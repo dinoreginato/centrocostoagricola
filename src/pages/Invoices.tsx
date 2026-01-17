@@ -959,18 +959,18 @@ export const Invoices: React.FC = () => {
               {/* Totals Footer */}
               <div className="bg-gray-900 text-white p-4 rounded-lg">
                 <div className="flex justify-between items-center text-xs text-gray-400 mb-2">
-                  <span>Subtotal: ${subtotal.toLocaleString()}</span>
-                  <span>Descuento: ${discountAmount.toLocaleString()}</span>
-                  <span>Impuesto ({taxPercentage}%): ${tax.toLocaleString()}</span>
-                  <span>Exento: ${exemptAmount.toLocaleString()}</span>
-                  <span>Imp. Esp: ${specialTaxAmount.toLocaleString()}</span>
+                  <span>Subtotal: {formatCLP(subtotal)}</span>
+                  <span>Descuento: {formatCLP(discountAmount)}</span>
+                  <span>Impuesto ({taxPercentage}%): {formatCLP(tax)}</span>
+                  <span>Exento: {formatCLP(exemptAmount)}</span>
+                  <span>Imp. Esp: {formatCLP(specialTaxAmount)}</span>
                 </div>
                 <div className="flex justify-between items-center pt-2 border-t border-gray-700">
                   <div className="text-sm">
-                    Impuestos: ${tax.toLocaleString()}
+                    Impuestos: {formatCLP(tax)}
                   </div>
                   <div className="text-xl font-bold">
-                    Total: ${total.toLocaleString()}
+                    Total: {formatCLP(total)}
                   </div>
                   <button
                     type="submit"

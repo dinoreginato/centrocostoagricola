@@ -288,7 +288,7 @@ export const Dashboard: React.FC = () => {
             >
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="name" />
-              <YAxis />
+              <YAxis tickFormatter={(value) => formatCLP(value)} />
               <Tooltip formatter={(value) => formatCLP(Number(value))} />
               <Legend />
               <Bar dataKey="cost" name="Costo Total" fill="#2E7D32" />

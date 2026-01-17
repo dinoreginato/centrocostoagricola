@@ -107,7 +107,10 @@ export const Reports: React.FC = () => {
               >
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="sector_name" label={{ value: 'Sector', position: 'insideBottom', offset: -5 }} />
-                <YAxis label={{ value: 'Costo / Ha ($)', angle: -90, position: 'insideLeft' }} />
+                <YAxis 
+                  label={{ value: 'Costo / Ha ($)', angle: -90, position: 'insideLeft' }} 
+                  tickFormatter={(value) => formatCLP(value)}
+                />
                 <Tooltip 
                   formatter={(value) => formatCLP(Number(value))}
                   labelFormatter={(label, payload) => {
