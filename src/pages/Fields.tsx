@@ -33,11 +33,16 @@ export const Fields: React.FC = () => {
   const [newSectorName, setNewSectorName] = useState('');
   const [newSectorHectares, setNewSectorHectares] = useState('');
 
-  // Edit states
+  // Edit Field states
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [editFieldName, setEditFieldName] = useState('');
   const [editFieldHectares, setEditFieldHectares] = useState('');
   const [editFieldFruit, setEditFieldFruit] = useState('');
+
+  // Edit Sector states
+  const [editingSectorId, setEditingSectorId] = useState<string | null>(null);
+  const [editSectorName, setEditSectorName] = useState('');
+  const [editSectorHectares, setEditSectorHectares] = useState('');
 
   useEffect(() => {
     if (selectedCompany) {
@@ -147,30 +152,7 @@ export const Fields: React.FC = () => {
     }
   };
 
-  const handleDeleteSector = async (sectorId: string, fieldId: string) => {
-    if (!window.confirm('¿Eliminar este sector?')) return;
-
-    try {
-      const { error } = await supabase
-        .from('sectors')
-        .delete()
-        .eq('id', sectorId);
-
-      if (error) throw error;
-
-      setFields(fields.map(f => {
-        if (f.id === fieldId) {
-          return {
-            ...f,
-            sectors: f.sectors?.filter(s => s.id !== sectorId)
-          };
-        }
-        return f;
-      }));
-    } catch (error) {
-      console.error('Error deleting sector:', error);
-    }
-  };
+  // --- SECTOR MANAGEMENT ---
 
   const handleCreateSector = async (e: React.FormEvent, fieldId: string) => {
     e.preventDefault();
@@ -202,6 +184,73 @@ export const Fields: React.FC = () => {
       setNewSectorHectares('');
     } catch (error) {
       console.error('Error creating sector:', error);
+    }
+  };
+
+  const startEditingSector = (sector: Sector) => {
+    setEditingSectorId(sector.id);
+    setEditSectorName(sector.name);
+    setEditSectorHectares(sector.hectares.toString());
+  };
+
+  const cancelEditingSector = () => {
+    setEditingSectorId(null);
+    setEditSectorName('');
+    setEditSectorHectares('');
+  };
+
+  const handleUpdateSector = async (e: React.FormEvent, sectorId: string, fieldId: string) => {
+    e.preventDefault();
+    try {
+      const { data, error } = await supabase
+        .from('sectors')
+        .update({
+          name: editSectorName,
+          hectares: parseFloat(editSectorHectares)
+        })
+        .eq('id', sectorId)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setFields(fields.map(f => {
+        if (f.id === fieldId) {
+          return {
+            ...f,
+            sectors: f.sectors?.map(s => s.id === sectorId ? data : s)
+          };
+        }
+        return f;
+      }));
+      cancelEditingSector();
+    } catch (error) {
+      console.error('Error updating sector:', error);
+    }
+  };
+
+  const handleDeleteSector = async (sectorId: string, fieldId: string) => {
+    if (!window.confirm('¿Eliminar este sector?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('sectors')
+        .delete()
+        .eq('id', sectorId);
+
+      if (error) throw error;
+
+      setFields(fields.map(f => {
+        if (f.id === fieldId) {
+          return {
+            ...f,
+            sectors: f.sectors?.filter(s => s.id !== sectorId)
+          };
+        }
+        return f;
+      }));
+    } catch (error) {
+      console.error('Error deleting sector:', error);
     }
   };
 
@@ -392,18 +441,66 @@ export const Fields: React.FC = () => {
                       <ul className="space-y-3 mb-4">
                         {field.sectors?.map((sector) => (
                           <li key={sector.id} className="flex items-center justify-between text-sm text-gray-600 group">
-                            <div className="flex items-center">
-                              <MapPin className="h-4 w-4 text-gray-400 mr-2" />
-                              <span className="font-medium mr-2">{sector.name}</span>
-                              <span className="text-gray-400">({sector.hectares} ha)</span>
-                            </div>
-                            <button
-                              onClick={() => handleDeleteSector(sector.id, field.id)}
-                              className="text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
-                              title="Eliminar sector"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
+                            {editingSectorId === sector.id ? (
+                              <form onSubmit={(e) => handleUpdateSector(e, sector.id, field.id)} className="flex items-center space-x-3 w-full">
+                                <input
+                                  type="text"
+                                  value={editSectorName}
+                                  onChange={(e) => setEditSectorName(e.target.value)}
+                                  className="block w-40 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                                  placeholder="Nombre"
+                                  required
+                                />
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={editSectorHectares}
+                                  onChange={(e) => setEditSectorHectares(e.target.value)}
+                                  className="block w-24 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                                  placeholder="Has"
+                                  required
+                                />
+                                <button
+                                  type="submit"
+                                  className="text-green-600 hover:text-green-800"
+                                  title="Guardar"
+                                >
+                                  <Check className="h-4 w-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={cancelEditingSector}
+                                  className="text-gray-500 hover:text-gray-700"
+                                  title="Cancelar"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </form>
+                            ) : (
+                              <>
+                                <div className="flex items-center">
+                                  <MapPin className="h-4 w-4 text-gray-400 mr-2" />
+                                  <span className="font-medium mr-2">{sector.name}</span>
+                                  <span className="text-gray-400">({sector.hectares} ha)</span>
+                                </div>
+                                <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={() => startEditingSector(sector)}
+                                    className="text-gray-400 hover:text-green-600"
+                                    title="Editar sector"
+                                  >
+                                    <Edit2 className="h-3 w-3" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteSector(sector.id, field.id)}
+                                    className="text-gray-400 hover:text-red-600"
+                                    title="Eliminar sector"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              </>
+                            )}
                           </li>
                         ))}
                       </ul>
