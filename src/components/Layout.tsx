@@ -1,0 +1,151 @@
+
+import React from 'react';
+import { Outlet, Link, useLocation, Navigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import { useCompany } from '../contexts/CompanyContext';
+import { 
+  LayoutDashboard, 
+  Map, 
+  FileText, 
+  Package, 
+  ClipboardList, 
+  BarChart3, 
+  LogOut,
+  Menu,
+  X,
+  Users
+} from 'lucide-react';
+
+export const Layout: React.FC = () => {
+  const { user, loading, signOut } = useAuth();
+  const { userRole } = useCompany();
+  const location = useLocation();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Define navigation items
+  const allNavItems = [
+    { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin', 'viewer'] },
+    { name: 'Campos', href: '/campos', icon: Map, roles: ['admin', 'viewer'] },
+    { name: 'Facturas', href: '/facturas', icon: FileText, roles: ['admin'] },
+    { name: 'Bodega', href: '/bodega', icon: Package, roles: ['admin', 'editor', 'viewer'] },
+    { name: 'Aplicaciones', href: '/aplicaciones', icon: ClipboardList, roles: ['admin', 'editor', 'viewer'] },
+    { name: 'Reportes', href: '/reportes', icon: BarChart3, roles: ['admin', 'viewer'] },
+    { name: 'Usuarios', href: '/usuarios', icon: Users, roles: ['admin'] },
+  ];
+
+  const navigation = allNavItems.filter(item => 
+    !userRole || item.roles.includes(userRole)
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex">
+      {/* Sidebar for desktop */}
+      <div className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 bg-white border-r border-gray-200">
+        <div className="flex items-center justify-center h-16 border-b border-gray-200 px-4">
+          <span className="text-xl font-bold text-green-700">AgroCostos</span>
+        </div>
+        <div className="flex-1 flex flex-col overflow-y-auto pt-5 pb-4">
+          <nav className="mt-5 flex-1 px-2 space-y-1">
+            {navigation.map((item) => {
+              const isActive = location.pathname === item.href;
+              return (
+                <Link
+                  key={item.name}
+                  to={item.href}
+                  className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
+                    isActive
+                      ? 'bg-green-50 text-green-700'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  <item.icon
+                    className={`mr-3 flex-shrink-0 h-6 w-6 ${
+                      isActive ? 'text-green-700' : 'text-gray-400 group-hover:text-gray-500'
+                    }`}
+                  />
+                  {item.name}
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+        <div className="flex-shrink-0 flex border-t border-gray-200 p-4">
+          <div className="flex-shrink-0 w-full group block">
+            <div className="flex items-center">
+              <div className="ml-3">
+                <p className="text-sm font-medium text-gray-700 truncate">{user.email}</p>
+                <button
+                  onClick={signOut}
+                  className="text-xs font-medium text-gray-500 hover:text-gray-700 flex items-center mt-1"
+                >
+                  <LogOut className="mr-1 h-3 w-3" /> Cerrar Sesión
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile menu */}
+      <div className="md:hidden fixed top-0 left-0 w-full bg-white border-b border-gray-200 z-10 flex items-center justify-between px-4 h-16">
+        <span className="text-xl font-bold text-green-700">AgroCostos</span>
+        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
+          {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+        </button>
+      </div>
+
+      {isMobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 z-20 bg-white pt-16">
+           <nav className="mt-5 px-2 space-y-1">
+            {navigation.map((item) => (
+              <Link
+                key={item.name}
+                to={item.href}
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50"
+              >
+                <div className="flex items-center">
+                  <item.icon className="mr-4 h-6 w-6 text-gray-500" />
+                  {item.name}
+                </div>
+              </Link>
+            ))}
+            <button
+              onClick={() => {
+                signOut();
+                setIsMobileMenuOpen(false);
+              }}
+              className="w-full text-left block px-3 py-2 rounded-md text-base font-medium text-red-600 hover:bg-red-50"
+            >
+              <div className="flex items-center">
+                <LogOut className="mr-4 h-6 w-6" />
+                Cerrar Sesión
+              </div>
+            </button>
+          </nav>
+        </div>
+      )}
+
+      {/* Main content */}
+      <div className="md:pl-64 flex flex-col flex-1 w-full">
+        <main className="flex-1">
+          <div className="py-6 px-4 sm:px-6 md:px-8 mt-16 md:mt-0">
+             <Outlet />
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+};
