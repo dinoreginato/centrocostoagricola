@@ -32,7 +32,11 @@ export const Inventory: React.FC = () => {
     if (!selectedCompany) return;
     setLoading(true);
     try {
-      // Fetch ALL products for the company, no category restrictions
+      // Define allowed categories for warehouse (Chemicals & Fertilizers only)
+      // Using partial matching logic later, but for initial fetch we get all and filter in JS 
+      // or use a broad filter if Supabase supports ILIKE ANY (it doesn't easily).
+      // Let's fetch all and filter in memory to be robust with casing/variations.
+      
       const { data, error } = await supabase
         .from('products')
         .select('*')
@@ -40,14 +44,35 @@ export const Inventory: React.FC = () => {
         .order('name');
 
       if (error) throw error;
-      setProducts(data || []);
       
-      // Extract unique categories for filter from actual data
-      if (data) {
-        // Normalize categories to avoid duplicates with case differences if needed, 
-        // but for now just unique set is fine.
-        const cats = Array.from(new Set(data.map(p => p.category))).filter(Boolean).sort();
+      // Filter for specific chemical/agrochemical categories
+      const AGRO_CATEGORIES = [
+        'fertilizante', 'plaguicida', 'insecticida', 'fungicida', 'herbicida', 
+        'quimico', 'agro', 'urea', 'salitre', 'potasio', 'fosforo'
+      ];
+      
+      const chemicalProducts = (data || []).filter(product => {
+        const cat = (product.category || '').toLowerCase();
+        const name = product.name.toLowerCase();
+        
+        // Check if category matches any allowed term
+        const categoryMatch = AGRO_CATEGORIES.some(term => cat.includes(term));
+        
+        // Optional: Also check name if category is missing or generic "Insumo"
+        // But user asked strictly for specific types. Let's stick to category check mostly,
+        // but allow "Insumo" ONLY if name sounds chemical? No, user said "no quiero insumos".
+        // So we strictly filter by these agro keywords.
+        
+        return categoryMatch;
+      });
+
+      setProducts(chemicalProducts);
+      
+      if (chemicalProducts.length > 0) {
+        const cats = Array.from(new Set(chemicalProducts.map(p => p.category))).filter(Boolean).sort();
         setAvailableCategories(cats);
+      } else {
+        setAvailableCategories([]);
       }
     } catch (error) {
       console.error('Error loading inventory:', error);
