@@ -45,25 +45,20 @@ export const Inventory: React.FC = () => {
 
       if (error) throw error;
       
-      // Filter for specific chemical/agrochemical categories
-      const AGRO_CATEGORIES = [
+      // Filter for specific chemical/agrochemical categories OR names containing keywords
+      const AGRO_KEYWORDS = [
         'fertilizante', 'plaguicida', 'insecticida', 'fungicida', 'herbicida', 
-        'quimico', 'agro', 'urea', 'salitre', 'potasio', 'fosforo'
+        'quimico', 'agro', 'urea', 'salitre', 'potasio', 'fosforo', 'nitrato', 'sulfato'
       ];
       
       const chemicalProducts = (data || []).filter(product => {
         const cat = (product.category || '').toLowerCase();
         const name = product.name.toLowerCase();
         
-        // Check if category matches any allowed term
-        const categoryMatch = AGRO_CATEGORIES.some(term => cat.includes(term));
+        // Check if category OR name matches any allowed term
+        const match = AGRO_KEYWORDS.some(term => cat.includes(term) || name.includes(term));
         
-        // Optional: Also check name if category is missing or generic "Insumo"
-        // But user asked strictly for specific types. Let's stick to category check mostly,
-        // but allow "Insumo" ONLY if name sounds chemical? No, user said "no quiero insumos".
-        // So we strictly filter by these agro keywords.
-        
-        return categoryMatch;
+        return match;
       });
 
       setProducts(chemicalProducts);
