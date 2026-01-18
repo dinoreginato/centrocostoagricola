@@ -591,10 +591,20 @@ export const Invoices: React.FC = () => {
 
   const handleDeleteInvoice = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (!window.confirm('¿Está seguro de eliminar esta factura? \n\nIMPORTANTE: Esto no revertirá automáticamente el stock ingresado a la bodega. Si desea ajustar el stock, debe hacerlo manualmente.')) return;
+    if (!window.confirm('¿Está seguro de eliminar esta factura?')) return;
 
     try {
       setLoading(true);
+      
+      // 1. Delete invoice items first (manual cascade to be safe)
+      const { error: itemsError } = await supabase
+        .from('invoice_items')
+        .delete()
+        .eq('invoice_id', id);
+        
+      if (itemsError) throw itemsError;
+
+      // 2. Delete the invoice itself
       const { error } = await supabase.from('invoices').delete().eq('id', id);
       if (error) throw error;
       
@@ -603,9 +613,6 @@ export const Invoices: React.FC = () => {
       // Optimistic update: Remove from UI immediately
       const updatedInvoices = allInvoices.filter(inv => inv.id !== id);
       setAllInvoices(updatedInvoices);
-      
-      // Force UI update by toggling search query momentarily if needed, 
-      // but modifying state directly should trigger re-render of getFilteredInvoices
       
       loadStats(); // This will fetch fresh data from server eventually
       if (editingInvoiceId === id) handleCancelEdit();
