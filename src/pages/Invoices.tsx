@@ -1065,12 +1065,17 @@ export const Invoices: React.FC = () => {
                     >
                       <div className="flex justify-between items-start mb-1 pr-6">
                         <span className="font-bold text-sm text-white">#{inv.invoice_number}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          inv.status === 'Pagada' ? 'bg-green-900 text-green-300' : 
-                          inv.status === 'Pendiente' ? 'bg-yellow-900 text-yellow-300' : 'bg-red-900 text-red-300'
-                        }`}>
-                          {inv.status}
-                        </span>
+                        <div className="flex flex-col items-end">
+                          <span className={`text-xs px-2 py-0.5 rounded-full mb-1 ${
+                            inv.status === 'Pagada' ? 'bg-green-900 text-green-300' : 
+                            inv.status === 'Pendiente' ? 'bg-yellow-900 text-yellow-300' : 'bg-red-900 text-red-300'
+                          }`}>
+                            {inv.status}
+                          </span>
+                          <span className="text-[10px] text-gray-500">
+                            {inv.items?.length || 0} items
+                          </span>
+                        </div>
                       </div>
                       <div className="text-sm text-gray-300 mb-1 truncate">{inv.supplier}</div>
                       <div className="flex justify-between text-xs text-gray-500">
