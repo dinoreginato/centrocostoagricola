@@ -564,56 +564,37 @@ export const Invoices: React.FC = () => {
     }
   };
 
-  const handleDeleteByYear = async () => {
-    if (!selectedYear) return;
+  const handleDeleteAllGlobal = async () => {
+    if (!companies || companies.length === 0) return;
 
-    // Filter invoices belonging to the selected year
-    const invoicesToDelete = allInvoices.filter(inv => {
-      const invYear = inv.invoice_date ? inv.invoice_date.substring(0, 4) : '';
-      return invYear === selectedYear;
-    });
+    const confirmMessage = `PELIGRO EXTREMO: Estás a punto de eliminar TODAS las facturas de TODAS las empresas (${companies.length} empresas).\n\nEsto dejará el sistema en CERO facturas.\n\n¿Estás absolutamente seguro?`;
     
-    if (invoicesToDelete.length === 0) {
-      alert(`No se encontraron facturas para el año ${selectedYear}.`);
-      return;
-    }
-
-    if (!window.confirm(`PELIGRO: Estás a punto de eliminar ${invoicesToDelete.length} facturas del año ${selectedYear}.\n\nEsta acción NO SE PUEDE DESHACER.\n\n¿Estás seguro de que quieres borrar TODO el año ${selectedYear}?`)) {
-      return;
-    }
-
-    // Double confirmation
-    if (!window.confirm(`Confirmación final: ¿Realmente deseas eliminar ${invoicesToDelete.length} facturas?`)) {
-      return;
-    }
+    if (!window.confirm(confirmMessage)) return;
+    if (!window.confirm("CONFIRMACIÓN FINAL: Escribe 'SI' (mentalmente) y acepta para BORRAR TODO.")) return;
 
     setLoading(true);
     try {
-      const ids = invoicesToDelete.map(inv => inv.id);
+      const companyIds = companies.map(c => c.id);
       
-      // Delete in batches if too many to avoid URL length issues or timeouts
-      // Supabase handles large IN clauses well, but let's be safe if > 1000
-      const { error } = await supabase
+      // Delete invoices for all accessible companies
+      const { error, count } = await supabase
         .from('invoices')
-        .delete()
-        .in('id', ids);
+        .delete({ count: 'exact' })
+        .in('company_id', companyIds);
 
       if (error) throw error;
 
-      alert(`Se han eliminado ${invoicesToDelete.length} facturas del año ${selectedYear}.`);
+      alert(`Operación completada. Se han eliminado las facturas de todas las empresas.`);
       
-      // Update local state
-      const remaining = allInvoices.filter(inv => !ids.includes(inv.id));
-      setAllInvoices(remaining);
+      // Clear local state
+      setAllInvoices([]);
+      setItems([]);
+      handleCancelEdit();
       
-      // Reset form if editing a deleted invoice
-      if (editingInvoiceId && ids.includes(editingInvoiceId)) {
-        handleCancelEdit();
-      }
-
-      loadStats(); // Reload full data from server to be sure
+      // Reload stats (will be empty)
+      loadStats();
     } catch (error: any) {
-      console.error('Error deleting:', error);
+      console.error('Error deleting all:', error);
       alert('Error al eliminar: ' + error.message);
     } finally {
       setLoading(false);
@@ -740,11 +721,11 @@ export const Invoices: React.FC = () => {
                 </button>
               )}
               <button 
-                onClick={handleDeleteByYear}
-                className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm flex items-center"
-                title={`Eliminar todas las facturas del año ${selectedYear}`}
+                onClick={handleDeleteAllGlobal}
+                className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm flex items-center font-bold"
+                title="Eliminar TODAS las facturas de TODAS las empresas"
               >
-                <Trash2 className="h-4 w-4 mr-1" /> Borrar Año {selectedYear}
+                <Trash2 className="h-4 w-4 mr-1" /> ELIMINAR TODO
               </button>
               <input 
                 type="file" 
