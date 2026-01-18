@@ -438,6 +438,21 @@ export const Invoices: React.FC = () => {
               continue;
             }
 
+            // Check duplicate on import
+            const { data: existingImport } = await supabase
+              .from('invoices')
+              .select('id')
+              .eq('company_id', targetCompanyId)
+              .eq('invoice_number', invoiceDataMap.number)
+              .eq('supplier', invoiceDataMap.supplier)
+              .maybeSingle();
+
+            if (existingImport) {
+              console.warn(`Skipping duplicate invoice: ${invoiceDataMap.number} - ${invoiceDataMap.supplier}`);
+              // Optional: count as error or just skip silently? Let's skip.
+              continue;
+            }
+
             // 1. Create Invoice
             const { data: invoiceData, error: invError } = await supabase
               .from('invoices')
@@ -705,6 +720,22 @@ export const Invoices: React.FC = () => {
 
       } else {
         // --- CREATE NEW INVOICE ---
+        
+        // 0. Check for duplicates before creating
+        const { data: existingInvoice } = await supabase
+          .from('invoices')
+          .select('id')
+          .eq('company_id', selectedCompany.id)
+          .eq('invoice_number', invoiceNumber)
+          .eq('supplier', supplier)
+          .maybeSingle();
+
+        if (existingInvoice) {
+          alert(`¡Atención! Ya existe una factura con el número "${invoiceNumber}" para el proveedor "${supplier}".\n\nNo se puede crear un duplicado.`);
+          setLoading(false);
+          return;
+        }
+
         const { data: invoice, error: invoiceError } = await supabase
           .from('invoices')
           .insert([{
