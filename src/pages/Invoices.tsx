@@ -712,7 +712,24 @@ export const Invoices: React.FC = () => {
       if (editingInvoiceId) {
         // --- UPDATE EXISTING INVOICE ---
         
-        // 1. Update Invoice Details
+        // 1. Fetch old items to reverse inventory
+        const { data: oldItems } = await supabase
+          .from('invoice_items')
+          .select('product_id, quantity')
+          .eq('invoice_id', editingInvoiceId);
+
+        if (oldItems) {
+          for (const oldItem of oldItems) {
+            if (oldItem.product_id) {
+              await supabase.rpc('reverse_inventory_movement', {
+                target_product_id: oldItem.product_id,
+                quantity_to_remove: oldItem.quantity
+              });
+            }
+          }
+        }
+
+        // 2. Update Invoice Details
         const { error: updateError } = await supabase
           .from('invoices')
           .update({
@@ -808,6 +825,15 @@ export const Invoices: React.FC = () => {
           
           if (productError) throw productError;
           productId = newProduct.id;
+        } else if (editingInvoiceId) {
+           // If editing and using existing product, update its metadata in case user changed category/unit in the form
+           await supabase
+             .from('products')
+             .update({
+               category: item.category,
+               unit: item.unit
+             })
+             .eq('id', productId);
         }
 
         // Create Invoice Item
