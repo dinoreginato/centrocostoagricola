@@ -145,7 +145,14 @@ export const Invoices: React.FC = () => {
     // Fetch all invoices with items and products for client-side search/stats
     let query = supabase
       .from('invoices')
-      .select('id, invoice_number, supplier, invoice_date, total_amount, status, invoice_items(total_price, category, products(name))')
+      .select(`
+        id, invoice_number, supplier, invoice_date, total_amount, status, due_date, notes, document_type,
+        tax_percentage, discount_amount, exempt_amount, special_tax_amount,
+        invoice_items (
+          id, quantity, unit_price, total_price, category, product_id,
+          products (id, name, unit)
+        )
+      `)
       .eq('company_id', selectedCompany.id)
       .order('invoice_date', { ascending: false });
 
