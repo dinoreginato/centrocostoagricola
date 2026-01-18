@@ -293,10 +293,21 @@ export const Reports: React.FC = () => {
   };
 
   if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
+  
+  // Dynamic Title based on Active Tab
+  const getReportTitle = () => {
+    switch(activeTab) {
+      case 'applications': return 'Costos de Aplicación';
+      case 'monthly': return 'Gastos Mensuales';
+      case 'categories': return 'Gastos por Clasificación';
+      case 'pending': return 'Facturas Pendientes';
+      default: return 'Reporte';
+    }
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center print:hidden">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Reportes de Gestión</h1>
           <p className="text-sm text-gray-500">Vista integral de costos y gastos</p>
@@ -315,14 +326,24 @@ export const Reports: React.FC = () => {
             </select>
           </div>
 
-          <button className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            <FileDown className="mr-2 h-4 w-4" /> Exportar
+          <button 
+            onClick={() => window.print()}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+          >
+            <FileDown className="mr-2 h-4 w-4" /> Imprimir / PDF
           </button>
         </div>
       </div>
 
+      {/* Print Header */}
+      <div className="hidden print:block mb-8">
+        <h1 className="text-3xl font-bold text-gray-900">{selectedCompany.name}</h1>
+        <h2 className="text-xl text-gray-600 mt-2">{getReportTitle()} - {selectedYear}</h2>
+        <p className="text-sm text-gray-400 mt-1">Generado el {new Date().toLocaleDateString()}</p>
+      </div>
+
       {/* Tabs Navigation */}
-      <div className="border-b border-gray-200">
+      <div className="border-b border-gray-200 print:hidden">
         <nav className="-mb-px flex space-x-8 overflow-x-auto">
           <button
             onClick={() => setActiveTab('applications')}

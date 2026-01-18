@@ -52,7 +52,7 @@ export const Layout: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-100 flex">
       {/* Sidebar for desktop */}
-      <div className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 bg-white border-r border-gray-200">
+      <div className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 bg-white border-r border-gray-200 print:hidden">
         <div className="flex items-center justify-center h-16 border-b border-gray-200 px-4">
           <span className="text-xl font-bold text-green-700">AgroCostos</span>
         </div>
@@ -99,7 +99,7 @@ export const Layout: React.FC = () => {
       </div>
 
       {/* Mobile menu */}
-      <div className="md:hidden fixed top-0 left-0 w-full bg-white border-b border-gray-200 z-10 flex items-center justify-between px-4 h-16">
+      <div className="md:hidden fixed top-0 left-0 w-full bg-white border-b border-gray-200 z-10 flex items-center justify-between px-4 h-16 print:hidden">
         <span className="text-xl font-bold text-green-700">AgroCostos</span>
         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
           {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
@@ -139,7 +139,7 @@ export const Layout: React.FC = () => {
       )}
 
       {/* Main content */}
-      <div className="md:pl-64 flex flex-col flex-1 w-full">
+      <div className="md:pl-64 flex flex-col flex-1 w-full print:pl-0">
         <main className="flex-1">
           <div className="py-6 px-4 sm:px-6 md:px-8 mt-16 md:mt-0">
              <Outlet />
