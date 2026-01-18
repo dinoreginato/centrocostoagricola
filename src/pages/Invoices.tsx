@@ -466,10 +466,10 @@ export const Invoices: React.FC = () => {
               const itemMap = {
                 name: item.descripcion || item.product_name,
                 category: item.categoria || guessCategory(item.descripcion || item.product_name || ''),
-                quantity: item.cantidad || item.quantity,
+                quantity: Number(item.cantidad || item.quantity || 0),
                 unit: item.unidad ? (item.unidad.toLowerCase().startsWith('unid') ? 'un' : item.unidad) : 'un',
-                price: item.precio || item.precioUnit || item.unit_price,
-                total: item.total || item.total_price
+                price: Number(item.precio || item.precioUnit || item.unit_price || 0),
+                total: Number(item.total || item.total_price || 0)
               };
 
               let productId;
