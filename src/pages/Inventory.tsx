@@ -32,20 +32,11 @@ export const Inventory: React.FC = () => {
     if (!selectedCompany) return;
     setLoading(true);
     try {
-      // Define allowed categories (Singular and Plural forms to be safe)
-      const ALLOWED_CATEGORIES = [
-        'Fertilizantes', 
-        'Plaguicida', 'Plaguicidas',
-        'Herbicida', 'Herbicidas',
-        'Insecticida', 'Insecticidas',
-        'Fungicida', 'Fungicidas', 'Funguicidas', 'Funguicida'
-      ];
-
+      // Fetch ALL products for the company, no category restrictions
       const { data, error } = await supabase
         .from('products')
         .select('*')
         .eq('company_id', selectedCompany.id)
-        .in('category', ALLOWED_CATEGORIES)
         .order('name');
 
       if (error) throw error;
@@ -53,6 +44,8 @@ export const Inventory: React.FC = () => {
       
       // Extract unique categories for filter from actual data
       if (data) {
+        // Normalize categories to avoid duplicates with case differences if needed, 
+        // but for now just unique set is fine.
         const cats = Array.from(new Set(data.map(p => p.category))).filter(Boolean).sort();
         setAvailableCategories(cats);
       }
