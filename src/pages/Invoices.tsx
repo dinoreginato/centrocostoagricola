@@ -606,30 +606,25 @@ export const Invoices: React.FC = () => {
 
   const handleDeleteInvoice = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (!window.confirm('¿Está seguro de eliminar esta factura?')) return;
+    if (!window.confirm('¿FUERZA BRUTA: Borrar esta factura definitivamente?')) return;
 
     try {
       setLoading(true);
       
-      // 1. Delete invoice items first (manual cascade to be safe)
-      const { error: itemsError } = await supabase
-        .from('invoice_items')
-        .delete()
-        .eq('invoice_id', id);
-        
-      if (itemsError) throw itemsError;
+      // Use the new RPC function for atomic force delete
+      const { error } = await supabase.rpc('delete_invoice_force', {
+        target_invoice_id: id
+      });
 
-      // 2. Delete the invoice itself
-      const { error } = await supabase.from('invoices').delete().eq('id', id);
       if (error) throw error;
       
-      alert('Factura eliminada');
+      alert('Factura eliminada (Forzado)');
       
-      // Optimistic update: Remove from UI immediately
+      // Update local state
       const updatedInvoices = allInvoices.filter(inv => inv.id !== id);
       setAllInvoices(updatedInvoices);
       
-      loadStats(); // This will fetch fresh data from server eventually
+      loadStats();
       if (editingInvoiceId === id) handleCancelEdit();
     } catch (error: any) {
       console.error('Error deleting:', error);
