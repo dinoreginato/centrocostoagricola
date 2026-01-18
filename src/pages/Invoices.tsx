@@ -347,29 +347,41 @@ export const Invoices: React.FC = () => {
         let jsonContent = event.target?.result as string;
         let json;
 
-        try {
-          // First try standard parse
-          json = JSON.parse(jsonContent);
-        } catch (e) {
-          console.warn('Standard JSON parse failed, trying auto-fix...', e);
+        // Smart JSON Parsing Strategy
+        const parseFlexibleJSON = (text: string) => {
+          text = text.trim();
           
-          // Common issue: User pastes list of objects without [ ] or trailing commas
-          // 1. Try wrapping in [ ] if it looks like a list of objects but missing brackets
-          const trimmed = jsonContent.trim();
-          if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-             // Maybe multiple objects separated by commas or newlines without brackets?
-             // Or just a single object?
-             // Let's try wrapping in [ ] just in case it's a stream of objects like {..}, {..}
-             try {
-                json = JSON.parse(`[${trimmed}]`);
-             } catch (e2) {
-                // Failed again.
-                // 2. Maybe it's a single object that works? No, first try failed.
-                throw e;
-             }
-          } else {
-             throw e;
-          }
+          // 1. Try standard parse
+          try { return JSON.parse(text); } catch (e) {}
+          
+          // 2. Try wrapping in brackets (for comma-separated lists)
+          try { return JSON.parse(`[${text}]`); } catch (e) {}
+
+          // 3. Try fixing concatenated objects like } { -> }, {
+          try {
+             const fixed = text.replace(/}\s*{/g, '},{');
+             return JSON.parse(`[${fixed}]`);
+          } catch (e) {}
+
+          // 4. Aggressive Regex Extraction (Finds anything looking like an object)
+          // Matches { ... } allowing for one level of nesting
+          try {
+            const matches = text.match(/\{(?:[^{}]|{[^{}]*})*\}/g);
+            if (matches && matches.length > 0) {
+              // Join matches with commas and wrap in brackets
+              return JSON.parse(`[${matches.join(',')}]`);
+            }
+          } catch (e) {}
+
+          throw new Error("No se pudo interpretar el formato del archivo.");
+        };
+
+        try {
+          json = parseFlexibleJSON(jsonContent);
+        } catch (e: any) {
+          console.error('JSON Parse Error:', e);
+          alert(`Error crítico al leer el archivo: ${e.message}\n\nPor favor verifica que sea un archivo de texto con formato JSON válido.`);
+          return;
         }
 
         // Handle "facturas" wrapper if present
