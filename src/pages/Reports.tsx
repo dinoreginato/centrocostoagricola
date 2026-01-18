@@ -576,13 +576,23 @@ export const Reports: React.FC = () => {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             {inv.days_overdue > 0 ? (
-                              <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                                {inv.days_overdue} días vencida
-                              </span>
+                              <>
+                                <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 print:hidden">
+                                  {inv.days_overdue} días vencida
+                                </span>
+                                <span className="hidden print:inline text-red-700 font-bold">
+                                  {inv.days_overdue} días
+                                </span>
+                              </>
                             ) : (
-                              <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                                Al día ({Math.abs(inv.days_overdue)} restantes)
-                              </span>
+                              <>
+                                <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 print:hidden">
+                                  Al día ({Math.abs(inv.days_overdue)} restantes)
+                                </span>
+                                <span className="hidden print:inline text-green-700">
+                                  {Math.abs(inv.days_overdue)} rest.
+                                </span>
+                              </>
                             )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">{inv.supplier}</td>

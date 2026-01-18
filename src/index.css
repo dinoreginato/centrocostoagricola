@@ -16,30 +16,61 @@
 @media print {
   @page {
     size: letter; /* Tamaño Carta */
-    margin: 1cm;
+    margin: 0.5cm; /* Márgenes más pequeños para ganar espacio */
   }
   
   body {
     background: white;
-    font-size: 12pt;
+    font-size: 10pt; /* Letra un poco más pequeña para que quepa todo */
+    -webkit-print-color-adjust: exact !important; /* Forzar impresión de colores de fondo */
+    print-color-adjust: exact !important;
   }
 
   /* Asegurar que los gráficos no se corten */
   .recharts-wrapper {
     width: 100% !important;
     height: auto !important;
+    max-height: 400px !important; /* Limitar altura para que no ocupe toda la hoja */
   }
 
   /* Evitar saltos de página dentro de tablas o gráficos */
-  table, .recharts-responsive-container, .bg-white {
+  table, .recharts-responsive-container, .bg-white, tr {
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
+  /* Tabla al 100% del ancho */
+  table {
+    width: 100% !important;
+    table-layout: fixed; /* Forzar columnas fijas si es necesario, o auto para mejor ajuste */
+  }
+  
+  /* Celdas más compactas */
+  th, td {
+    padding: 4px 8px !important; /* Menos relleno */
+    font-size: 9pt !important;
+    white-space: normal !important; /* Permitir que el texto baje de línea si es largo */
+    word-wrap: break-word !important;
+  }
+
+  /* Encabezados de tabla con fondo gris */
+  thead th {
+    background-color: #f3f4f6 !important;
+    color: #111827 !important;
+    font-weight: bold !important;
+  }
+
   /* Ocultar sombras y bordes innecesarios para impresión limpia */
-  .shadow, .shadow-md, .shadow-lg, .shadow-sm {
+  .shadow, .shadow-md, .shadow-lg, .shadow-sm, .rounded-lg, .rounded-md {
     box-shadow: none !important;
-    border: 1px solid #e5e7eb; /* Borde suave */
+    border: none !important;
+    border-radius: 0 !important;
+  }
+  
+  /* Bordes simples para tablas */
+  table, th, td {
+    border: 1px solid #e5e7eb !important;
+    border-collapse: collapse !important;
   }
 
   /* Asegurar texto negro para mejor legibilidad */
