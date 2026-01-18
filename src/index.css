@@ -12,3 +12,48 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+@media print {
+  @page {
+    size: letter; /* Tamaño Carta */
+    margin: 1cm;
+  }
+  
+  body {
+    background: white;
+    font-size: 12pt;
+  }
+
+  /* Asegurar que los gráficos no se corten */
+  .recharts-wrapper {
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  /* Evitar saltos de página dentro de tablas o gráficos */
+  table, .recharts-responsive-container, .bg-white {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Ocultar sombras y bordes innecesarios para impresión limpia */
+  .shadow, .shadow-md, .shadow-lg, .shadow-sm {
+    box-shadow: none !important;
+    border: 1px solid #e5e7eb; /* Borde suave */
+  }
+
+  /* Asegurar texto negro para mejor legibilidad */
+  * {
+    color: black !important;
+  }
+
+  /* Ocultar elementos no deseados */
+  .print\:hidden {
+    display: none !important;
+  }
+  
+  /* Mostrar elementos solo para impresión */
+  .print\:block {
+    display: block !important;
+  }
+}
