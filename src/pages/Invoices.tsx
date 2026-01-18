@@ -563,6 +563,44 @@ export const Invoices: React.FC = () => {
     }
   };
 
+  const handleDeleteEmptyInvoices = async () => {
+    const emptyInvoices = allInvoices.filter(inv => !inv.invoice_items || inv.invoice_items.length === 0);
+    
+    if (emptyInvoices.length === 0) {
+      alert('No se encontraron facturas sin ítems.');
+      return;
+    }
+
+    if (!window.confirm(`ATENCIÓN: Se encontraron ${emptyInvoices.length} facturas con 0 ítems (probablemente fallos de importación).\n\n¿Estás seguro de que quieres ELIMINARLAS todas permanentemente?`)) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const ids = emptyInvoices.map(inv => inv.id);
+      const { error } = await supabase
+        .from('invoices')
+        .delete()
+        .in('id', ids);
+
+      if (error) throw error;
+
+      alert(`${emptyInvoices.length} facturas eliminadas correctamente.`);
+      
+      // Update local state immediately
+      const remaining = allInvoices.filter(inv => !ids.includes(inv.id));
+      setAllInvoices(remaining);
+      
+      loadStats(); // Reload full data
+      handleCancelEdit();
+    } catch (error: any) {
+      console.error('Error deleting:', error);
+      alert('Error al eliminar: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCompany || items.length === 0) return;
@@ -682,6 +720,13 @@ export const Invoices: React.FC = () => {
                   Cancelar Edición
                 </button>
               )}
+              <button 
+                onClick={handleDeleteEmptyInvoices}
+                className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm flex items-center"
+                title="Eliminar facturas vacías (0 items)"
+              >
+                <Trash2 className="h-4 w-4 mr-1" /> Limpiar Vacías
+              </button>
               <input 
                 type="file" 
                 ref={fileInputRef} 
