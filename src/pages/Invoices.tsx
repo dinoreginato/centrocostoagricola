@@ -639,37 +639,68 @@ export const Invoices: React.FC = () => {
     }
   };
 
-  const handleDeleteAllGlobal = async () => {
-    if (!companies || companies.length === 0) return;
-
-    const confirmMessage = `PELIGRO EXTREMO: Estás a punto de eliminar TODAS las facturas de TODAS las empresas (${companies.length} empresas).\n\nEsto dejará el sistema en CERO facturas.\n\n¿Estás absolutamente seguro?`;
-    
-    if (!window.confirm(confirmMessage)) return;
-    if (!window.confirm("CONFIRMACIÓN FINAL: Escribe 'SI' (mentalmente) y acepta para BORRAR TODO.")) return;
+  const handleCleanDuplicates = async () => {
+    if (!selectedCompany) return;
+    if (!window.confirm('¿Desea buscar y eliminar facturas duplicadas automáticamente? Se conservará la versión más reciente de cada factura.')) return;
 
     setLoading(true);
     try {
-      const companyIds = companies.map(c => c.id);
-      
-      // Use the new RPC function to bypass RLS and delete everything cleanly
-      const { error } = await supabase.rpc('delete_all_invoices_for_companies', {
-        company_ids: companyIds
-      });
+      // Fetch all invoices
+      const { data: allInvoicesRaw, error } = await supabase
+        .from('invoices')
+        .select('id, invoice_number, supplier, created_at')
+        .eq('company_id', selectedCompany.id);
 
       if (error) throw error;
 
-      alert(`Operación completada. Se han eliminado las facturas de todas las empresas.`);
-      
-      // Clear local state
-      setAllInvoices([]);
-      setItems([]);
-      handleCancelEdit();
-      
-      // Reload stats (will be empty)
-      loadStats();
-    } catch (error: any) {
-      console.error('Error deleting all:', error);
-      alert('Error al eliminar: ' + error.message);
+      const duplicatesToDelete: string[] = [];
+      const seen = new Set<string>();
+
+      // Sort by created_at desc so we keep the newest
+      const sorted = (allInvoicesRaw || []).sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      for (const inv of sorted) {
+        const key = `${inv.invoice_number}-${inv.supplier}`;
+        if (seen.has(key)) {
+          duplicatesToDelete.push(inv.id);
+        } else {
+          seen.add(key);
+        }
+      }
+
+      if (duplicatesToDelete.length === 0) {
+        alert('No se encontraron duplicados.');
+      } else {
+        if (!window.confirm(`Se encontraron ${duplicatesToDelete.length} duplicados. ¿Eliminar?`)) {
+            setLoading(false);
+            return;
+        }
+
+        // Delete items first for these duplicates
+        const { error: itemsError } = await supabase
+            .from('invoice_items')
+            .delete()
+            .in('invoice_id', duplicatesToDelete);
+        
+        if (itemsError) throw itemsError;
+
+        // Delete invoices
+        const { error: deleteError } = await supabase
+            .from('invoices')
+            .delete()
+            .in('id', duplicatesToDelete);
+
+        if (deleteError) throw deleteError;
+
+        alert(`Se eliminaron ${duplicatesToDelete.length} facturas duplicadas.`);
+        loadStats();
+      }
+
+    } catch (err: any) {
+      console.error('Error cleaning duplicates:', err);
+      alert('Error: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -855,11 +886,11 @@ export const Invoices: React.FC = () => {
                 </button>
               )}
               <button 
-                onClick={handleDeleteAllGlobal}
-                className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm flex items-center font-bold"
-                title="Eliminar TODAS las facturas de TODAS las empresas"
+                onClick={handleCleanDuplicates}
+                className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-sm flex items-center font-bold"
+                title="Buscar y eliminar facturas duplicadas"
               >
-                <Trash2 className="h-4 w-4 mr-1" /> ELIMINAR TODO
+                <RefreshCw className="h-4 w-4 mr-1" /> Limpiar Duplicados
               </button>
               <input 
                 type="file" 
