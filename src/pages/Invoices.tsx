@@ -362,7 +362,7 @@ export const Invoices: React.FC = () => {
               status: inv.estado ? (inv.estado.toLowerCase() === 'pagada' ? 'Pagada' : 'Pendiente') : 'Pendiente',
               notes: inv.notes || inv.notas || '',
               type: inv.tipo ? (inv.tipo.toLowerCase() === 'boleta' ? 'Boleta' : 'Factura') : 'Factura',
-              taxPct: inv.impuestosPct || inv.impuestoPct || 19,
+              taxPct: inv.impuestosPct !== undefined ? inv.impuestosPct : (inv.impuestoPct !== undefined ? inv.impuestoPct : 19),
               discount: inv.descuentoMonto || 0,
               exempt: inv.montoExentoGlobal || inv.montoExentoMontoTotal || 0,
               specialTax: inv.impuestoEspecialMonto || 0,
@@ -412,9 +412,9 @@ export const Invoices: React.FC = () => {
             for (const item of inv.items) {
               const itemMap = {
                 name: item.descripcion || item.product_name,
-                category: item.categoria || 'Otros',
+                category: item.categoria || guessCategory(item.descripcion || item.product_name || ''),
                 quantity: item.cantidad || item.quantity,
-                unit: item.unidad || 'un',
+                unit: item.unidad ? (item.unidad.toLowerCase().startsWith('unid') ? 'un' : item.unidad) : 'un',
                 price: item.precio || item.precioUnit || item.unit_price,
                 total: item.total || item.total_price
               };
