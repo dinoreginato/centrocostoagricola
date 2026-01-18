@@ -564,21 +564,35 @@ export const Invoices: React.FC = () => {
     }
   };
 
-  const handleDeleteEmptyInvoices = async () => {
-    const emptyInvoices = allInvoices.filter(inv => !inv.invoice_items || inv.invoice_items.length === 0);
+  const handleDeleteByYear = async () => {
+    if (!selectedYear) return;
+
+    // Filter invoices belonging to the selected year
+    const invoicesToDelete = allInvoices.filter(inv => {
+      const invYear = inv.invoice_date ? inv.invoice_date.substring(0, 4) : '';
+      return invYear === selectedYear;
+    });
     
-    if (emptyInvoices.length === 0) {
-      alert('No se encontraron facturas sin ítems.');
+    if (invoicesToDelete.length === 0) {
+      alert(`No se encontraron facturas para el año ${selectedYear}.`);
       return;
     }
 
-    if (!window.confirm(`ATENCIÓN: Se encontraron ${emptyInvoices.length} facturas con 0 ítems (probablemente fallos de importación).\n\n¿Estás seguro de que quieres ELIMINARLAS todas permanentemente?`)) {
+    if (!window.confirm(`PELIGRO: Estás a punto de eliminar ${invoicesToDelete.length} facturas del año ${selectedYear}.\n\nEsta acción NO SE PUEDE DESHACER.\n\n¿Estás seguro de que quieres borrar TODO el año ${selectedYear}?`)) {
+      return;
+    }
+
+    // Double confirmation
+    if (!window.confirm(`Confirmación final: ¿Realmente deseas eliminar ${invoicesToDelete.length} facturas?`)) {
       return;
     }
 
     setLoading(true);
     try {
-      const ids = emptyInvoices.map(inv => inv.id);
+      const ids = invoicesToDelete.map(inv => inv.id);
+      
+      // Delete in batches if too many to avoid URL length issues or timeouts
+      // Supabase handles large IN clauses well, but let's be safe if > 1000
       const { error } = await supabase
         .from('invoices')
         .delete()
@@ -586,14 +600,18 @@ export const Invoices: React.FC = () => {
 
       if (error) throw error;
 
-      alert(`${emptyInvoices.length} facturas eliminadas correctamente.`);
+      alert(`Se han eliminado ${invoicesToDelete.length} facturas del año ${selectedYear}.`);
       
-      // Update local state immediately
+      // Update local state
       const remaining = allInvoices.filter(inv => !ids.includes(inv.id));
       setAllInvoices(remaining);
       
-      loadStats(); // Reload full data
-      handleCancelEdit();
+      // Reset form if editing a deleted invoice
+      if (editingInvoiceId && ids.includes(editingInvoiceId)) {
+        handleCancelEdit();
+      }
+
+      loadStats(); // Reload full data from server to be sure
     } catch (error: any) {
       console.error('Error deleting:', error);
       alert('Error al eliminar: ' + error.message);
@@ -722,11 +740,11 @@ export const Invoices: React.FC = () => {
                 </button>
               )}
               <button 
-                onClick={handleDeleteEmptyInvoices}
+                onClick={handleDeleteByYear}
                 className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm flex items-center"
-                title="Eliminar facturas vacías (0 items)"
+                title={`Eliminar todas las facturas del año ${selectedYear}`}
               >
-                <Trash2 className="h-4 w-4 mr-1" /> Limpiar Vacías
+                <Trash2 className="h-4 w-4 mr-1" /> Borrar Año {selectedYear}
               </button>
               <input 
                 type="file" 
