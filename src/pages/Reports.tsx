@@ -23,6 +23,7 @@ interface MonthlyExpense {
 interface CategoryExpense {
   category: string;
   total: number;
+  [key: string]: string | number;
 }
 
 interface PendingInvoice {
@@ -41,7 +42,16 @@ export const Reports: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'applications' | 'monthly' | 'categories' | 'pending'>('applications');
   
-  // State for different reports
+  // Data State
+  const [rawFields, setRawFields] = useState<any[]>([]);
+  const [rawApplications, setRawApplications] = useState<any[]>([]);
+  const [rawInvoices, setRawInvoices] = useState<any[]>([]);
+
+  // Filter State
+  const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
+  const [availableYears, setAvailableYears] = useState<string[]>([]);
+
+  // Display State
   const [reportData, setReportData] = useState<ReportData[]>([]);
   const [monthlyExpenses, setMonthlyExpenses] = useState<MonthlyExpense[]>([]);
   const [categoryExpenses, setCategoryExpenses] = useState<CategoryExpense[]>([]);
@@ -49,48 +59,110 @@ export const Reports: React.FC = () => {
 
   useEffect(() => {
     if (selectedCompany) {
-      loadAllReports();
+      loadRawData();
     }
   }, [selectedCompany]);
 
-  const loadAllReports = async () => {
+  // Process data whenever raw data or selected year changes
+  useEffect(() => {
+    processReports();
+  }, [rawFields, rawApplications, rawInvoices, selectedYear]);
+
+  const loadRawData = async () => {
     if (!selectedCompany) return;
     setLoading(true);
     try {
-      await Promise.all([
-        loadApplicationReports(),
-        loadFinancialReports()
-      ]);
+      // 1. Fetch Fields
+      const { data: fields } = await supabase
+        .from('fields')
+        .select('id, name, sectors(id, name, hectares)')
+        .eq('company_id', selectedCompany.id);
+      
+      setRawFields(fields || []);
+
+      // 2. Fetch Applications
+      // We need application_date to filter by year
+      const { data: applications } = await supabase
+        .from('applications')
+        .select('field_id, sector_id, total_cost, application_date')
+        .in('field_id', (fields || []).map(f => f.id));
+      
+      setRawApplications(applications || []);
+
+      // 3. Fetch Invoices
+      const { data: invoices } = await supabase
+        .from('invoices')
+        .select('id, invoice_number, supplier, invoice_date, due_date, total_amount, status, invoice_items(total_price, category)')
+        .eq('company_id', selectedCompany.id);
+      
+      setRawInvoices(invoices || []);
+
+      // 4. Extract Years
+      const yearsSet = new Set<string>();
+      const currentYear = new Date().getFullYear().toString();
+      yearsSet.add(currentYear);
+
+      applications?.forEach(app => {
+        if (app.application_date) {
+          yearsSet.add(app.application_date.substring(0, 4));
+        }
+      });
+
+      invoices?.forEach(inv => {
+        if (inv.invoice_date) {
+          // Handle potential date format issues
+          try {
+             let dateStr = inv.invoice_date;
+             // Simple check if it looks like YYYY-MM-DD
+             if (dateStr.match(/^\d{4}-\d{2}-\d{2}/)) {
+                yearsSet.add(dateStr.substring(0, 4));
+             } else {
+                // Try to parse if it's weird
+                const d = new Date(dateStr);
+                if (!isNaN(d.getTime())) {
+                   yearsSet.add(d.getFullYear().toString());
+                }
+             }
+          } catch (e) {
+             // ignore invalid dates for year extraction
+          }
+        }
+      });
+
+      const sortedYears = Array.from(yearsSet).sort().reverse();
+      setAvailableYears(sortedYears);
+      
+      // Default to first available year if current selection is invalid
+      if (!sortedYears.includes(selectedYear)) {
+        setSelectedYear(sortedYears[0]);
+      }
+
     } catch (error) {
-      console.error('Error loading reports:', error);
+      console.error('Error loading raw data:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const loadApplicationReports = async () => {
-    if (!selectedCompany) return;
-    
-    // 1. Get all fields and sectors for the company
-    const { data: fields } = await supabase
-      .from('fields')
-      .select('id, name, sectors(id, name, hectares)')
-      .eq('company_id', selectedCompany.id);
+  const processReports = () => {
+    processApplicationReports();
+    processFinancialReports();
+  };
 
-    if (!fields) return;
+  const processApplicationReports = () => {
+    if (!rawFields.length) return;
 
-    // 2. Get all applications for these fields
-    const { data: applications } = await supabase
-      .from('applications')
-      .select('field_id, sector_id, total_cost')
-      .in('field_id', fields.map(f => f.id));
+    // Filter applications by year
+    const filteredApps = rawApplications.filter(app => {
+      if (!app.application_date) return false;
+      return app.application_date.substring(0, 4) === selectedYear;
+    });
 
-    // 3. Aggregate Data
     const data: ReportData[] = [];
 
-    fields.forEach(field => {
-      field.sectors?.forEach(sector => {
-        const sectorApps = applications?.filter(app => app.sector_id === sector.id) || [];
+    rawFields.forEach(field => {
+      field.sectors?.forEach((sector: any) => {
+        const sectorApps = filteredApps.filter(app => app.sector_id === sector.id);
         const totalCost = sectorApps.reduce((sum, app) => sum + Number(app.total_cost), 0);
         const hectares = Number(sector.hectares);
         
@@ -108,39 +180,70 @@ export const Reports: React.FC = () => {
     setReportData(data);
   };
 
-  const loadFinancialReports = async () => {
-    if (!selectedCompany) return;
-
-    // Fetch invoices
-    const { data: invoices } = await supabase
-      .from('invoices')
-      .select('id, invoice_number, supplier, invoice_date, due_date, total_amount, status, invoice_items(total_price, category)')
-      .eq('company_id', selectedCompany.id);
-
-    if (!invoices) return;
+  const processFinancialReports = () => {
+    // Filter invoices by year
+    const filteredInvoices = rawInvoices.filter(inv => {
+      try {
+        if (!inv.invoice_date) return false;
+        // Robust check
+        let year = '';
+        if (inv.invoice_date.match(/^\d{4}-\d{2}-\d{2}/)) {
+           year = inv.invoice_date.substring(0, 4);
+        } else {
+           const d = new Date(inv.invoice_date);
+           if (!isNaN(d.getTime())) year = d.getFullYear().toString();
+        }
+        return year === selectedYear;
+      } catch {
+        return false;
+      }
+    });
 
     // 1. Monthly Expenses
     const monthlyData = new Map<string, number>();
     const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
-    invoices.forEach(inv => {
-      const date = new Date(inv.invoice_date);
-      const key = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
-      monthlyData.set(key, (monthlyData.get(key) || 0) + Number(inv.total_amount));
+    // Initialize all months for the selected year with 0
+    monthNames.forEach(m => monthlyData.set(`${m} ${selectedYear}`, 0));
+
+    filteredInvoices.forEach(inv => {
+      try {
+        if (!inv.invoice_date) return;
+        
+        let date = new Date(inv.invoice_date);
+        
+        // Date fix logic from previous turn
+        if (isNaN(date.getTime())) {
+          const parts = inv.invoice_date.split(/[-/]/);
+          if (parts.length === 3) {
+             date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+          }
+        }
+
+        if (!isNaN(date.getTime())) {
+          const key = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
+          // Only add if it matches the key (it should, because we filtered by year, but safety first)
+          if (monthlyData.has(key)) {
+             const amount = Number(inv.total_amount) || 0;
+             monthlyData.set(key, (monthlyData.get(key) || 0) + amount);
+          }
+        }
+      } catch (e) {
+        console.warn('Error processing invoice:', inv);
+      }
     });
 
-    // Sort chronologically (needs helper but for now simple iteration)
-    // Actually better to sort by date string YYYY-MM then map to names
-    const sortedKeys = Array.from(monthlyData.keys()); // Simplified for now
-    const monthlyStats: MonthlyExpense[] = sortedKeys.map(key => ({
-      month: key,
-      total: monthlyData.get(key) || 0
+    const monthlyStats: MonthlyExpense[] = Array.from(monthlyData.entries()).map(([month, total]) => ({
+      month,
+      total
     }));
+    // Sort logic relies on monthNames order if we iterated map, but map order is insertion order.
+    // Since we initialized monthNames in order, it should be correct.
     setMonthlyExpenses(monthlyStats);
 
     // 2. Category Expenses
     const catData = new Map<string, number>();
-    invoices.forEach(inv => {
+    filteredInvoices.forEach(inv => {
       inv.invoice_items?.forEach((item: any) => {
         const cat = item.category || 'Sin Categoría';
         catData.set(cat, (catData.get(cat) || 0) + Number(item.total_price));
@@ -152,26 +255,40 @@ export const Reports: React.FC = () => {
       .sort((a, b) => b.total - a.total);
     setCategoryExpenses(catStats);
 
-    // 3. Pending Invoices
+    // 3. Pending Invoices (Use ALL invoices, not just selected year, because pending is about status, not history)
+    // Actually user might want to see pending invoices FROM that year, OR all pending.
+    // Usually "Pending" report is a snapshot of current debt.
+    // Let's keep it as ALL pending invoices for now, as debt doesn't care about year it was created.
+    // BUT, the user asked for "reports by year". 
+    // If I select 2024, I probably want to see expenses of 2024. 
+    // Pending invoices is a bit different. I'll stick to ALL pending for now as it's more useful operationally.
+    
     const today = new Date();
-    const pending: PendingInvoice[] = invoices
+    const pending: PendingInvoice[] = rawInvoices
       .filter(inv => inv.status === 'Pendiente')
       .map(inv => {
-        const dueDate = inv.due_date ? new Date(inv.due_date) : new Date(inv.invoice_date); // Fallback to invoice date if no due date
-        const diffTime = today.getTime() - dueDate.getTime();
-        const daysOverdue = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        
-        return {
-          id: inv.id,
-          invoice_number: inv.invoice_number,
-          supplier: inv.supplier,
-          due_date: inv.due_date || 'Sin vencimiento',
-          total_amount: Number(inv.total_amount),
-          days_overdue: daysOverdue
-        };
-      })
-      .sort((a, b) => b.days_overdue - a.days_overdue); // Most overdue first
+        try {
+          let dueDate = inv.due_date ? new Date(inv.due_date) : new Date(inv.invoice_date);
+          if (isNaN(dueDate.getTime())) dueDate = new Date(); 
 
+          const diffTime = today.getTime() - dueDate.getTime();
+          const daysOverdue = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          
+          return {
+            id: inv.id,
+            invoice_number: inv.invoice_number || 'S/N',
+            supplier: inv.supplier || 'Desconocido',
+            due_date: inv.due_date || inv.invoice_date || 'Sin fecha',
+            total_amount: Number(inv.total_amount) || 0,
+            days_overdue: daysOverdue
+          };
+        } catch (e) {
+          return null;
+        }
+      })
+      .filter(Boolean) as PendingInvoice[];
+      
+    pending.sort((a, b) => b.days_overdue - a.days_overdue);
     setPendingInvoices(pending);
   };
 
@@ -184,9 +301,24 @@ export const Reports: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">Reportes de Gestión</h1>
           <p className="text-sm text-gray-500">Vista integral de costos y gastos</p>
         </div>
-        <button className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-          <FileDown className="mr-2 h-4 w-4" /> Exportar
-        </button>
+        <div className="mt-4 sm:mt-0 flex items-center space-x-3">
+          {/* Year Selector */}
+          <div className="relative">
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm rounded-md"
+            >
+              {availableYears.map(year => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          </div>
+
+          <button className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+            <FileDown className="mr-2 h-4 w-4" /> Exportar
+          </button>
+        </div>
       </div>
 
       {/* Tabs Navigation */}
@@ -250,10 +382,12 @@ export const Reports: React.FC = () => {
           {activeTab === 'applications' && (
             <div className="space-y-6">
               <div className="bg-white p-6 rounded-lg shadow">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Costo por Hectárea (por Sector)</h3>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-medium text-gray-900">Costo por Hectárea ({selectedYear})</h3>
+                </div>
                 <div className="h-96 w-full">
                   {reportData.length === 0 ? (
-                    <div className="flex h-full items-center justify-center text-gray-500">No hay datos</div>
+                    <div className="flex h-full items-center justify-center text-gray-500">No hay datos para {selectedYear}</div>
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={reportData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
@@ -271,7 +405,7 @@ export const Reports: React.FC = () => {
               
               <div className="bg-white shadow overflow-hidden sm:rounded-lg">
                 <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
-                  <h3 className="text-lg leading-6 font-medium text-gray-900">Detalle por Sector</h3>
+                  <h3 className="text-lg leading-6 font-medium text-gray-900">Detalle por Sector ({selectedYear})</h3>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
@@ -304,10 +438,10 @@ export const Reports: React.FC = () => {
           {/* 2. MONTHLY EXPENSES REPORT */}
           {activeTab === 'monthly' && (
             <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Evolución de Gastos Mensuales</h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Evolución de Gastos Mensuales ({selectedYear})</h3>
               <div className="h-96 w-full">
-                {monthlyExpenses.length === 0 ? (
-                  <div className="flex h-full items-center justify-center text-gray-500">No hay datos de facturas</div>
+                {monthlyExpenses.every(m => m.total === 0) ? (
+                  <div className="flex h-full items-center justify-center text-gray-500">No hay gastos en {selectedYear}</div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={monthlyExpenses} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
@@ -328,10 +462,10 @@ export const Reports: React.FC = () => {
           {activeTab === 'categories' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="bg-white p-6 rounded-lg shadow">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Gastos por Clasificación</h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Gastos por Clasificación ({selectedYear})</h3>
                 <div className="h-80 w-full">
                   {categoryExpenses.length === 0 ? (
-                    <div className="flex h-full items-center justify-center text-gray-500">No hay datos</div>
+                    <div className="flex h-full items-center justify-center text-gray-500">No hay gastos en {selectedYear}</div>
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
@@ -359,7 +493,7 @@ export const Reports: React.FC = () => {
               </div>
               
               <div className="bg-white p-6 rounded-lg shadow overflow-hidden">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Detalle de Categorías</h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Detalle de Categorías ({selectedYear})</h3>
                 <div className="overflow-y-auto max-h-80">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
@@ -387,7 +521,7 @@ export const Reports: React.FC = () => {
             <div className="bg-white shadow overflow-hidden sm:rounded-lg">
               <div className="px-4 py-5 sm:px-6 border-b border-gray-200 flex justify-between items-center">
                 <div>
-                  <h3 className="text-lg leading-6 font-medium text-gray-900">Facturas Pendientes de Pago</h3>
+                  <h3 className="text-lg leading-6 font-medium text-gray-900">Facturas Pendientes de Pago (Total Histórico)</h3>
                   <p className="mt-1 text-sm text-gray-500">Ordenadas por fecha de vencimiento</p>
                 </div>
                 <div className="text-right">
