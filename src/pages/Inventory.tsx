@@ -81,17 +81,32 @@ export const Inventory: React.FC = () => {
   };
 
   const handleDeleteProduct = async (id: string, name: string) => {
-    if (!window.confirm(`¿Estás seguro de eliminar el producto "${name}"?\n\nSi este producto se usa en facturas o aplicaciones, podría fallar o dejar registros huérfanos.`)) return;
-
+    // 1. Check if product is used in any invoice
     try {
-      const { error } = await supabase.from('products').delete().eq('id', id);
+      const { count, error } = await supabase
+        .from('invoice_items')
+        .select('*', { count: 'exact', head: true })
+        .eq('product_id', id);
+
       if (error) throw error;
+
+      if (count && count > 0) {
+        alert(`No se puede eliminar el producto "${name}" porque está asociado a ${count} factura(s).\n\nEliminarlo rompería el historial de compras.\n\nSugerencia: Edita el nombre del producto o ajusta su stock a 0 si ya no se usa.`);
+        return;
+      }
+
+      // 2. Safe to delete if count is 0
+      if (!window.confirm(`¿Estás seguro de eliminar el producto "${name}"?\n\nEsta acción no se puede deshacer.`)) return;
+
+      const { error: deleteError } = await supabase.from('products').delete().eq('id', id);
+      if (deleteError) throw deleteError;
       
       setProducts(products.filter(p => p.id !== id));
       alert('Producto eliminado correctamente');
+
     } catch (error: any) {
-      console.error('Error deleting product:', error);
-      alert('Error al eliminar: ' + error.message);
+      console.error('Error checking/deleting product:', error);
+      alert('Error: ' + error.message);
     }
   };
 
