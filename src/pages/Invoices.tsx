@@ -30,6 +30,7 @@ interface Invoice {
   total_amount: number;
   status: string;
   items?: any[];
+  invoice_items?: any[]; // Allow this property
 }
 
 interface DashboardStats {
