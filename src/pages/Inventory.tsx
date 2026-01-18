@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Package, Search, AlertTriangle, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { Package, Search, AlertTriangle, Edit, Trash2, X, Save } from 'lucide-react';
 
 interface Product {
   id: string;
@@ -21,6 +21,10 @@ export const Inventory: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
+
+  // Edit State
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editForm, setEditForm] = useState<Partial<Product>>({});
 
   useEffect(() => {
     if (selectedCompany) {
@@ -73,6 +77,70 @@ export const Inventory: React.FC = () => {
       console.error('Error loading inventory:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteProduct = async (id: string, name: string) => {
+    if (!window.confirm(`¿Estás seguro de eliminar el producto "${name}"?\n\nSi este producto se usa en facturas o aplicaciones, podría fallar o dejar registros huérfanos.`)) return;
+
+    try {
+      const { error } = await supabase.from('products').delete().eq('id', id);
+      if (error) throw error;
+      
+      setProducts(products.filter(p => p.id !== id));
+      alert('Producto eliminado correctamente');
+    } catch (error: any) {
+      console.error('Error deleting product:', error);
+      alert('Error al eliminar: ' + error.message);
+    }
+  };
+
+  const startEdit = (product: Product) => {
+    setEditingProduct(product);
+    setEditForm({
+      name: product.name,
+      category: product.category,
+      unit: product.unit,
+      current_stock: product.current_stock,
+      average_cost: product.average_cost
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditingProduct(null);
+    setEditForm({});
+  };
+
+  const handleUpdateProduct = async () => {
+    if (!editingProduct || !editForm.name) return;
+
+    try {
+      const { error } = await supabase
+        .from('products')
+        .update({
+          name: editForm.name,
+          category: editForm.category,
+          unit: editForm.unit,
+          current_stock: editForm.current_stock,
+          average_cost: editForm.average_cost,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', editingProduct.id);
+
+      if (error) throw error;
+
+      // Update local state
+      setProducts(products.map(p => 
+        p.id === editingProduct.id 
+          ? { ...p, ...editForm } as Product 
+          : p
+      ));
+      
+      cancelEdit();
+      alert('Producto actualizado');
+    } catch (error: any) {
+      console.error('Error updating product:', error);
+      alert('Error al actualizar: ' + error.message);
     }
   };
 
@@ -151,16 +219,19 @@ export const Inventory: React.FC = () => {
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Estado
                 </th>
+                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Acciones
+                </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-4 text-center">Cargando inventario...</td>
+                  <td colSpan={7} className="px-6 py-4 text-center">Cargando inventario...</td>
                 </tr>
               ) : filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
                     No se encontraron productos.
                   </td>
                 </tr>
@@ -210,6 +281,22 @@ export const Inventory: React.FC = () => {
                         </span>
                       )}
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <button 
+                        onClick={() => startEdit(product)}
+                        className="text-blue-600 hover:text-blue-900 mr-4"
+                        title="Editar"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteProduct(product.id, product.name)}
+                        className="text-red-600 hover:text-red-900"
+                        title="Eliminar"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -217,6 +304,96 @@ export const Inventory: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Edit Modal */}
+      {editingProduct && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold">Editar Producto</h3>
+              <button onClick={cancelEdit} className="text-gray-500 hover:text-gray-700">
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+                <input
+                  type="text"
+                  value={editForm.name || ''}
+                  onChange={e => setEditForm({...editForm, name: e.target.value})}
+                  className="w-full border border-gray-300 rounded-md p-2"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
+                <input
+                  type="text"
+                  value={editForm.category || ''}
+                  onChange={e => setEditForm({...editForm, category: e.target.value})}
+                  className="w-full border border-gray-300 rounded-md p-2"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Stock Actual</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editForm.current_stock || 0}
+                    onChange={e => setEditForm({...editForm, current_stock: Number(e.target.value)})}
+                    className="w-full border border-gray-300 rounded-md p-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label>
+                  <select
+                    value={editForm.unit || 'un'}
+                    onChange={e => setEditForm({...editForm, unit: e.target.value})}
+                    className="w-full border border-gray-300 rounded-md p-2"
+                  >
+                    <option value="L">L</option>
+                    <option value="kg">kg</option>
+                    <option value="un">un</option>
+                    <option value="m3">m3</option>
+                    <option value="g">g</option>
+                    <option value="cc">cc</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Costo Promedio</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editForm.average_cost || 0}
+                  onChange={e => setEditForm({...editForm, average_cost: Number(e.target.value)})}
+                  className="w-full border border-gray-300 rounded-md p-2"
+                />
+              </div>
+
+              <div className="flex justify-end pt-4 gap-2">
+                <button
+                  onClick={cancelEdit}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleUpdateProduct}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center"
+                >
+                  <Save className="h-4 w-4 mr-2" /> Guardar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
