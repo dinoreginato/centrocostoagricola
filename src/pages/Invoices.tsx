@@ -253,7 +253,7 @@ export const Invoices: React.FC = () => {
     filtered = filtered.filter(inv => 
       inv.invoice_number.toLowerCase().includes(lowerQuery) ||
       inv.supplier.toLowerCase().includes(lowerQuery) ||
-      inv.items?.some((item: any) => 
+      inv.invoice_items?.some((item: any) => 
         item.products?.name?.toLowerCase().includes(lowerQuery)
       )
     );
@@ -1119,7 +1119,7 @@ export const Invoices: React.FC = () => {
                             {inv.status}
                           </span>
                           <span className="text-[10px] text-gray-500">
-                            {inv.items?.length || 0} items
+                            {inv.invoice_items?.length || 0} items
                           </span>
                         </div>
                       </div>
