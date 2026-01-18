@@ -576,11 +576,10 @@ export const Invoices: React.FC = () => {
     try {
       const companyIds = companies.map(c => c.id);
       
-      // Delete invoices for all accessible companies
-      const { error, count } = await supabase
-        .from('invoices')
-        .delete({ count: 'exact' })
-        .in('company_id', companyIds);
+      // Use the new RPC function to bypass RLS and delete everything cleanly
+      const { error } = await supabase.rpc('delete_all_invoices_for_companies', {
+        company_ids: companyIds
+      });
 
       if (error) throw error;
 
