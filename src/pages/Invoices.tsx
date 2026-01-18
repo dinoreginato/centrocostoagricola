@@ -332,6 +332,11 @@ export const Invoices: React.FC = () => {
     fileInputRef.current?.click();
   };
 
+  // Helper to normalize strings for comparison (remove accents, lowercase, trim)
+  const normalizeString = (str: string) => {
+    return str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  };
+
   const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedCompany) return;
@@ -398,7 +403,16 @@ export const Invoices: React.FC = () => {
             };
 
             if (invoiceDataMap.companyName) {
-               const foundCompany = companies.find(c => c.name.toLowerCase().trim() === invoiceDataMap.companyName.toLowerCase().trim());
+               const normCompanyName = normalizeString(invoiceDataMap.companyName);
+               
+               // Try exact match first
+               let foundCompany = companies.find(c => normalizeString(c.name) === normCompanyName);
+               
+               // If not found, try includes (fuzzy match)
+               if (!foundCompany) {
+                 foundCompany = companies.find(c => normalizeString(c.name).includes(normCompanyName) || normCompanyName.includes(normalizeString(c.name)));
+               }
+
                if (foundCompany) {
                  targetCompanyId = foundCompany.id;
                } else {
