@@ -339,7 +339,34 @@ export const Invoices: React.FC = () => {
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
-        const json = JSON.parse(event.target?.result as string);
+        let jsonContent = event.target?.result as string;
+        let json;
+
+        try {
+          // First try standard parse
+          json = JSON.parse(jsonContent);
+        } catch (e) {
+          console.warn('Standard JSON parse failed, trying auto-fix...', e);
+          
+          // Common issue: User pastes list of objects without [ ] or trailing commas
+          // 1. Try wrapping in [ ] if it looks like a list of objects but missing brackets
+          const trimmed = jsonContent.trim();
+          if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+             // Maybe multiple objects separated by commas or newlines without brackets?
+             // Or just a single object?
+             // Let's try wrapping in [ ] just in case it's a stream of objects like {..}, {..}
+             try {
+                json = JSON.parse(`[${trimmed}]`);
+             } catch (e2) {
+                // Failed again.
+                // 2. Maybe it's a single object that works? No, first try failed.
+                throw e;
+             }
+          } else {
+             throw e;
+          }
+        }
+
         // Handle "facturas" wrapper if present
         const invoicesToImport = json.facturas || (Array.isArray(json) ? json : [json]);
         
