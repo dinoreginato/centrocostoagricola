@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Package, Search, AlertTriangle, Edit, Trash2, X, Save } from 'lucide-react';
+import { Package, Search, AlertTriangle, Edit, Trash2, X, Save, History, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 
 interface Product {
   id: string;
@@ -12,6 +12,28 @@ interface Product {
   current_stock: number;
   average_cost: number;
   updated_at: string;
+}
+
+interface InventoryMovement {
+  id: string;
+  created_at: string;
+  movement_type: 'entrada' | 'salida';
+  quantity: number;
+  unit_cost: number;
+  invoice_items?: {
+    invoice: {
+      number: string;
+      supplier: string;
+      date: string;
+    }
+  };
+  application_items?: {
+    application: {
+      application_date: string;
+      field: { name: string };
+      sector: { name: string };
+    }
+  };
 }
 
 export const Inventory: React.FC = () => {
@@ -26,6 +48,11 @@ export const Inventory: React.FC = () => {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editForm, setEditForm] = useState<Partial<Product>>({});
 
+  // History State
+  const [viewingHistory, setViewingHistory] = useState<Product | null>(null);
+  const [historyData, setHistoryData] = useState<InventoryMovement[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
   useEffect(() => {
     if (selectedCompany) {
       loadInventory();
@@ -36,11 +63,6 @@ export const Inventory: React.FC = () => {
     if (!selectedCompany) return;
     setLoading(true);
     try {
-      // Define allowed categories for warehouse (Chemicals & Fertilizers only)
-      // Using partial matching logic later, but for initial fetch we get all and filter in JS 
-      // or use a broad filter if Supabase supports ILIKE ANY (it doesn't easily).
-      // Let's fetch all and filter in memory to be robust with casing/variations.
-      
       const { data, error } = await supabase
         .from('products')
         .select('*')
@@ -49,7 +71,6 @@ export const Inventory: React.FC = () => {
 
       if (error) throw error;
       
-      // Filter for specific chemical/agrochemical categories OR names containing keywords
       const AGRO_KEYWORDS = [
         'fertilizante', 'plaguicida', 'insecticida', 'fungicida', 'herbicida', 
         'quimico', 'agro', 'urea', 'salitre', 'potasio', 'fosforo', 'nitrato', 'sulfato'
@@ -58,10 +79,7 @@ export const Inventory: React.FC = () => {
       const chemicalProducts = (data || []).filter(product => {
         const cat = (product.category || '').toLowerCase();
         const name = product.name.toLowerCase();
-        
-        // Check if category OR name matches any allowed term
         const match = AGRO_KEYWORDS.some(term => cat.includes(term) || name.includes(term));
-        
         return match;
       });
 
@@ -80,8 +98,44 @@ export const Inventory: React.FC = () => {
     }
   };
 
+  const loadHistory = async (product: Product) => {
+    setViewingHistory(product);
+    setLoadingHistory(true);
+    try {
+        const { data, error } = await supabase
+            .from('inventory_movements')
+            .select(`
+                *,
+                invoice_items (
+                    invoice:invoices (number, supplier, date)
+                ),
+                application_items (
+                    application:applications (
+                        application_date, 
+                        field:fields(name), 
+                        sector:sectors(name)
+                    )
+                )
+            `)
+            .eq('product_id', product.id)
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        setHistoryData(data || []);
+    } catch (error) {
+        console.error('Error loading history:', error);
+        alert('Error al cargar historial');
+    } finally {
+        setLoadingHistory(false);
+    }
+  };
+
+  const closeHistory = () => {
+      setViewingHistory(null);
+      setHistoryData([]);
+  };
+
   const handleDeleteProduct = async (id: string, name: string) => {
-    // 1. Check if product is used in any invoice
     try {
       const { count, error } = await supabase
         .from('invoice_items')
@@ -95,7 +149,6 @@ export const Inventory: React.FC = () => {
         return;
       }
 
-      // 2. Safe to delete if count is 0
       if (!window.confirm(`¿Estás seguro de eliminar el producto "${name}"?\n\nEsta acción no se puede deshacer.`)) return;
 
       const { error: deleteError } = await supabase.from('products').delete().eq('id', id);
@@ -144,7 +197,6 @@ export const Inventory: React.FC = () => {
 
       if (error) throw error;
 
-      // Update local state
       setProducts(products.map(p => 
         p.id === editingProduct.id 
           ? { ...p, ...editForm } as Product 
@@ -298,6 +350,13 @@ export const Inventory: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button 
+                        onClick={() => loadHistory(product)}
+                        className="text-gray-600 hover:text-gray-900 mr-4"
+                        title="Ver Movimientos"
+                      >
+                        <History className="h-4 w-4" />
+                      </button>
+                      <button 
                         onClick={() => startEdit(product)}
                         className="text-blue-600 hover:text-blue-900 mr-4"
                         title="Editar"
@@ -319,6 +378,94 @@ export const Inventory: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* History Modal */}
+      {viewingHistory && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                  <div className="flex justify-between items-center mb-6">
+                      <div>
+                          <h3 className="text-xl font-bold text-gray-900">Historial de Movimientos</h3>
+                          <p className="text-sm text-gray-500">{viewingHistory.name}</p>
+                      </div>
+                      <button onClick={closeHistory} className="text-gray-500 hover:text-gray-700">
+                          <X className="h-6 w-6" />
+                      </button>
+                  </div>
+
+                  {loadingHistory ? (
+                      <div className="text-center py-8">Cargando movimientos...</div>
+                  ) : historyData.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">No hay movimientos registrados.</div>
+                  ) : (
+                      <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-gray-200">
+                              <thead className="bg-gray-50">
+                                  <tr>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Cantidad</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Origen/Destino</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Costo Unit.</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-200">
+                                  {historyData.map(movement => (
+                                      <tr key={movement.id}>
+                                          <td className="px-4 py-2 text-sm text-gray-900">
+                                              {new Date(movement.created_at).toLocaleDateString()}
+                                          </td>
+                                          <td className="px-4 py-2 text-sm">
+                                              <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                                  movement.movement_type === 'entrada' 
+                                                  ? 'bg-blue-100 text-blue-800' 
+                                                  : 'bg-orange-100 text-orange-800'
+                                              }`}>
+                                                  {movement.movement_type === 'entrada' ? 'Entrada' : 'Salida'}
+                                              </span>
+                                          </td>
+                                          <td className="px-4 py-2 text-sm font-medium text-gray-900">
+                                              {movement.movement_type === 'entrada' ? (
+                                                  <span className="flex items-center text-blue-600">
+                                                      <ArrowDownLeft className="h-4 w-4 mr-1" />
+                                                      +{movement.quantity} {viewingHistory.unit}
+                                                  </span>
+                                              ) : (
+                                                  <span className="flex items-center text-orange-600">
+                                                      <ArrowUpRight className="h-4 w-4 mr-1" />
+                                                      -{movement.quantity} {viewingHistory.unit}
+                                                  </span>
+                                              )}
+                                          </td>
+                                          <td className="px-4 py-2 text-sm text-gray-500">
+                                              {movement.movement_type === 'entrada' && movement.invoice_items?.invoice ? (
+                                                  <div>
+                                                      <div className="font-medium text-gray-900">Factura {movement.invoice_items.invoice.number}</div>
+                                                      <div className="text-xs">{movement.invoice_items.invoice.supplier}</div>
+                                                  </div>
+                                              ) : movement.movement_type === 'salida' && movement.application_items?.application ? (
+                                                  <div>
+                                                      <div className="font-medium text-gray-900">Aplicación {new Date(movement.application_items.application.application_date).toLocaleDateString()}</div>
+                                                      <div className="text-xs">
+                                                          {movement.application_items.application.field?.name} - {movement.application_items.application.sector?.name}
+                                                      </div>
+                                                  </div>
+                                              ) : (
+                                                  <span className="italic text-gray-400">Ajuste Manual / Desconocido</span>
+                                              )}
+                                          </td>
+                                          <td className="px-4 py-2 text-sm text-gray-500">
+                                              {formatCLP(movement.unit_cost)}
+                                          </td>
+                                      </tr>
+                                  ))}
+                              </tbody>
+                          </table>
+                      </div>
+                  )}
+              </div>
+          </div>
+      )}
 
       {/* Edit Modal */}
       {editingProduct && (

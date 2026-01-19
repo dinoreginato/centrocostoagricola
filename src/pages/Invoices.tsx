@@ -701,47 +701,6 @@ export const Invoices: React.FC = () => {
     }
   };
 
-  const handleFixDuplicatesInForm = async () => {
-    if (!editingInvoiceId) return;
-    if (!window.confirm('¿Detectar y eliminar items duplicados directamente en la base de datos? Esto dejará solo una copia de cada producto.')) return;
-
-    try {
-      setLoading(true);
-      const { error } = await supabase.rpc('clean_invoice_duplicates', {
-        target_invoice_id: editingInvoiceId
-      });
-
-      if (error) throw error;
-
-      alert('Limpieza de duplicados completada. Recargando factura...');
-      
-      // Reload the current invoice to reflect changes
-      const { data: refreshedInvoice, error: reloadError } = await supabase
-        .from('invoices')
-        .select(`
-          *,
-          invoice_items (
-            id, quantity, unit_price, total_price, category, product_id,
-            products (id, name, unit)
-          )
-        `)
-        .eq('id', editingInvoiceId)
-        .single();
-
-      if (reloadError) throw reloadError;
-      
-      if (refreshedInvoice) {
-        handleEditClick(refreshedInvoice);
-      }
-
-    } catch (err: any) {
-      console.error('Error cleaning duplicates:', err);
-      alert('Error al limpiar duplicados: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCompany || items.length === 0) return;
@@ -1035,13 +994,6 @@ export const Invoices: React.FC = () => {
             <div className="flex space-x-2">
               {editingInvoiceId && (
                 <>
-                  <button 
-                    onClick={handleFixDuplicatesInForm}
-                    className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded text-sm flex items-center font-bold animate-pulse"
-                    title="Detectar y eliminar items duplicados directamente en la base de datos"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-1" /> CORREGIR DUPLICADOS (DB)
-                  </button>
                   <button 
                     onClick={handleCancelEdit}
                     className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm flex items-center"
