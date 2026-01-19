@@ -36,7 +36,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.error('Error signing out:', error);
+    } finally {
+      // Force clear state and critical local storage
+      setSession(null);
+      setUser(null);
+      localStorage.removeItem('selectedCompanyId'); // Clear company selection
+      localStorage.removeItem('sb-access-token'); // Clear legacy tokens if any
+      localStorage.removeItem('sb-refresh-token');
+    }
   };
 
   const value = {
