@@ -701,28 +701,45 @@ export const Invoices: React.FC = () => {
     }
   };
 
-  const handleFixDuplicatesInForm = () => {
-    if (items.length === 0) return;
-    if (!window.confirm('¿Detectar y fusionar items idénticos en este formulario? Se conservará un solo registro por producto/precio.')) return;
+  const handleFixDuplicatesInForm = async () => {
+    if (!editingInvoiceId) return;
+    if (!window.confirm('¿Detectar y eliminar items duplicados directamente en la base de datos? Esto dejará solo una copia de cada producto.')) return;
 
-    const uniqueMap = new Map<string, InvoiceItem>();
-    
-    items.forEach(item => {
-      // Key based on product ID (or name) and price/unit to ensure we don't merge different things
-      // We assume if it's the same product and same price, it's a duplicate entry.
-      // If quantities differ, we keep the first one or we could sum them? 
-      // User said "SE SUPONE QUE TIENE QUE HABER UN SOLO ITEM". implying duplicates are errors, not split lines.
-      // Let's just keep one instance.
-      const key = `${item.product_id || item.product_name}-${item.unit_price}`;
+    try {
+      setLoading(true);
+      const { error } = await supabase.rpc('clean_invoice_duplicates', {
+        target_invoice_id: editingInvoiceId
+      });
+
+      if (error) throw error;
+
+      alert('Limpieza de duplicados completada. Recargando factura...');
       
-      if (!uniqueMap.has(key)) {
-        uniqueMap.set(key, item);
-      }
-    });
+      // Reload the current invoice to reflect changes
+      const { data: refreshedInvoice, error: reloadError } = await supabase
+        .from('invoices')
+        .select(`
+          *,
+          invoice_items (
+            id, quantity, unit_price, total_price, category, product_id,
+            products (id, name, unit)
+          )
+        `)
+        .eq('id', editingInvoiceId)
+        .single();
 
-    const fixedItems = Array.from(uniqueMap.values());
-    setItems(fixedItems);
-    alert(`Se redujeron ${items.length} items a ${fixedItems.length} items únicos.`);
+      if (reloadError) throw reloadError;
+      
+      if (refreshedInvoice) {
+        handleEditClick(refreshedInvoice);
+      }
+
+    } catch (err: any) {
+      console.error('Error cleaning duplicates:', err);
+      alert('Error al limpiar duplicados: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
