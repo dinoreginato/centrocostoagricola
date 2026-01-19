@@ -1037,10 +1037,10 @@ export const Invoices: React.FC = () => {
                 <>
                   <button 
                     onClick={handleFixDuplicatesInForm}
-                    className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded text-sm flex items-center font-bold"
-                    title="Detectar y eliminar duplicados en el formulario actual"
+                    className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded text-sm flex items-center font-bold animate-pulse"
+                    title="Detectar y eliminar items duplicados directamente en la base de datos"
                   >
-                    <RefreshCw className="h-4 w-4 mr-1" /> Unificar Duplicados
+                    <RefreshCw className="h-4 w-4 mr-1" /> CORREGIR DUPLICADOS (DB)
                   </button>
                   <button 
                     onClick={handleCancelEdit}
