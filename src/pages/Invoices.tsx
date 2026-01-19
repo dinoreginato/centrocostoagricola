@@ -701,6 +701,30 @@ export const Invoices: React.FC = () => {
     }
   };
 
+  const handleFixDuplicatesInForm = () => {
+    if (items.length === 0) return;
+    if (!window.confirm('¿Detectar y fusionar items idénticos en este formulario? Se conservará un solo registro por producto/precio.')) return;
+
+    const uniqueMap = new Map<string, InvoiceItem>();
+    
+    items.forEach(item => {
+      // Key based on product ID (or name) and price/unit to ensure we don't merge different things
+      // We assume if it's the same product and same price, it's a duplicate entry.
+      // If quantities differ, we keep the first one or we could sum them? 
+      // User said "SE SUPONE QUE TIENE QUE HABER UN SOLO ITEM". implying duplicates are errors, not split lines.
+      // Let's just keep one instance.
+      const key = `${item.product_id || item.product_name}-${item.unit_price}`;
+      
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, item);
+      }
+    });
+
+    const fixedItems = Array.from(uniqueMap.values());
+    setItems(fixedItems);
+    alert(`Se redujeron ${items.length} items a ${fixedItems.length} items únicos.`);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCompany || items.length === 0) return;
@@ -710,26 +734,9 @@ export const Invoices: React.FC = () => {
       let invoiceId = editingInvoiceId;
 
       if (editingInvoiceId) {
-        // --- UPDATE EXISTING INVOICE ---
+        // --- UPDATE EXISTING INVOICE (DIFFING STRATEGY) ---
         
-        // 1. Fetch old items to reverse inventory
-        const { data: oldItems } = await supabase
-          .from('invoice_items')
-          .select('product_id, quantity')
-          .eq('invoice_id', editingInvoiceId);
-
-        if (oldItems) {
-          for (const oldItem of oldItems) {
-            if (oldItem.product_id) {
-              await supabase.rpc('reverse_inventory_movement', {
-                target_product_id: oldItem.product_id,
-                quantity_to_remove: oldItem.quantity
-              });
-            }
-          }
-        }
-
-        // 2. Update Invoice Details
+        // 1. Update Invoice Details Header
         const { error: updateError } = await supabase
           .from('invoices')
           .update({
@@ -749,17 +756,143 @@ export const Invoices: React.FC = () => {
           .eq('id', editingInvoiceId);
 
         if (updateError) throw updateError;
+        
+        invoiceId = editingInvoiceId;
 
-        // 2. Delete old items (inventory reversal should ideally happen here, but keeping it simple for now)
-        // Note: Ideally we should handle stock reversal. For now, we assume user manages stock manually if needed or we accept slight drift.
-        // To do it right: fetch old items, subtract stock, delete, then add new items.
-        // Let's at least delete old invoice_items so we don't duplicate lines.
-        const { error: deleteItemsError } = await supabase
+        // 2. Fetch current DB items to compare
+        const { data: currentDbItems, error: fetchError } = await supabase
           .from('invoice_items')
-          .delete()
+          .select('*')
           .eq('invoice_id', editingInvoiceId);
-          
-        if (deleteItemsError) throw deleteItemsError;
+
+        if (fetchError) throw fetchError;
+        
+        const dbItems = currentDbItems || [];
+
+        // Identify items to DELETE (in DB but not in current State)
+        const itemsToDelete = dbItems.filter(dbItem => !items.find(formItem => formItem.id === dbItem.id));
+        
+        // Identify items to UPDATE (in both)
+        const itemsToUpdate = items.filter(formItem => formItem.id && dbItems.find(dbItem => dbItem.id === formItem.id));
+        
+        // Identify items to ADD (in State but no ID)
+        const itemsToAdd = items.filter(formItem => !formItem.id);
+
+        // A. Process DELETES
+        // Optimization: Gather IDs first for batch delete, but do inventory reversal individually
+        const deleteIds = itemsToDelete.map(i => i.id);
+
+        for (const item of itemsToDelete) {
+           // Reverse Inventory first
+           if (item.product_id) {
+             await supabase.rpc('reverse_inventory_movement', {
+               target_product_id: item.product_id,
+               quantity_to_remove: item.quantity
+             });
+           }
+        }
+        
+        if (deleteIds.length > 0) {
+            const { error: delErr } = await supabase
+                .from('invoice_items')
+                .delete()
+                .in('id', deleteIds);
+            if (delErr) throw delErr;
+        }
+
+        // B. Process UPDATES
+        for (const item of itemsToUpdate) {
+           const oldItem = dbItems.find(db => db.id === item.id);
+           if (!oldItem) continue;
+
+           // Check if inventory-relevant fields changed
+           const quantityChanged = oldItem.quantity !== item.quantity;
+           const priceChanged = oldItem.unit_price !== item.unit_price;
+
+           if (quantityChanged || priceChanged) {
+               // 1. Reverse OLD stock impact
+               await supabase.rpc('reverse_inventory_movement', {
+                   target_product_id: oldItem.product_id,
+                   quantity_to_remove: oldItem.quantity
+               });
+
+               // 2. Update Item Record
+               const { error: upErr } = await supabase
+                   .from('invoice_items')
+                   .update({
+                       quantity: item.quantity,
+                       unit_price: item.unit_price,
+                       total_price: item.total_price,
+                       category: item.category
+                   })
+                   .eq('id', item.id);
+               if (upErr) throw upErr;
+
+               // 3. Add NEW stock impact (re-calculate avg cost)
+               await supabase.rpc('update_inventory_with_average_cost', {
+                   product_id: item.product_id,
+                   quantity_in: item.quantity,
+                   unit_cost: item.unit_price,
+                   invoice_item_id: item.id
+               });
+           } else {
+               // Just update metadata (category, etc.)
+               if (oldItem.category !== item.category) {
+                   await supabase
+                       .from('invoice_items')
+                       .update({ category: item.category })
+                       .eq('id', item.id);
+               }
+           }
+        }
+
+        // C. Process ADDS
+        for (const item of itemsToAdd) {
+            let productId = item.product_id;
+
+            // Handle New Product Creation
+            if (productId === 'new' || !productId) {
+                 const { data: newProduct, error: productError } = await supabase
+                    .from('products')
+                    .insert([{
+                      company_id: selectedCompany.id,
+                      name: item.product_name,
+                      category: item.category,
+                      unit: item.unit,
+                      current_stock: 0, 
+                      average_cost: 0
+                    }])
+                    .select()
+                    .single();
+                  
+                  if (productError) throw productError;
+                  productId = newProduct.id;
+            }
+
+            // Insert Invoice Item
+            const { data: invoiceItem, error: itemError } = await supabase
+              .from('invoice_items')
+              .insert([{
+                invoice_id: invoiceId,
+                product_id: productId,
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                total_price: item.total_price,
+                category: item.category
+              }])
+              .select()
+              .single();
+
+            if (itemError) throw itemError;
+
+            // Update Inventory
+            await supabase.rpc('update_inventory_with_average_cost', {
+              product_id: productId,
+              quantity_in: item.quantity,
+              unit_cost: item.unit_price,
+              invoice_item_id: invoiceItem.id
+            });
+        }
 
       } else {
         // --- CREATE NEW INVOICE ---
@@ -801,66 +934,51 @@ export const Invoices: React.FC = () => {
 
         if (invoiceError) throw invoiceError;
         invoiceId = invoice.id;
-      }
 
-      // 3. Process Items (For both Create and Update)
-      // Since we deleted old items in update mode, we just insert everything as new lines
-      for (const item of items) {
-        let productId = item.product_id;
+        // Process Items for NEW Invoice
+        for (const item of items) {
+            let productId = item.product_id;
 
-        // Create product if new
-        if (productId === 'new') {
-          const { data: newProduct, error: productError } = await supabase
-            .from('products')
-            .insert([{
-              company_id: selectedCompany.id,
-              name: item.product_name,
-              category: item.category,
-              unit: item.unit,
-              current_stock: 0, 
-              average_cost: 0
-            }])
-            .select()
-            .single();
-          
-          if (productError) throw productError;
-          productId = newProduct.id;
-        } else if (editingInvoiceId) {
-           // If editing and using existing product, update its metadata in case user changed category/unit in the form
-           await supabase
-             .from('products')
-             .update({
-               category: item.category,
-               unit: item.unit
-             })
-             .eq('id', productId);
+            if (productId === 'new' || !productId) {
+              const { data: newProduct, error: productError } = await supabase
+                .from('products')
+                .insert([{
+                  company_id: selectedCompany.id,
+                  name: item.product_name,
+                  category: item.category,
+                  unit: item.unit,
+                  current_stock: 0, 
+                  average_cost: 0
+                }])
+                .select()
+                .single();
+              
+              if (productError) throw productError;
+              productId = newProduct.id;
+            }
+
+            const { data: invoiceItem, error: itemError } = await supabase
+              .from('invoice_items')
+              .insert([{
+                invoice_id: invoiceId,
+                product_id: productId,
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+                total_price: item.total_price,
+                category: item.category
+              }])
+              .select()
+              .single();
+
+            if (itemError) throw itemError;
+
+            await supabase.rpc('update_inventory_with_average_cost', {
+              product_id: productId,
+              quantity_in: item.quantity,
+              unit_cost: item.unit_price,
+              invoice_item_id: invoiceItem.id
+            });
         }
-
-        // Create Invoice Item
-        const { data: invoiceItem, error: itemError } = await supabase
-          .from('invoice_items')
-          .insert([{
-            invoice_id: invoiceId, // Use the determined ID
-            product_id: productId,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            total_price: item.total_price,
-            category: item.category
-          }])
-          .select()
-          .single();
-
-        if (itemError) throw itemError;
-
-        // Update Inventory (Only for new items or re-added items)
-        // In update mode, this adds stock AGAIN. Ideally we reverse first.
-        // For now, this fixes the duplicate invoice issue.
-        await supabase.rpc('update_inventory_with_average_cost', {
-          product_id: productId,
-          quantity_in: item.quantity,
-          unit_cost: item.unit_price,
-          invoice_item_id: invoiceItem.id
-        });
       }
 
       // Success Reset
@@ -899,12 +1017,21 @@ export const Invoices: React.FC = () => {
             </div>
             <div className="flex space-x-2">
               {editingInvoiceId && (
-                <button 
-                  onClick={handleCancelEdit}
-                  className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm flex items-center"
-                >
-                  Cancelar Edición
-                </button>
+                <>
+                  <button 
+                    onClick={handleFixDuplicatesInForm}
+                    className="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded text-sm flex items-center font-bold"
+                    title="Detectar y eliminar duplicados en el formulario actual"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-1" /> Unificar Duplicados
+                  </button>
+                  <button 
+                    onClick={handleCancelEdit}
+                    className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm flex items-center"
+                  >
+                    Cancelar Edición
+                  </button>
+                </>
               )}
               <button 
                 onClick={handleCleanDuplicates}
