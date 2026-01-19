@@ -92,6 +92,7 @@ export const Layout: React.FC = () => {
                 >
                   <LogOut className="mr-1 h-3 w-3" /> Cerrar Sesión
                 </button>
+                <div className="text-[10px] text-gray-400 mt-1">v1.2 (Fix Logout)</div>
               </div>
             </div>
           </div>
