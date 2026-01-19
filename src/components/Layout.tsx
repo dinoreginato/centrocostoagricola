@@ -13,7 +13,8 @@ import {
   LogOut,
   Menu,
   X,
-  Users
+  Users,
+  Tractor
 } from 'lucide-react';
 
 export const Layout: React.FC = () => {
@@ -39,6 +40,7 @@ export const Layout: React.FC = () => {
     { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin', 'viewer'] },
     { name: 'Campos', href: '/campos', icon: Map, roles: ['admin', 'viewer'] },
     { name: 'Facturas', href: '/facturas', icon: FileText, roles: ['admin'] },
+    { name: 'Labores', href: '/labores', icon: Tractor, roles: ['admin', 'editor', 'viewer'] },
     { name: 'Bodega', href: '/bodega', icon: Package, roles: ['admin', 'editor', 'viewer'] },
     { name: 'Aplicaciones', href: '/aplicaciones', icon: ClipboardList, roles: ['admin', 'editor', 'viewer'] },
     { name: 'Reportes', href: '/reportes', icon: BarChart3, roles: ['admin', 'viewer'] },

@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Plus, Loader2, Save, Trash2, Beaker, Calendar, Droplets, MapPin, RefreshCw } from 'lucide-react';
+import { Plus, Loader2, Save, Trash2, Beaker, Calendar, Droplets, MapPin, RefreshCw, Edit, Filter, Download } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface Field {
   id: string;
@@ -44,13 +46,19 @@ interface ApplicationHistory {
   application_type: string;
   total_cost: number;
   water_liters_per_hectare: number;
-  field: { name: string };
-  sector: { name: string; hectares: number };
-  application_items: {
+  field_id: string;
+  field_name: string;
+  sector_id: string;
+  sector_name: string;
+  sector_hectares: number;
+  items: {
+    product_id: string;
+    product_name: string;
     quantity_used: number;
     dose_per_hectare: number;
+    unit: string;
+    unit_cost: number;
     total_cost: number;
-    product: { name: string; unit: string };
   }[];
 }
 
@@ -104,12 +112,17 @@ export const Applications: React.FC = () => {
   const [applications, setApplications] = useState<ApplicationHistory[]>([]);
   
   // Application Form State
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedFieldId, setSelectedFieldId] = useState('');
   const [selectedSectorId, setSelectedSectorId] = useState('');
   const [applicationDate, setApplicationDate] = useState(new Date().toISOString().split('T')[0]);
   const [applicationType, setApplicationType] = useState('fertilizacion');
   const [waterVolumePerHectare, setWaterVolumePerHectare] = useState<number>(0); 
   const [items, setItems] = useState<ApplicationItem[]>([]);
+
+  // Filter State
+  const [filterSectorId, setFilterSectorId] = useState<string>('all');
+
 
   // Item Form State
   const [currentItem, setCurrentItem] = useState<{
@@ -208,23 +221,11 @@ export const Applications: React.FC = () => {
 
     // Load Applications History
     const { data: appsData, error: appsError } = await supabase
-        .from('applications')
-        .select(`
-            *,
-            field!inner (name, company_id),
-            sector (name, hectares),
-            application_items (
-                quantity_used,
-                dose_per_hectare,
-                total_cost,
-                product (name, unit)
-            )
-        `)
-        .eq('field.company_id', selectedCompany.id)
-        .order('application_date', { ascending: false });
+        .rpc('get_company_applications_v2', { p_company_id: selectedCompany.id });
     
     if (appsError) {
         console.error('Error loading applications:', appsError);
+        alert('Error cargando historial: ' + appsError.message);
     } else {
         setApplications(appsData || []);
     }
@@ -287,6 +288,63 @@ export const Applications: React.FC = () => {
     }
   };
 
+  const handleDownloadPDF = () => {
+    const doc = new jsPDF();
+    const filteredApps = applications.filter(app => filterSectorId === 'all' || app.sector_id === filterSectorId);
+    
+    // Title
+    doc.setFontSize(18);
+    doc.text('Reporte de Aplicaciones', 14, 22);
+    
+    doc.setFontSize(11);
+    doc.setTextColor(100);
+    const dateStr = new Date().toLocaleDateString();
+    let subtitle = `Generado el: ${dateStr}`;
+    
+    if (filterSectorId !== 'all') {
+        const sectorName = applications.find(a => a.sector_id === filterSectorId)?.sector_name || 'Sector Seleccionado';
+        subtitle += ` - Filtrado por Sector: ${sectorName}`;
+    } else {
+        subtitle += ' - Todos los Sectores';
+    }
+    
+    doc.text(subtitle, 14, 30);
+    
+    // Table Data preparation
+    const tableRows = filteredApps.map(app => {
+        const details = app.items.map(item => 
+            `${item.product_name}: ${item.dose_per_hectare} ${item.unit}/ha`
+        ).join('\n');
+        
+        return [
+            new Date(app.application_date).toLocaleDateString(),
+            app.field_name,
+            app.sector_name,
+            app.application_type,
+            details,
+            formatCLP(app.total_cost)
+        ];
+    });
+
+    autoTable(doc, {
+        head: [['Fecha', 'Campo', 'Sector', 'Tipo', 'Detalles', 'Costo Total']],
+        body: tableRows,
+        startY: 40,
+        styles: { fontSize: 8, cellPadding: 3 },
+        headStyles: { fillColor: [46, 191, 88] }, // Green header
+        columnStyles: {
+            0: { cellWidth: 25 },
+            1: { cellWidth: 30 },
+            2: { cellWidth: 30 },
+            3: { cellWidth: 25 },
+            4: { cellWidth: 'auto' },
+            5: { cellWidth: 25, halign: 'right' },
+        }
+    });
+
+    doc.save(`reporte_aplicaciones_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
   const handleDeleteAllApplications = async () => {
     if (!selectedCompany) return;
     if (!window.confirm('¿ESTÁS SEGURO DE ELIMINAR TODAS LAS APLICACIONES?\n\nEsta acción borrará todo el historial de aplicaciones y RESTAURARÁ el stock de los productos a la bodega.\n\nEs ideal para empezar de cero si has estado haciendo pruebas.')) return;
@@ -305,75 +363,138 @@ export const Applications: React.FC = () => {
     }
   };
 
+  const handleEditApplication = (app: ApplicationHistory) => {
+    // Populate form with application data
+    setEditingId(app.id);
+    setSelectedFieldId(app.field_id);
+    setSelectedSectorId(app.sector_id);
+    
+    setApplicationDate(app.application_date);
+    setApplicationType(app.application_type);
+    setWaterVolumePerHectare(app.water_liters_per_hectare || 0);
+
+    // Populate items
+    const mappedItems: ApplicationItem[] = app.items.map((ai) => ({
+        product_id: ai.product_id,
+        product_name: ai.product_name,
+        quantity_used: ai.quantity_used,
+        dose_per_hectare: ai.dose_per_hectare,
+        dose_input_value: ai.dose_per_hectare, // Approximation
+        dose_input_type: 'ha',
+        dose_unit: ai.unit,
+        unit_cost: ai.unit_cost,
+        total_cost: ai.total_cost,
+        unit: ai.unit
+    }));
+    
+    setItems(mappedItems);
+    
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setSelectedFieldId('');
+    setSelectedSectorId('');
+    setApplicationDate(new Date().toISOString().split('T')[0]);
+    setApplicationType('fertilizacion');
+    setWaterVolumePerHectare(0);
+    setItems([]);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedFieldId || !selectedSectorId || items.length === 0) return;
 
     setLoading(true);
     try {
-      // 1. Create Application
       const totalCost = items.reduce((sum, item) => sum + item.total_cost, 0);
-      
-      const { data: application, error: appError } = await supabase
-        .from('applications')
-        .insert([{
-          field_id: selectedFieldId,
-          sector_id: selectedSectorId,
-          application_date: applicationDate,
-          application_type: applicationType,
-          total_cost: totalCost,
-          water_liters_per_hectare: waterVolumePerHectare
-        }])
-        .select()
-        .single();
 
-      if (appError) throw appError;
+      if (editingId) {
+        // UPDATE MODE
+        const { error } = await supabase.rpc('update_application_inventory', {
+            p_application_id: editingId,
+            p_field_id: selectedFieldId,
+            p_sector_id: selectedSectorId,
+            p_date: applicationDate,
+            p_type: applicationType,
+            p_water_rate: waterVolumePerHectare,
+            p_total_cost: totalCost,
+            p_items: items.map(item => ({
+                product_id: item.product_id,
+                quantity_used: item.quantity_used,
+                dose_per_hectare: item.dose_per_hectare,
+                unit_cost: item.unit_cost,
+                total_cost: item.total_cost
+            }))
+        });
 
-      // 2. Process Items and Deduct Stock
-      for (const item of items) {
-        // Create Application Item
-        const { data: savedItem, error: itemError } = await supabase
-          .from('application_items')
+        if (error) throw error;
+        alert('Aplicación actualizada exitosamente');
+        handleCancelEdit(); // Reset form
+
+      } else {
+        // CREATE MODE
+        // 1. Create Application
+        const { data: application, error: appError } = await supabase
+          .from('applications')
           .insert([{
-            application_id: application.id,
-            product_id: item.product_id,
-            quantity_used: item.quantity_used,
-            dose_per_hectare: item.dose_per_hectare, 
-            unit_cost: item.unit_cost,
-            total_cost: item.total_cost
+            field_id: selectedFieldId,
+            sector_id: selectedSectorId,
+            application_date: applicationDate,
+            application_type: applicationType,
+            total_cost: totalCost,
+            water_liters_per_hectare: waterVolumePerHectare
           }])
           .select()
           .single();
 
-        if (itemError) throw itemError;
+        if (appError) throw appError;
 
-        // Deduct Stock
-        const product = products.find(p => p.id === item.product_id);
-        if (product) {
-            const newStock = product.current_stock - item.quantity_used;
-            await supabase
-                .from('products')
-                .update({ current_stock: newStock })
-                .eq('id', item.product_id);
-            
-            // Record Inventory Movement (Salida) linked to Application Item
-            await supabase
-                .from('inventory_movements')
-                .insert([{
-                    product_id: item.product_id,
-                    movement_type: 'salida',
-                    quantity: item.quantity_used,
-                    unit_cost: item.unit_cost,
-                    application_item_id: savedItem.id // LINK TO APPLICATION
-                }]);
+        // 2. Process Items and Deduct Stock
+        for (const item of items) {
+          // Create Application Item
+          const { data: savedItem, error: itemError } = await supabase
+            .from('application_items')
+            .insert([{
+              application_id: application.id,
+              product_id: item.product_id,
+              quantity_used: item.quantity_used,
+              dose_per_hectare: item.dose_per_hectare, 
+              unit_cost: item.unit_cost,
+              total_cost: item.total_cost
+            }])
+            .select()
+            .single();
+
+          if (itemError) throw itemError;
+
+          // Deduct Stock
+          const product = products.find(p => p.id === item.product_id);
+          if (product) {
+              const newStock = product.current_stock - item.quantity_used;
+              await supabase
+                  .from('products')
+                  .update({ current_stock: newStock })
+                  .eq('id', item.product_id);
+              
+              // Record Inventory Movement (Salida) linked to Application Item
+              await supabase
+                  .from('inventory_movements')
+                  .insert([{
+                      product_id: item.product_id,
+                      movement_type: 'salida',
+                      quantity: item.quantity_used,
+                      unit_cost: item.unit_cost,
+                      application_item_id: savedItem.id // LINK TO APPLICATION
+                  }]);
+          }
         }
+        alert('Aplicación registrada exitosamente');
+        handleCancelEdit(); // Reset form
       }
 
-      alert('Aplicación registrada exitosamente');
-      setItems([]);
-      setSelectedFieldId('');
-      setSelectedSectorId('');
-      setWaterVolumePerHectare(0);
       loadData(); 
 
     } catch (error: any) {
@@ -401,19 +522,38 @@ export const Applications: React.FC = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">Libro de Aplicaciones</h1>
-        {applications.length > 0 && (
+        <div className="flex space-x-2">
+            <button
+                onClick={loadData}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                title="Recargar datos"
+            >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
             <button
                 onClick={handleDeleteAllApplications}
                 className="inline-flex items-center px-4 py-2 border border-red-300 shadow-sm text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50"
             >
-                <RefreshCw className="h-4 w-4 mr-2" />
+                <Trash2 className="h-4 w-4 mr-2" />
                 Reiniciar / Borrar Todo
             </button>
-        )}
+        </div>
       </div>
 
       <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">Nueva Aplicación</h2>
+        <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-medium text-gray-900">
+                {editingId ? 'Editar Aplicación' : 'Nueva Aplicación'}
+            </h2>
+            {editingId && (
+                <button
+                    onClick={handleCancelEdit}
+                    className="text-sm text-gray-500 hover:text-gray-700 underline"
+                >
+                    Cancelar Edición
+                </button>
+            )}
+        </div>
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Application Header */}
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -424,6 +564,11 @@ export const Applications: React.FC = () => {
                 value={selectedFieldId}
                 onChange={e => {
                     setSelectedFieldId(e.target.value);
+                    // Only clear sector if we are NOT in the middle of setting up edit (which sets both)
+                    // But standard behavior is clear sector on field change.
+                    // If user manually changes field, we should clear sector.
+                    // Our handleEdit sets both, but React batching might trigger this?
+                    // Usually onChange is only user interaction.
                     setSelectedSectorId('');
                 }}
                 className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
@@ -651,20 +796,29 @@ export const Applications: React.FC = () => {
           </div>
 
           <div className="flex justify-end pt-4">
+            {editingId && (
+                <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="mr-3 inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none"
+                >
+                    Cancelar
+                </button>
+            )}
             <button
               type="submit"
               disabled={loading || items.length === 0 || !selectedFieldId || !selectedSectorId}
-              className="ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+              className={`ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white focus:outline-none focus:ring-2 focus:ring-offset-2 ${editingId ? 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500' : 'bg-green-600 hover:bg-green-700 focus:ring-green-500'} disabled:opacity-50`}
             >
               {loading ? (
                 <>
                   <Loader2 className="animate-spin -ml-1 mr-2 h-5 w-5" />
-                  Guardando...
+                  {editingId ? 'Actualizando...' : 'Guardando...'}
                 </>
               ) : (
                 <>
                   <Save className="-ml-1 mr-2 h-5 w-5" />
-                  Registrar Aplicación
+                  {editingId ? 'Actualizar Aplicación' : 'Registrar Aplicación'}
                 </>
               )}
             </button>
@@ -674,8 +828,38 @@ export const Applications: React.FC = () => {
 
       {/* Applications List */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
             <h2 className="text-lg font-medium text-gray-900">Historial de Aplicaciones</h2>
+            
+            {/* Sector Filter & Download */}
+            <div className="flex items-center space-x-4">
+                <button
+                    onClick={handleDownloadPDF}
+                    className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                    title="Descargar PDF"
+                >
+                    <Download className="h-4 w-4 mr-2" />
+                    PDF
+                </button>
+
+                <div className="flex items-center space-x-2">
+                    <Filter className="h-4 w-4 text-gray-400" />
+                    <select
+                        value={filterSectorId}
+                        onChange={(e) => setFilterSectorId(e.target.value)}
+                        className="block w-48 py-1.5 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                    >
+                        <option value="all">Todos los Sectores</option>
+                        {/* Unique sectors from history */}
+                        {Array.from(new Set(applications.map(a => JSON.stringify({id: a.sector_id, name: a.sector_name}))))
+                            .map(s => JSON.parse(s))
+                            .map((sector: any) => (
+                                <option key={sector.id} value={sector.id}>{sector.name}</option>
+                            ))
+                        }
+                    </select>
+                </div>
+            </div>
         </div>
         {applications.length === 0 ? (
             <div className="p-6 text-center text-gray-500">No hay aplicaciones registradas.</div>
@@ -693,8 +877,10 @@ export const Applications: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                        {applications.map((app) => (
-                            <tr key={app.id}>
+                        {applications
+                            .filter(app => filterSectorId === 'all' || app.sector_id === filterSectorId)
+                            .map((app) => (
+                            <tr key={app.id} className={editingId === app.id ? 'bg-blue-50' : ''}>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                     <div className="flex items-center">
                                         <Calendar className="h-4 w-4 mr-2 text-gray-400" />
@@ -703,10 +889,10 @@ export const Applications: React.FC = () => {
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                     <div className="flex flex-col">
-                                        <span className="font-medium">{app.field?.name}</span>
+                                        <span className="font-medium">{app.field_name}</span>
                                         <span className="text-gray-500 text-xs flex items-center mt-0.5">
                                             <MapPin className="h-3 w-3 mr-1" />
-                                            {app.sector?.name} ({app.sector?.hectares} ha)
+                                            {app.sector_name} ({app.sector_hectares} ha)
                                         </span>
                                     </div>
                                 </td>
@@ -721,11 +907,11 @@ export const Applications: React.FC = () => {
                                 </td>
                                 <td className="px-6 py-4 text-sm text-gray-500">
                                     <ul className="list-disc pl-4 space-y-1">
-                                        {app.application_items?.map((item, idx) => (
+                                        {app.items?.map((item, idx) => (
                                             <li key={idx} className="text-xs">
-                                                <span className="font-medium text-gray-700">{item.product?.name}:</span> 
-                                                {' '}{item.dose_per_hectare} {item.product?.unit}/ha
-                                                {' '}<span className="text-gray-400">({item.quantity_used} {item.product?.unit} total)</span>
+                                                <span className="font-medium text-gray-700">{item.product_name}:</span> 
+                                                {' '}{item.dose_per_hectare} {item.unit}/ha
+                                                {' '}<span className="text-gray-400">({item.quantity_used} {item.unit} total)</span>
                                             </li>
                                         ))}
                                     </ul>
@@ -734,6 +920,13 @@ export const Applications: React.FC = () => {
                                     {formatCLP(app.total_cost)}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <button 
+                                        onClick={() => handleEditApplication(app)}
+                                        className="text-blue-600 hover:text-blue-900 mr-3"
+                                        title="Editar aplicación"
+                                    >
+                                        <Edit className="h-5 w-5" />
+                                    </button>
                                     <button 
                                         onClick={() => handleDeleteApplication(app.id)}
                                         className="text-red-600 hover:text-red-900"

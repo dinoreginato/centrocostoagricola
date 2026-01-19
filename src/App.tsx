@@ -11,6 +11,7 @@ import { Inventory } from './pages/Inventory';
 import { Applications } from './pages/Applications';
 import { Reports } from './pages/Reports';
 import { Users } from './pages/Users';
+import { Labors } from './pages/Labors';
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
               {/* Other routes will be added here later */}
               <Route path="campos" element={<Fields />} />
               <Route path="facturas" element={<Invoices />} />
+              <Route path="labores" element={<Labors />} />
               <Route path="bodega" element={<Inventory />} />
               <Route path="aplicaciones" element={<Applications />} />
               <Route path="reportes" element={<Reports />} />

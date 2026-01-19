@@ -4,7 +4,9 @@ import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { FileDown, Loader2, Calendar, PieChart as PieChartIcon, AlertCircle, Beaker } from 'lucide-react';
+import { FileDown, Loader2, Calendar, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface ReportData {
   field_name: string;
@@ -43,6 +45,28 @@ interface ProductExpense {
   avg_price: number;
 }
 
+// Detailed Report Interfaces
+interface DetailedItem {
+  date: string;
+  supplier: string;
+  invoiceNumber: string;
+  description: string;
+  total: number;
+}
+
+interface DetailedCategory {
+  name: string;
+  total: number;
+  items: DetailedItem[];
+}
+
+interface DetailedMonth {
+  monthName: string;
+  monthIndex: number; // 0-11
+  total: number;
+  categories: DetailedCategory[];
+}
+
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#8dd1e1', '#a4de6c', '#d0ed57'];
 
 // Categories considered as "Chemicals" or "Inputs"
@@ -54,7 +78,7 @@ const CHEMICAL_CATEGORIES = [
 export const Reports: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'applications' | 'monthly' | 'categories' | 'pending' | 'chemicals'>('applications');
+  const [activeTab, setActiveTab] = useState<'applications' | 'monthly' | 'categories' | 'pending' | 'chemicals' | 'detailed'>('applications');
   
   // Data State
   const [rawFields, setRawFields] = useState<any[]>([]);
@@ -71,6 +95,15 @@ export const Reports: React.FC = () => {
   const [categoryExpenses, setCategoryExpenses] = useState<CategoryExpense[]>([]);
   const [pendingInvoices, setPendingInvoices] = useState<PendingInvoice[]>([]);
   const [chemicalProducts, setChemicalProducts] = useState<ProductExpense[]>([]);
+  const [detailedReport, setDetailedReport] = useState<DetailedMonth[]>([]);
+
+  // Detailed Report Filters
+  const [filterMonth, setFilterMonth] = useState<string>('all');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+
+  // Preview Modal State
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (selectedCompany) {
@@ -161,6 +194,89 @@ export const Reports: React.FC = () => {
   const processReports = () => {
     processApplicationReports();
     processFinancialReports();
+    processDetailedReport();
+  };
+
+  const processDetailedReport = () => {
+    // Filter invoices by selected year
+    const filteredInvoices = rawInvoices.filter(inv => {
+      if (!inv.invoice_date) return false;
+      return inv.invoice_date.substring(0, 4) === selectedYear;
+    });
+
+    const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const monthsMap = new Map<number, DetailedMonth>();
+
+    // Initialize months
+    monthNames.forEach((name, index) => {
+        monthsMap.set(index, {
+            monthName: name,
+            monthIndex: index,
+            total: 0,
+            categories: []
+        });
+    });
+
+    filteredInvoices.forEach(inv => {
+        const date = new Date(inv.invoice_date);
+        const monthIndex = date.getMonth();
+        const monthData = monthsMap.get(monthIndex);
+
+        if (monthData) {
+            monthData.total += Number(inv.total_amount);
+
+            // Group by category within invoice items
+            // Note: Invoices have items with categories.
+            // If invoice has items, we use them. If not (shouldn't happen with correct data), we use fallback.
+            
+            if (inv.invoice_items && inv.invoice_items.length > 0) {
+                inv.invoice_items.forEach((item: any) => {
+                    const catName = item.category || 'Sin Categoría';
+                    let category = monthData.categories.find(c => c.name === catName);
+                    
+                    if (!category) {
+                        category = { name: catName, total: 0, items: [] };
+                        monthData.categories.push(category);
+                    }
+
+                    category.total += Number(item.total_price);
+                    category.items.push({
+                        date: inv.invoice_date,
+                        supplier: inv.supplier,
+                        invoiceNumber: inv.invoice_number,
+                        description: item.products?.name || 'Item',
+                        total: Number(item.total_price)
+                    });
+                });
+            } else {
+                // Fallback for invoice without items (treat as whole)
+                const catName = 'Sin Categoría';
+                let category = monthData.categories.find(c => c.name === catName);
+                if (!category) {
+                    category = { name: catName, total: 0, items: [] };
+                    monthData.categories.push(category);
+                }
+                category.total += Number(inv.total_amount);
+                category.items.push({
+                    date: inv.invoice_date,
+                    supplier: inv.supplier,
+                    invoiceNumber: inv.invoice_number,
+                    description: 'Factura sin detalle',
+                    total: Number(inv.total_amount)
+                });
+            }
+        }
+    });
+
+    // Clean up empty months and sort categories
+    const result = Array.from(monthsMap.values())
+        .filter(m => m.total > 0)
+        .map(m => ({
+            ...m,
+            categories: m.categories.sort((a, b) => b.total - a.total)
+        }));
+
+    setDetailedReport(result);
   };
 
   const processApplicationReports = () => {
@@ -309,6 +425,119 @@ export const Reports: React.FC = () => {
     setPendingInvoices(pending);
   };
 
+  const handleGeneratePDF = () => {
+    const doc = new jsPDF();
+    
+    // Header
+    doc.setFontSize(18);
+    doc.text(`Reporte de Gastos Mensuales Detallado`, 14, 20);
+    doc.setFontSize(12);
+    doc.text(`Empresa: ${selectedCompany?.name}`, 14, 28);
+    doc.text(`Año: ${selectedYear}`, 14, 34);
+    
+    let subHeader = 'Filtros: ';
+    if (filterMonth !== 'all') {
+        const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+        subHeader += `Mes: ${monthNames[parseInt(filterMonth)]} `;
+    }
+    if (filterCategory !== 'all') {
+        subHeader += `| Categoría: ${filterCategory}`;
+    }
+    if (filterMonth === 'all' && filterCategory === 'all') subHeader += 'Todos';
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(subHeader, 14, 40);
+    doc.setTextColor(0);
+
+    let yPos = 50;
+
+    // Filter Data for PDF
+    const filteredData = detailedReport
+        .filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth)
+        .map(m => ({
+            ...m,
+            categories: m.categories.filter(c => filterCategory === 'all' || c.name === filterCategory)
+        }))
+        .filter(m => m.categories.length > 0);
+
+    if (filteredData.length === 0) {
+        doc.text('No hay datos para los filtros seleccionados.', 14, yPos);
+    }
+
+    filteredData.forEach((month) => {
+        // Recalculate month total based on filtered categories
+        const monthTotal = month.categories.reduce((sum, cat) => sum + cat.total, 0);
+
+        // Check for page break
+        if (yPos > 250) {
+            doc.addPage();
+            yPos = 20;
+        }
+
+        // Month Header
+        doc.setFontSize(14);
+        doc.setTextColor(0, 100, 0); // Dark Green
+        doc.text(`${month.monthName} - Total: ${formatCLP(monthTotal)}`, 14, yPos);
+        yPos += 10;
+
+        month.categories.forEach((cat) => {
+            // Category Header
+            if (yPos > 250) {
+                doc.addPage();
+                yPos = 20;
+            }
+
+            // Table for Category Items
+            const tableData = cat.items.map(item => [
+                new Date(item.date).toLocaleDateString(),
+                item.supplier,
+                item.invoiceNumber,
+                item.description,
+                formatCLP(item.total)
+            ]);
+
+            autoTable(doc, {
+                startY: yPos,
+                head: [[`${cat.name} (Total: ${formatCLP(cat.total)})`, '', '', '', '']],
+                body: tableData,
+                theme: 'grid',
+                headStyles: { fillColor: [200, 200, 200], textColor: [0, 0, 0], fontStyle: 'bold' },
+                columnStyles: {
+                    0: { cellWidth: 25 }, // Date
+                    1: { cellWidth: 40 }, // Supplier
+                    2: { cellWidth: 25 }, // Invoice #
+                    3: { cellWidth: 'auto' }, // Description
+                    4: { cellWidth: 30, halign: 'right' } // Total
+                },
+                margin: { left: 14, right: 14 },
+                didDrawPage: (data) => {
+                    yPos = data.cursor.y + 10;
+                }
+            });
+            
+            yPos = (doc as any).lastAutoTable.finalY + 10;
+        });
+        
+        yPos += 10; // Space between months
+    });
+
+    // Save or Preview
+    const pdfBlob = doc.output('blob');
+    const pdfUrl = URL.createObjectURL(pdfBlob);
+    setPreviewPdfUrl(pdfUrl);
+    setShowPreview(true);
+  };
+
+  const downloadFromPreview = () => {
+    if (previewPdfUrl) {
+        const link = document.createElement('a');
+        link.href = previewPdfUrl;
+        link.download = `reporte_gastos_${selectedYear}.pdf`;
+        link.click();
+    }
+  };
+
   if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
   
   const getReportTitle = () => {
@@ -318,12 +547,58 @@ export const Reports: React.FC = () => {
       case 'categories': return 'Gastos por Clasificación';
       case 'chemicals': return 'Insumos Químicos';
       case 'pending': return 'Facturas Pendientes';
+      case 'detailed': return 'Informe Detallado';
       default: return 'Reporte';
     }
   };
 
   return (
     <div className="space-y-6">
+        {/* PDF PREVIEW MODAL */}
+        {showPreview && (
+            <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-75 flex items-center justify-center p-4">
+                <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl h-[90vh] flex flex-col">
+                    <div className="flex justify-between items-center p-4 border-b">
+                        <h3 className="text-lg font-medium text-gray-900 flex items-center">
+                            <Printer className="mr-2 h-5 w-5 text-gray-500" />
+                            Vista Previa de Impresión
+                        </h3>
+                        <button onClick={() => setShowPreview(false)} className="text-gray-400 hover:text-gray-500">
+                            <X className="h-6 w-6" />
+                        </button>
+                    </div>
+                    <div className="flex-1 bg-gray-100 p-4 overflow-hidden">
+                        {previewPdfUrl ? (
+                            <iframe 
+                                src={previewPdfUrl} 
+                                className="w-full h-full border border-gray-300 rounded shadow" 
+                                title="PDF Preview"
+                            />
+                        ) : (
+                            <div className="flex items-center justify-center h-full">
+                                <Loader2 className="animate-spin h-8 w-8 text-gray-400" />
+                            </div>
+                        )}
+                    </div>
+                    <div className="p-4 border-t bg-gray-50 flex justify-end space-x-3">
+                        <button
+                            onClick={() => setShowPreview(false)}
+                            className="px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                        >
+                            Cerrar
+                        </button>
+                        <button
+                            onClick={downloadFromPreview}
+                            className="px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+                        >
+                            <FileDown className="mr-2 h-4 w-4 inline" />
+                            Descargar PDF
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center print:hidden">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Reportes de Gestión</h1>
@@ -343,10 +618,10 @@ export const Reports: React.FC = () => {
           </div>
 
           <button 
-            onClick={() => window.print()}
+            onClick={handleGeneratePDF}
             className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
           >
-            <FileDown className="mr-2 h-4 w-4" /> Imprimir / PDF
+            <Printer className="mr-2 h-4 w-4" /> Generar Informe PDF
           </button>
         </div>
       </div>
@@ -398,6 +673,14 @@ export const Reports: React.FC = () => {
             } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
           >
             <AlertCircle className="mr-2 h-4 w-4" /> Facturas Pendientes
+          </button>
+          <button
+            onClick={() => setActiveTab('detailed')}
+            className={`${
+              activeTab === 'detailed' ? 'border-green-500 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
+          >
+            <FileText className="mr-2 h-4 w-4" /> Informe Detallado
           </button>
         </nav>
       </div>
@@ -665,6 +948,111 @@ export const Reports: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+          {/* 6. DETAILED REPORT (NEW) */}
+          {activeTab === 'detailed' && (
+            <div className="space-y-6">
+                <div className="bg-white p-6 rounded-lg shadow">
+                    <h3 className="text-lg font-medium text-gray-900 mb-4">Informe Detallado Mensual y por Clasificación ({selectedYear})</h3>
+                    <div className="space-y-8">
+                        {/* Filters */}
+                        <div className="flex flex-col sm:flex-row gap-4 mb-4">
+                            <div className="flex-1">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Filtrar por Mes</label>
+                                <select
+                                    value={filterMonth}
+                                    onChange={(e) => setFilterMonth(e.target.value)}
+                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                >
+                                    <option value="all">Todos los Meses</option>
+                                    {detailedReport.map(m => (
+                                        <option key={m.monthIndex} value={m.monthIndex.toString()}>{m.monthName}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="flex-1">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Filtrar por Categoría</label>
+                                <select
+                                    value={filterCategory}
+                                    onChange={(e) => setFilterCategory(e.target.value)}
+                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                >
+                                    <option value="all">Todas las Categorías</option>
+                                    {Array.from(new Set(detailedReport.flatMap(m => m.categories.map(c => c.name)))).map(cat => (
+                                        <option key={cat} value={cat}>{cat}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+
+                        {detailedReport
+                            .filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth)
+                            .map((month) => {
+                                // Filter categories for display
+                                const displayCategories = month.categories.filter(c => filterCategory === 'all' || c.name === filterCategory);
+                                if (displayCategories.length === 0) return null;
+
+                                return (
+                                <div key={month.monthIndex} className="border border-gray-200 rounded-lg overflow-hidden">
+                                    <div className="bg-green-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                                        <h4 className="text-lg font-bold text-green-800">{month.monthName}</h4>
+                                        <span className="text-sm font-medium text-green-700 bg-green-100 px-3 py-1 rounded-full">
+                                            Total Mes: {formatCLP(month.total)}
+                                        </span>
+                                    </div>
+                                    <div className="p-4 space-y-6">
+                                        {displayCategories.map((cat, catIdx) => (
+                                            <div key={catIdx}>
+                                                <h5 className="text-sm font-bold text-gray-700 mb-2 border-b border-gray-100 pb-1 flex justify-between">
+                                                    <span>{cat.name}</span>
+                                                    <span>{formatCLP(cat.total)}</span>
+                                                </h5>
+                                                <div className="overflow-x-auto">
+                                                    <table className="min-w-full divide-y divide-gray-100">
+                                                        <thead className="bg-gray-50">
+                                                            <tr>
+                                                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                                                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Proveedor</th>
+                                                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">N° Doc</th>
+                                                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Detalle</th>
+                                                                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Monto</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-gray-100">
+                                                            {cat.items.map((item, itemIdx) => (
+                                                                <tr key={itemIdx} className="hover:bg-gray-50">
+                                                                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
+                                                                        {new Date(item.date).toLocaleDateString()}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 font-medium">
+                                                                        {item.supplier}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
+                                                                        {item.invoiceNumber}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 text-xs text-gray-500">
+                                                                        {item.description}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">
+                                                                        {formatCLP(item.total)}
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {detailedReport.filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth).length === 0 && (
+                             <div className="text-center text-gray-500 py-8">No hay registros que coincidan con los filtros.</div>
+                        )}
+                    </div>
+                </div>
             </div>
           )}
         </div>

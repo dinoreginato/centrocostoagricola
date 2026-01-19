@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
+import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X } from 'lucide-react';
+import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X, Trash2 } from 'lucide-react';
 import { 
   BarChart, 
   Bar, 
@@ -16,11 +17,14 @@ import {
 } from 'recharts';
 
 export const Dashboard: React.FC = () => {
-  const { companies, selectedCompany, loading, selectCompany, addCompany } = useCompany();
+  const { companies, selectedCompany, loading, selectCompany, addCompany, refreshCompanies } = useCompany(); // Import refreshCompanies
+  const { user } = useAuth(); // Import useAuth
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newCompanyRut, setNewCompanyRut] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [showNewCompanyModal, setShowNewCompanyModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false); // Add deleting state
+
   const [dashboardStats, setDashboardStats] = useState({
     totalFields: 0,
     totalHectares: 0,
@@ -84,6 +88,47 @@ export const Dashboard: React.FC = () => {
 
     } catch (error) {
       console.error('Error loading dashboard data:', error);
+    }
+  };
+
+  const handleDeleteCompany = async () => {
+    if (!selectedCompany || !user) return;
+    
+    // Safety check: Only owner or system admin can delete
+    const isOwner = selectedCompany.owner_id === user.id;
+    const isSystemAdmin = user.email === 'dino.reginato@gmail.com';
+    
+    if (!isOwner && !isSystemAdmin) {
+        alert('Solo el dueño de la empresa puede eliminarla.');
+        return;
+    }
+
+    if (!window.confirm(`PELIGRO: ¿Estás seguro de eliminar la empresa "${selectedCompany.name}"?\n\nEsta acción borrará PERMANENTEMENTE todos los campos, facturas, bodega y aplicaciones asociados.\n\nNO SE PUEDE DESHACER.`)) return;
+    
+    // Double confirmation for safety
+    const confirmName = prompt(`Para confirmar, escribe el nombre de la empresa: "${selectedCompany.name}"`);
+    if (confirmName !== selectedCompany.name) {
+        alert('El nombre no coincide. Eliminación cancelada.');
+        return;
+    }
+
+    setIsDeleting(true);
+    try {
+        const { error } = await supabase
+            .from('companies')
+            .delete()
+            .eq('id', selectedCompany.id);
+        
+        if (error) throw error;
+        
+        alert('Empresa eliminada exitosamente.');
+        await refreshCompanies(); // Reload companies list
+        
+    } catch (err: any) {
+        console.error('Error deleting company:', err);
+        alert('Error al eliminar: ' + err.message);
+    } finally {
+        setIsDeleting(false);
     }
   };
 
@@ -188,12 +233,34 @@ export const Dashboard: React.FC = () => {
           </select>
           <button
              type="button"
-             onClick={() => setShowNewCompanyModal(true)}
-             className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-green-700 bg-green-100 hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+             onClick={() => {
+                if (user?.email !== 'dino.reginato@gmail.com') {
+                    alert('Solo el administrador del sistema puede crear nuevas empresas.');
+                    return;
+                }
+                setShowNewCompanyModal(true);
+             }}
+             className={`inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 ${
+                user?.email === 'dino.reginato@gmail.com' 
+                ? 'text-green-700 bg-green-100 hover:bg-green-200' 
+                : 'text-gray-400 bg-gray-100 cursor-not-allowed'
+             }`}
+             title={user?.email === 'dino.reginato@gmail.com' ? 'Crear nueva empresa' : 'Solo el administrador puede crear empresas'}
           >
             <Plus className="h-4 w-4 mr-1" />
             Nueva Empresa
           </button>
+          
+          {selectedCompany && user && (selectedCompany.owner_id === user.id || user.email === 'dino.reginato@gmail.com') && (
+            <button
+              onClick={handleDeleteCompany}
+              disabled={isDeleting}
+              className="ml-2 inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+              title="Eliminar Empresa Actual"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </div>
 

@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useCompany, UserRole } from '../contexts/CompanyContext';
+import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabase/client';
 import { Plus, Trash2, Mail, Shield, Loader2 } from 'lucide-react';
 
@@ -14,9 +15,14 @@ interface Member {
 
 export const Users: React.FC = () => {
   const { selectedCompany, userRole } = useCompany();
+  const { user } = useAuth(); // Get current user for admin check
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState(false);
+  
+  // Admin Company Management
+  const [allCompanies, setAllCompanies] = useState<any[]>([]);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
   
   // Form
   const [newUserEmail, setNewUserEmail] = useState('');
@@ -27,7 +33,33 @@ export const Users: React.FC = () => {
     if (selectedCompany) {
       loadMembers();
     }
+    checkSystemAdmin();
   }, [selectedCompany]);
+
+  const checkSystemAdmin = async () => {
+    if (user?.email === 'dino.reginato@gmail.com') {
+        loadAllCompaniesAdmin();
+    }
+  };
+
+  const loadAllCompaniesAdmin = async () => {
+      const { data, error } = await supabase.rpc('get_all_companies_admin');
+      if (data) setAllCompanies(data);
+      if (error) console.error('Error loading admin companies:', error);
+  };
+
+  const handleDeleteCompanyAdmin = async (id: string, name: string) => {
+      if (!window.confirm(`PELIGRO: ¿Estás seguro de eliminar la empresa "${name}" y TODOS sus datos? Esta acción es irreversible.`)) return;
+      
+      try {
+          const { error } = await supabase.rpc('delete_company_admin', { target_company_id: id });
+          if (error) throw error;
+          alert('Empresa eliminada correctamente.');
+          loadAllCompaniesAdmin();
+      } catch (err: any) {
+          alert('Error: ' + err.message);
+      }
+  };
 
   const loadMembers = async () => {
     if (!selectedCompany) return;
@@ -119,6 +151,56 @@ export const Users: React.FC = () => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      
+      {/* SUPER ADMIN PANEL - Only for Dino */}
+      {user?.email === 'dino.reginato@gmail.com' && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 mb-8">
+          <h2 className="text-xl font-bold text-red-800 mb-4 flex items-center">
+            <Shield className="h-6 w-6 mr-2" /> Panel de Super Admin (Gestión de Empresas)
+          </h2>
+          <p className="text-sm text-red-600 mb-4">
+            Aquí puedes ver todas las empresas creadas en la plataforma y eliminarlas si es necesario.
+          </p>
+          
+          <div className="overflow-x-auto bg-white rounded-lg shadow">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Empresa</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dueño</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Creada</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acción</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {allCompanies.map((company) => (
+                  <tr key={company.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{company.name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{company.owner_email}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {new Date(company.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <button 
+                        onClick={() => handleDeleteCompanyAdmin(company.id, company.name)}
+                        className="text-red-600 hover:text-red-900 font-bold"
+                      >
+                        Eliminar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {allCompanies.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-4 text-center text-gray-500">Cargando empresas...</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Gestión de Usuarios</h1>
@@ -129,6 +211,20 @@ export const Users: React.FC = () => {
       {/* Add Member Form */}
       <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
         <h3 className="text-lg font-medium text-gray-900 mb-4">Agregar Nuevo Miembro</h3>
+        <div className="bg-blue-50 border-l-4 border-blue-400 p-4 mb-4">
+            <div className="flex">
+                <div className="flex-shrink-0">
+                    <Shield className="h-5 w-5 text-blue-400" />
+                </div>
+                <div className="ml-3">
+                    <p className="text-sm text-blue-700">
+                        Para que otros usuarios vean y modifiquen estos mismos datos, agrégalos aquí. 
+                        <br />
+                        <strong>Importante:</strong> El usuario debe haberse registrado previamente en la plataforma.
+                    </p>
+                </div>
+            </div>
+        </div>
         <form onSubmit={handleAddMember} className="flex flex-col md:flex-row gap-4 items-end">
           <div className="flex-1 w-full">
             <label className="block text-sm font-medium text-gray-700 mb-1">Correo Electrónico</label>

@@ -92,6 +92,7 @@ export const Invoices: React.FC = () => {
     unit: 'L'
   });
   const [isNewProduct, setIsNewProduct] = useState(false);
+  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
 
   // Dashboard/Filter/Search State
   const [stats, setStats] = useState<DashboardStats>({ total: 0, paid: 0, pending: 0, count: 0, topCategories: [] });
@@ -237,8 +238,9 @@ export const Invoices: React.FC = () => {
   const getFilteredInvoices = () => {
     let filtered = allInvoices;
 
-    // Filter by Year first
-    if (typeof selectedYear !== 'undefined' && selectedYear) {
+    // Filter by Year first (Only if NOT searching)
+    // If searching, we want to search across ALL years
+    if (!searchQuery && typeof selectedYear !== 'undefined' && selectedYear) {
       filtered = filtered.filter(inv => inv.invoice_date.substring(0, 4) === selectedYear);
     }
 
@@ -247,7 +249,7 @@ export const Invoices: React.FC = () => {
       filtered = filtered.filter(inv => inv.status === filterStatus);
     }
 
-    if (!searchQuery) return [];
+    if (!searchQuery) return filtered; // Return filtered list if no search
     
     const lowerQuery = searchQuery.toLowerCase();
     filtered = filtered.filter(inv => 
@@ -291,6 +293,7 @@ export const Invoices: React.FC = () => {
     if (!currentItem.product_name || !currentItem.quantity || !currentItem.unit_price) return;
 
     const newItem: InvoiceItem = {
+      id: currentItem.id, // Preserve ID if editing existing item
       product_id: currentItem.product_id || 'new',
       product_name: currentItem.product_name,
       quantity: Number(currentItem.quantity),
@@ -300,7 +303,18 @@ export const Invoices: React.FC = () => {
       unit: currentItem.unit || 'un'
     };
 
-    setItems([...items, newItem]);
+    if (editingItemIndex !== null) {
+        // Update existing item
+        const updatedItems = [...items];
+        updatedItems[editingItemIndex] = newItem;
+        setItems(updatedItems);
+        setEditingItemIndex(null);
+    } else {
+        // Add new item
+        setItems([...items, newItem]);
+    }
+
+    // Reset form
     setCurrentItem({
       product_id: '',
       product_name: '',
@@ -310,6 +324,32 @@ export const Invoices: React.FC = () => {
       unit: 'L'
     });
     setIsNewProduct(false);
+  };
+
+  const editItem = (index: number) => {
+    const item = items[index];
+    setCurrentItem({
+        id: item.id,
+        product_id: item.product_id,
+        product_name: item.product_name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        category: item.category,
+        unit: item.unit
+    });
+    setEditingItemIndex(index);
+  };
+
+  const cancelEditItem = () => {
+    setEditingItemIndex(null);
+    setCurrentItem({
+      product_id: '',
+      product_name: '',
+      quantity: 0,
+      unit_price: 0,
+      category: 'Fertilizantes',
+      unit: 'L'
+    });
   };
 
   const removeItem = (index: number) => {
@@ -1070,11 +1110,17 @@ export const Invoices: React.FC = () => {
                   <input
                     type="text"
                     required
+                    list="supplier-list"
                     value={supplier}
                     onChange={e => setSupplier(e.target.value)}
                     className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
                     placeholder="Nombre del prov"
                   />
+                  <datalist id="supplier-list">
+                    {suppliers.map((s, idx) => (
+                      <option key={idx} value={s} />
+                    ))}
+                  </datalist>
                 </div>
               </div>
 
@@ -1247,13 +1293,26 @@ export const Invoices: React.FC = () => {
                   </div>
                 </div>
                 
-                <div className="mt-3 flex justify-end">
+                <div className="mt-3 flex justify-end space-x-2">
+                  {editingItemIndex !== null && (
+                      <button
+                        type="button"
+                        onClick={cancelEditItem}
+                        className="bg-gray-500 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg text-sm"
+                      >
+                        Cancelar
+                      </button>
+                  )}
                   <button
                     type="button"
                     onClick={addItem}
                     className="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded-lg text-sm flex items-center"
                   >
-                    <Plus className="h-4 w-4 mr-1" /> Añadir item
+                    {editingItemIndex !== null ? (
+                        <>Actualizar item</>
+                    ) : (
+                        <><Plus className="h-4 w-4 mr-1" /> Añadir item</>
+                    )}
                   </button>
                 </div>
               </div>
@@ -1273,13 +1332,21 @@ export const Invoices: React.FC = () => {
                     </thead>
                     <tbody>
                       {items.map((item, idx) => (
-                        <tr key={idx} className="bg-white border-b">
+                        <tr key={idx} className={`border-b ${editingItemIndex === idx ? 'bg-blue-50' : 'bg-white'}`}>
                           <td className="px-4 py-2">{item.product_name}</td>
                           <td className="px-4 py-2">{item.category}</td>
                           <td className="px-4 py-2">{item.quantity} {item.unit}</td>
                           <td className="px-4 py-2">{formatCLP(item.total_price)}</td>
                           <td className="px-4 py-2 text-right">
-                            <button onClick={() => removeItem(idx)} className="text-red-500 hover:text-red-700">
+                            <button 
+                                type="button" 
+                                onClick={() => editItem(idx)} 
+                                className="text-blue-500 hover:text-blue-700 mr-3"
+                                disabled={editingItemIndex !== null && editingItemIndex !== idx}
+                            >
+                                Editar
+                            </button>
+                            <button type="button" onClick={() => removeItem(idx)} className="text-red-500 hover:text-red-700">
                               <Trash2 className="h-4 w-4" />
                             </button>
                           </td>
