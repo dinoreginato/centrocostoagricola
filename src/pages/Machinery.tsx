@@ -187,7 +187,11 @@ export const Machinery: React.FC = () => {
     filteredItems?.forEach((item: any) => {
         // Credit Note Logic (Robust)
         const docType = (item.invoices.document_type || '').toLowerCase();
-        const isCreditNote = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
+        const isCreditNote = docType.includes('nota de cr') || 
+                             docType.includes('nota de cre') || 
+                             docType.includes('nota credito') ||
+                             docType.includes('credito') || 
+                             docType === 'nc';
         
         // Calculate Gross Amount (Bruto)
         const taxPercent = item.invoices.tax_percentage !== undefined ? item.invoices.tax_percentage : 19;
@@ -195,8 +199,12 @@ export const Machinery: React.FC = () => {
         const grossAmount = netAmount * (1 + (taxPercent / 100));
 
         let total = grossAmount;
-        if (isCreditNote && total > 0) {
-            total = -total;
+        
+        // Force Negative for Credit Notes
+        if (isCreditNote) {
+            total = -Math.abs(total);
+        } else {
+            total = Math.abs(total);
         }
 
         const assigned = assignmentMap.get(item.id) || 0;
@@ -208,7 +216,7 @@ export const Machinery: React.FC = () => {
                 invoice_id: item.invoices.id,
                 invoice_number: item.invoices.invoice_number,
                 date: item.invoices.invoice_date,
-                description: `${item.products?.name || 'Sin descripción'} ${isCreditNote ? '(NC)' : ''}`,
+                description: `${item.products?.name || 'Sin descripción'} ${isCreditNote ? '(NC)' : ''} [${item.invoices.document_type}]`,
                 total_amount: total,
                 assigned_amount: assigned,
                 remaining_amount: remaining
