@@ -398,10 +398,10 @@ export const Machinery: React.FC = () => {
                 }
             }
         }
-        if (allocations.some(a => !a.sector_id || a.amount === 0)) {
-            alert('Complete todos los campos de sector y monto distinto de 0');
-            return;
-        }
+        if (allocations.some(a => !a.sector_id || a.amount === 0) && distributeBy === 'sector') {
+        alert('Complete todos los campos de sector y monto distinto de 0');
+        return;
+    }
 
         payload = allocations.map(a => ({
             invoice_item_id: selectedItemId,
