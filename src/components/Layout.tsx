@@ -14,7 +14,11 @@ import {
   Menu,
   X,
   Users,
-  Tractor
+  Tractor,
+  Fuel,
+  Wrench,
+  Droplets,
+  Briefcase
 } from 'lucide-react';
 
 export const Layout: React.FC = () => {
@@ -40,7 +44,11 @@ export const Layout: React.FC = () => {
     { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin', 'viewer'] },
     { name: 'Campos', href: '/campos', icon: Map, roles: ['admin', 'viewer'] },
     { name: 'Facturas', href: '/facturas', icon: FileText, roles: ['admin'] },
-    { name: 'Labores', href: '/labores', icon: Tractor, roles: ['admin', 'editor', 'viewer'] },
+    { name: 'Labores', href: '/labores', icon: Users, roles: ['admin', 'editor', 'viewer'] },
+    { name: 'Maquinaria', href: '/maquinaria', icon: Tractor, roles: ['admin', 'editor', 'viewer'] },
+    { name: 'Riego', href: '/riego', icon: Droplets, roles: ['admin', 'editor', 'viewer'] },
+    { name: 'Petróleo', href: '/petroleo', icon: Fuel, roles: ['admin', 'editor', 'viewer'] },
+    { name: 'Trabajadores', href: '/trabajadores', icon: Briefcase, roles: ['admin', 'editor', 'viewer'] },
     { name: 'Bodega', href: '/bodega', icon: Package, roles: ['admin', 'editor', 'viewer'] },
     { name: 'Aplicaciones', href: '/aplicaciones', icon: ClipboardList, roles: ['admin', 'editor', 'viewer'] },
     { name: 'Reportes', href: '/reportes', icon: BarChart3, roles: ['admin', 'viewer'] },
@@ -94,7 +102,7 @@ export const Layout: React.FC = () => {
                 >
                   <LogOut className="mr-1 h-3 w-3" /> Cerrar Sesión
                 </button>
-                <div className="text-[10px] text-gray-400 mt-1">v1.2 (Fix Logout)</div>
+                <div className="text-[10px] text-gray-400 mt-1">v1.3 (New Sections)</div>
               </div>
             </div>
           </div>

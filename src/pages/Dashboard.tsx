@@ -17,13 +17,13 @@ import {
 } from 'recharts';
 
 export const Dashboard: React.FC = () => {
-  const { companies, selectedCompany, loading, selectCompany, addCompany, refreshCompanies } = useCompany(); // Import refreshCompanies
-  const { user } = useAuth(); // Import useAuth
+  const { companies, selectedCompany, loading, selectCompany, addCompany, refreshCompanies } = useCompany();
+  const { user } = useAuth();
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newCompanyRut, setNewCompanyRut] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [showNewCompanyModal, setShowNewCompanyModal] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false); // Add deleting state
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [dashboardStats, setDashboardStats] = useState({
     totalFields: 0,
@@ -32,6 +32,7 @@ export const Dashboard: React.FC = () => {
     costPerHectare: 0
   });
   const [chartData, setChartData] = useState<any[]>([]);
+  const [sectorChartData, setSectorChartData] = useState<any[]>([]);
 
   useEffect(() => {
     if (selectedCompany) {
@@ -43,26 +44,90 @@ export const Dashboard: React.FC = () => {
     if (!selectedCompany) return;
 
     try {
-      // Load fields
+      // 1. Load fields and their sectors
       const { data: fields } = await supabase
         .from('fields')
-        .select('*')
+        .select('*, sectors(*)')
         .eq('company_id', selectedCompany.id);
 
       const totalFields = fields?.length || 0;
       const totalHectares = fields?.reduce((sum, field) => sum + Number(field.total_hectares), 0) || 0;
 
-      // Load applications for cost calculation (Simplified for now)
-      // Ideally we would join tables, but doing separate queries for simplicity in MVP
-      // In real app, create a view or RPC for this.
-      const { data: applications, error } = await supabase
+      // Flatten sectors
+      const allSectors = fields?.flatMap(f => f.sectors || []) || [];
+      const sectorIds = allSectors.map(s => s.id);
+
+      // 2. Load Costs
+      // A. Applications
+      const { data: applications, error: appError } = await supabase
         .from('applications')
-        .select('total_cost, field_id')
+        .select('total_cost, field_id, sector_id')
         .in('field_id', fields?.map(f => f.id) || []);
 
-      if (error) throw error;
+      if (appError) throw appError;
+
+      // B. Labor Assignments
+      let laborAssignments: any[] = [];
+      if (sectorIds.length > 0) {
+          const { data: labors } = await supabase
+            .from('labor_assignments')
+            .select('assigned_amount, sector_id')
+            .in('sector_id', sectorIds);
+          laborAssignments = labors || [];
+      }
+
+      // C. Fuel Assignments (Legacy/Direct)
+      let fuelAssignments: any[] = [];
+      if (sectorIds.length > 0) {
+          const { data: fuels } = await supabase
+            .from('fuel_assignments')
+            .select('assigned_amount, sector_id')
+            .in('sector_id', sectorIds);
+          fuelAssignments = fuels || [];
+      }
+
+      // C2. Fuel Consumption (New Stock System)
+      let fuelConsumption: any[] = [];
+      if (sectorIds.length > 0) {
+          const { data: consumptions } = await supabase
+            .from('fuel_consumption')
+            .select('estimated_price, sector_id')
+            .in('sector_id', sectorIds);
+          fuelConsumption = consumptions || [];
+      }
+
+      // D. Machinery Assignments
+      let machineryAssignments: any[] = [];
+      if (sectorIds.length > 0) {
+          const { data: machineries } = await supabase
+            .from('machinery_assignments')
+            .select('assigned_amount, sector_id')
+            .in('sector_id', sectorIds);
+          machineryAssignments = machineries || [];
+      }
+
+      // E. Irrigation Assignments
+      let irrigationAssignments: any[] = [];
+      if (sectorIds.length > 0) {
+          const { data: irrigations } = await supabase
+            .from('irrigation_assignments')
+            .select('assigned_amount, sector_id')
+            .in('sector_id', sectorIds);
+          irrigationAssignments = irrigations || [];
+      }
+
+      // Calculate Totals
+      const totalAppCost = applications?.reduce((sum, app) => sum + Number(app.total_cost), 0) || 0;
+      const totalLaborCost = laborAssignments.reduce((sum, l) => sum + Number(l.assigned_amount), 0);
       
-      const totalCost = applications?.reduce((sum, app) => sum + Number(app.total_cost), 0) || 0;
+      const totalFuelDirect = fuelAssignments.reduce((sum, l) => sum + Number(l.assigned_amount), 0);
+      const totalFuelConsumption = fuelConsumption.reduce((sum, l) => sum + Number(l.estimated_price), 0);
+      const totalFuelCost = totalFuelDirect + totalFuelConsumption;
+
+      const totalMachineryCost = machineryAssignments.reduce((sum, l) => sum + Number(l.assigned_amount), 0);
+      const totalIrrigationCost = irrigationAssignments.reduce((sum, l) => sum + Number(l.assigned_amount), 0);
+      
+      const totalCost = totalAppCost + totalLaborCost + totalFuelCost + totalMachineryCost + totalIrrigationCost;
       const costPerHectare = totalHectares > 0 ? totalCost / totalHectares : 0;
 
       setDashboardStats({
@@ -72,19 +137,94 @@ export const Dashboard: React.FC = () => {
         costPerHectare
       });
 
-      // Prepare chart data: Cost per field
+      // 3. Prepare Chart Data: Cost per Field
       const fieldCosts = fields?.map(field => {
-        const fieldApps = applications?.filter(app => app.field_id === field.id);
-        const fieldCost = fieldApps?.reduce((sum, app) => sum + Number(app.total_cost), 0) || 0;
+        // App costs for this field
+        const fieldAppCost = applications?.filter(app => app.field_id === field.id)
+            .reduce((sum, app) => sum + Number(app.total_cost), 0) || 0;
+        
+        // Assignments for sectors in this field
+        const fieldSectorIds = field.sectors?.map(s => s.id) || [];
+        
+        const fieldLaborCost = laborAssignments
+            .filter(l => fieldSectorIds.includes(l.sector_id))
+            .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
+        
+        const fieldFuelDirect = fuelAssignments
+            .filter(l => fieldSectorIds.includes(l.sector_id))
+            .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
+        const fieldFuelConsumption = fuelConsumption
+            .filter(l => fieldSectorIds.includes(l.sector_id))
+            .reduce((sum, l) => sum + Number(l.estimated_price), 0);
+        const fieldFuelCost = fieldFuelDirect + fieldFuelConsumption;
+
+        const fieldMachineryCost = machineryAssignments
+            .filter(l => fieldSectorIds.includes(l.sector_id))
+            .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
+
+        const fieldIrrigationCost = irrigationAssignments
+            .filter(l => fieldSectorIds.includes(l.sector_id))
+            .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
+
+        const totalFieldCost = fieldAppCost + fieldLaborCost + fieldFuelCost + fieldMachineryCost + fieldIrrigationCost;
+
         return {
           name: field.name,
-          cost: fieldCost,
+          cost: totalFieldCost,
           hectares: field.total_hectares,
-          costPerHa: field.total_hectares > 0 ? fieldCost / field.total_hectares : 0
+          costPerHa: field.total_hectares > 0 ? totalFieldCost / field.total_hectares : 0
         };
       });
 
       setChartData(fieldCosts || []);
+
+      // 4. Prepare Chart Data: Cost per Sector (Detailed)
+      const sectorCosts = allSectors.map(sector => {
+          // App costs
+          const sectorAppCost = applications?.filter(app => app.sector_id === sector.id)
+            .reduce((sum, app) => sum + Number(app.total_cost), 0) || 0;
+          
+          // Labor
+          const sectorLaborCost = laborAssignments
+            .filter(l => l.sector_id === sector.id)
+            .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
+          
+          // Fuel (Direct + Consumption)
+          const sectorFuelDirect = fuelAssignments
+            .filter(l => l.sector_id === sector.id)
+            .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
+          const sectorFuelConsumption = fuelConsumption
+            .filter(l => l.sector_id === sector.id)
+            .reduce((sum, l) => sum + Number(l.estimated_price), 0);
+          const sectorFuelCost = sectorFuelDirect + sectorFuelConsumption;
+
+          // Machinery
+          const sectorMachineryCost = machineryAssignments
+            .filter(l => l.sector_id === sector.id)
+            .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
+
+          // Irrigation
+          const sectorIrrigationCost = irrigationAssignments
+            .filter(l => l.sector_id === sector.id)
+            .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
+          
+          const totalSectorCost = sectorAppCost + sectorLaborCost + sectorFuelCost + sectorMachineryCost + sectorIrrigationCost;
+          
+          return {
+              name: sector.name,
+              fieldName: fields?.find(f => f.id === sector.field_id)?.name || '',
+              totalCost: totalSectorCost,
+              hectares: sector.hectares,
+              costPerHa: sector.hectares > 0 ? totalSectorCost / sector.hectares : 0,
+              laborCost: sectorLaborCost,
+              appCost: sectorAppCost,
+              machineryCost: sectorMachineryCost,
+              irrigationCost: sectorIrrigationCost,
+              fuelCost: sectorFuelCost
+          };
+      }).sort((a, b) => b.costPerHa - a.costPerHa);
+
+      setSectorChartData(sectorCosts);
 
     } catch (error) {
       console.error('Error loading dashboard data:', error);
@@ -94,7 +234,6 @@ export const Dashboard: React.FC = () => {
   const handleDeleteCompany = async () => {
     if (!selectedCompany || !user) return;
     
-    // Safety check: Only owner or system admin can delete
     const isOwner = selectedCompany.owner_id === user.id;
     const isSystemAdmin = user.email === 'dino.reginato@gmail.com';
     
@@ -105,7 +244,6 @@ export const Dashboard: React.FC = () => {
 
     if (!window.confirm(`PELIGRO: ¿Estás seguro de eliminar la empresa "${selectedCompany.name}"?\n\nEsta acción borrará PERMANENTEMENTE todos los campos, facturas, bodega y aplicaciones asociados.\n\nNO SE PUEDE DESHACER.`)) return;
     
-    // Double confirmation for safety
     const confirmName = prompt(`Para confirmar, escribe el nombre de la empresa: "${selectedCompany.name}"`);
     if (confirmName !== selectedCompany.name) {
         alert('El nombre no coincide. Eliminación cancelada.');
@@ -122,7 +260,7 @@ export const Dashboard: React.FC = () => {
         if (error) throw error;
         
         alert('Empresa eliminada exitosamente.');
-        await refreshCompanies(); // Reload companies list
+        await refreshCompanies();
         
     } catch (err: any) {
         console.error('Error deleting company:', err);
@@ -212,7 +350,6 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Header with Company Selector */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded-lg shadow-sm">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard General</h1>
@@ -264,7 +401,6 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
         <div className="bg-white overflow-hidden shadow rounded-lg">
           <div className="p-5">
@@ -339,33 +475,116 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Charts */}
-      <div className="bg-white p-6 rounded-lg shadow">
-        <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Costos por Campo</h3>
-        <div className="h-80 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={chartData}
-              margin={{
-                top: 5,
-                right: 30,
-                left: 20,
-                bottom: 5,
-              }}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis tickFormatter={(value) => formatCLP(value)} />
-              <Tooltip formatter={(value) => formatCLP(Number(value))} />
-              <Legend />
-              <Bar dataKey="cost" name="Costo Total" fill="#2E7D32" />
-              <Bar dataKey="costPerHa" name="Costo / Ha" fill="#82ca9d" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Costos por Campo</h3>
+            <div className="h-80 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={chartData}
+                  margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis tickFormatter={(value) => formatCLP(value)} />
+                  <Tooltip formatter={(value) => formatCLP(Number(value))} />
+                  <Legend />
+                  <Bar dataKey="cost" name="Costo Total" fill="#2E7D32" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Costo / Hectárea por Sector</h3>
+            <div className="h-80 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={sectorChartData.slice(0, 10)} 
+                  layout="vertical"
+                  margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" tickFormatter={(value) => formatCLP(value)} />
+                  <YAxis type="category" dataKey="name" width={100} />
+                  <Tooltip 
+                    formatter={(value: number) => [formatCLP(value), 'Costo/Ha']}
+                    labelFormatter={(label) => `Sector: ${label}`}
+                  />
+                  <Legend />
+                  <Bar dataKey="costPerHa" name="Costo por Hectárea" fill="#E65100" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <p className="text-xs text-gray-500 mt-2 text-center">* Mostrando los 10 sectores con mayor costo por hectárea</p>
+          </div>
       </div>
 
-      {/* New Company Modal */}
+      <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+          <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
+            <h3 className="text-lg leading-6 font-medium text-gray-900">Desglose de Costos por Sector</h3>
+            <p className="mt-1 text-sm text-gray-500">Detalle de costos acumulados (Aplicaciones + Labores)</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sector / Campo</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Hectáreas</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Labores</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Aplicaciones</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Maquinaria</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Riego</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Combustible</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo Total</th>
+                  <th className="px-6 py-3 text-right text-xs font-bold text-gray-900 uppercase tracking-wider">Costo / Ha</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {sectorChartData.map((sector, idx) => (
+                  <tr key={idx} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900">{sector.name}</div>
+                      <div className="text-xs text-gray-500">{sector.fieldName}</div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">
+                      {sector.hectares} ha
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">
+                      {formatCLP(sector.laborCost)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-blue-600">
+                      {formatCLP(sector.appCost)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-orange-600">
+                      {formatCLP(sector.machineryCost)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-cyan-600">
+                      {formatCLP(sector.irrigationCost)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-purple-600">
+                       {formatCLP(sector.fuelCost)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">
+                      {formatCLP(sector.totalCost)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-orange-600">
+                      {formatCLP(sector.costPerHa)}
+                    </td>
+                  </tr>
+                ))}
+                {sectorChartData.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-10 text-center text-gray-500">
+                      No hay datos de costos registrados aún.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+      </div>
+
       {showNewCompanyModal && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center z-50">
           <div className="relative bg-white rounded-lg shadow-xl p-8 max-w-md w-full m-4">

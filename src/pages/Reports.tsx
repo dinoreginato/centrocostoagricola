@@ -3,18 +3,30 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
+import { getSeasonFromDate, getSeasonRange, isDateInSeason } from '../lib/seasonUtils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { FileDown, Loader2, Calendar, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer } from 'lucide-react';
+import { FileDown, Loader2, Calendar, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer, Settings, DollarSign, Scale } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 interface ReportData {
   field_name: string;
   sector_name: string;
+  sector_id: string; 
   hectares: number;
   total_cost: number;
   cost_per_ha: number;
   application_count: number;
+  kg_produced?: number;
+  // Separate costs for specific reports
+  app_cost_only: number;
+  app_cost_per_ha: number;
+  // Detailed costs
+  labor_cost: number;
+  worker_cost: number; // New field for Plant Workers
+  fuel_cost: number;
+  machinery_cost: number;
+  irrigation_cost: number;
 }
 
 interface MonthlyExpense {
@@ -72,22 +84,34 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'
 // Categories considered as "Chemicals" or "Inputs"
 const CHEMICAL_CATEGORIES = [
   'Quimicos', 'Plaguicida', 'Insecticida', 'Fungicida', 'Herbicida', 
-  'Fertilizantes', 'fertilizante', 'pesticida', 'herbicida', 'fungicida', 'Insumo'
+  'Fertilizantes', 'fertilizante', 'pesticida', 'herbicida', 'fungicida'
 ];
 
 export const Reports: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'applications' | 'monthly' | 'categories' | 'pending' | 'chemicals' | 'detailed'>('applications');
+  const [activeTab, setActiveTab] = useState<'applications' | 'monthly' | 'categories' | 'pending' | 'chemicals' | 'detailed' | 'general'>('applications');
   
   // Data State
   const [rawFields, setRawFields] = useState<any[]>([]);
   const [rawApplications, setRawApplications] = useState<any[]>([]);
   const [rawInvoices, setRawInvoices] = useState<any[]>([]);
+  const [rawLabor, setRawLabor] = useState<any[]>([]); 
+  const [rawWorkerCosts, setRawWorkerCosts] = useState<any[]>([]); // New state
+  const [rawFuel, setRawFuel] = useState<any[]>([]); 
+  const [rawFuelConsumption, setRawFuelConsumption] = useState<any[]>([]); // New: Fuel Consumption
+  const [rawMachinery, setRawMachinery] = useState<any[]>([]); 
+  const [rawIrrigation, setRawIrrigation] = useState<any[]>([]); 
+  const [productionRecords, setProductionRecords] = useState<any[]>([]); 
 
   // Filter State
-  const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
-  const [availableYears, setAvailableYears] = useState<string[]>([]);
+  const [selectedSeason, setSelectedSeason] = useState<string>(getSeasonFromDate(new Date()));
+  const [availableSeasons, setAvailableSeasons] = useState<string[]>([]);
+
+  // Settings State (USD, etc)
+  const [usdExchangeRate, setUsdExchangeRate] = useState<number>(950);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [editingProduction, setEditingProduction] = useState<boolean>(false); 
 
   // Display State
   const [reportData, setReportData] = useState<ReportData[]>([]);
@@ -100,6 +124,8 @@ export const Reports: React.FC = () => {
   // Detailed Report Filters
   const [filterMonth, setFilterMonth] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
+  // Chemical Report Filters
+  const [filterChemicalCategory, setFilterChemicalCategory] = useState<string>('all');
 
   // Preview Modal State
   const [showPreview, setShowPreview] = useState(false);
@@ -111,10 +137,10 @@ export const Reports: React.FC = () => {
     }
   }, [selectedCompany]);
 
-  // Process data whenever raw data or selected year changes
+  // Process data whenever raw data or selected season changes
   useEffect(() => {
     processReports();
-  }, [rawFields, rawApplications, rawInvoices, selectedYear]);
+  }, [rawFields, rawApplications, rawInvoices, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawMachinery, rawIrrigation, productionRecords, selectedSeason]);
 
   const loadRawData = async () => {
     if (!selectedCompany) return;
@@ -127,61 +153,101 @@ export const Reports: React.FC = () => {
         .eq('company_id', selectedCompany.id);
       
       setRawFields(fields || []);
+      const fieldIds = (fields || []).map(f => f.id);
+      const sectorIds = (fields || []).flatMap(f => f.sectors.map((s:any) => s.id));
 
       // 2. Fetch Applications
       const { data: applications } = await supabase
         .from('applications')
         .select('field_id, sector_id, total_cost, application_date')
-        .in('field_id', (fields || []).map(f => f.id));
+        .in('field_id', fieldIds);
       
       setRawApplications(applications || []);
 
-      // 3. Fetch Invoices with Items and Product details
-      const { data: invoices } = await supabase
+      // 2b. Fetch Labor Assignments
+      const { data: labor } = await supabase
+        .from('labor_assignments')
+        .select('sector_id, assigned_amount, assigned_date')
+        .in('sector_id', sectorIds);
+      setRawLabor(labor || []);
+
+      // 2b2. Fetch Worker Costs (Plant Staff)
+      const { data: workers } = await supabase
+        .from('worker_costs')
+        .select('sector_id, amount, date')
+        .in('sector_id', sectorIds);
+      setRawWorkerCosts(workers || []);
+
+      // 2c. Fetch Fuel Assignments (Direct)
+      const { data: fuel } = await supabase
+        .from('fuel_assignments')
+        .select('sector_id, assigned_amount, assigned_date')
+        .in('sector_id', sectorIds);
+      setRawFuel(fuel || []);
+
+      // 2d. Fetch Fuel Consumption (Stock System)
+      const { data: fuelCons } = await supabase
+        .from('fuel_consumption')
+        .select('sector_id, estimated_price, date') // date is the column
+        .in('sector_id', sectorIds);
+      setRawFuelConsumption(fuelCons || []);
+
+      // 2e. Fetch Machinery
+      const { data: machinery } = await supabase
+        .from('machinery_assignments')
+        .select('sector_id, assigned_amount, assigned_date')
+        .in('sector_id', sectorIds);
+      setRawMachinery(machinery || []);
+
+      // 2f. Fetch Irrigation
+      const { data: irrigation } = await supabase
+        .from('irrigation_assignments')
+        .select('sector_id, assigned_amount, assigned_date')
+        .in('sector_id', sectorIds);
+      setRawIrrigation(irrigation || []);
+
+      // 2g. Fetch Production
+      const { data: prod } = await supabase
+        .from('production_records')
+        .select('*')
+        .eq('company_id', selectedCompany.id);
+      setProductionRecords(prod || []);
+
+      // 3. Fetch Invoices
+      const { data: invoicesData } = await supabase
         .from('invoices')
         .select(`
-          id, invoice_number, supplier, invoice_date, due_date, total_amount, status,
+          id, invoice_number, invoice_date, total_amount, supplier, status, due_date,
           invoice_items (
-            total_price, category, quantity, unit_price,
+            id, category, total_price, quantity,
             products (name)
           )
         `)
         .eq('company_id', selectedCompany.id);
       
-      setRawInvoices(invoices || []);
+      setRawInvoices(invoicesData || []);
 
-      // 4. Extract Years
-      const yearsSet = new Set<string>();
-      const currentYear = new Date().getFullYear().toString();
-      yearsSet.add(currentYear);
+      // 4. Extract Seasons
+      const seasonsSet = new Set<string>();
+      seasonsSet.add(getSeasonFromDate(new Date()));
 
       applications?.forEach(app => {
         if (app.application_date) {
-          yearsSet.add(app.application_date.substring(0, 4));
+          seasonsSet.add(getSeasonFromDate(new Date(app.application_date)));
         }
       });
 
-      invoices?.forEach(inv => {
+      invoicesData?.forEach(inv => {
         if (inv.invoice_date) {
-          try {
-             let dateStr = inv.invoice_date;
-             if (dateStr.match(/^\d{4}-\d{2}-\d{2}/)) {
-                yearsSet.add(dateStr.substring(0, 4));
-             } else {
-                const d = new Date(dateStr);
-                if (!isNaN(d.getTime())) {
-                   yearsSet.add(d.getFullYear().toString());
-                }
-             }
-          } catch (e) {}
+            seasonsSet.add(getSeasonFromDate(new Date(inv.invoice_date)));
         }
       });
 
-      const sortedYears = Array.from(yearsSet).sort().reverse();
-      setAvailableYears(sortedYears);
+      const sortedSeasons = Array.from(seasonsSet).sort().reverse();
+      setAvailableSeasons(sortedSeasons);
       
-      if (!sortedYears.includes(selectedYear)) {
-        setSelectedYear(sortedYears[0]);
+      if (!sortedSeasons.includes(selectedSeason)) {
+        setSelectedSeason(sortedSeasons[0]);
       }
 
     } catch (error) {
@@ -192,16 +258,16 @@ export const Reports: React.FC = () => {
   };
 
   const processReports = () => {
-    processApplicationReports();
+    processApplicationReports(); // This is effectively the "General Cost Report" now
     processFinancialReports();
     processDetailedReport();
   };
 
   const processDetailedReport = () => {
-    // Filter invoices by selected year
+    // Filter invoices by selected season
     const filteredInvoices = rawInvoices.filter(inv => {
       if (!inv.invoice_date) return false;
-      return inv.invoice_date.substring(0, 4) === selectedYear;
+      return isDateInSeason(inv.invoice_date, selectedSeason);
     });
 
     const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -226,8 +292,6 @@ export const Reports: React.FC = () => {
             monthData.total += Number(inv.total_amount);
 
             // Group by category within invoice items
-            // Note: Invoices have items with categories.
-            // If invoice has items, we use them. If not (shouldn't happen with correct data), we use fallback.
             
             if (inv.invoice_items && inv.invoice_items.length > 0) {
                 inv.invoice_items.forEach((item: any) => {
@@ -282,26 +346,103 @@ export const Reports: React.FC = () => {
   const processApplicationReports = () => {
     if (!rawFields.length) return;
 
+    // Filter apps by season
     const filteredApps = rawApplications.filter(app => {
       if (!app.application_date) return false;
-      return app.application_date.substring(0, 4) === selectedYear;
+      return isDateInSeason(app.application_date, selectedSeason);
+    });
+
+    // Filter labor by season
+    const filteredLabor = rawLabor.filter(lab => {
+      if (!lab.assigned_date) return false;
+      return isDateInSeason(lab.assigned_date, selectedSeason);
+    });
+
+    // Filter Worker Costs by season
+    const filteredWorkerCosts = rawWorkerCosts.filter(w => {
+        if (!w.date) return false;
+        return isDateInSeason(w.date, selectedSeason);
+    });
+
+    // Filter Fuel by season (Direct)
+    const filteredFuel = rawFuel.filter(item => {
+      if (!item.assigned_date) return false;
+      return isDateInSeason(item.assigned_date, selectedSeason);
+    });
+
+    // Filter Fuel Consumption by season
+    const filteredFuelConsumption = rawFuelConsumption.filter(item => {
+      if (!item.date) return false; // column is 'date'
+      return isDateInSeason(item.date, selectedSeason);
+    });
+
+    // Filter Machinery by season
+    const filteredMachinery = rawMachinery.filter(item => {
+      if (!item.assigned_date) return false;
+      return isDateInSeason(item.assigned_date, selectedSeason);
+    });
+
+    // Filter Irrigation by season
+    const filteredIrrigation = rawIrrigation.filter(item => {
+      if (!item.assigned_date) return false;
+      return isDateInSeason(item.assigned_date, selectedSeason);
     });
 
     const data: ReportData[] = [];
 
     rawFields.forEach(field => {
       field.sectors?.forEach((sector: any) => {
+        // Costs
         const sectorApps = filteredApps.filter(app => app.sector_id === sector.id);
-        const totalCost = sectorApps.reduce((sum, app) => sum + Number(app.total_cost), 0);
+        const appCost = sectorApps.reduce((sum, app) => sum + Number(app.total_cost), 0);
+        
+        const sectorLabor = filteredLabor.filter(lab => lab.sector_id === sector.id);
+        const laborCost = sectorLabor.reduce((sum, lab) => sum + Number(lab.assigned_amount), 0);
+
+        const sectorWorkers = filteredWorkerCosts.filter(w => w.sector_id === sector.id);
+        const workerCost = sectorWorkers.reduce((sum, w) => sum + Number(w.amount), 0);
+
+        const sectorFuelDirect = filteredFuel.filter(item => item.sector_id === sector.id);
+        const sectorFuelCons = filteredFuelConsumption.filter(item => item.sector_id === sector.id);
+        const fuelCost = sectorFuelDirect.reduce((sum, item) => sum + Number(item.assigned_amount), 0) +
+                         sectorFuelCons.reduce((sum, item) => sum + Number(item.estimated_price), 0);
+
+        const sectorMachinery = filteredMachinery.filter(item => item.sector_id === sector.id);
+        const machineryCost = sectorMachinery.reduce((sum, item) => sum + Number(item.assigned_amount), 0);
+
+        const sectorIrrigation = filteredIrrigation.filter(item => item.sector_id === sector.id);
+        const irrigationCost = sectorIrrigation.reduce((sum, item) => sum + Number(item.assigned_amount), 0);
+
+        // For General Report: Total Cost = Apps + Labor + Workers + Fuel + Machinery + Irrigation
+        const totalCostGeneral = appCost + laborCost + workerCost + fuelCost + machineryCost + irrigationCost;
+        const totalCostAppsOnly = appCost;
+        
         const hectares = Number(sector.hectares);
+
+        // Production
+        // We assume production records are stored with 'season_year' as the start year of the season
+        // e.g., Season 2025-2026 -> season_year 2025
+        const seasonStartYear = parseInt(selectedSeason.split('-')[0]);
+        const prodRecord = productionRecords.find(p => p.sector_id === sector.id && p.season_year === seasonStartYear);
+        const kgProduced = prodRecord ? Number(prodRecord.kg_produced) : 0;
         
         data.push({
           field_name: field.name,
           sector_name: sector.name,
+          sector_id: sector.id,
           hectares: hectares,
-          total_cost: totalCost,
-          cost_per_ha: hectares > 0 ? totalCost / hectares : 0,
-          application_count: sectorApps.length
+          total_cost: totalCostGeneral, // Default for General Table
+          cost_per_ha: hectares > 0 ? totalCostGeneral / hectares : 0, // Default for General Table
+          application_count: sectorApps.length,
+          kg_produced: kgProduced,
+          // Specific Costs
+          app_cost_only: totalCostAppsOnly,
+          app_cost_per_ha: hectares > 0 ? totalCostAppsOnly / hectares : 0,
+          labor_cost: laborCost,
+          worker_cost: workerCost,
+          fuel_cost: fuelCost,
+          machinery_cost: machineryCost,
+          irrigation_cost: irrigationCost
         });
       });
     });
@@ -313,14 +454,7 @@ export const Reports: React.FC = () => {
     const filteredInvoices = rawInvoices.filter(inv => {
       try {
         if (!inv.invoice_date) return false;
-        let year = '';
-        if (inv.invoice_date.match(/^\d{4}-\d{2}-\d{2}/)) {
-           year = inv.invoice_date.substring(0, 4);
-        } else {
-           const d = new Date(inv.invoice_date);
-           if (!isNaN(d.getTime())) year = d.getFullYear().toString();
-        }
-        return year === selectedYear;
+        return isDateInSeason(inv.invoice_date, selectedSeason);
       } catch {
         return false;
       }
@@ -329,7 +463,19 @@ export const Reports: React.FC = () => {
     // 1. Monthly Expenses
     const monthlyData = new Map<string, number>();
     const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-    monthNames.forEach(m => monthlyData.set(`${m} ${selectedYear}`, 0));
+    // For a season (e.g. 2025-2026), we want months from May 2025 to April 2026
+    const [startYearStr] = selectedSeason.split('-');
+    const startYear = parseInt(startYearStr);
+    
+    // Generate keys for the season
+    // May(4) to Dec(11) of startYear
+    for (let m = 4; m <= 11; m++) {
+        monthlyData.set(`${monthNames[m]} ${startYear}`, 0);
+    }
+    // Jan(0) to Apr(3) of startYear + 1
+    for (let m = 0; m <= 3; m++) {
+        monthlyData.set(`${monthNames[m]} ${startYear + 1}`, 0);
+    }
 
     filteredInvoices.forEach(inv => {
       try {
@@ -425,26 +571,71 @@ export const Reports: React.FC = () => {
     setPendingInvoices(pending);
   };
 
+  const handleSaveProduction = async (sectorId: string, kg: number) => {
+    try {
+        if (!selectedCompany) return;
+        // Use the start year of the season for storage
+        const seasonStartYear = parseInt(selectedSeason.split('-')[0]);
+        
+        // Upsert production record
+        const { error } = await supabase
+            .from('production_records')
+            .upsert({
+                sector_id: sectorId,
+                season_year: seasonStartYear,
+                kg_produced: kg,
+                company_id: selectedCompany.id,
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'sector_id, season_year' });
+
+        if (error) throw error;
+
+        // Update local state
+        setProductionRecords(prev => {
+            const existing = prev.findIndex(p => p.sector_id === sectorId && p.season_year === seasonStartYear);
+            if (existing >= 0) {
+                const newArr = [...prev];
+                newArr[existing] = { ...newArr[existing], kg_produced: kg };
+                return newArr;
+            } else {
+                return [...prev, { sector_id: sectorId, season_year: seasonStartYear, kg_produced: kg }];
+            }
+        });
+
+    } catch (error: any) {
+        console.error('Error saving production:', error);
+        alert(`Error al guardar producción: ${error.message || JSON.stringify(error)}`);
+    }
+  };
+
   const handleGeneratePDF = () => {
     const doc = new jsPDF();
+    const title = getReportTitle();
     
     // Header
     doc.setFontSize(18);
-    doc.text(`Reporte de Gastos Mensuales Detallado`, 14, 20);
+    doc.text(`Reporte: ${title}`, 14, 20);
     doc.setFontSize(12);
     doc.text(`Empresa: ${selectedCompany?.name}`, 14, 28);
-    doc.text(`Año: ${selectedYear}`, 14, 34);
+    doc.text(`Temporada: ${selectedSeason}`, 14, 34);
     
-    let subHeader = 'Filtros: ';
-    if (filterMonth !== 'all') {
-        const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-        subHeader += `Mes: ${monthNames[parseInt(filterMonth)]} `;
-    }
-    if (filterCategory !== 'all') {
-        subHeader += `| Categoría: ${filterCategory}`;
-    }
-    if (filterMonth === 'all' && filterCategory === 'all') subHeader += 'Todos';
+    let subHeader = '';
     
+    // Customize subheader based on tab
+    if (activeTab === 'detailed') {
+        subHeader = 'Filtros: ';
+        if (filterMonth !== 'all') {
+            const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+            subHeader += `Mes: ${monthNames[parseInt(filterMonth)]} `;
+        }
+        if (filterCategory !== 'all') {
+            subHeader += `| Categoría: ${filterCategory}`;
+        }
+        if (filterMonth === 'all' && filterCategory === 'all') subHeader += 'Todos';
+    } else if (activeTab === 'general') {
+        subHeader = `Tipo de Cambio: ${formatCLP(usdExchangeRate)} CLP/USD`;
+    }
+
     doc.setFontSize(10);
     doc.setTextColor(100);
     doc.text(subHeader, 14, 40);
@@ -452,75 +643,231 @@ export const Reports: React.FC = () => {
 
     let yPos = 50;
 
-    // Filter Data for PDF
-    const filteredData = detailedReport
-        .filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth)
-        .map(m => ({
-            ...m,
-            categories: m.categories.filter(c => filterCategory === 'all' || c.name === filterCategory)
-        }))
-        .filter(m => m.categories.length > 0);
+    // --- REPORT GENERATION LOGIC BASED ON ACTIVE TAB ---
 
-    if (filteredData.length === 0) {
-        doc.text('No hay datos para los filtros seleccionados.', 14, yPos);
-    }
+    if (activeTab === 'general') {
+        // GENERAL REPORT
+        const tableBody = reportData.map(row => {
+            const costUsd = row.total_cost / (usdExchangeRate || 1);
+            const costPerHaUsd = row.cost_per_ha / (usdExchangeRate || 1);
+            const costPerKgClp = (row.kg_produced || 0) > 0 ? row.total_cost / row.kg_produced! : 0;
+            const costPerKgUsd = (row.kg_produced || 0) > 0 ? costUsd / row.kg_produced! : 0;
 
-    filteredData.forEach((month) => {
-        // Recalculate month total based on filtered categories
-        const monthTotal = month.categories.reduce((sum, cat) => sum + cat.total, 0);
+            return [
+                `${row.sector_name}\n(${row.field_name})`,
+                row.hectares.toString(),
+                (row.kg_produced || 0).toLocaleString('es-CL'),
+                formatCLP(row.labor_cost),
+                formatCLP(row.worker_cost),
+                formatCLP(row.app_cost_only),
+                formatCLP(row.machinery_cost),
+                formatCLP(row.irrigation_cost),
+                formatCLP(row.fuel_cost),
+                formatCLP(row.total_cost),
+                `$${Math.round(costUsd).toLocaleString('en-US')}`,
+                formatCLP(row.cost_per_ha),
+                `$${Math.round(costPerHaUsd).toLocaleString('en-US')}`,
+                costPerKgClp > 0 ? formatCLP(costPerKgClp) : '-',
+                costPerKgUsd > 0 ? `$${costPerKgUsd.toFixed(2)}` : '-'
+            ];
+        });
 
-        // Check for page break
-        if (yPos > 250) {
-            doc.addPage();
-            yPos = 20;
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Sector/Campo', 'Has', 'Prod (Kg)', 'Mano Obra', 'Personal', 'Aplic.', 'Maq.', 'Riego', 'Comb.', 'Total (CLP)', 'Total (USD)', 'Costo/Ha (CLP)', 'Costo/Ha (USD)', 'Costo/Kg (CLP)', 'Costo/Kg (USD)']],
+            body: tableBody,
+            theme: 'grid',
+            headStyles: { fillColor: [46, 125, 50], fontSize: 7 }, // Green, smaller font
+            styles: { fontSize: 7, cellPadding: 1 },
+            columnStyles: {
+                0: { cellWidth: 20 },
+                1: { halign: 'right', cellWidth: 10 },
+                2: { halign: 'right', cellWidth: 15 },
+                3: { halign: 'right' },
+                4: { halign: 'right' },
+                5: { halign: 'right' },
+                6: { halign: 'right' },
+                7: { halign: 'right' },
+                8: { halign: 'right' },
+                9: { halign: 'right', fontStyle: 'bold' },
+                10: { halign: 'right' },
+                11: { halign: 'right' },
+                12: { halign: 'right' },
+                13: { halign: 'right', fontStyle: 'bold' },
+                14: { halign: 'right', fontStyle: 'bold' }
+            }
+        });
+
+    } else if (activeTab === 'applications') {
+        // APPLICATIONS / COST PER HA REPORT
+        const tableBody = reportData.map(row => [
+            row.field_name,
+            row.sector_name,
+            row.hectares.toString(),
+            formatCLP(row.app_cost_only),
+            formatCLP(row.app_cost_per_ha)
+        ]);
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Campo', 'Sector', 'Hectáreas', 'Costo Total', 'Costo / Ha']],
+            body: tableBody,
+            theme: 'striped',
+            headStyles: { fillColor: [46, 125, 50] },
+            columnStyles: {
+                3: { halign: 'right' },
+                4: { halign: 'right', fontStyle: 'bold' }
+            }
+        });
+
+    } else if (activeTab === 'monthly') {
+        // MONTHLY EXPENSES REPORT
+        const tableBody = monthlyExpenses.map(m => [
+            m.month,
+            formatCLP(m.total)
+        ]);
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Mes', 'Total Gastado']],
+            body: tableBody,
+            theme: 'striped',
+            headStyles: { fillColor: [136, 132, 216] }, // Purple
+            columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } }
+        });
+
+    } else if (activeTab === 'categories') {
+        // CATEGORIES REPORT
+        const tableBody = categoryExpenses.map(c => [
+            c.category,
+            formatCLP(c.total)
+        ]);
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Categoría', 'Monto Total']],
+            body: tableBody,
+            theme: 'striped',
+            headStyles: { fillColor: [136, 132, 216] },
+            columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } }
+        });
+
+    } else if (activeTab === 'chemicals') {
+        // CHEMICALS REPORT
+        const filteredChems = chemicalProducts.filter(p => filterChemicalCategory === 'all' || p.category === filterChemicalCategory);
+        const tableBody = filteredChems.map(p => [
+            p.name,
+            p.category,
+            p.total_quantity.toLocaleString('es-CL'),
+            formatCLP(p.avg_price),
+            formatCLP(p.total_cost)
+        ]);
+
+        // Add filter info to subheader if needed, handled by generic header mostly
+        if (filterChemicalCategory !== 'all') {
+            doc.text(`Filtro Tipo: ${filterChemicalCategory}`, 14, 45);
+            yPos += 5;
         }
 
-        // Month Header
-        doc.setFontSize(14);
-        doc.setTextColor(0, 100, 0); // Dark Green
-        doc.text(`${month.monthName} - Total: ${formatCLP(monthTotal)}`, 14, yPos);
-        yPos += 10;
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Producto', 'Categoría', 'Cantidad Total', 'Precio Promedio', 'Costo Total']],
+            body: tableBody,
+            theme: 'striped',
+            headStyles: { fillColor: [0, 136, 254] }, // Blue
+            columnStyles: {
+                2: { halign: 'right' },
+                3: { halign: 'right' },
+                4: { halign: 'right', fontStyle: 'bold' }
+            }
+        });
 
-        month.categories.forEach((cat) => {
-            // Category Header
+    } else if (activeTab === 'pending') {
+        // PENDING INVOICES REPORT
+        const tableBody = pendingInvoices.map(inv => [
+            new Date(inv.due_date).toLocaleDateString(),
+            `${inv.days_overdue} días`,
+            inv.supplier,
+            inv.invoice_number,
+            formatCLP(inv.total_amount)
+        ]);
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Vencimiento', 'Días Vencida', 'Proveedor', 'N° Factura', 'Monto']],
+            body: tableBody,
+            theme: 'grid',
+            headStyles: { fillColor: [220, 53, 69] }, // Red
+            columnStyles: {
+                4: { halign: 'right', fontStyle: 'bold' }
+            }
+        });
+
+    } else if (activeTab === 'detailed') {
+        // DETAILED REPORT (Existing Logic)
+        const filteredData = detailedReport
+            .filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth)
+            .map(m => ({
+                ...m,
+                categories: m.categories.filter(c => filterCategory === 'all' || c.name === filterCategory)
+            }))
+            .filter(m => m.categories.length > 0);
+
+        if (filteredData.length === 0) {
+            doc.text('No hay datos para los filtros seleccionados.', 14, yPos);
+        }
+
+        filteredData.forEach((month) => {
+            const monthTotal = month.categories.reduce((sum, cat) => sum + cat.total, 0);
+
             if (yPos > 250) {
                 doc.addPage();
                 yPos = 20;
             }
 
-            // Table for Category Items
-            const tableData = cat.items.map(item => [
-                new Date(item.date).toLocaleDateString(),
-                item.supplier,
-                item.invoiceNumber,
-                item.description,
-                formatCLP(item.total)
-            ]);
+            doc.setFontSize(14);
+            doc.setTextColor(0, 100, 0);
+            doc.text(`${month.monthName} - Total: ${formatCLP(monthTotal)}`, 14, yPos);
+            yPos += 10;
 
-            autoTable(doc, {
-                startY: yPos,
-                head: [[`${cat.name} (Total: ${formatCLP(cat.total)})`, '', '', '', '']],
-                body: tableData,
-                theme: 'grid',
-                headStyles: { fillColor: [200, 200, 200], textColor: [0, 0, 0], fontStyle: 'bold' },
-                columnStyles: {
-                    0: { cellWidth: 25 }, // Date
-                    1: { cellWidth: 40 }, // Supplier
-                    2: { cellWidth: 25 }, // Invoice #
-                    3: { cellWidth: 'auto' }, // Description
-                    4: { cellWidth: 30, halign: 'right' } // Total
-                },
-                margin: { left: 14, right: 14 },
-                didDrawPage: (data) => {
-                    yPos = data.cursor.y + 10;
+            month.categories.forEach((cat) => {
+                if (yPos > 250) {
+                    doc.addPage();
+                    yPos = 20;
                 }
+
+                const tableData = cat.items.map(item => [
+                    new Date(item.date).toLocaleDateString(),
+                    item.supplier,
+                    item.invoiceNumber,
+                    item.description,
+                    formatCLP(item.total)
+                ]);
+
+                autoTable(doc, {
+                    startY: yPos,
+                    head: [[`${cat.name} (Total: ${formatCLP(cat.total)})`, '', '', '', '']],
+                    body: tableData,
+                    theme: 'grid',
+                    headStyles: { fillColor: [200, 200, 200], textColor: [0, 0, 0], fontStyle: 'bold' },
+                    columnStyles: {
+                        0: { cellWidth: 25 },
+                        1: { cellWidth: 40 },
+                        2: { cellWidth: 25 },
+                        3: { cellWidth: 'auto' },
+                        4: { cellWidth: 30, halign: 'right' }
+                    },
+                    margin: { left: 14, right: 14 },
+                    didDrawPage: (data) => {
+                        yPos = data.cursor.y + 10;
+                    }
+                });
+                
+                yPos = (doc as any).lastAutoTable.finalY + 10;
             });
-            
-            yPos = (doc as any).lastAutoTable.finalY + 10;
+            yPos += 10;
         });
-        
-        yPos += 10; // Space between months
-    });
+    }
 
     // Save or Preview
     const pdfBlob = doc.output('blob');
@@ -533,7 +880,7 @@ export const Reports: React.FC = () => {
     if (previewPdfUrl) {
         const link = document.createElement('a');
         link.href = previewPdfUrl;
-        link.download = `reporte_gastos_${selectedYear}.pdf`;
+        link.download = `reporte_gastos_${selectedSeason}.pdf`;
         link.click();
     }
   };
@@ -607,12 +954,12 @@ export const Reports: React.FC = () => {
         <div className="mt-4 sm:mt-0 flex items-center space-x-3">
           <div className="relative">
             <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
+              value={selectedSeason}
+              onChange={(e) => setSelectedSeason(e.target.value)}
               className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm rounded-md"
             >
-              {availableYears.map(year => (
-                <option key={year} value={year}>{year}</option>
+              {availableSeasons.map(season => (
+                <option key={season} value={season}>{season}</option>
               ))}
             </select>
           </div>
@@ -628,12 +975,20 @@ export const Reports: React.FC = () => {
 
       <div className="hidden print:block mb-8">
         <h1 className="text-3xl font-bold text-gray-900">{selectedCompany.name}</h1>
-        <h2 className="text-xl text-gray-600 mt-2">{getReportTitle()} - {selectedYear}</h2>
+        <h2 className="text-xl text-gray-600 mt-2">{getReportTitle()} - {selectedSeason}</h2>
         <p className="text-sm text-gray-400 mt-1">Generado el {new Date().toLocaleDateString()}</p>
       </div>
 
       <div className="border-b border-gray-200 print:hidden">
         <nav className="-mb-px flex space-x-8 overflow-x-auto">
+          <button
+            onClick={() => setActiveTab('general')}
+            className={`${
+              activeTab === 'general' ? 'border-green-500 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
+          >
+            <Scale className="mr-2 h-4 w-4" /> Costos Generales (USD/Kg)
+          </button>
           <button
             onClick={() => setActiveTab('applications')}
             className={`${
@@ -691,16 +1046,133 @@ export const Reports: React.FC = () => {
         </div>
       ) : (
         <div className="mt-6">
-          {/* 1. APPLICATIONS REPORT */}
-          {activeTab === 'applications' && (
+          {/* 0. GENERAL REPORT (NEW) */}
+      {activeTab === 'general' && (
+        <div className="space-y-6">
+            {/* Settings Card */}
+            <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-medium text-gray-900 flex items-center">
+                        <Settings className="mr-2 h-5 w-5 text-gray-500" />
+                        Configuración de Reporte
+                    </h3>
+                    <button
+                        onClick={() => setEditingProduction(!editingProduction)}
+                        className={`text-sm font-medium px-3 py-1 rounded-md border ${editingProduction ? 'bg-green-100 text-green-700 border-green-300' : 'bg-white text-gray-700 border-gray-300'}`}
+                    >
+                        {editingProduction ? 'Finalizar Edición' : 'Editar Producción (Kg)'}
+                    </button>
+                </div>
+                <div className="flex items-center gap-6">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Cambio (CLP/USD)</label>
+                        <div className="relative rounded-md shadow-sm w-40">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <DollarSign className="h-4 w-4 text-gray-400" />
+                            </div>
+                            <input
+                                type="number"
+                                value={usdExchangeRate}
+                                onChange={(e) => setUsdExchangeRate(Number(e.target.value))}
+                                className="focus:ring-green-500 focus:border-green-500 block w-full pl-9 sm:text-sm border-gray-300 rounded-md"
+                            />
+                        </div>
+                    </div>
+                    <div className="text-sm text-gray-500 pt-6">
+                        * Ingrese la producción de Kg en la tabla para calcular costos unitarios.
+                    </div>
+                </div>
+            </div>
+
+            {/* Main Table */}
+            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+                <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
+                  <h3 className="text-lg leading-6 font-medium text-gray-900">Costos Generales y Producción ({selectedSeason})</h3>
+                  <p className="mt-1 text-sm text-gray-500">Resumen por Sector incluyendo Labores y Aplicaciones</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Campo / Sector</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Has</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-green-50">Prod. (Kg)</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Mano Obra</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Personal</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Aplicaciones</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Maquinaria</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Riego</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Combustible</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total (CLP)</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total (USD)</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo/Ha (CLP)</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo/Ha (USD)</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo/Kg (CLP)</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo/Kg (USD)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {reportData.map((row, index) => {
+                          const costUsd = row.total_cost / (usdExchangeRate || 1);
+                          const costPerHaUsd = row.cost_per_ha / (usdExchangeRate || 1);
+                          const costPerKgClp = (row.kg_produced || 0) > 0 ? row.total_cost / row.kg_produced! : 0;
+                          const costPerKgUsd = (row.kg_produced || 0) > 0 ? costUsd / row.kg_produced! : 0;
+
+                          return (
+                            <tr key={index} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                  <div className="text-sm font-medium text-gray-900">{row.sector_name}</div>
+                                  <div className="text-xs text-gray-500">{row.field_name}</div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">{row.hectares}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right bg-green-50">
+                                  {editingProduction ? (
+                                      <input 
+                                          type="number" 
+                                          className="w-24 text-right text-sm border-gray-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500 p-1"
+                                          defaultValue={row.kg_produced || 0}
+                                          onBlur={(e) => handleSaveProduction(row.sector_id, Number(e.target.value))}
+                                      />
+                                  ) : (
+                                      <span className="font-medium text-gray-900">{(row.kg_produced || 0).toLocaleString('es-CL')}</span>
+                                  )}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-gray-600">{formatCLP(row.labor_cost)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-indigo-600">{formatCLP(row.worker_cost)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-blue-600">{formatCLP(row.app_cost_only)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-orange-600">{formatCLP(row.machinery_cost)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-cyan-600">{formatCLP(row.irrigation_cost)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-purple-600">{formatCLP(row.fuel_cost)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-900">{formatCLP(row.total_cost)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">${costUsd.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">{formatCLP(row.cost_per_ha)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-600">${costPerHaUsd.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-600">
+                                  {costPerKgClp > 0 ? formatCLP(costPerKgClp) : '-'}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-800">
+                                  {costPerKgUsd > 0 ? `$${costPerKgUsd.toFixed(2)}` : '-'}
+                              </td>
+                            </tr>
+                          );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* 1. APPLICATIONS REPORT */}
+      {activeTab === 'applications' && (
             <div className="space-y-6">
               <div className="bg-white p-6 rounded-lg shadow">
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-medium text-gray-900">Costo por Hectárea ({selectedYear})</h3>
+                  <h3 className="text-lg font-medium text-gray-900">Costo por Hectárea ({selectedSeason})</h3>
                 </div>
                 <div className="h-96 w-full">
                   {reportData.length === 0 ? (
-                    <div className="flex h-full items-center justify-center text-gray-500">No hay datos para {selectedYear}</div>
+                    <div className="flex h-full items-center justify-center text-gray-500">No hay datos para {selectedSeason}</div>
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={reportData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
@@ -709,7 +1181,7 @@ export const Reports: React.FC = () => {
                         <YAxis tickFormatter={(value) => formatCLP(value)} />
                         <Tooltip formatter={(value) => formatCLP(Number(value))} />
                         <Legend />
-                        <Bar dataKey="cost_per_ha" name="Costo por Hectárea" fill="#2E7D32" />
+                        <Bar dataKey="app_cost_per_ha" name="Costo por Hectárea" fill="#2E7D32" />
                       </BarChart>
                     </ResponsiveContainer>
                   )}
@@ -718,7 +1190,7 @@ export const Reports: React.FC = () => {
               
               <div className="bg-white shadow overflow-hidden sm:rounded-lg">
                 <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
-                  <h3 className="text-lg leading-6 font-medium text-gray-900">Detalle por Sector ({selectedYear})</h3>
+                  <h3 className="text-lg leading-6 font-medium text-gray-900">Detalle por Sector ({selectedSeason})</h3>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
@@ -737,8 +1209,8 @@ export const Reports: React.FC = () => {
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{row.field_name}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.sector_name}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.hectares}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCLP(row.total_cost)}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-green-700">{formatCLP(row.cost_per_ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCLP(row.app_cost_only)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-green-700">{formatCLP(row.app_cost_per_ha)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -751,10 +1223,10 @@ export const Reports: React.FC = () => {
           {/* 2. MONTHLY EXPENSES REPORT */}
           {activeTab === 'monthly' && (
             <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Evolución de Gastos Mensuales ({selectedYear})</h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Evolución de Gastos Mensuales ({selectedSeason})</h3>
               <div className="h-96 w-full">
                 {monthlyExpenses.every(m => m.total === 0) ? (
-                  <div className="flex h-full items-center justify-center text-gray-500">No hay gastos en {selectedYear}</div>
+                  <div className="flex h-full items-center justify-center text-gray-500">No hay gastos en {selectedSeason}</div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={monthlyExpenses} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
@@ -775,10 +1247,10 @@ export const Reports: React.FC = () => {
           {activeTab === 'categories' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="bg-white p-6 rounded-lg shadow">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Gastos por Clasificación ({selectedYear})</h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Gastos por Clasificación ({selectedSeason})</h3>
                 <div className="h-80 w-full">
                   {categoryExpenses.length === 0 ? (
-                    <div className="flex h-full items-center justify-center text-gray-500">No hay gastos en {selectedYear}</div>
+                    <div className="flex h-full items-center justify-center text-gray-500">No hay gastos en {selectedSeason}</div>
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
@@ -806,7 +1278,7 @@ export const Reports: React.FC = () => {
               </div>
               
               <div className="bg-white p-6 rounded-lg shadow overflow-hidden">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Detalle de Categorías ({selectedYear})</h3>
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Detalle de Categorías ({selectedSeason})</h3>
                 <div className="overflow-y-auto max-h-80">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
@@ -832,16 +1304,37 @@ export const Reports: React.FC = () => {
           {/* 5. CHEMICALS REPORT (NEW) */}
           {activeTab === 'chemicals' && (
             <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-              <div className="px-4 py-5 sm:px-6 border-b border-gray-200 flex justify-between items-center">
-                <div>
-                  <h3 className="text-lg leading-6 font-medium text-gray-900">Insumos Químicos y Fertilizantes ({selectedYear})</h3>
-                  <p className="mt-1 text-sm text-gray-500">Detalle de productos adquiridos según facturas</p>
+              <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
+                    <div>
+                      <h3 className="text-lg leading-6 font-medium text-gray-900">Insumos Químicos y Fertilizantes ({selectedSeason})</h3>
+                      <p className="mt-1 text-sm text-gray-500">Detalle de productos adquiridos según facturas</p>
+                    </div>
+                    <div className="text-right mt-2 sm:mt-0">
+                      <span className="text-sm font-medium text-gray-500">Total Insumos:</span>
+                      <span className="ml-2 text-xl font-bold text-green-700">
+                        {formatCLP(
+                            chemicalProducts
+                                .filter(p => filterChemicalCategory === 'all' || p.category === filterChemicalCategory)
+                                .reduce((sum, p) => sum + p.total_cost, 0)
+                        )}
+                      </span>
+                    </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-sm font-medium text-gray-500">Total Insumos:</span>
-                  <span className="ml-2 text-xl font-bold text-green-700">
-                    {formatCLP(chemicalProducts.reduce((sum, p) => sum + p.total_cost, 0))}
-                  </span>
+                
+                {/* Filter */}
+                <div className="w-full sm:w-64">
+                    <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Filtrar por Tipo</label>
+                    <select
+                        value={filterChemicalCategory}
+                        onChange={(e) => setFilterChemicalCategory(e.target.value)}
+                        className="block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                    >
+                        <option value="all">Todos los Tipos</option>
+                        {Array.from(new Set(chemicalProducts.map(p => p.category))).sort().map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                    </select>
                 </div>
               </div>
               <div className="overflow-x-auto">
@@ -858,10 +1351,12 @@ export const Reports: React.FC = () => {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {chemicalProducts.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-6 py-4 text-center text-gray-500">No hay compras de insumos registradas en {selectedYear}</td>
+                        <td colSpan={5} className="px-6 py-4 text-center text-gray-500">No hay compras de insumos registradas en {selectedSeason}</td>
                       </tr>
                     ) : (
-                      chemicalProducts.map((prod, index) => (
+                      chemicalProducts
+                        .filter(p => filterChemicalCategory === 'all' || p.category === filterChemicalCategory)
+                        .map((prod, index) => (
                         <tr key={index}>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{prod.name}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -875,73 +1370,56 @@ export const Reports: React.FC = () => {
                         </tr>
                       ))
                     )}
+                    {chemicalProducts.filter(p => filterChemicalCategory === 'all' || p.category === filterChemicalCategory).length === 0 && chemicalProducts.length > 0 && (
+                         <tr>
+                            <td colSpan={5} className="px-6 py-4 text-center text-gray-500">No hay productos en esta categoría.</td>
+                         </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
 
-          {/* 4. PENDING INVOICES REPORT */}
+          {/* 6. PENDING INVOICES REPORT */}
           {activeTab === 'pending' && (
             <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-              <div className="px-4 py-5 sm:px-6 border-b border-gray-200 flex justify-between items-center">
-                <div>
-                  <h3 className="text-lg leading-6 font-medium text-gray-900">Facturas Pendientes de Pago (Total Histórico)</h3>
-                  <p className="mt-1 text-sm text-gray-500">Ordenadas por fecha de vencimiento</p>
-                </div>
-                <div className="text-right">
-                  <span className="text-sm font-medium text-gray-500">Total Pendiente:</span>
-                  <span className="ml-2 text-xl font-bold text-red-600">
-                    {formatCLP(pendingInvoices.reduce((sum, inv) => sum + inv.total_amount, 0))}
-                  </span>
-                </div>
+              <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
+                <h3 className="text-lg leading-6 font-medium text-gray-900">Facturas Pendientes de Pago</h3>
+                <p className="mt-1 text-sm text-gray-500">Facturas ingresadas sin marcar como "Pagada"</p>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vencimiento</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Días</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Proveedor</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">N° Factura</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Monto</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Monto Total</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {pendingInvoices.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-6 py-4 text-center text-gray-500">No hay facturas pendientes</td>
+                        <td colSpan={5} className="px-6 py-4 text-center text-gray-500">No hay facturas pendientes.</td>
                       </tr>
                     ) : (
                       pendingInvoices.map((inv) => (
-                        <tr key={inv.id} className={inv.days_overdue > 0 ? 'bg-red-50' : ''}>
+                        <tr key={inv.id} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             {new Date(inv.due_date).toLocaleDateString()}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            {inv.days_overdue > 0 ? (
-                              <>
-                                <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 print:hidden">
-                                  {inv.days_overdue} días vencida
-                                </span>
-                                <span className="hidden print:inline text-red-700 font-bold">
-                                  {inv.days_overdue} días
-                                </span>
-                              </>
-                            ) : (
-                              <>
-                                <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 print:hidden">
-                                  Al día ({Math.abs(inv.days_overdue)} restantes)
-                                </span>
-                                <span className="hidden print:inline text-green-700">
-                                  {Math.abs(inv.days_overdue)} rest.
-                                </span>
-                              </>
-                            )}
+                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                              inv.days_overdue > 0 ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
+                            }`}>
+                              {inv.days_overdue > 0 ? `${inv.days_overdue} días vencida` : 'Por vencer'}
+                            </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">{inv.supplier}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{inv.supplier}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{inv.invoice_number}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{formatCLP(inv.total_amount)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-900">{formatCLP(inv.total_amount)}</td>
                         </tr>
                       ))
                     )}
@@ -950,109 +1428,95 @@ export const Reports: React.FC = () => {
               </div>
             </div>
           )}
-          {/* 6. DETAILED REPORT (NEW) */}
+
+          {/* 7. DETAILED REPORT */}
           {activeTab === 'detailed' && (
             <div className="space-y-6">
-                <div className="bg-white p-6 rounded-lg shadow">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">Informe Detallado Mensual y por Clasificación ({selectedYear})</h3>
-                    <div className="space-y-8">
-                        {/* Filters */}
-                        <div className="flex flex-col sm:flex-row gap-4 mb-4">
-                            <div className="flex-1">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Filtrar por Mes</label>
-                                <select
-                                    value={filterMonth}
-                                    onChange={(e) => setFilterMonth(e.target.value)}
-                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
-                                >
-                                    <option value="all">Todos los Meses</option>
-                                    {detailedReport.map(m => (
-                                        <option key={m.monthIndex} value={m.monthIndex.toString()}>{m.monthName}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div className="flex-1">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Filtrar por Categoría</label>
-                                <select
-                                    value={filterCategory}
-                                    onChange={(e) => setFilterCategory(e.target.value)}
-                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
-                                >
-                                    <option value="all">Todas las Categorías</option>
-                                    {Array.from(new Set(detailedReport.flatMap(m => m.categories.map(c => c.name)))).map(cat => (
-                                        <option key={cat} value={cat}>{cat}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-
-                        {detailedReport
-                            .filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth)
-                            .map((month) => {
-                                // Filter categories for display
-                                const displayCategories = month.categories.filter(c => filterCategory === 'all' || c.name === filterCategory);
-                                if (displayCategories.length === 0) return null;
-
-                                return (
-                                <div key={month.monthIndex} className="border border-gray-200 rounded-lg overflow-hidden">
-                                    <div className="bg-green-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
-                                        <h4 className="text-lg font-bold text-green-800">{month.monthName}</h4>
-                                        <span className="text-sm font-medium text-green-700 bg-green-100 px-3 py-1 rounded-full">
-                                            Total Mes: {formatCLP(month.total)}
-                                        </span>
-                                    </div>
-                                    <div className="p-4 space-y-6">
-                                        {displayCategories.map((cat, catIdx) => (
-                                            <div key={catIdx}>
-                                                <h5 className="text-sm font-bold text-gray-700 mb-2 border-b border-gray-100 pb-1 flex justify-between">
-                                                    <span>{cat.name}</span>
-                                                    <span>{formatCLP(cat.total)}</span>
-                                                </h5>
-                                                <div className="overflow-x-auto">
-                                                    <table className="min-w-full divide-y divide-gray-100">
-                                                        <thead className="bg-gray-50">
-                                                            <tr>
-                                                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                                                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Proveedor</th>
-                                                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">N° Doc</th>
-                                                                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Detalle</th>
-                                                                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Monto</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="divide-y divide-gray-100">
-                                                            {cat.items.map((item, itemIdx) => (
-                                                                <tr key={itemIdx} className="hover:bg-gray-50">
-                                                                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
-                                                                        {new Date(item.date).toLocaleDateString()}
-                                                                    </td>
-                                                                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-900 font-medium">
-                                                                        {item.supplier}
-                                                                    </td>
-                                                                    <td className="px-3 py-2 whitespace-nowrap text-xs text-gray-500">
-                                                                        {item.invoiceNumber}
-                                                                    </td>
-                                                                    <td className="px-3 py-2 text-xs text-gray-500">
-                                                                        {item.description}
-                                                                    </td>
-                                                                    <td className="px-3 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">
-                                                                        {formatCLP(item.total)}
-                                                                    </td>
-                                                                </tr>
-                                                            ))}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                        {detailedReport.filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth).length === 0 && (
-                             <div className="text-center text-gray-500 py-8">No hay registros que coincidan con los filtros.</div>
-                        )}
+                <div className="bg-white p-4 rounded-lg shadow border border-gray-200 flex flex-wrap gap-4 items-center">
+                    <div>
+                        <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Filtrar por Mes</label>
+                        <select 
+                            value={filterMonth}
+                            onChange={(e) => setFilterMonth(e.target.value)}
+                            className="block w-40 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        >
+                            <option value="all">Todos los Meses</option>
+                            {['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'].map((m, i) => (
+                                <option key={i} value={i}>{m}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Filtrar por Categoría</label>
+                        <select 
+                            value={filterCategory}
+                            onChange={(e) => setFilterCategory(e.target.value)}
+                            className="block w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        >
+                            <option value="all">Todas las Categorías</option>
+                            {Array.from(new Set(rawInvoices.flatMap(i => i.invoice_items?.map((item: any) => item.category || 'Sin Categoría') || []))).sort().map((cat: any) => (
+                                <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                        </select>
                     </div>
                 </div>
+
+                {detailedReport
+                    .filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth)
+                    .map(month => {
+                        const filteredCategories = month.categories.filter(c => filterCategory === 'all' || c.name === filterCategory);
+                        if (filteredCategories.length === 0) return null;
+                        const monthTotal = filteredCategories.reduce((sum, c) => sum + c.total, 0);
+
+                        return (
+                            <div key={month.monthIndex} className="bg-white shadow overflow-hidden sm:rounded-lg">
+                                <div className="px-4 py-5 sm:px-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+                                    <h3 className="text-lg leading-6 font-medium text-gray-900">{month.monthName}</h3>
+                                    <span className="text-lg font-bold text-indigo-600">{formatCLP(monthTotal)}</span>
+                                </div>
+                                <div className="p-4 space-y-6">
+                                    {filteredCategories.map((cat, idx) => (
+                                        <div key={idx} className="border rounded-md overflow-hidden">
+                                            <div className="bg-gray-100 px-4 py-2 border-b flex justify-between">
+                                                <span className="font-semibold text-gray-700">{cat.name}</span>
+                                                <span className="font-bold text-gray-900">{formatCLP(cat.total)}</span>
+                                            </div>
+                                            <table className="min-w-full divide-y divide-gray-200">
+                                                <thead className="bg-gray-50">
+                                                    <tr>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Proveedor</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Factura</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Detalle</th>
+                                                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Monto</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="bg-white divide-y divide-gray-200">
+                                                    {cat.items.map((item, i) => (
+                                                        <tr key={i}>
+                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">
+                                                                {new Date(item.date).toLocaleDateString()}
+                                                            </td>
+                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{item.supplier}</td>
+                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">{item.invoiceNumber}</td>
+                                                            <td className="px-4 py-2 text-xs text-gray-500 truncate max-w-xs">{item.description}</td>
+                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">{formatCLP(item.total)}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })}
+                
+                {detailedReport.filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth).length === 0 && (
+                    <div className="text-center py-10 text-gray-500 bg-white rounded-lg shadow">
+                        No hay registros para los filtros seleccionados.
+                    </div>
+                )}
             </div>
           )}
         </div>

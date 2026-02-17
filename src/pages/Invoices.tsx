@@ -821,21 +821,53 @@ export const Invoices: React.FC = () => {
            const oldItem = dbItems.find(db => db.id === item.id);
            if (!oldItem) continue;
 
-           // Check if inventory-relevant fields changed
+           let currentProductId = item.product_id;
+
+           // Handle Product Change / New Product during Update
+           // If product_id is 'new' or null, it means user typed a new name.
+           // Or if they selected a different product ID.
+           if (currentProductId === 'new' || !currentProductId) {
+                // Create new product
+                const { data: newProduct, error: productError } = await supabase
+                    .from('products')
+                    .insert([{
+                        company_id: selectedCompany.id,
+                        name: item.product_name,
+                        category: item.category,
+                        unit: item.unit,
+                        current_stock: 0, 
+                        average_cost: 0
+                    }])
+                    .select()
+                    .single();
+                
+                if (productError) throw productError;
+                currentProductId = newProduct.id;
+           }
+
+           // Check if fields changed
            const quantityChanged = oldItem.quantity !== item.quantity;
            const priceChanged = oldItem.unit_price !== item.unit_price;
+           const productChanged = oldItem.product_id !== currentProductId;
+           const categoryChanged = oldItem.category !== item.category;
 
-           if (quantityChanged || priceChanged) {
-               // 1. Reverse OLD stock impact
-               await supabase.rpc('reverse_inventory_movement', {
-                   target_product_id: oldItem.product_id,
-                   quantity_to_remove: oldItem.quantity
-               });
+           if (quantityChanged || priceChanged || productChanged || categoryChanged) {
+               // 1. Reverse OLD stock impact (if quantity or product changed)
+               // Even if only price changed, we usually reverse and re-apply to update avg cost correctly.
+               // If product changed, we MUST reverse old product.
+               
+               if (quantityChanged || priceChanged || productChanged) {
+                   await supabase.rpc('reverse_inventory_movement', {
+                       target_product_id: oldItem.product_id,
+                       quantity_to_remove: oldItem.quantity
+                   });
+               }
 
                // 2. Update Item Record
                const { error: upErr } = await supabase
                    .from('invoice_items')
                    .update({
+                       product_id: currentProductId, // Update product_id
                        quantity: item.quantity,
                        unit_price: item.unit_price,
                        total_price: item.total_price,
@@ -845,19 +877,14 @@ export const Invoices: React.FC = () => {
                if (upErr) throw upErr;
 
                // 3. Add NEW stock impact (re-calculate avg cost)
-               await supabase.rpc('update_inventory_with_average_cost', {
-                   product_id: item.product_id,
-                   quantity_in: item.quantity,
-                   unit_cost: item.unit_price,
-                   invoice_item_id: item.id
-               });
-           } else {
-               // Just update metadata (category, etc.)
-               if (oldItem.category !== item.category) {
-                   await supabase
-                       .from('invoice_items')
-                       .update({ category: item.category })
-                       .eq('id', item.id);
+               // Only if inventory-relevant fields changed
+               if (quantityChanged || priceChanged || productChanged) {
+                   await supabase.rpc('update_inventory_with_average_cost', {
+                       product_id: currentProductId,
+                       quantity_in: item.quantity,
+                       unit_cost: item.unit_price,
+                       invoice_item_id: item.id
+                   });
                }
            }
         }

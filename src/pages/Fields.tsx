@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
-import { Plus, Map, MapPin, ChevronDown, ChevronRight, Loader2, Edit2, X, Check, Trash2 } from 'lucide-react';
+import { formatCLP } from '../lib/utils';
+import { Plus, Map, MapPin, ChevronDown, ChevronRight, Loader2, Edit2, X, Check, Trash2, DollarSign } from 'lucide-react';
 
 interface Sector {
   id: string;
   name: string;
   hectares: number;
+  total_labor_cost?: number;
 }
 
 interface Field {
@@ -54,6 +56,7 @@ export const Fields: React.FC = () => {
     if (!selectedCompany) return;
     setLoading(true);
     try {
+      // 1. Fetch Fields and Sectors
       const { data: fieldsData, error: fieldsError } = await supabase
         .from('fields')
         .select('*, sectors(*)')
@@ -61,7 +64,38 @@ export const Fields: React.FC = () => {
         .order('created_at', { ascending: false });
 
       if (fieldsError) throw fieldsError;
-      setFields(fieldsData || []);
+
+      // 2. Fetch Labor Costs for these sectors
+      const allSectors = fieldsData?.flatMap(f => f.sectors || []) || [];
+      const sectorIds = allSectors.map(s => s.id);
+
+      let laborMap: Record<string, number> = {};
+
+      if (sectorIds.length > 0) {
+        const { data: laborData, error: laborError } = await supabase
+          .from('labor_assignments')
+          .select('sector_id, assigned_amount')
+          .in('sector_id', sectorIds);
+        
+        if (laborError) {
+             console.error('Error loading labor costs:', laborError);
+        } else {
+             laborData?.forEach(item => {
+                 laborMap[item.sector_id] = (laborMap[item.sector_id] || 0) + Number(item.assigned_amount);
+             });
+        }
+      }
+
+      // 3. Merge data
+      const fieldsWithCosts = fieldsData?.map(field => ({
+          ...field,
+          sectors: field.sectors?.map(sector => ({
+              ...sector,
+              total_labor_cost: laborMap[sector.id] || 0
+          }))
+      }));
+
+      setFields(fieldsWithCosts || []);
     } catch (error) {
       console.error('Error loading fields:', error);
     } finally {
@@ -478,10 +512,23 @@ export const Fields: React.FC = () => {
                               </form>
                             ) : (
                               <>
-                                <div className="flex items-center">
+                                <div className="flex items-center flex-1">
                                   <MapPin className="h-4 w-4 text-gray-400 mr-2" />
                                   <span className="font-medium mr-2">{sector.name}</span>
-                                  <span className="text-gray-400">({sector.hectares} ha)</span>
+                                  <span className="text-gray-400 mr-6">({sector.hectares} ha)</span>
+                                  
+                                  {(sector.total_labor_cost || 0) > 0 && (
+                                    <div className="hidden sm:flex items-center space-x-6 text-sm">
+                                        <div className="flex flex-col">
+                                            <span className="text-[10px] uppercase text-gray-400 font-bold">Mano de Obra</span>
+                                            <span className="font-medium text-green-600">{formatCLP(sector.total_labor_cost || 0)}</span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-[10px] uppercase text-gray-400 font-bold">Costo / Ha</span>
+                                            <span className="font-medium text-gray-700">{formatCLP((sector.total_labor_cost || 0) / (sector.hectares || 1))}</span>
+                                        </div>
+                                    </div>
+                                  )}
                                 </div>
                                 <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                   <button

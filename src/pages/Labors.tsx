@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Tractor, ArrowRight, Save, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Tractor, ArrowRight, Save, Loader2, CheckCircle2, AlertCircle, Trash2, Edit2 } from 'lucide-react';
 
 interface LaborItem {
   id: string; // invoice_item_id
@@ -26,6 +26,19 @@ interface Allocation {
   amount: number;
 }
 
+interface HistoryItem {
+    id: string;
+    assigned_amount: number;
+    assigned_date: string;
+    sector_id: string;
+    invoice_item_id: string;
+    sectors?: { name: string };
+    invoice_items?: {
+        products?: { name: string };
+        invoices?: { invoice_number: string };
+    };
+}
+
 export const Labors: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
@@ -37,9 +50,13 @@ export const Labors: React.FC = () => {
   // Selection State
   const [selectedLaborId, setSelectedLaborId] = useState<string | null>(null);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
+  const [assignedDate, setAssignedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   
+  // Editing State
+  const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
+
   // History State
-  const [history, setHistory] = useState<any[]>([]);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
 
   useEffect(() => {
     if (selectedCompany) {
@@ -80,38 +97,44 @@ export const Labors: React.FC = () => {
     if (!selectedCompany) return;
 
     // 1. Get all invoice items with category related to labor
-    // Using simple OR logic for exact matches to avoid regex issues, plus ILIKE for flexibility
-    // But since Supabase client 'or' syntax can be tricky, let's simplify.
-    // We will fetch ALL items for the company and filter in memory to be 100% sure.
-    // This is safer given the small volume of invoice items per company.
+    // We fetch ALL items for the company and filter in memory.
+    // Corrected query: join with products to get the name, as invoice_items doesn't have product_name
     
     const { data: items, error } = await supabase
         .from('invoice_items')
         .select(`
-            id, total_price, product_name, category,
-            invoices!inner (id, invoice_number, invoice_date, company_id)
+            id, total_price, category,
+            products (name),
+            invoices!inner (id, invoice_number, invoice_date, company_id, document_type)
         `)
         .eq('invoices.company_id', selectedCompany.id);
 
     if (error) {
         console.error('Error fetching items:', error);
-        throw error;
+        // Don't throw, just log and return empty to avoid crashing UI completely
+        // throw error; 
     }
 
-    // Filter in memory for robust matching
-    const laborKeywords = ['labor', 'mano de obra', 'trabajo', 'faena', 'poda', 'cosecha', 'raleo', 'aplicacion'];
+    // Filter strictly by Category as requested
+    const laborCategories = ['labores agrícolas', 'labores agricolas', 'mano de obra', 'servicio de labores'];
     const filteredItems = items?.filter((item: any) => {
-        const cat = (item.category || '').toLowerCase();
-        const desc = (item.product_name || '').toLowerCase();
+        const cat = (item.category || '').toLowerCase().trim();
         
-        // Match if category OR description contains keywords
-        return laborKeywords.some(kw => cat.includes(kw)) || laborKeywords.some(kw => desc.includes(kw));
+        // Match only if category contains the labor keywords
+        return laborCategories.some(c => cat.includes(c));
     });
 
     // 2. Get existing assignments to calculate remaining
-    const { data: assignments } = await supabase
+    // Optimización: Filtrar asignaciones por empresa y aumentar límite
+    const { data: assignments, error: assignError } = await supabase
         .from('labor_assignments')
-        .select('invoice_item_id, assigned_amount');
+        .select('invoice_item_id, assigned_amount, invoice_items!inner(invoices!inner(company_id))')
+        .eq('invoice_items.invoices.company_id', selectedCompany.id)
+        .range(0, 4999);
+
+    if (assignError) {
+        console.error('Error fetching assignments:', assignError);
+    }
 
     const assignmentMap = new Map<string, number>();
     assignments?.forEach(a => {
@@ -122,18 +145,25 @@ export const Labors: React.FC = () => {
     // 3. Filter and map
     const pending: LaborItem[] = [];
     filteredItems?.forEach((item: any) => {
-        const total = Number(item.total_price);
+        // If it's a Credit Note, the amount should be negative to subtract cost
+        const isCreditNote = item.invoices.document_type === 'Nota de Crédito';
+        let total = Number(item.total_price);
+        
+        if (isCreditNote && total > 0) {
+            total = -total;
+        }
+
         const assigned = assignmentMap.get(item.id) || 0;
         const remaining = total - assigned;
 
-        // Tolerance for float errors
-        if (remaining > 1) { 
+        // Tolerance for float errors (absolute value for negative amounts)
+        if (Math.abs(remaining) > 1) { 
             pending.push({
                 id: item.id,
                 invoice_id: item.invoices.id,
                 invoice_number: item.invoices.invoice_number,
                 date: item.invoices.invoice_date,
-                description: item.product_name,
+                description: `${item.products?.name || 'Sin descripción'} ${isCreditNote ? '(NC)' : ''}`,
                 total_amount: total,
                 assigned_amount: assigned,
                 remaining_amount: remaining
@@ -152,20 +182,61 @@ export const Labors: React.FC = () => {
         .select(`
             id, assigned_amount, assigned_date,
             sectors (name),
-            invoice_items (product_name, invoices(invoice_number))
+            invoice_items (
+                products (name),
+                invoices (invoice_number)
+            )
         `)
         .order('assigned_date', { ascending: false })
         .limit(50);
     
     // Filter by company (via RLS it handles it, but let's be safe if query is complex)
     // The RLS policy we added ensures we only see our company's data.
-    setHistory(data || []);
+    setHistory(data as unknown as HistoryItem[] || []);
   };
 
   const handleSelectLabor = (labor: LaborItem) => {
     setSelectedLaborId(labor.id);
+    setEditingAssignmentId(null);
+    setAssignedDate(labor.date ? labor.date.split('T')[0] : new Date().toISOString().split('T')[0]);
     // Reset allocations
     setAllocations([{ sector_id: '', amount: labor.remaining_amount }]);
+  };
+
+  const handleEditAssignment = (assignment: HistoryItem) => {
+      setEditingAssignmentId(assignment.id);
+      setSelectedLaborId(assignment.invoice_item_id);
+      setAssignedDate(assignment.assigned_date ? assignment.assigned_date.split('T')[0] : new Date().toISOString().split('T')[0]);
+      
+      // When editing, we need to know the original labor item to show details
+      // We also need to 'free up' the amount of this assignment so it can be re-allocated
+      // For simplicity in this UI, we will treat it as updating just this allocation record.
+      
+      setAllocations([{ 
+          sector_id: assignment.sector_id, 
+          amount: assignment.assigned_amount 
+      }]);
+  };
+
+  const handleDeleteAssignment = async (id: string) => {
+      if (!confirm('¿Estás seguro de eliminar esta asignación?')) return;
+      
+      setLoading(true);
+      try {
+          const { error } = await supabase
+              .from('labor_assignments')
+              .delete()
+              .eq('id', id);
+              
+          if (error) throw error;
+          
+          loadData(); // Reload to update lists
+      } catch (error: any) {
+          console.error('Error deleting:', error);
+          alert('Error: ' + error.message);
+      } finally {
+          setLoading(false);
+      }
   };
 
   const handleAddAllocationRow = () => {
@@ -192,31 +263,67 @@ export const Labors: React.FC = () => {
     const selectedLabor = pendingLabors.find(p => p.id === selectedLaborId);
     
     if (!selectedLabor) return;
-    if (totalAllocated > selectedLabor.remaining_amount + 1) { // +1 for float tolerance
-        alert(`El monto asignado (${formatCLP(totalAllocated)}) excede el pendiente (${formatCLP(selectedLabor.remaining_amount)})`);
-        return;
+    // When editing, we ignore the check against remaining amount for now as it's complex to recalc
+    // For negative amounts (Credit Notes), logic is reversed or just check absolute
+    if (!editingAssignmentId) {
+        if (selectedLabor.remaining_amount < 0) {
+             // It's a credit note or negative balance
+             // totalAllocated should be negative and not less than remaining (more negative)
+             // e.g. remaining -1000. allocated -1200 -> Error. allocated -500 -> OK.
+             if (totalAllocated < selectedLabor.remaining_amount - 1) {
+                 alert(`El monto asignado (${formatCLP(totalAllocated)}) excede el pendiente (${formatCLP(selectedLabor.remaining_amount)})`);
+                 return;
+             }
+        } else {
+             // Normal positive balance
+             if (totalAllocated > selectedLabor.remaining_amount + 1) { 
+                alert(`El monto asignado (${formatCLP(totalAllocated)}) excede el pendiente (${formatCLP(selectedLabor.remaining_amount)})`);
+                return;
+             }
+        }
     }
-    if (allocations.some(a => !a.sector_id || a.amount <= 0)) {
-        alert('Complete todos los campos de sector y monto mayor a 0');
+    
+    if (allocations.some(a => !a.sector_id || a.amount === 0)) { // Allow negative amounts, just not 0
+        alert('Complete todos los campos de sector y monto distinto de 0');
         return;
     }
 
     setLoading(true);
     try {
-        const payload = allocations.map(a => ({
-            invoice_item_id: selectedLaborId,
-            sector_id: a.sector_id,
-            assigned_amount: a.amount
-        }));
+        if (editingAssignmentId) {
+            // Update existing assignment
+            // Note: We only support single row editing in this simple mode
+            const alloc = allocations[0];
+            const { error } = await supabase
+                .from('labor_assignments')
+                .update({
+                    sector_id: alloc.sector_id,
+                    assigned_amount: alloc.amount,
+                    assigned_date: assignedDate
+                })
+                .eq('id', editingAssignmentId);
 
-        const { error } = await supabase
-            .from('labor_assignments')
-            .insert(payload);
+            if (error) throw error;
+            alert('Asignación actualizada exitosamente');
+        } else {
+            // Create new assignments
+            const payload = allocations.map(a => ({
+                invoice_item_id: selectedLaborId,
+                sector_id: a.sector_id,
+                assigned_amount: a.amount,
+                assigned_date: assignedDate
+            }));
 
-        if (error) throw error;
+            const { error } = await supabase
+                .from('labor_assignments')
+                .insert(payload);
 
-        alert('Asignación guardada exitosamente');
+            if (error) throw error;
+            alert('Asignación guardada exitosamente');
+        }
+
         setSelectedLaborId(null);
+        setEditingAssignmentId(null);
         setAllocations([]);
         loadData();
 
@@ -282,15 +389,28 @@ export const Labors: React.FC = () => {
         <div className="lg:col-span-2 space-y-6">
             {selectedLaborId ? (
                 <div className="bg-white rounded-lg shadow p-6 border-t-4 border-green-500">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">Asignar Costo a Sectores</h3>
+                    <h3 className="text-lg font-medium text-gray-900 mb-4">
+                        {editingAssignmentId ? 'Editar Asignación' : 'Asignar Costo a Sectores'}
+                    </h3>
                     
                     <div className="bg-gray-50 p-4 rounded-md mb-6">
                         <div className="text-sm text-gray-500">Item Seleccionado:</div>
                         <div className="font-medium text-gray-900">
                             {pendingLabors.find(p => p.id === selectedLaborId)?.description}
                         </div>
-                        <div className="text-right mt-2 text-lg font-bold text-green-600">
-                            Disponible: {formatCLP(pendingLabors.find(p => p.id === selectedLaborId)?.remaining_amount || 0)}
+                        {!editingAssignmentId && (
+                            <div className="text-right mt-2 text-lg font-bold text-green-600">
+                                Disponible: {formatCLP(pendingLabors.find(p => p.id === selectedLaborId)?.remaining_amount || 0)}
+                            </div>
+                        )}
+                        <div className="mt-4">
+                            <label className="block text-sm font-medium text-gray-700">Fecha de Asignación</label>
+                            <input
+                                type="date"
+                                value={assignedDate}
+                                onChange={(e) => setAssignedDate(e.target.value)}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                            />
                         </div>
                     </div>
 
@@ -319,38 +439,45 @@ export const Labors: React.FC = () => {
                                         className="block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
                                     />
                                 </div>
-                                <button 
-                                    onClick={() => handleRemoveAllocationRow(idx)}
-                                    className="mb-1 p-2 text-red-500 hover:text-red-700"
-                                    disabled={allocations.length === 1}
-                                >
-                                    &times;
-                                </button>
+                                {!editingAssignmentId && (
+                                    <button 
+                                        onClick={() => handleRemoveAllocationRow(idx)}
+                                        className="mb-1 p-2 text-red-500 hover:text-red-700"
+                                        disabled={allocations.length === 1}
+                                    >
+                                        &times;
+                                    </button>
+                                )}
                             </div>
                         ))}
                     </div>
 
-                    <div className="mt-4 flex justify-between">
-                        <button
-                            onClick={handleAddAllocationRow}
-                            className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-                        >
-                            + Agregar otro sector
-                        </button>
-                        <div className="text-right">
-                            <span className="text-sm text-gray-500 mr-2">Total Asignado:</span>
-                            <span className={`font-bold ${
-                                allocations.reduce((sum, a) => sum + a.amount, 0) > (pendingLabors.find(p => p.id === selectedLaborId)?.remaining_amount || 0) 
-                                ? 'text-red-600' : 'text-gray-900'
-                            }`}>
-                                {formatCLP(allocations.reduce((sum, a) => sum + a.amount, 0))}
-                            </span>
+                    {!editingAssignmentId && (
+                        <div className="mt-4 flex justify-between">
+                            <button
+                                onClick={handleAddAllocationRow}
+                                className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                            >
+                                + Agregar otro sector
+                            </button>
+                            <div className="text-right">
+                                <span className="text-sm text-gray-500 mr-2">Total Asignado:</span>
+                                <span className={`font-bold ${
+                                    allocations.reduce((sum, a) => sum + a.amount, 0) > (pendingLabors.find(p => p.id === selectedLaborId)?.remaining_amount || 0) 
+                                    ? 'text-red-600' : 'text-gray-900'
+                                }`}>
+                                    {formatCLP(allocations.reduce((sum, a) => sum + a.amount, 0))}
+                                </span>
+                            </div>
                         </div>
-                    </div>
+                    )}
 
                     <div className="mt-8 flex justify-end space-x-3">
                         <button
-                            onClick={() => setSelectedLaborId(null)}
+                            onClick={() => {
+                                setSelectedLaborId(null);
+                                setEditingAssignmentId(null);
+                            }}
                             className="px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                         >
                             Cancelar
@@ -361,7 +488,7 @@ export const Labors: React.FC = () => {
                             className="inline-flex justify-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                         >
                             {loading ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <Save className="h-5 w-5 mr-2" />}
-                            Guardar Asignación
+                            {editingAssignmentId ? 'Actualizar' : 'Guardar Asignación'}
                         </button>
                     </div>
                 </div>
@@ -395,14 +522,32 @@ export const Labors: React.FC = () => {
                                         {new Date(h.assigned_date).toLocaleDateString()}
                                     </td>
                                     <td className="px-6 py-4 text-sm text-gray-900">
-                                        <div className="font-medium">{h.invoice_items?.product_name}</div>
+                                        <div className="font-medium">{h.invoice_items?.products?.name || 'Sin nombre'}</div>
                                         <div className="text-xs text-gray-500">#{h.invoice_items?.invoices?.invoice_number}</div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         {h.sectors?.name}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 text-right">
-                                        {formatCLP(h.assigned_amount)}
+                                        <div className="flex items-center justify-end gap-3">
+                                            {formatCLP(h.assigned_amount)}
+                                            <div className="flex gap-1">
+                                                <button 
+                                                    onClick={() => handleEditAssignment(h)}
+                                                    className="text-blue-500 hover:text-blue-700 p-1"
+                                                    title="Editar"
+                                                >
+                                                    <Edit2 className="h-4 w-4" />
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleDeleteAssignment(h.id)}
+                                                    className="text-red-500 hover:text-red-700 p-1"
+                                                    title="Eliminar"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                        </div>
                                     </td>
                                 </tr>
                             ))}

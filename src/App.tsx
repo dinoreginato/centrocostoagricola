@@ -12,6 +12,10 @@ import { Applications } from './pages/Applications';
 import { Reports } from './pages/Reports';
 import { Users } from './pages/Users';
 import { Labors } from './pages/Labors';
+import { Machinery } from './pages/Machinery';
+import { Fuel } from './pages/Fuel';
+import { Irrigation } from './pages/Irrigation';
+import { Workers } from './pages/Workers';
 
 function App() {
   return (
@@ -27,6 +31,10 @@ function App() {
               <Route path="campos" element={<Fields />} />
               <Route path="facturas" element={<Invoices />} />
               <Route path="labores" element={<Labors />} />
+              <Route path="maquinaria" element={<Machinery />} />
+              <Route path="riego" element={<Irrigation />} />
+              <Route path="petroleo" element={<Fuel />} />
+              <Route path="trabajadores" element={<Workers />} />
               <Route path="bodega" element={<Inventory />} />
               <Route path="aplicaciones" element={<Applications />} />
               <Route path="reportes" element={<Reports />} />
