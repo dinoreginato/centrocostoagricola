@@ -359,14 +359,34 @@ export const Invoices: React.FC = () => {
   };
 
   const calculateTotals = () => {
+    // Basic Sum of Items (Net Prices)
     const subtotal = items.reduce((sum, item) => sum + item.total_price, 0);
-    const taxableAmount = Math.max(0, subtotal - exemptAmount - discountAmount);
-    const tax = taxableAmount * (taxPercentage / 100);
-    const total = taxableAmount + tax + exemptAmount + specialTaxAmount;
-    return { subtotal, tax, total };
+    
+    // Check for Credit Note
+    const isCreditNote = documentType.toLowerCase().includes('nota de cr') || 
+                         documentType.toLowerCase().includes('credito') || 
+                         documentType.toLowerCase() === 'nc';
+
+    const multiplier = isCreditNote ? -1 : 1;
+
+    // Apply Discount
+    const netAfterDiscount = subtotal - discountAmount;
+    
+    // Calculate Tax
+    const tax = (netAfterDiscount * (taxPercentage / 100));
+    
+    // Total
+    const total = (netAfterDiscount + tax + exemptAmount + specialTaxAmount) * multiplier;
+
+    return { 
+        subtotal: subtotal * multiplier, 
+        tax: tax * multiplier, 
+        total,
+        isCreditNote // Export this flag for UI rendering
+    };
   };
 
-  const { subtotal, tax, total } = calculateTotals();
+  const { subtotal, tax, total, isCreditNote } = calculateTotals();
 
   const handleImportClick = () => {
     fileInputRef.current?.click();
@@ -609,7 +629,7 @@ export const Invoices: React.FC = () => {
     setStatus(inv.status);
     setNotes(inv.notes || '');
     setDocumentType(inv.document_type || 'Factura');
-    setTaxPercentage(inv.tax_percentage || 19);
+    setTaxPercentage(inv.tax_percentage !== undefined ? inv.tax_percentage : 19);
     setDiscountAmount(inv.discount_amount || 0);
     setExemptAmount(inv.exempt_amount || 0);
     setSpecialTaxAmount(inv.special_tax_amount || 0);
