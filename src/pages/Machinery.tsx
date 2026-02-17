@@ -403,6 +403,7 @@ export const Machinery: React.FC = () => {
         return;
     }
 
+    if (distributeBy === 'sector') {
         payload = allocations.map(a => ({
             invoice_item_id: selectedItemId,
             sector_id: a.sector_id,
