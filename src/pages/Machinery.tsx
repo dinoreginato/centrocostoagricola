@@ -411,6 +411,7 @@ export const Machinery: React.FC = () => {
             assigned_date: assignedDate
         }));
     }
+    }
 
     setLoading(true);
     try {
