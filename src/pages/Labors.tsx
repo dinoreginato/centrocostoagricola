@@ -19,6 +19,13 @@ interface Sector {
   id: string;
   name: string;
   hectares: number;
+  field_id: string; // Added field_id for distribution logic
+}
+
+interface Field {
+    id: string;
+    name: string;
+    total_hectares: number;
 }
 
 interface Allocation {
@@ -46,11 +53,15 @@ export const Labors: React.FC = () => {
   // Data State
   const [pendingLabors, setPendingLabors] = useState<LaborItem[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
+  const [fields, setFields] = useState<Field[]>([]);
   
   // Selection State
   const [selectedLaborId, setSelectedLaborId] = useState<string | null>(null);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
   const [assignedDate, setAssignedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [distributeBy, setDistributeBy] = useState<'sector' | 'field' | 'company'>('sector');
+  const [selectedFieldId, setSelectedFieldId] = useState<string>('');
+  const [fieldTotalAmount, setFieldTotalAmount] = useState<number>(0);
   
   // Editing State
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
@@ -81,11 +92,19 @@ export const Labors: React.FC = () => {
 
   const loadSectors = async () => {
     if (!selectedCompany) return;
+    
+    // Load Fields
+    const { data: fieldsData } = await supabase
+        .from('fields')
+        .select('*')
+        .eq('company_id', selectedCompany.id);
+    setFields(fieldsData || []);
+
     // We need sectors linked to fields of this company
     const { data } = await supabase
         .from('sectors')
         .select(`
-            id, name, hectares,
+            id, name, hectares, field_id,
             fields!inner(company_id)
         `)
         .eq('fields.company_id', selectedCompany.id);
@@ -216,7 +235,9 @@ export const Labors: React.FC = () => {
     setEditingAssignmentId(null);
     setAssignedDate(labor.date ? labor.date.split('T')[0] : new Date().toISOString().split('T')[0]);
     // Reset allocations
+    setDistributeBy('sector');
     setAllocations([{ sector_id: '', amount: labor.remaining_amount }]);
+    setFieldTotalAmount(labor.remaining_amount);
   };
 
   const handleEditAssignment = (assignment: HistoryItem) => {
@@ -299,9 +320,21 @@ export const Labors: React.FC = () => {
         }
     }
     
-    if (allocations.some(a => !a.sector_id || a.amount === 0)) { // Allow negative amounts, just not 0
+    if (allocations.some(a => !a.sector_id || a.amount === 0) && distributeBy === 'sector') { // Allow negative amounts, just not 0
         alert('Complete todos los campos de sector y monto distinto de 0');
         return;
+    }
+
+    if (distributeBy === 'field' && !selectedFieldId) {
+        alert('Seleccione un campo');
+        return;
+    }
+    
+    if (distributeBy === 'field' || distributeBy === 'company') {
+        if (fieldTotalAmount === 0) {
+             alert('El monto a distribuir no puede ser 0');
+             return;
+        }
     }
 
     setLoading(true);
@@ -323,12 +356,41 @@ export const Labors: React.FC = () => {
             alert('Asignación actualizada exitosamente');
         } else {
             // Create new assignments
-            const payload = allocations.map(a => ({
-                invoice_item_id: selectedLaborId,
-                sector_id: a.sector_id,
-                assigned_amount: a.amount,
-                assigned_date: assignedDate
-            }));
+            let payload: any[] = [];
+            
+            if (distributeBy === 'sector') {
+                 payload = allocations.map(a => ({
+                    invoice_item_id: selectedLaborId,
+                    sector_id: a.sector_id,
+                    assigned_amount: a.amount,
+                    assigned_date: assignedDate
+                }));
+            } else if (distributeBy === 'field') {
+                 // Distribute proportional to hectares in the selected field
+                 const targetSectors = sectors.filter(s => s.field_id === selectedFieldId);
+                 if (targetSectors.length === 0) throw new Error('El campo seleccionado no tiene sectores');
+                 
+                 const totalHa = targetSectors.reduce((sum, s) => sum + Number(s.hectares), 0);
+                 if (totalHa === 0) throw new Error('El campo no tiene hectáreas definidas');
+
+                 payload = targetSectors.map(s => ({
+                     invoice_item_id: selectedLaborId,
+                     sector_id: s.id,
+                     assigned_amount: (Number(s.hectares) / totalHa) * fieldTotalAmount,
+                     assigned_date: assignedDate
+                 }));
+            } else if (distributeBy === 'company') {
+                 // Distribute proportional to hectares across ALL fields
+                 const totalHa = sectors.reduce((sum, s) => sum + Number(s.hectares), 0);
+                 if (totalHa === 0) throw new Error('La empresa no tiene hectáreas definidas');
+
+                 payload = sectors.map(s => ({
+                     invoice_item_id: selectedLaborId,
+                     sector_id: s.id,
+                     assigned_amount: (Number(s.hectares) / totalHa) * fieldTotalAmount,
+                     assigned_date: assignedDate
+                 }));
+            }
 
             const { error } = await supabase
                 .from('labor_assignments')
@@ -420,6 +482,45 @@ export const Labors: React.FC = () => {
                             </div>
                         )}
                         <div className="mt-4">
+                            <label className="block text-sm font-medium text-gray-700">Modo de Distribución</label>
+                            <div className="mt-2 flex space-x-4">
+                                <label className="inline-flex items-center">
+                                    <input
+                                        type="radio"
+                                        className="form-radio text-green-600"
+                                        name="distributeBy"
+                                        value="sector"
+                                        checked={distributeBy === 'sector'}
+                                        onChange={() => setDistributeBy('sector')}
+                                    />
+                                    <span className="ml-2">Por Sector</span>
+                                </label>
+                                <label className="inline-flex items-center">
+                                    <input
+                                        type="radio"
+                                        className="form-radio text-green-600"
+                                        name="distributeBy"
+                                        value="field"
+                                        checked={distributeBy === 'field'}
+                                        onChange={() => setDistributeBy('field')}
+                                    />
+                                    <span className="ml-2">Por Campo Completo</span>
+                                </label>
+                                <label className="inline-flex items-center">
+                                    <input
+                                        type="radio"
+                                        className="form-radio text-green-600"
+                                        name="distributeBy"
+                                        value="company"
+                                        checked={distributeBy === 'company'}
+                                        onChange={() => setDistributeBy('company')}
+                                    />
+                                    <span className="ml-2">Toda la Empresa</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div className="mt-4">
                             <label className="block text-sm font-medium text-gray-700">Fecha de Asignación</label>
                             <input
                                 type="date"
@@ -431,7 +532,7 @@ export const Labors: React.FC = () => {
                     </div>
 
                     <div className="space-y-4">
-                        {allocations.map((alloc, idx) => (
+                        {distributeBy === 'sector' && allocations.map((alloc, idx) => (
                             <div key={idx} className="flex gap-4 items-end">
                                 <div className="flex-1">
                                     <label className="block text-xs font-medium text-gray-500 mb-1">Sector</label>
@@ -466,9 +567,59 @@ export const Labors: React.FC = () => {
                                 )}
                             </div>
                         ))}
+
+                        {distributeBy === 'field' && (
+                            <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Seleccionar Campo</label>
+                                    <select
+                                        value={selectedFieldId}
+                                        onChange={(e) => setSelectedFieldId(e.target.value)}
+                                        className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                    >
+                                        <option value="">Seleccione un Campo...</option>
+                                        {fields.map(f => (
+                                            <option key={f.id} value={f.id}>{f.name}</option>
+                                        ))}
+                                    </select>
+                                    <p className="mt-1 text-xs text-blue-600">
+                                        El costo se distribuirá proporcionalmente a las hectáreas de cada sector dentro de este campo.
+                                    </p>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Monto Total a Distribuir</label>
+                                    <input
+                                        type="number"
+                                        value={fieldTotalAmount}
+                                        onChange={(e) => setFieldTotalAmount(Number(e.target.value))}
+                                        className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        {distributeBy === 'company' && (
+                            <div className="space-y-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
+                                <div className="text-sm text-purple-800 font-medium">
+                                    Distribución a Toda la Empresa
+                                </div>
+                                <p className="text-xs text-purple-600">
+                                    El costo se distribuirá proporcionalmente a las hectáreas de <strong>TODOS</strong> los sectores de la empresa.
+                                </p>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Monto Total a Distribuir</label>
+                                    <input
+                                        type="number"
+                                        value={fieldTotalAmount}
+                                        onChange={(e) => setFieldTotalAmount(Number(e.target.value))}
+                                        className="block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm"
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </div>
 
-                    {!editingAssignmentId && (
+                    {!editingAssignmentId && distributeBy === 'sector' && (
                         <div className="mt-4 flex justify-between">
                             <button
                                 onClick={handleAddAllocationRow}
