@@ -145,14 +145,14 @@ export const Labors: React.FC = () => {
     // 3. Filter and map
     const pending: LaborItem[] = [];
     filteredItems?.forEach((item: any) => {
-        // If it's a Credit Note, the amount should be negative to subtract cost
+        // Credit Note Logic (Robust)
         const docType = (item.invoices.document_type || '').toLowerCase();
-        // More comprehensive check for Credit Note terms
+        // Check for common credit note variations
         const isCreditNote = docType.includes('nota de cr') || 
                              docType.includes('nota de cre') || 
                              docType.includes('nota credito') ||
-                             docType.includes('credito') || // fallback for just 'credito'
-                             docType === 'nc'; // fallback for short code
+                             docType.includes('credito') || 
+                             docType === 'nc';
 
         // Calculate Gross Amount (Bruto)
         const taxPercent = item.invoices.tax_percentage !== undefined ? item.invoices.tax_percentage : 19;
@@ -162,12 +162,10 @@ export const Labors: React.FC = () => {
         let total = grossAmount;
         
         // Ensure negative if it's a credit note, even if database stored it as positive
-        if (isCreditNote && total > 0) {
-            total = -total;
-        }
-        
-        // Double check: if it's NOT a credit note, it should probably be positive (unless it's a return)
-        if (!isCreditNote && total < 0) {
+        if (isCreditNote) {
+            total = -Math.abs(total);
+        } else {
+            // If NOT a credit note, ensure positive
             total = Math.abs(total);
         }
 
@@ -175,13 +173,13 @@ export const Labors: React.FC = () => {
         const remaining = total - assigned;
 
         // Tolerance for float errors (absolute value for negative amounts)
-        if (Math.abs(remaining) > 10) {  // Increased tolerance slightly for rounding diffs
+        if (Math.abs(remaining) > 10) {  
             pending.push({
                 id: item.id,
                 invoice_id: item.invoices.id,
                 invoice_number: item.invoices.invoice_number,
                 date: item.invoices.invoice_date,
-                description: `${item.products?.name || 'Sin descripción'} ${isCreditNote ? '(NC)' : ''}`,
+                description: `${item.products?.name || 'Sin descripción'} ${isCreditNote ? '(NC)' : ''} [${item.invoices.document_type}]`, // Added doc type for debug visibility
                 total_amount: total,
                 assigned_amount: assigned,
                 remaining_amount: remaining
