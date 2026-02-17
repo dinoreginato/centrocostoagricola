@@ -147,21 +147,28 @@ export const Labors: React.FC = () => {
     filteredItems?.forEach((item: any) => {
         // If it's a Credit Note, the amount should be negative to subtract cost
         const docType = (item.invoices.document_type || '').toLowerCase();
-        const isCreditNote = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
-        
+        // More comprehensive check for Credit Note terms
+        const isCreditNote = docType.includes('nota de cr') || 
+                             docType.includes('nota de cre') || 
+                             docType.includes('nota credito') ||
+                             docType.includes('credito') || // fallback for just 'credito'
+                             docType === 'nc'; // fallback for short code
+
         // Calculate Gross Amount (Bruto)
-        // item.total_price is usually Net. We need to add VAT.
-        // Tax percentage defaults to 19 if not present (standard Chile VAT)
-        // But if it's Exenta, tax should be 0.
-        // However, Invoices table stores tax_percentage.
         const taxPercent = item.invoices.tax_percentage !== undefined ? item.invoices.tax_percentage : 19;
         const netAmount = Number(item.total_price);
         const grossAmount = netAmount * (1 + (taxPercent / 100));
 
         let total = grossAmount;
         
+        // Ensure negative if it's a credit note, even if database stored it as positive
         if (isCreditNote && total > 0) {
             total = -total;
+        }
+        
+        // Double check: if it's NOT a credit note, it should probably be positive (unless it's a return)
+        if (!isCreditNote && total < 0) {
+            total = Math.abs(total);
         }
 
         const assigned = assignmentMap.get(item.id) || 0;
