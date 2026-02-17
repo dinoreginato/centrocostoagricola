@@ -123,7 +123,7 @@ export const Machinery: React.FC = () => {
         .select(`
             id, total_price, category,
             products (name),
-            invoices!inner (id, invoice_number, invoice_date, company_id, document_type)
+            invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
         `)
         .eq('invoices.company_id', selectedCompany.id);
 
@@ -185,9 +185,16 @@ export const Machinery: React.FC = () => {
 
     const pending: MachineryItem[] = [];
     filteredItems?.forEach((item: any) => {
-        // Credit Note Logic
-        const isCreditNote = item.invoices.document_type === 'Nota de Crédito';
-        let total = Number(item.total_price);
+        // Credit Note Logic (Robust)
+        const docType = (item.invoices.document_type || '').toLowerCase();
+        const isCreditNote = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
+        
+        // Calculate Gross Amount (Bruto)
+        const taxPercent = item.invoices.tax_percentage !== undefined ? item.invoices.tax_percentage : 19;
+        const netAmount = Number(item.total_price);
+        const grossAmount = netAmount * (1 + (taxPercent / 100));
+
+        let total = grossAmount;
         if (isCreditNote && total > 0) {
             total = -total;
         }
@@ -195,7 +202,7 @@ export const Machinery: React.FC = () => {
         const assigned = assignmentMap.get(item.id) || 0;
         const remaining = total - assigned;
 
-        if (Math.abs(remaining) > 1) { 
+        if (Math.abs(remaining) > 10) { 
             pending.push({
                 id: item.id,
                 invoice_id: item.invoices.id,

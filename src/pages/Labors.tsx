@@ -105,7 +105,7 @@ export const Labors: React.FC = () => {
         .select(`
             id, total_price, category,
             products (name),
-            invoices!inner (id, invoice_number, invoice_date, company_id, document_type)
+            invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
         `)
         .eq('invoices.company_id', selectedCompany.id);
 
@@ -146,8 +146,19 @@ export const Labors: React.FC = () => {
     const pending: LaborItem[] = [];
     filteredItems?.forEach((item: any) => {
         // If it's a Credit Note, the amount should be negative to subtract cost
-        const isCreditNote = item.invoices.document_type === 'Nota de Crédito';
-        let total = Number(item.total_price);
+        const docType = (item.invoices.document_type || '').toLowerCase();
+        const isCreditNote = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
+        
+        // Calculate Gross Amount (Bruto)
+        // item.total_price is usually Net. We need to add VAT.
+        // Tax percentage defaults to 19 if not present (standard Chile VAT)
+        // But if it's Exenta, tax should be 0.
+        // However, Invoices table stores tax_percentage.
+        const taxPercent = item.invoices.tax_percentage !== undefined ? item.invoices.tax_percentage : 19;
+        const netAmount = Number(item.total_price);
+        const grossAmount = netAmount * (1 + (taxPercent / 100));
+
+        let total = grossAmount;
         
         if (isCreditNote && total > 0) {
             total = -total;
@@ -157,7 +168,7 @@ export const Labors: React.FC = () => {
         const remaining = total - assigned;
 
         // Tolerance for float errors (absolute value for negative amounts)
-        if (Math.abs(remaining) > 1) { 
+        if (Math.abs(remaining) > 10) {  // Increased tolerance slightly for rounding diffs
             pending.push({
                 id: item.id,
                 invoice_id: item.invoices.id,

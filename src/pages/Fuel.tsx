@@ -114,7 +114,7 @@ export const Fuel: React.FC = () => {
         .select(`
             id, quantity, total_price, category,
             products (name, unit),
-            invoices!inner (invoice_number, invoice_date, company_id, document_type)
+            invoices!inner (invoice_number, invoice_date, company_id, document_type, tax_percentage)
         `)
         .eq('invoices.company_id', selectedCompany.id);
 
@@ -156,14 +156,21 @@ export const Fuel: React.FC = () => {
     setInvoices(fuelItems);
 
     const totalPurchasedLiters = fuelItems.reduce((sum, item) => {
-        const isNC = item.invoices.document_type === 'Nota de Crédito';
+        const docType = (item.invoices.document_type || '').toLowerCase();
+        const isNC = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
+        
         const qty = Number(item.quantity || 0);
         // If it's a Credit Note, we subtract the quantity (unless it was already entered as negative)
         return sum + (isNC ? -Math.abs(qty) : qty);
     }, 0);
 
     const totalPurchasedCost = fuelItems.reduce((sum, item) => {
-        const isNC = item.invoices.document_type === 'Nota de Crédito';
+        const docType = (item.invoices.document_type || '').toLowerCase();
+        const isNC = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
+        
+        // Use Net Price for Fuel stock valuation usually, but we ensure robustness here.
+        // If user wants Gross here too, we can add it, but standard accounting usually tracks Net for stock value.
+        // We will keep it as is (Net) for now unless requested, as it affects Average Price.
         const price = Number(item.total_price || 0);
         return sum + (isNC ? -Math.abs(price) : price);
     }, 0);
