@@ -78,15 +78,14 @@ BEGIN
             movement_type,
             quantity,
             unit_cost,
-            application_item_id,
-            company_id -- Ensure company_id is set if column exists, otherwise trigger/default handles it
+            application_item_id
+            -- Removed company_id as it might not exist in the table structure or is handled by default
         ) VALUES (
             (new_item->>'product_id')::uuid,
             'salida',
             (new_item->>'quantity_used')::numeric,
             (new_item->>'unit_cost')::numeric,
-            v_app_item_id,
-            (SELECT company_id FROM applications WHERE id = p_application_id) -- Get company from app
+            v_app_item_id
         );
     END LOOP;
 END;
