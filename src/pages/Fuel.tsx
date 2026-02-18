@@ -155,7 +155,7 @@ export const Fuel: React.FC = () => {
 
     setInvoices(fuelItems);
 
-    const totalPurchasedLiters = fuelItems.reduce((sum, item) => {
+    const totalPurchasedLiters = fuelItems.reduce((sum, item: any) => {
         const docType = (item.invoices.document_type || '').toLowerCase();
         const isNC = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
         
@@ -164,7 +164,7 @@ export const Fuel: React.FC = () => {
         return sum + (isNC ? -Math.abs(qty) : qty);
     }, 0);
 
-    const totalPurchasedCost = fuelItems.reduce((sum, item) => {
+    const totalPurchasedCost = fuelItems.reduce((sum, item: any) => {
         const docType = (item.invoices.document_type || '').toLowerCase();
         const isNC = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
         
