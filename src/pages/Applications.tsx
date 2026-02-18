@@ -30,6 +30,7 @@ interface Product {
 interface ApplicationItem {
   product_id: string;
   product_name: string;
+  product_category: string; // Added category
   quantity_used: number; // In product units (e.g. L)
   dose_per_hectare: number; // Final dose per hectare
   dose_input_value: number; // What the user typed
@@ -254,6 +255,7 @@ export const Applications: React.FC = () => {
     const newItem: ApplicationItem = {
       product_id: product.id,
       product_name: product.name,
+      product_category: product.category,
       quantity_used: currentItem.quantity,
       dose_per_hectare: Number(dosePerHectare.toFixed(4)), // Normalized dose/ha
       dose_input_value: currentItem.dose_input_value,
@@ -369,23 +371,31 @@ export const Applications: React.FC = () => {
     setSelectedFieldId(app.field_id);
     setSelectedSectorId(app.sector_id);
     
-    setApplicationDate(app.application_date);
+    // Fix Date: Ensure we use the date string directly without timezone conversion issues
+    // Assuming app.application_date is YYYY-MM-DD or ISO
+    const dateStr = app.application_date.split('T')[0];
+    setApplicationDate(dateStr);
+    
     setApplicationType(app.application_type);
     setWaterVolumePerHectare(app.water_liters_per_hectare || 0);
 
     // Populate items
-    const mappedItems: ApplicationItem[] = app.items.map((ai) => ({
-        product_id: ai.product_id,
-        product_name: ai.product_name,
-        quantity_used: ai.quantity_used,
-        dose_per_hectare: ai.dose_per_hectare,
-        dose_input_value: ai.dose_per_hectare, // Approximation
-        dose_input_type: 'ha',
-        dose_unit: ai.unit,
-        unit_cost: ai.unit_cost,
-        total_cost: ai.total_cost,
-        unit: ai.unit
-    }));
+    const mappedItems: ApplicationItem[] = app.items.map((ai) => {
+        const prod = products.find(p => p.id === ai.product_id);
+        return {
+            product_id: ai.product_id,
+            product_name: ai.product_name,
+            product_category: prod?.category || 'Desconocido', // Lookup category
+            quantity_used: ai.quantity_used,
+            dose_per_hectare: ai.dose_per_hectare,
+            dose_input_value: ai.dose_per_hectare, // Approximation
+            dose_input_type: 'ha',
+            dose_unit: ai.unit,
+            unit_cost: ai.unit_cost,
+            total_cost: ai.total_cost,
+            unit: ai.unit
+        };
+    });
     
     setItems(mappedItems);
     
@@ -755,6 +765,7 @@ export const Applications: React.FC = () => {
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Producto</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Categoría</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Dosis/Ha (Real)</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Entrada</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Usado</th>
@@ -766,6 +777,7 @@ export const Applications: React.FC = () => {
                       {items.map((item, index) => (
                         <tr key={index}>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.product_name}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{item.product_category}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.dose_per_hectare} {item.unit}/ha</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
                               {item.dose_input_value} {item.dose_unit} ({item.dose_input_type === 'ha' ? '/ha' : '/100L'})
@@ -884,7 +896,11 @@ export const Applications: React.FC = () => {
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                     <div className="flex items-center">
                                         <Calendar className="h-4 w-4 mr-2 text-gray-400" />
-                                        {new Date(app.application_date).toLocaleDateString()}
+                                        {/* Parse date manually to avoid timezone shift */}
+                                        {(() => {
+                                            const [y, m, d] = app.application_date.split('T')[0].split('-');
+                                            return `${d}/${m}/${y}`;
+                                        })()}
                                     </div>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
