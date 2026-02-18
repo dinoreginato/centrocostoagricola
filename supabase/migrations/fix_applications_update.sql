@@ -44,8 +44,8 @@ BEGIN
         application_date = p_date,
         application_type = p_type,
         water_liters_per_hectare = p_water_rate,
-        total_cost = p_total_cost,
-        updated_at = now()
+        total_cost = p_total_cost
+        -- removed updated_at as column might not exist
     WHERE id = p_application_id;
 
     -- 4. Insert New Items and Deduct Stock
