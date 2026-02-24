@@ -223,11 +223,12 @@ export const Labors: React.FC = () => {
         .select(`
             id, assigned_amount, assigned_date,
             sectors (name),
-            invoice_items (
+            invoice_items!inner (
                 products (name),
-                invoices (invoice_number)
+                invoices!inner (invoice_number, company_id)
             )
         `)
+        .eq('invoice_items.invoices.company_id', selectedCompany.id)
         .order('assigned_date', { ascending: false })
         .limit(50);
     
