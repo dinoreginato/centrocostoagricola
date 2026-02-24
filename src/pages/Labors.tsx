@@ -126,7 +126,8 @@ export const Labors: React.FC = () => {
             products (name),
             invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
         `)
-        .eq('invoices.company_id', selectedCompany.id);
+        .eq('invoices.company_id', selectedCompany.id)
+        .range(0, 9999);
 
     if (error) {
         console.error('Error fetching items:', error);
@@ -149,7 +150,7 @@ export const Labors: React.FC = () => {
         .from('labor_assignments')
         .select('invoice_item_id, assigned_amount, invoice_items!inner(invoices!inner(company_id))')
         .eq('invoice_items.invoices.company_id', selectedCompany.id)
-        .range(0, 4999);
+        .range(0, 19999);
 
     if (assignError) {
         console.error('Error fetching assignments:', assignError);
@@ -274,6 +275,46 @@ export const Labors: React.FC = () => {
       } finally {
           setLoading(false);
       }
+  };
+
+  const handleDeleteAllAssignments = async () => {
+    if (!selectedCompany) return;
+    if (!confirm('¿ESTÁ SEGURO? Esto eliminará TODAS las asignaciones de labores para esta empresa. Esta acción no se puede deshacer.')) return;
+
+    setLoading(true);
+    try {
+        const { data: assignments, error: fetchError } = await supabase
+            .from('labor_assignments')
+            .select('id, invoice_items!inner(invoices!inner(company_id))')
+            .eq('invoice_items.invoices.company_id', selectedCompany.id);
+
+        if (fetchError) throw fetchError;
+
+        if (!assignments || assignments.length === 0) {
+            alert('No hay asignaciones para eliminar.');
+            return;
+        }
+
+        const ids = assignments.map(a => a.id);
+        const BATCH_SIZE = 1000;
+        for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+            const batch = ids.slice(i, i + BATCH_SIZE);
+            const { error: deleteError } = await supabase
+                .from('labor_assignments')
+                .delete()
+                .in('id', batch);
+            
+            if (deleteError) throw deleteError;
+        }
+
+        alert('Todas las asignaciones han sido eliminadas.');
+        loadData();
+    } catch (error: any) {
+        console.error('Error deleting all:', error);
+        alert('Error al eliminar: ' + error.message);
+    } finally {
+        setLoading(false);
+    }
   };
 
   const handleAddAllocationRow = () => {
@@ -669,8 +710,15 @@ export const Labors: React.FC = () => {
 
             {/* Recent History */}
             <div className="bg-white rounded-lg shadow overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200">
+                <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                     <h3 className="text-lg font-medium text-gray-900">Historial de Asignaciones Recientes</h3>
+                    <button
+                        onClick={handleDeleteAllAssignments}
+                        className="text-xs text-red-600 hover:text-red-800 border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-1 rounded transition-colors"
+                        title="Eliminar todas las asignaciones de esta empresa"
+                    >
+                        Eliminar Todo
+                    </button>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">

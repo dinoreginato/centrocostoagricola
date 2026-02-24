@@ -118,6 +118,8 @@ export const Machinery: React.FC = () => {
   const loadPendingItems = async () => {
     if (!selectedCompany) return;
 
+    // Load Pending Items
+    // Increased limit to ensure we see all items even with many records
     const { data: items, error } = await supabase
         .from('invoice_items')
         .select(`
@@ -125,57 +127,31 @@ export const Machinery: React.FC = () => {
             products (name),
             invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
         `)
-        .eq('invoices.company_id', selectedCompany.id);
+        .eq('invoices.company_id', selectedCompany.id)
+        .range(0, 9999); // Increased limit
 
     if (error) {
         console.error('Error fetching items:', error);
     }
-
+    
     const targetCategories = ['maquinaria', 'repuesto', 'mantencion', 'tractor', 'implemento'];
     const filteredItems = items?.filter((item: any) => {
         const cat = (item.category || '').toLowerCase().trim();
         return targetCategories.some(c => cat.includes(c));
     });
 
-    // Optimización: Filtrar asignaciones solo para los items relevantes
-    // Evita traer toda la tabla y superar el límite de filas de Supabase
-    const itemIds = filteredItems?.map((i: any) => i.id) || [];
-    
-    let assignments: any[] = [];
-    
-    if (itemIds.length > 0) {
-        // Use pagination to fetch all assignments if necessary, or just rely on 'in' filter which is usually efficient enough
-        // Supabase/PostgREST has a limit on URL length for 'in' filter, so we might need to batch if too many items.
-        // For now, let's assume < 100 items pending is typical.
-        // But wait, filteredItems includes ALL items of that category, even old ones fully assigned.
-        // This list grows over time. We need a better strategy.
-        
-        // Strategy: 
-        // 1. Fetch only assignments for items that are NOT fully assigned? No, we don't know which are fully assigned without fetching assignments.
-        // 2. We can filter items by date? Maybe only last 2 years?
-        // 3. Or use a view/RPC.
-        
-        // Let's stick to the 'in' filter but chunk it if needed.
-        // Or better: Fetch assignments linked to invoices of this company.
-        
-        // Actually, the previous query without filter was hitting the 1000 row limit.
-        // The new query filters by IDs. If there are 2000 items, the URL will be too long.
-        
-        // Alternative: Fetch assignments for this company via join
-         // We set a high limit (e.g. 5000) to ensure we get all assignments. 
-         // Pagination would be better for massive scale, but this fixes the immediate issue.
-         const { data, error } = await supabase
-             .from('machinery_assignments')
-             .select('invoice_item_id, assigned_amount, invoice_items!inner(invoices!inner(company_id))')
-             .eq('invoice_items.invoices.company_id', selectedCompany.id)
-             .range(0, 4999);
+    // Fetch assignments linked to invoices of this company.
+    // Increased limit to avoid "capped" assignments issue
+    const { data: assignments, error: assignError } = await supabase
+        .from('machinery_assignments')
+        .select('invoice_item_id, assigned_amount, invoice_items!inner(invoices!inner(company_id))')
+        .eq('invoice_items.invoices.company_id', selectedCompany.id)
+        .range(0, 19999); // Significantly increased limit
              
-         if (error) {
-            console.error('Error fetching assignments:', error);
-        } else {
-            assignments = data || [];
-        }
+    if (assignError) {
+       console.error('Error fetching assignments:', assignError);
     }
+    // ... rest of the function
 
     const assignmentMap = new Map<string, number>();
     assignments?.forEach(a => {
@@ -285,6 +261,50 @@ export const Machinery: React.FC = () => {
       } finally {
           setLoading(false);
       }
+  };
+
+  const handleDeleteAllAssignments = async () => {
+    if (!selectedCompany) return;
+    if (!confirm('¿ESTÁ SEGURO? Esto eliminará TODAS las asignaciones de maquinaria para esta empresa. Esta acción no se puede deshacer.')) return;
+
+    setLoading(true);
+    try {
+        // 1. Get all assignment IDs for this company
+        // We need to join tables to ensure we only delete for the current company
+        const { data: assignments, error: fetchError } = await supabase
+            .from('machinery_assignments')
+            .select('id, invoice_items!inner(invoices!inner(company_id))')
+            .eq('invoice_items.invoices.company_id', selectedCompany.id);
+
+        if (fetchError) throw fetchError;
+
+        if (!assignments || assignments.length === 0) {
+            alert('No hay asignaciones para eliminar.');
+            return;
+        }
+
+        const ids = assignments.map(a => a.id);
+
+        // 2. Delete in batches (Supabase URL limit safety)
+        const BATCH_SIZE = 1000;
+        for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+            const batch = ids.slice(i, i + BATCH_SIZE);
+            const { error: deleteError } = await supabase
+                .from('machinery_assignments')
+                .delete()
+                .in('id', batch);
+            
+            if (deleteError) throw deleteError;
+        }
+
+        alert('Todas las asignaciones han sido eliminadas.');
+        loadData();
+    } catch (error: any) {
+        console.error('Error deleting all:', error);
+        alert('Error al eliminar: ' + error.message);
+    } finally {
+        setLoading(false);
+    }
   };
 
   const handleAddAllocationRow = () => {
@@ -689,8 +709,15 @@ export const Machinery: React.FC = () => {
 
             {/* Recent History */}
             <div className="bg-white rounded-lg shadow overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200">
+                <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                     <h3 className="text-lg font-medium text-gray-900">Historial de Asignaciones Recientes</h3>
+                    <button
+                        onClick={handleDeleteAllAssignments}
+                        className="text-xs text-red-600 hover:text-red-800 border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-1 rounded transition-colors"
+                        title="Eliminar todas las asignaciones de esta empresa"
+                    >
+                        Eliminar Todo
+                    </button>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
