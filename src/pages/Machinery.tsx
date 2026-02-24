@@ -269,40 +269,62 @@ export const Machinery: React.FC = () => {
     if (!confirm('¿ESTÁ SEGURO? Esto eliminará TODAS las asignaciones de maquinaria para esta empresa. Esta acción no se puede deshacer.')) return;
 
     setLoading(true);
+    // 1. Get all assignment IDs for this company via RPC to avoid query URL limits
+    // We fetch in chunks if necessary, but RPC is cleaner. 
+    // Let's stick to client-side fetch but minimal fields to keep payload small.
+    // The previous error "Bad Request" is likely due to the URL being too long when sending thousands of IDs in `.in('id', batch)`.
+    // OR the initial SELECT returned too many rows.
+    
+    // Better approach: Use a custom RPC to delete by company_id directly in the database.
+    // This avoids transferring IDs back and forth.
+    
     try {
-        // 1. Get all assignment IDs for this company
-        // We need to join tables to ensure we only delete for the current company
-        const { data: assignments, error: fetchError } = await supabase
-            .from('machinery_assignments')
-            .select('id, invoice_items!inner(invoices!inner(company_id))')
-            .eq('invoice_items.invoices.company_id', selectedCompany.id);
-
-        if (fetchError) throw fetchError;
-
-        if (!assignments || assignments.length === 0) {
-            alert('No hay asignaciones para eliminar.');
-            return;
-        }
-
-        const ids = assignments.map(a => a.id);
-
-        // 2. Delete in batches (Supabase URL limit safety)
-        const BATCH_SIZE = 1000;
-        for (let i = 0; i < ids.length; i += BATCH_SIZE) {
-            const batch = ids.slice(i, i + BATCH_SIZE);
-            const { error: deleteError } = await supabase
-                .from('machinery_assignments')
-                .delete()
-                .in('id', batch);
-            
-            if (deleteError) throw deleteError;
+        const { error: rpcError } = await supabase.rpc('delete_machinery_assignments_by_company', {
+            p_company_id: selectedCompany.id
+        });
+        
+        if (rpcError) {
+             // If RPC doesn't exist yet, fall back to the batched method but with smaller batches and robust error handling
+             console.warn('RPC delete failed, falling back to manual batch delete', rpcError);
+             throw rpcError; 
         }
 
         alert('Todas las asignaciones han sido eliminadas.');
         loadData();
     } catch (error: any) {
-        console.error('Error deleting all:', error);
-        alert('Error al eliminar: ' + error.message);
+         // Fallback implementation if RPC is missing
+         try {
+            const { data: assignments, error: fetchError } = await supabase
+            .from('machinery_assignments')
+            .select('id, invoice_items!inner(invoices!inner(company_id))')
+            .eq('invoice_items.invoices.company_id', selectedCompany.id);
+
+            if (fetchError) throw fetchError;
+
+            if (!assignments || assignments.length === 0) {
+                alert('No hay asignaciones para eliminar.');
+                return;
+            }
+
+            const ids = assignments.map(a => a.id);
+            // Smaller batch size to avoid Request-URI Too Long
+            const BATCH_SIZE = 100; 
+            for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+                const batch = ids.slice(i, i + BATCH_SIZE);
+                const { error: deleteError } = await supabase
+                    .from('machinery_assignments')
+                    .delete()
+                    .in('id', batch);
+                
+                if (deleteError) throw deleteError;
+            }
+             alert('Todas las asignaciones han sido eliminadas (Método Manual).');
+             loadData();
+
+         } catch (manualError: any) {
+            console.error('Error deleting all:', manualError);
+            alert('Error al eliminar: ' + manualError.message);
+         }
     } finally {
         setLoading(false);
     }

@@ -281,36 +281,54 @@ export const Labors: React.FC = () => {
     if (!confirm('¿ESTÁ SEGURO? Esto eliminará TODAS las asignaciones de labores para esta empresa. Esta acción no se puede deshacer.')) return;
 
     setLoading(true);
+    // Use a custom RPC to delete by company_id directly in the database.
     try {
-        const { data: assignments, error: fetchError } = await supabase
-            .from('labor_assignments')
-            .select('id, invoice_items!inner(invoices!inner(company_id))')
-            .eq('invoice_items.invoices.company_id', selectedCompany.id);
-
-        if (fetchError) throw fetchError;
-
-        if (!assignments || assignments.length === 0) {
-            alert('No hay asignaciones para eliminar.');
-            return;
-        }
-
-        const ids = assignments.map(a => a.id);
-        const BATCH_SIZE = 1000;
-        for (let i = 0; i < ids.length; i += BATCH_SIZE) {
-            const batch = ids.slice(i, i + BATCH_SIZE);
-            const { error: deleteError } = await supabase
-                .from('labor_assignments')
-                .delete()
-                .in('id', batch);
-            
-            if (deleteError) throw deleteError;
+        const { error: rpcError } = await supabase.rpc('delete_labor_assignments_by_company', {
+            p_company_id: selectedCompany.id
+        });
+        
+        if (rpcError) {
+             // If RPC doesn't exist yet, fall back to the batched method
+             console.warn('RPC delete failed, falling back to manual batch delete', rpcError);
+             throw rpcError; 
         }
 
         alert('Todas las asignaciones han sido eliminadas.');
         loadData();
     } catch (error: any) {
-        console.error('Error deleting all:', error);
-        alert('Error al eliminar: ' + error.message);
+         // Fallback implementation
+         try {
+            const { data: assignments, error: fetchError } = await supabase
+            .from('labor_assignments')
+            .select('id, invoice_items!inner(invoices!inner(company_id))')
+            .eq('invoice_items.invoices.company_id', selectedCompany.id);
+
+            if (fetchError) throw fetchError;
+
+            if (!assignments || assignments.length === 0) {
+                alert('No hay asignaciones para eliminar.');
+                return;
+            }
+
+            const ids = assignments.map(a => a.id);
+            // Smaller batch size
+            const BATCH_SIZE = 100; 
+            for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+                const batch = ids.slice(i, i + BATCH_SIZE);
+                const { error: deleteError } = await supabase
+                    .from('labor_assignments')
+                    .delete()
+                    .in('id', batch);
+                
+                if (deleteError) throw deleteError;
+            }
+             alert('Todas las asignaciones han sido eliminadas (Método Manual).');
+             loadData();
+
+         } catch (manualError: any) {
+            console.error('Error deleting all:', manualError);
+            alert('Error al eliminar: ' + manualError.message);
+         }
     } finally {
         setLoading(false);
     }
