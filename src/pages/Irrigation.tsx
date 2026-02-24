@@ -138,22 +138,23 @@ export const Irrigation: React.FC = () => {
         return targetCategories.some(c => cat.includes(c));
     });
 
-    // Optimización: Filtrar asignaciones por empresa y aumentar límite
-    const { data: assignments, error: assignError } = await supabase
-        .from('irrigation_assignments')
-        .select('invoice_item_id, assigned_amount, invoice_items!inner(invoices!inner(company_id))')
-        .eq('invoice_items.invoices.company_id', selectedCompany.id)
-        .range(0, 19999);
-
-    if (assignError) {
-        console.error('Error fetching assignments:', assignError);
+    // Optimización: Usar RPC para obtener el total asignado de manera eficiente y escalable
+    let assignmentMap = new Map<string, number>();
+    
+    try {
+        const { data: summary, error: rpcError } = await supabase
+            .rpc('get_irrigation_assignments_summary', { p_company_id: selectedCompany.id });
+            
+        if (rpcError) throw rpcError;
+        
+        if (summary) {
+            summary.forEach((item: any) => {
+                assignmentMap.set(item.invoice_item_id, Number(item.total_assigned));
+            });
+        }
+    } catch (err) {
+        console.error('Error fetching assignment summary via RPC:', err);
     }
-
-    const assignmentMap = new Map<string, number>();
-    assignments?.forEach(a => {
-        const current = assignmentMap.get(a.invoice_item_id) || 0;
-        assignmentMap.set(a.invoice_item_id, current + a.assigned_amount);
-    });
 
     const pending: IrrigationItem[] = [];
     filteredItems?.forEach((item: any) => {

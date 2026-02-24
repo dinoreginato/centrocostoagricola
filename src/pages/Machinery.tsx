@@ -140,24 +140,25 @@ export const Machinery: React.FC = () => {
         return targetCategories.some(c => cat.includes(c));
     });
 
-    // Fetch assignments linked to invoices of this company.
-    // Increased limit to avoid "capped" assignments issue
-    const { data: assignments, error: assignError } = await supabase
-        .from('machinery_assignments')
-        .select('invoice_item_id, assigned_amount, invoice_items!inner(invoices!inner(company_id))')
-        .eq('invoice_items.invoices.company_id', selectedCompany.id)
-        .range(0, 19999); // Significantly increased limit
-             
-    if (assignError) {
-       console.error('Error fetching assignments:', assignError);
+    // Optimización: Usar RPC para obtener el total asignado de manera eficiente y escalable
+    // Reemplaza la carga masiva de asignaciones individuales
+    let assignmentMap = new Map<string, number>();
+    
+    try {
+        const { data: summary, error: rpcError } = await supabase
+            .rpc('get_machinery_assignments_summary', { p_company_id: selectedCompany.id });
+            
+        if (rpcError) throw rpcError;
+        
+        if (summary) {
+            summary.forEach((item: any) => {
+                assignmentMap.set(item.invoice_item_id, Number(item.total_assigned));
+            });
+        }
+    } catch (err) {
+        console.error('Error fetching assignment summary via RPC:', err);
+        // Fallback (aunque no debería ser necesario si el RPC existe)
     }
-    // ... rest of the function
-
-    const assignmentMap = new Map<string, number>();
-    assignments?.forEach(a => {
-        const current = assignmentMap.get(a.invoice_item_id) || 0;
-        assignmentMap.set(a.invoice_item_id, current + a.assigned_amount);
-    });
 
     const pending: MachineryItem[] = [];
     filteredItems?.forEach((item: any) => {
