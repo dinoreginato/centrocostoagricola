@@ -134,6 +134,9 @@ export const Irrigation: React.FC = () => {
 
     const targetCategories = ['riego', 'agua', 'electricidad', 'canal', 'bomba'];
     const filteredItems = items?.filter((item: any) => {
+        // Double check company_id strictly
+        if (item.invoices?.company_id !== selectedCompany.id) return false;
+
         const cat = (item.category || '').toLowerCase().trim();
         return targetCategories.some(c => cat.includes(c));
     });

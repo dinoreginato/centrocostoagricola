@@ -136,6 +136,9 @@ export const Machinery: React.FC = () => {
     
     const targetCategories = ['maquinaria', 'repuesto', 'mantencion', 'tractor', 'implemento'];
     const filteredItems = items?.filter((item: any) => {
+        // Double check company_id strictly
+        if (item.invoices?.company_id !== selectedCompany.id) return false;
+
         const cat = (item.category || '').toLowerCase().trim();
         return targetCategories.some(c => cat.includes(c));
     });

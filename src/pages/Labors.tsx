@@ -138,6 +138,9 @@ export const Labors: React.FC = () => {
     // Filter strictly by Category as requested
     const laborCategories = ['labores agrícolas', 'labores agricolas', 'mano de obra', 'servicio de labores'];
     const filteredItems = items?.filter((item: any) => {
+        // Double check company_id strictly
+        if (item.invoices?.company_id !== selectedCompany.id) return false;
+
         const cat = (item.category || '').toLowerCase().trim();
         
         // Match only if category contains the labor keywords
