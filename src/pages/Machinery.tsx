@@ -165,6 +165,9 @@ export const Machinery: React.FC = () => {
 
     const pending: MachineryItem[] = [];
     filteredItems?.forEach((item: any) => {
+        // Double Check: Ensure item belongs to selected company
+        if (item.invoices?.company_id !== selectedCompany.id) return;
+
         // Credit Note Logic (Robust)
         const docType = (item.invoices.document_type || '').toLowerCase();
         const isCreditNote = docType.includes('nota de cr') || 

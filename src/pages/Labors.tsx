@@ -167,6 +167,9 @@ export const Labors: React.FC = () => {
 
     const pending: LaborItem[] = [];
     filteredItems?.forEach((item: any) => {
+        // Double Check: Ensure item belongs to selected company
+        if (item.invoices?.company_id !== selectedCompany.id) return;
+
         // Credit Note Logic (Robust)
         const docType = (item.invoices.document_type || '').toLowerCase();
         // Check for common credit note variations
