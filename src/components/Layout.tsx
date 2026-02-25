@@ -133,6 +133,7 @@ export const Layout: React.FC = () => {
           </div>
         </div>
       </div>
+      </div>
 
       {/* Mobile menu */}
       <div className="md:hidden fixed top-0 left-0 w-full bg-white border-b border-gray-200 z-10 flex items-center justify-between px-4 h-16 print:hidden">
