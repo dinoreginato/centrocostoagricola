@@ -18,12 +18,13 @@ import {
   Fuel,
   Wrench,
   Droplets,
-  Briefcase
+  Briefcase,
+  Building2
 } from 'lucide-react';
 
 export const Layout: React.FC = () => {
   const { user, loading, signOut } = useAuth();
-  const { userRole } = useCompany();
+  const { userRole, companies, selectedCompany, selectCompany } = useCompany();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
 
@@ -52,7 +53,8 @@ export const Layout: React.FC = () => {
     { name: 'Bodega', href: '/bodega', icon: Package, roles: ['admin', 'editor', 'viewer'] },
     { name: 'Aplicaciones', href: '/aplicaciones', icon: ClipboardList, roles: ['admin', 'editor', 'viewer'] },
     { name: 'Reportes', href: '/reportes', icon: BarChart3, roles: ['admin', 'viewer'] },
-    { name: 'Usuarios', href: '/usuarios', icon: Users, roles: ['admin'] },
+    // Removed "Usuarios" from sidebar for regular users, accessible via top right or special admin page
+    ...(userRole === 'admin' ? [{ name: 'Usuarios', href: '/usuarios', icon: Users, roles: ['admin'] }] : []),
   ];
 
   const navigation = allNavItems.filter(item => 
@@ -63,10 +65,33 @@ export const Layout: React.FC = () => {
     <div className="min-h-screen bg-gray-100 flex">
       {/* Sidebar for desktop */}
       <div className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 bg-white border-r border-gray-200 print:hidden">
-        <div className="flex items-center justify-center h-16 border-b border-gray-200 px-4">
-          <span className="text-xl font-bold text-green-700">AgroCostos</span>
-        </div>
-        <div className="flex-1 flex flex-col overflow-y-auto pt-5 pb-4">
+        <div className="flex flex-col h-full">
+          <div className="flex items-center justify-center h-16 border-b border-gray-200 px-4">
+            <span className="text-xl font-bold text-green-700">AgroCostos</span>
+          </div>
+          
+          {/* Company Selector in Sidebar */}
+          <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Empresa Actual</label>
+            <div className="relative">
+              <select
+                value={selectedCompany?.id || ''}
+                onChange={(e) => selectCompany(e.target.value)}
+                className="block w-full pl-3 pr-8 py-2 text-sm border-gray-300 focus:outline-none focus:ring-green-500 focus:border-green-500 rounded-md"
+              >
+                {companies.map((company) => (
+                  <option key={company.id} value={company.id}>
+                    {company.name}
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-700">
+                <Building2 className="h-4 w-4" />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex-1 flex flex-col overflow-y-auto pt-2 pb-4">
           <nav className="mt-5 flex-1 px-2 space-y-1">
             {navigation.map((item) => {
               const isActive = location.pathname === item.href;
@@ -119,7 +144,24 @@ export const Layout: React.FC = () => {
 
       {isMobileMenuOpen && (
         <div className="md:hidden fixed inset-0 z-20 bg-white pt-16">
-           <nav className="mt-5 px-2 space-y-1">
+           <div className="px-4 py-4 bg-gray-50 border-b border-gray-200">
+               <label className="block text-xs font-medium text-gray-500 mb-1">Empresa Actual</label>
+               <select
+                   value={selectedCompany?.id || ''}
+                   onChange={(e) => {
+                       selectCompany(e.target.value);
+                       setIsMobileMenuOpen(false);
+                   }}
+                   className="block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+               >
+                   {companies.map((company) => (
+                       <option key={company.id} value={company.id}>
+                           {company.name}
+                       </option>
+                   ))}
+               </select>
+           </div>
+           <nav className="mt-2 px-2 space-y-1">
             {navigation.map((item) => (
               <Link
                 key={item.name}
