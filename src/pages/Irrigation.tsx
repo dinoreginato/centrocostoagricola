@@ -71,6 +71,7 @@ export const Irrigation: React.FC = () => {
 
   // History State
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [historySearch, setHistorySearch] = useState('');
 
   useEffect(() => {
     if (selectedCompany) {
@@ -221,10 +222,20 @@ export const Irrigation: React.FC = () => {
         `)
         .eq('invoice_items.invoices.company_id', selectedCompany.id)
         .order('assigned_date', { ascending: false })
-        .limit(50);
+        .limit(500);
     
     setHistory(data as unknown as HistoryItem[] || []);
   };
+
+  const filteredHistory = history.filter(h => {
+    if (!historySearch) return true;
+    const search = historySearch.toLowerCase();
+    const productName = (h.invoice_items?.products?.name || '').toLowerCase();
+    const invoiceNum = (h.invoice_items?.invoices?.invoice_number || '').toLowerCase();
+    const sectorName = (h.sectors?.name || '').toLowerCase();
+    
+    return productName.includes(search) || invoiceNum.includes(search) || sectorName.includes(search);
+  });
 
   const handleSelectItem = (item: IrrigationItem) => {
     setSelectedItemId(item.id);
@@ -731,19 +742,29 @@ export const Irrigation: React.FC = () => {
 
             {/* Recent History */}
             <div className="bg-white rounded-lg shadow overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-                    <h3 className="text-lg font-medium text-gray-900">Historial de Asignaciones Recientes</h3>
-                    <button
-                        onClick={handleDeleteAllAssignments}
-                        className="text-xs text-red-600 hover:text-red-800 border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-1 rounded transition-colors"
-                        title="Eliminar todas las asignaciones de esta empresa"
-                    >
-                        Eliminar Todo
-                    </button>
+                <div className="px-6 py-4 border-b border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
+                    <h3 className="text-lg font-medium text-gray-900">Historial de Asignaciones</h3>
+                    
+                    <div className="flex items-center gap-2 w-full md:w-auto">
+                        <input
+                            type="text"
+                            placeholder="Buscar por item, factura o sector..."
+                            value={historySearch}
+                            onChange={(e) => setHistorySearch(e.target.value)}
+                            className="text-sm border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 flex-1 md:w-64"
+                        />
+                        <button
+                            onClick={handleDeleteAllAssignments}
+                            className="text-xs text-red-600 hover:text-red-800 border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-2 rounded transition-colors whitespace-nowrap"
+                            title="Eliminar todas las asignaciones de esta empresa"
+                        >
+                            Eliminar Todo
+                        </button>
+                    </div>
                 </div>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
                     <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
+                        <thead className="bg-gray-50 sticky top-0">
                             <tr>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item / Factura</th>
@@ -752,7 +773,7 @@ export const Irrigation: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                            {history.map((h) => (
+                            {filteredHistory.map((h) => (
                                 <tr key={h.id}>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         {new Date(h.assigned_date).toLocaleDateString()}
