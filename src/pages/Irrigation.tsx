@@ -158,6 +158,17 @@ export const Irrigation: React.FC = () => {
         }
     } catch (err) {
         console.error('Error fetching assignment summary via RPC:', err);
+         const { data: fallbackData } = await supabase
+             .from('irrigation_assignments')
+             .select('invoice_item_id, assigned_amount, invoice_items!inner(invoices!inner(company_id))')
+             .eq('invoice_items.invoices.company_id', selectedCompany.id);
+             
+         if (fallbackData) {
+             fallbackData.forEach((item: any) => {
+                 const current = assignmentMap.get(item.invoice_item_id) || 0;
+                 assignmentMap.set(item.invoice_item_id, current + Number(item.assigned_amount));
+             });
+         }
     }
 
     const pending: IrrigationItem[] = [];

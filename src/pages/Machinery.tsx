@@ -162,6 +162,17 @@ export const Machinery: React.FC = () => {
     } catch (err) {
         console.error('Error fetching assignment summary via RPC:', err);
         // Fallback (aunque no debería ser necesario si el RPC existe)
+        const { data: fallbackData } = await supabase
+            .from('machinery_assignments')
+            .select('invoice_item_id, assigned_amount, invoice_items!inner(invoices!inner(company_id))')
+            .eq('invoice_items.invoices.company_id', selectedCompany.id);
+            
+        if (fallbackData) {
+            fallbackData.forEach((item: any) => {
+                const current = assignmentMap.get(item.invoice_item_id) || 0;
+                assignmentMap.set(item.invoice_item_id, current + Number(item.assigned_amount));
+            });
+        }
     }
 
     const pending: MachineryItem[] = [];
