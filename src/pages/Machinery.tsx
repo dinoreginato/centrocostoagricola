@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Layers } from 'lucide-react';
+import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Layers, Settings, Plus, X } from 'lucide-react';
 
 interface MachineryItem {
   id: string; // invoice_item_id
@@ -14,6 +14,16 @@ interface MachineryItem {
   total_amount: number;
   assigned_amount: number;
   remaining_amount: number;
+}
+
+interface Machine {
+    id: string;
+    name: string;
+    type: string;
+    brand: string;
+    model: string;
+    plate: string;
+    description: string;
 }
 
 interface Sector {
@@ -40,7 +50,9 @@ interface HistoryItem {
     assigned_date: string;
     sector_id: string;
     invoice_item_id: string;
+    machine_id?: string;
     sectors?: { name: string };
+    machines?: { name: string };
     invoice_items?: {
         products?: { name: string };
         invoices?: { invoice_number: string };
@@ -55,11 +67,13 @@ export const Machinery: React.FC = () => {
   const [pendingItems, setPendingItems] = useState<MachineryItem[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [fields, setFields] = useState<Field[]>([]);
+  const [machines, setMachines] = useState<Machine[]>([]);
   
   // Selection State
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
   const [assignedDate, setAssignedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedMachineId, setSelectedMachineId] = useState<string>('');
   
   // Distribution Mode
   const [distributeBy, setDistributeBy] = useState<'sector' | 'field' | 'company'>('sector');
@@ -68,6 +82,10 @@ export const Machinery: React.FC = () => {
 
   // Editing State
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
+
+  // Machine Management State
+  const [showMachineModal, setShowMachineModal] = useState(false);
+  const [editingMachine, setEditingMachine] = useState<Partial<Machine> | null>(null);
 
   // History State
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -85,7 +103,8 @@ export const Machinery: React.FC = () => {
         await Promise.all([
             loadSectorsAndFields(),
             loadPendingItems(),
-            loadHistory()
+            loadHistory(),
+            loadMachines()
         ]);
     } catch (error) {
         console.error('Error loading data:', error);
@@ -114,6 +133,17 @@ export const Machinery: React.FC = () => {
         .eq('fields.company_id', selectedCompany.id);
     
     setSectors(sectorsData || []);
+  };
+
+  const loadMachines = async () => {
+      if (!selectedCompany) return;
+      const { data } = await supabase
+          .from('machines')
+          .select('*')
+          .eq('company_id', selectedCompany.id)
+          .eq('is_active', true)
+          .order('name');
+      setMachines(data || []);
   };
 
   const loadPendingItems = async () => {
@@ -231,6 +261,7 @@ export const Machinery: React.FC = () => {
         .select(`
             id, assigned_amount, assigned_date,
             sectors (name),
+            machines (name),
             invoice_items!inner (
                 products (name),
                 invoices!inner (invoice_number, company_id)
@@ -250,8 +281,9 @@ export const Machinery: React.FC = () => {
     const productName = (h.invoice_items?.products?.name || '').toLowerCase();
     const invoiceNum = (h.invoice_items?.invoices?.invoice_number || '').toLowerCase();
     const sectorName = (h.sectors?.name || '').toLowerCase();
+    const machineName = (h.machines?.name || '').toLowerCase();
     
-    return productName.includes(search) || invoiceNum.includes(search) || sectorName.includes(search);
+    return productName.includes(search) || invoiceNum.includes(search) || sectorName.includes(search) || machineName.includes(search);
   });
 
   const handleSelectItem = (item: MachineryItem) => {
@@ -259,6 +291,7 @@ export const Machinery: React.FC = () => {
     setEditingAssignmentId(null);
     setAssignedDate(item.date ? item.date.split('T')[0] : new Date().toISOString().split('T')[0]);
     setDistributeBy('sector');
+    setSelectedMachineId('');
     setAllocations([{ sector_id: '', amount: item.remaining_amount }]);
     setFieldTotalAmount(item.remaining_amount);
   };
@@ -268,6 +301,7 @@ export const Machinery: React.FC = () => {
       setSelectedItemId(assignment.invoice_item_id);
       setAssignedDate(assignment.assigned_date ? assignment.assigned_date.split('T')[0] : new Date().toISOString().split('T')[0]);
       setDistributeBy('sector'); // Edit is always single sector for now
+      setSelectedMachineId(assignment.machine_id || '');
       setAllocations([{ 
           sector_id: assignment.sector_id, 
           amount: assignment.assigned_amount 
@@ -361,6 +395,68 @@ export const Machinery: React.FC = () => {
     }
   };
 
+  const handleSaveMachine = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCompany || !editingMachine) return;
+
+    setLoading(true);
+    try {
+        const machineData = {
+            name: editingMachine.name,
+            type: editingMachine.type,
+            brand: editingMachine.brand,
+            model: editingMachine.model,
+            plate: editingMachine.plate,
+            description: editingMachine.description,
+            company_id: selectedCompany.id
+        };
+
+        if (editingMachine.id) {
+            // Update
+            const { error } = await supabase
+                .from('machines')
+                .update(machineData)
+                .eq('id', editingMachine.id);
+            if (error) throw error;
+        } else {
+            // Create
+            const { error } = await supabase
+                .from('machines')
+                .insert([machineData]);
+            if (error) throw error;
+        }
+
+        setShowMachineModal(false);
+        setEditingMachine(null);
+        loadMachines();
+    } catch (error: any) {
+        console.error('Error saving machine:', error);
+        alert('Error: ' + error.message);
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const handleDeleteMachine = async (id: string) => {
+      if (!confirm('¿Estás seguro? Esto no eliminará las asignaciones históricas, pero la máquina ya no estará disponible para nuevas asignaciones.')) return;
+      
+      setLoading(true);
+      try {
+          const { error } = await supabase
+              .from('machines')
+              .update({ is_active: false }) // Soft delete
+              .eq('id', id);
+          
+          if (error) throw error;
+          loadMachines();
+      } catch (error: any) {
+          console.error('Error deleting machine:', error);
+          alert('Error: ' + error.message);
+      } finally {
+          setLoading(false);
+      }
+  };
+
   const handleAddAllocationRow = () => {
     setAllocations([...allocations, { sector_id: '', amount: 0 }]);
   };
@@ -416,6 +512,7 @@ export const Machinery: React.FC = () => {
         payload = allSectors.map(s => ({
             invoice_item_id: selectedItemId,
             sector_id: s.id,
+            machine_id: selectedMachineId || null,
             assigned_amount: (Number(s.hectares) / totalHa) * fieldTotalAmount,
             assigned_date: assignedDate
         }));
@@ -451,6 +548,7 @@ export const Machinery: React.FC = () => {
         payload = fieldSectors.map(s => ({
             invoice_item_id: selectedItemId,
             sector_id: s.id,
+            machine_id: selectedMachineId || null,
             assigned_amount: (Number(s.hectares) / totalHa) * fieldTotalAmount,
             assigned_date: assignedDate
         }));
@@ -481,6 +579,7 @@ export const Machinery: React.FC = () => {
         payload = allocations.map(a => ({
             invoice_item_id: selectedItemId,
             sector_id: a.sector_id,
+            machine_id: selectedMachineId || null,
             assigned_amount: a.amount,
             assigned_date: assignedDate
         }));
@@ -496,6 +595,7 @@ export const Machinery: React.FC = () => {
                 .from('machinery_assignments')
                 .update({
                     sector_id: alloc.sector_id,
+                    machine_id: selectedMachineId || null,
                     assigned_amount: alloc.assigned_amount,
                     assigned_date: assignedDate
                 })
@@ -537,6 +637,16 @@ export const Machinery: React.FC = () => {
             </h1>
             <p className="text-sm text-gray-500">Asigna costos de maquinaria y repuestos a sectores</p>
         </div>
+        <button
+            onClick={() => {
+                setEditingMachine(null);
+                setShowMachineModal(true);
+            }}
+            className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+        >
+            <Settings className="h-4 w-4 mr-2" />
+            Gestionar Máquinas
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -603,6 +713,19 @@ export const Machinery: React.FC = () => {
                                 onChange={(e) => setAssignedDate(e.target.value)}
                                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm"
                             />
+                        </div>
+                        <div className="mt-4">
+                            <label className="block text-sm font-medium text-gray-700">Máquina (Opcional)</label>
+                            <select
+                                value={selectedMachineId}
+                                onChange={(e) => setSelectedMachineId(e.target.value)}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm"
+                            >
+                                <option value="">Ninguna / General</option>
+                                {machines.map(m => (
+                                    <option key={m.id} value={m.id}>{m.name} ({m.type})</option>
+                                ))}
+                            </select>
                         </div>
                     </div>
 
@@ -790,6 +913,7 @@ export const Machinery: React.FC = () => {
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item / Factura</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sector Asignado</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Máquina</th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Monto</th>
                             </tr>
                         </thead>
@@ -805,6 +929,9 @@ export const Machinery: React.FC = () => {
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         {h.sectors?.name}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        {h.machines?.name || '-'}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 text-right">
                                         <div className="flex items-center justify-end gap-3">
@@ -842,6 +969,126 @@ export const Machinery: React.FC = () => {
             </div>
         </div>
       </div>
+
+      {showMachineModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-medium text-gray-900">Gestionar Máquinas y Vehículos</h3>
+                    <button onClick={() => setShowMachineModal(false)} className="text-gray-400 hover:text-gray-600">
+                        <X className="h-6 w-6" />
+                    </button>
+                </div>
+                
+                <div className="mb-6 bg-gray-50 p-4 rounded-md border border-gray-200">
+                    <h4 className="text-sm font-medium text-gray-900 mb-2">{editingMachine?.id ? 'Editar Máquina' : 'Nueva Máquina'}</h4>
+                    <form onSubmit={handleSaveMachine} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500">Nombre</label>
+                            <input
+                                type="text"
+                                required
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                value={editingMachine?.name || ''}
+                                onChange={e => setEditingMachine({...editingMachine, name: e.target.value})}
+                                placeholder="Ej: Tractor John Deere"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500">Tipo</label>
+                            <select
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                value={editingMachine?.type || 'Tractor'}
+                                onChange={e => setEditingMachine({...editingMachine, type: e.target.value})}
+                            >
+                                <option value="Tractor">Tractor</option>
+                                <option value="Camioneta">Camioneta</option>
+                                <option value="Carro">Carro / Coloso</option>
+                                <option value="Implemento">Implemento</option>
+                                <option value="Fumigadora">Fumigadora</option>
+                                <option value="Otro">Otro</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500">Marca</label>
+                            <input
+                                type="text"
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                value={editingMachine?.brand || ''}
+                                onChange={e => setEditingMachine({...editingMachine, brand: e.target.value})}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500">Modelo</label>
+                            <input
+                                type="text"
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                value={editingMachine?.model || ''}
+                                onChange={e => setEditingMachine({...editingMachine, model: e.target.value})}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500">Patente (Opcional)</label>
+                            <input
+                                type="text"
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                value={editingMachine?.plate || ''}
+                                onChange={e => setEditingMachine({...editingMachine, plate: e.target.value})}
+                            />
+                        </div>
+                        <div className="md:col-span-2 flex justify-end gap-2 mt-2">
+                             <button
+                                type="button"
+                                onClick={() => setEditingMachine(null)}
+                                className="px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                            >
+                                Limpiar
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="inline-flex justify-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                            >
+                                {loading ? <Loader2 className="animate-spin h-4 w-4" /> : <Save className="h-4 w-4 mr-2" />}
+                                Guardar
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nombre</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Marca/Modelo</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {machines.map((m) => (
+                                <tr key={m.id}>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{m.name}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{m.type}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{m.brand} {m.model}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                        <button onClick={() => setEditingMachine(m)} className="text-blue-600 hover:text-blue-900 mr-4">Editar</button>
+                                        <button onClick={() => handleDeleteMachine(m.id)} className="text-red-600 hover:text-red-900">Eliminar</button>
+                                    </td>
+                                </tr>
+                            ))}
+                            {machines.length === 0 && (
+                                <tr>
+                                    <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500">No hay máquinas registradas.</td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+      )}
     </div>
   );
 };

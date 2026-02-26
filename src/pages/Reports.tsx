@@ -79,6 +79,19 @@ interface DetailedMonth {
   categories: DetailedCategory[];
 }
 
+interface IncomeEntry {
+    id: string;
+    date: string;
+    category: string;
+    amount: number;
+    description: string;
+    season: string;
+    field_id?: string;
+    sector_id?: string;
+    fields?: { name: string };
+    sectors?: { name: string };
+}
+
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#8dd1e1', '#a4de6c', '#d0ed57'];
 
 // Categories considered as "Chemicals" or "Inputs"
@@ -90,7 +103,7 @@ const CHEMICAL_CATEGORIES = [
 export const Reports: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'applications' | 'monthly' | 'categories' | 'pending' | 'chemicals' | 'detailed' | 'general'>('applications');
+  const [activeTab, setActiveTab] = useState<'applications' | 'monthly' | 'categories' | 'pending' | 'chemicals' | 'detailed' | 'general' | 'budget'>('general');
   
   // Data State
   const [rawFields, setRawFields] = useState<any[]>([]);
@@ -103,6 +116,7 @@ export const Reports: React.FC = () => {
   const [rawMachinery, setRawMachinery] = useState<any[]>([]); 
   const [rawIrrigation, setRawIrrigation] = useState<any[]>([]); 
   const [productionRecords, setProductionRecords] = useState<any[]>([]); 
+  const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([]);
 
   // Filter State
   const [selectedSeason, setSelectedSeason] = useState<string>(getSeasonFromDate(new Date()));
@@ -112,6 +126,8 @@ export const Reports: React.FC = () => {
   const [usdExchangeRate, setUsdExchangeRate] = useState<number>(950);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [editingProduction, setEditingProduction] = useState<boolean>(false); 
+  const [showIncomeModal, setShowIncomeModal] = useState(false);
+  const [editingIncome, setEditingIncome] = useState<Partial<IncomeEntry>>({});
 
   // Display State
   const [reportData, setReportData] = useState<ReportData[]>([]);
@@ -140,7 +156,7 @@ export const Reports: React.FC = () => {
   // Process data whenever raw data or selected season changes
   useEffect(() => {
     processReports();
-  }, [rawFields, rawApplications, rawInvoices, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawMachinery, rawIrrigation, productionRecords, selectedSeason]);
+  }, [rawFields, rawApplications, rawInvoices, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawMachinery, rawIrrigation, productionRecords, incomeEntries, selectedSeason]);
 
   const loadRawData = async () => {
     if (!selectedCompany) return;
@@ -212,6 +228,13 @@ export const Reports: React.FC = () => {
         .select('*')
         .eq('company_id', selectedCompany.id);
       setProductionRecords(prod || []);
+
+      // 2h. Fetch Income Entries
+      const { data: income } = await supabase
+        .from('income_entries')
+        .select('*, fields(name), sectors(name)')
+        .eq('company_id', selectedCompany.id);
+      setIncomeEntries(income || []);
 
       // 3. Fetch Invoices
       const { data: invoicesData } = await supabase
@@ -608,6 +631,59 @@ export const Reports: React.FC = () => {
     }
   };
 
+  const handleSaveIncome = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCompany) return;
+    
+    setLoading(true);
+    try {
+        const payload = {
+            company_id: selectedCompany.id,
+            date: editingIncome.date,
+            category: editingIncome.category || 'Venta Fruta',
+            amount: Number(editingIncome.amount),
+            description: editingIncome.description,
+            season: selectedSeason, // Or derived from date
+            field_id: editingIncome.field_id || null,
+            sector_id: editingIncome.sector_id || null
+        };
+
+        if (editingIncome.id) {
+            const { error } = await supabase
+                .from('income_entries')
+                .update(payload)
+                .eq('id', editingIncome.id);
+            if(error) throw error;
+        } else {
+            const { error } = await supabase
+                .from('income_entries')
+                .insert([payload]);
+            if(error) throw error;
+        }
+        
+        setShowIncomeModal(false);
+        setEditingIncome({});
+        loadRawData(); // Reload all data
+        
+    } catch (error: any) {
+        alert('Error: ' + error.message);
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const handleDeleteIncome = async (id: string) => {
+    if(!confirm('¿Eliminar registro?')) return;
+    setLoading(true);
+    const { error } = await supabase.from('income_entries').delete().eq('id', id);
+    if (!error) {
+        loadRawData();
+    } else {
+        alert('Error al eliminar');
+        setLoading(false);
+    }
+  };
+
   const handleGeneratePDF = () => {
     const doc = new jsPDF();
     const title = getReportTitle();
@@ -990,6 +1066,14 @@ export const Reports: React.FC = () => {
             <Scale className="mr-2 h-4 w-4" /> Costos Generales (USD/Kg)
           </button>
           <button
+            onClick={() => setActiveTab('budget')}
+            className={`${
+              activeTab === 'budget' ? 'border-green-500 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
+          >
+            <DollarSign className="mr-2 h-4 w-4" /> Presupuesto y Ventas
+          </button>
+          <button
             onClick={() => setActiveTab('applications')}
             className={`${
               activeTab === 'applications' ? 'border-green-500 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -1046,6 +1130,160 @@ export const Reports: React.FC = () => {
         </div>
       ) : (
         <div className="mt-6">
+          {/* 8. BUDGET & SALES REPORT (NEW) */}
+          {activeTab === 'budget' && (
+            <div className="space-y-6">
+                {/* Summary Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-white p-6 rounded-lg shadow border-l-4 border-green-500">
+                        <div className="flex items-center">
+                            <div className="p-3 rounded-full bg-green-100 text-green-600">
+                                <DollarSign className="h-6 w-6" />
+                            </div>
+                            <div className="ml-4">
+                                <p className="text-sm font-medium text-gray-500">Ingresos / Presupuesto</p>
+                                <p className="text-2xl font-semibold text-gray-900">
+                                    {formatCLP(incomeEntries.reduce((sum, i) => sum + i.amount, 0))}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="bg-white p-6 rounded-lg shadow border-l-4 border-red-500">
+                        <div className="flex items-center">
+                            <div className="p-3 rounded-full bg-red-100 text-red-600">
+                                <Scale className="h-6 w-6" />
+                            </div>
+                            <div className="ml-4">
+                                <p className="text-sm font-medium text-gray-500">Gastos Totales</p>
+                                <p className="text-2xl font-semibold text-gray-900">
+                                    {formatCLP(monthlyExpenses.reduce((sum, m) => sum + m.total, 0))}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="bg-white p-6 rounded-lg shadow border-l-4 border-blue-500">
+                        <div className="flex items-center">
+                            <div className="p-3 rounded-full bg-blue-100 text-blue-600">
+                                <PieChartIcon className="h-6 w-6" />
+                            </div>
+                            <div className="ml-4">
+                                <p className="text-sm font-medium text-gray-500">Balance / Saldo</p>
+                                <p className={`text-2xl font-semibold ${
+                                    (incomeEntries.reduce((sum, i) => sum + i.amount, 0) - monthlyExpenses.reduce((sum, m) => sum + m.total, 0)) >= 0 
+                                    ? 'text-green-600' : 'text-red-600'
+                                }`}>
+                                    {formatCLP(incomeEntries.reduce((sum, i) => sum + i.amount, 0) - monthlyExpenses.reduce((sum, m) => sum + m.total, 0))}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Chart: Income vs Expenses */}
+                <div className="bg-white p-6 rounded-lg shadow">
+                    <h3 className="text-lg font-medium text-gray-900 mb-4">Flujo de Caja Mensual ({selectedSeason})</h3>
+                    <div className="h-96 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart
+                                data={monthlyExpenses.map(m => {
+                                    // Calculate income for this month
+                                    const monthIncome = incomeEntries
+                                        .filter(i => {
+                                            const d = new Date(i.date);
+                                            const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+                                            const key = `${monthNames[d.getMonth()]} ${d.getFullYear()}`;
+                                            return key === m.month;
+                                        })
+                                        .reduce((sum, i) => sum + i.amount, 0);
+                                    return {
+                                        month: m.month,
+                                        gastos: m.total,
+                                        ingresos: monthIncome
+                                    };
+                                })}
+                                margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                            >
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="month" />
+                                <YAxis tickFormatter={(value) => formatCLP(value)} />
+                                <Tooltip formatter={(value) => formatCLP(Number(value))} />
+                                <Legend />
+                                <Bar dataKey="ingresos" name="Ingresos / Presupuesto" fill="#10B981" />
+                                <Bar dataKey="gastos" name="Gastos Reales" fill="#EF4444" />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Income Table */}
+                <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+                    <div className="px-4 py-5 sm:px-6 border-b border-gray-200 flex justify-between items-center">
+                        <div>
+                            <h3 className="text-lg leading-6 font-medium text-gray-900">Registro de Ingresos y Presupuesto</h3>
+                            <p className="mt-1 text-sm text-gray-500">Ventas de fruta, exportaciones y presupuesto asignado</p>
+                        </div>
+                        <button
+                            onClick={() => {
+                                setEditingIncome({});
+                                setShowIncomeModal(true);
+                            }}
+                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700"
+                        >
+                            <DollarSign className="mr-2 h-4 w-4" />
+                            Agregar Ingreso
+                        </button>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descripción</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Campo / Sector</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Monto</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {incomeEntries.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={6} className="px-6 py-4 text-center text-gray-500">No hay ingresos registrados.</td>
+                                    </tr>
+                                ) : (
+                                    incomeEntries.map((entry) => (
+                                        <tr key={entry.id}>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{new Date(entry.date).toLocaleDateString()}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                                    entry.category === 'Presupuesto' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                                                }`}>
+                                                    {entry.category}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-sm text-gray-500">{entry.description}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                {entry.fields?.name || '-'} {entry.sectors?.name ? `/ ${entry.sectors.name}` : ''}
+                                            </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-green-700">{formatCLP(entry.amount)}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                <button 
+                                                    onClick={() => handleDeleteIncome(entry.id)}
+                                                    className="text-red-600 hover:text-red-900"
+                                                >
+                                                    Eliminar
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+          )}
+
           {/* 0. GENERAL REPORT (NEW) */}
       {activeTab === 'general' && (
         <div className="space-y-6">
@@ -1519,6 +1757,102 @@ export const Reports: React.FC = () => {
                 )}
             </div>
           )}
+        </div>
+      )}
+
+      {showIncomeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-lg">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">{editingIncome.id ? 'Editar Ingreso' : 'Registrar Ingreso / Presupuesto'}</h3>
+                <form onSubmit={handleSaveIncome} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Fecha</label>
+                        <input
+                            type="date"
+                            required
+                            value={editingIncome.date || new Date().toISOString().split('T')[0]}
+                            onChange={e => setEditingIncome({...editingIncome, date: e.target.value})}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Categoría</label>
+                        <select
+                            value={editingIncome.category || 'Venta Fruta'}
+                            onChange={e => setEditingIncome({...editingIncome, category: e.target.value})}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                        >
+                            <option value="Venta Fruta">Venta Fruta / Exportación</option>
+                            <option value="Presupuesto">Presupuesto Asignado</option>
+                            <option value="Otro Ingreso">Otro Ingreso</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Monto</label>
+                        <input
+                            type="number"
+                            required
+                            min="0"
+                            value={editingIncome.amount || ''}
+                            onChange={e => setEditingIncome({...editingIncome, amount: Number(e.target.value)})}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Descripción</label>
+                        <input
+                            type="text"
+                            value={editingIncome.description || ''}
+                            onChange={e => setEditingIncome({...editingIncome, description: e.target.value})}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Campo (Opcional)</label>
+                        <select
+                            value={editingIncome.field_id || ''}
+                            onChange={e => setEditingIncome({...editingIncome, field_id: e.target.value, sector_id: undefined})}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                        >
+                            <option value="">General (Toda la Empresa)</option>
+                            {rawFields.map(f => (
+                                <option key={f.id} value={f.id}>{f.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    {editingIncome.field_id && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Sector (Opcional)</label>
+                            <select
+                                value={editingIncome.sector_id || ''}
+                                onChange={e => setEditingIncome({...editingIncome, sector_id: e.target.value})}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                            >
+                                <option value="">Todo el Campo</option>
+                                {rawFields.find(f => f.id === editingIncome.field_id)?.sectors.map((s: any) => (
+                                    <option key={s.id} value={s.id}>{s.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+                    
+                    <div className="flex justify-end space-x-3 pt-4">
+                        <button
+                            type="button"
+                            onClick={() => setShowIncomeModal(false)}
+                            className="px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            type="submit"
+                            className="px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+                        >
+                            Guardar
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
       )}
     </div>
