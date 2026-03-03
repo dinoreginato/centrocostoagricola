@@ -71,25 +71,31 @@ export const Inventory: React.FC = () => {
         const worksheet = workbook.Sheets[sheetName];
         const jsonData: any[] = utils.sheet_to_json(worksheet);
 
-        // Normalize headers (to lowercase, trim)
+        // Normalize headers (to lowercase, trim, remove accents)
+        const normalizeKey = (key: string) => key.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
         const normalizedData = jsonData.map(row => {
             const newRow: any = {};
             Object.keys(row).forEach(key => {
-                newRow[key.toLowerCase().trim()] = row[key];
+                newRow[normalizeKey(key)] = row[key];
             });
             return newRow;
         });
 
+        // Debug: Show found columns in alert if mapping fails
+        const firstRowKeys = Object.keys(normalizedData[0] || {});
+        console.log('Columnas encontradas:', firstRowKeys);
+
         const mappedData = normalizedData.map(row => ({
-            commercial_name: row['nombre comercial'] || row['nombre'] || row['producto'] || '',
-            active_ingredient: row['ingrediente activo'] || row['ingrediente'] || row['ia'] || '',
-            concentration: row['concentracion'] || row['concentración'] || '',
-            company_name: row['titular'] || row['empresa'] || '',
-            registration_number: String(row['autorizacion'] || row['n° autorizacion'] || row['registro'] || row['sag'] || '')
+            commercial_name: row['nombre comercial'] || row['nombre'] || row['producto'] || row['plaguicida'] || '',
+            active_ingredient: row['sustancias activas'] || row['sustancia activa'] || row['ingrediente activo'] || row['ingrediente'] || row['ia'] || '',
+            concentration: row['concentracion'] || row['concentracion'] || row['concentracion (v/v)'] || row['concentracion (p/p)'] || '',
+            company_name: row['titular'] || row['empresa'] || row['fabricante'] || '',
+            registration_number: String(row['autorizacion'] || row['n° autorizacion'] || row['registro'] || row['sag'] || row['nº autorizacion'] || row['numero autorizacion'] || '')
         })).filter(p => p.commercial_name && p.registration_number);
 
         if (mappedData.length === 0) {
-            alert('No se encontraron columnas reconocibles (Nombre Comercial, Ingrediente Activo, Autorización).');
+            alert(`No se encontraron columnas compatibles.\nColumnas detectadas: ${firstRowKeys.join(', ')}\n\nEsperadas: "Nombre Comercial", "Sustancias Activas", "Concentración", "Autorización"`);
             return;
         }
 
