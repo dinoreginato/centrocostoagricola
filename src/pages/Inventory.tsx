@@ -290,10 +290,15 @@ export const Inventory: React.FC = () => {
   };
 
   const selectOfficialForEdit = (official: any) => {
+      // Concatenate Active Ingredient + Concentration
+      const combinedIngredient = [official.active_ingredient, official.concentration]
+        .filter(Boolean)
+        .join(' ');
+
       setEditForm({
           ...editForm,
           name: official.commercial_name,
-          active_ingredient: official.active_ingredient || ''
+          active_ingredient: combinedIngredient || ''
       });
       setEditSuggestions([]);
   };

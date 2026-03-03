@@ -324,10 +324,15 @@ export const Invoices: React.FC = () => {
   };
 
   const selectOfficialProduct = (official: any) => {
+      // Concatenate Active Ingredient + Concentration
+      const combinedIngredient = [official.active_ingredient, official.concentration]
+        .filter(Boolean)
+        .join(' ');
+
       setCurrentItem({
           ...currentItem,
           product_name: official.commercial_name,
-          active_ingredient: official.active_ingredient || '',
+          active_ingredient: combinedIngredient || '',
           product_id: 'new' // Still new to our inventory
       });
       setShowSuggestions(false);
