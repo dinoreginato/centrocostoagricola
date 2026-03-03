@@ -339,6 +339,20 @@ export const Applications: React.FC = () => {
     setItems(newItems);
   };
 
+  const editItem = (index: number) => {
+    const item = items[index];
+    setCurrentItem({
+        product_id: item.product_id,
+        quantity: item.quantity_used,
+        dose_input_value: item.dose_input_value,
+        dose_input_type: item.dose_input_type,
+        dose_unit: item.dose_unit,
+        objective: item.objective || ''
+    });
+    // Remove from list so user can update it
+    removeItem(index);
+  };
+
   const handleDeleteApplication = async (id: string) => {
     if (!window.confirm('¿Estás seguro de eliminar esta aplicación?\n\n¡Cuidado! El stock descontado será RESTAURADO a la bodega.')) return;
     
@@ -1209,7 +1223,10 @@ export const Applications: React.FC = () => {
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.quantity_used} {item.unit}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatCLP(item.total_cost)}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            <button type="button" onClick={() => removeItem(index)} className="text-red-600 hover:text-red-900">
+                            <button type="button" onClick={() => editItem(index)} className="text-blue-600 hover:text-blue-900 mr-2" title="Editar item">
+                                <Edit className="h-4 w-4" />
+                            </button>
+                            <button type="button" onClick={() => removeItem(index)} className="text-red-600 hover:text-red-900" title="Eliminar item">
                               <Trash2 className="h-4 w-4" />
                             </button>
                           </td>
