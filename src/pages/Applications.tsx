@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Plus, Loader2, Save, Trash2, Beaker, Calendar, Droplets, MapPin, RefreshCw, Edit, Filter, Download, Eye } from 'lucide-react';
+import { Plus, Loader2, Save, Trash2, Beaker, Calendar, Droplets, MapPin, RefreshCw, Edit, Filter, Download, Eye, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -547,6 +547,81 @@ export const Applications: React.FC = () => {
 
     if (action === 'save') {
         doc.save(`orden_campo_${new Date().toISOString().split('T')[0]}.pdf`);
+    } else {
+        window.open(doc.output('bloburl'), '_blank');
+    }
+  };
+
+  const handleDownloadDetailedReport = (action: 'save' | 'preview' = 'save') => {
+    const doc = new jsPDF();
+    const filteredApps = applications.filter(app => filterSectorId === 'all' || app.sector_id === filterSectorId);
+    
+    // Title
+    doc.setFontSize(18);
+    doc.text('Reporte Detallado de Aplicaciones', 14, 22);
+    
+    doc.setFontSize(11);
+    doc.setTextColor(100);
+    const dateStr = new Date().toLocaleDateString();
+    let subtitle = `Generado el: ${dateStr}`;
+    
+    if (filterSectorId !== 'all') {
+        const sectorName = applications.find(a => a.sector_id === filterSectorId)?.sector_name || 'Sector Seleccionado';
+        subtitle += ` - Filtrado por Sector: ${sectorName}`;
+    } else {
+        subtitle += ' - Todos los Sectores';
+    }
+    
+    doc.text(subtitle, 14, 30);
+    
+    // Prepare flattened data for the table
+    const tableBody: any[] = [];
+
+    // Sort applications by date ascending for the report
+    const sortedApps = [...filteredApps].sort((a, b) => new Date(a.application_date).getTime() - new Date(b.application_date).getTime());
+
+    sortedApps.forEach(app => {
+        const [y, m, d] = app.application_date.split('T')[0].split('-');
+        const appDate = `${d}/${m}/${y}`;
+        const location = `${app.field_name} - ${app.sector_name}`;
+
+        app.items.forEach(item => {
+            // Find product to get active ingredient
+            const product = products.find(p => p.id === item.product_id);
+            const activeIngredient = product?.active_ingredient || '-';
+
+            tableBody.push([
+                appDate,
+                location,
+                item.product_name,
+                activeIngredient,
+                `${item.dose_per_hectare} ${item.unit}/ha`,
+                `${app.water_liters_per_hectare} L/ha`,
+                `${item.quantity_used} ${item.unit}`
+            ]);
+        });
+    });
+
+    autoTable(doc, {
+        head: [['Fecha', 'Lugar', 'Producto', 'Ing. Activo', 'Dosis', 'Volumen', 'Total']],
+        body: tableBody,
+        startY: 40,
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [46, 191, 88] }, // Green header
+        columnStyles: {
+            0: { cellWidth: 20 }, // Fecha
+            1: { cellWidth: 35 }, // Lugar
+            2: { cellWidth: 35 }, // Producto
+            3: { cellWidth: 35 }, // Ing. Activo
+            4: { cellWidth: 20 }, // Dosis
+            5: { cellWidth: 20 }, // Volumen
+            6: { cellWidth: 20 }, // Total
+        },
+        alternateRowStyles: { fillColor: [245, 245, 245] }
+    });
+
+    if (action === 'save') {
+        doc.save(`reporte_detallado_${new Date().toISOString().split('T')[0]}.pdf`);
     } else {
         window.open(doc.output('bloburl'), '_blank');
     }
@@ -1243,6 +1318,24 @@ export const Applications: React.FC = () => {
                     >
                         <Download className="h-4 w-4 mr-2" />
                         PDF
+                    </button>
+                </div>
+
+                <div className="flex shadow-sm rounded-md">
+                    <button
+                        onClick={() => handleDownloadDetailedReport('preview')}
+                        className="inline-flex items-center px-2 py-1.5 border border-purple-300 text-sm font-medium rounded-l-md text-purple-700 bg-white hover:bg-purple-50 focus:z-10 focus:ring-1 focus:ring-purple-500 focus:border-purple-500"
+                        title="Vista Previa Reporte Detallado"
+                    >
+                        <Eye className="h-4 w-4" />
+                    </button>
+                    <button
+                        onClick={() => handleDownloadDetailedReport('save')}
+                        className="inline-flex items-center px-3 py-1.5 border border-l-0 border-purple-300 text-sm font-medium rounded-r-md text-purple-700 bg-white hover:bg-purple-50 focus:z-10 focus:ring-1 focus:ring-purple-500 focus:border-purple-500"
+                        title="Descargar Reporte Detallado (Tabla)"
+                    >
+                        <FileText className="h-4 w-4 mr-2" />
+                        Detalle
                     </button>
                 </div>
 
