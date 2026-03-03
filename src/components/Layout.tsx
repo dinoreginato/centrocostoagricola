@@ -131,7 +131,7 @@ export const Layout: React.FC = () => {
                 >
                   <LogOut className="mr-1 h-3 w-3" /> Cerrar Sesión
                 </button>
-                <div className="text-[10px] text-gray-400 mt-1">v1.8.0 (Reportes Detallados)</div>
+                <div className="text-[10px] text-gray-400 mt-1">v1.9.0 (Integración SAG)</div>
               </div>
             </div>
           </div>

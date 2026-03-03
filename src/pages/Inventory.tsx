@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Package, Search, AlertTriangle, Edit, Trash2, X, Save, History, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
+import { Package, Search, AlertTriangle, Edit, Trash2, X, Save, History, ArrowDownLeft, ArrowUpRight, Upload } from 'lucide-react';
+import { read, utils } from 'xlsx';
 
 interface Product {
   id: string;
@@ -48,11 +49,81 @@ export const Inventory: React.FC = () => {
   // Edit State
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editForm, setEditForm] = useState<Partial<Product>>({});
+  const [editSuggestions, setEditSuggestions] = useState<any[]>([]);
 
   // History State
   const [viewingHistory, setViewingHistory] = useState<Product | null>(null);
   const [historyData, setHistoryData] = useState<InventoryMovement[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // SAG Import
+  const sagFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleImportSAG = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLoading(true);
+    try {
+        const buffer = await file.arrayBuffer();
+        const workbook = read(buffer);
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData: any[] = utils.sheet_to_json(worksheet);
+
+        // Normalize headers (to lowercase, trim)
+        const normalizedData = jsonData.map(row => {
+            const newRow: any = {};
+            Object.keys(row).forEach(key => {
+                newRow[key.toLowerCase().trim()] = row[key];
+            });
+            return newRow;
+        });
+
+        const mappedData = normalizedData.map(row => ({
+            commercial_name: row['nombre comercial'] || row['nombre'] || row['producto'] || '',
+            active_ingredient: row['ingrediente activo'] || row['ingrediente'] || row['ia'] || '',
+            concentration: row['concentracion'] || row['concentración'] || '',
+            company_name: row['titular'] || row['empresa'] || '',
+            registration_number: String(row['autorizacion'] || row['n° autorizacion'] || row['registro'] || row['sag'] || '')
+        })).filter(p => p.commercial_name && p.registration_number);
+
+        if (mappedData.length === 0) {
+            alert('No se encontraron columnas reconocibles (Nombre Comercial, Ingrediente Activo, Autorización).');
+            return;
+        }
+
+        if (!window.confirm(`Se encontraron ${mappedData.length} productos válidos. ¿Importar al registro oficial?`)) return;
+
+        // Batch Insert
+        const chunkSize = 100;
+        let insertedCount = 0;
+        
+        for (let i = 0; i < mappedData.length; i += chunkSize) {
+            const chunk = mappedData.slice(i, i + chunkSize);
+            // Use upsert to avoid duplicates
+            const { error } = await supabase
+                .from('official_products')
+                .upsert(chunk, { onConflict: 'registration_number', ignoreDuplicates: false });
+            
+            if (error) {
+                console.error('Error importing chunk:', error);
+            } else {
+                insertedCount += chunk.length;
+            }
+        }
+
+        alert(`Importación finalizada. ${insertedCount} productos actualizados/insertados.`);
+
+    } catch (error: any) {
+        console.error('Error importing SAG file:', error);
+        alert('Error al importar: ' + error.message);
+    } finally {
+        setLoading(false);
+        if (sagFileInputRef.current) sagFileInputRef.current.value = '';
+    }
+  };
+
 
   useEffect(() => {
     if (selectedCompany) {
@@ -179,6 +250,29 @@ export const Inventory: React.FC = () => {
   const cancelEdit = () => {
     setEditingProduct(null);
     setEditForm({});
+    setEditSuggestions([]);
+  };
+
+  const searchOfficialForEdit = async (query: string) => {
+      if (query.length < 3) {
+          setEditSuggestions([]);
+          return;
+      }
+      const { data } = await supabase
+          .from('official_products')
+          .select('*')
+          .ilike('commercial_name', `%${query}%`)
+          .limit(5);
+      setEditSuggestions(data || []);
+  };
+
+  const selectOfficialForEdit = (official: any) => {
+      setEditForm({
+          ...editForm,
+          name: official.commercial_name,
+          active_ingredient: official.active_ingredient || ''
+      });
+      setEditSuggestions([]);
   };
 
   const handleUpdateProduct = async () => {
@@ -231,7 +325,23 @@ export const Inventory: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">Bodega de Productos</h1>
           <p className="text-sm text-gray-500">Gestión de inventario y costos promedio</p>
         </div>
-        <div className="bg-white px-4 py-2 rounded-lg shadow border border-gray-200">
+        <div className="bg-white px-4 py-2 rounded-lg shadow border border-gray-200 flex items-center space-x-2">
+          <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              ref={sagFileInputRef}
+              onChange={handleImportSAG}
+              className="hidden"
+          />
+          <button
+              onClick={() => sagFileInputRef.current?.click()}
+              className="text-sm font-medium text-green-700 hover:text-green-800 flex items-center"
+              title="Importar Listado Oficial SAG (Excel)"
+          >
+              <Upload className="h-4 w-4 mr-1" />
+              Importar SAG
+          </button>
+          <div className="h-4 w-px bg-gray-300 mx-2"></div>
           <span className="text-sm text-gray-500">Valor Total Bodega:</span>
           <span className="ml-2 text-lg font-bold text-green-700">{formatCLP(totalValue)}</span>
         </div>
@@ -485,14 +595,32 @@ export const Inventory: React.FC = () => {
             </div>
             
             <div className="space-y-4">
-              <div>
+              <div className="relative">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
                 <input
                   type="text"
                   value={editForm.name || ''}
-                  onChange={e => setEditForm({...editForm, name: e.target.value})}
+                  onChange={e => {
+                      setEditForm({...editForm, name: e.target.value});
+                      searchOfficialForEdit(e.target.value);
+                  }}
                   className="w-full border border-gray-300 rounded-md p-2"
+                  autoComplete="off"
                 />
+                {editSuggestions.length > 0 && (
+                    <div className="absolute z-50 left-0 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-40 overflow-y-auto">
+                        {editSuggestions.map((sug, idx) => (
+                            <button
+                                key={idx}
+                                onClick={() => selectOfficialForEdit(sug)}
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b border-gray-100"
+                            >
+                                <div className="font-medium">{sug.commercial_name}</div>
+                                <div className="text-xs text-gray-500">{sug.active_ingredient}</div>
+                            </button>
+                        ))}
+                    </div>
+                )}
               </div>
 
               <div>

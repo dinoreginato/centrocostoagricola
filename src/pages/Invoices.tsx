@@ -13,6 +13,7 @@ interface InvoiceItem {
   total_price: number;
   category: string;
   unit: string;
+  active_ingredient?: string;
 }
 
 interface Product {
@@ -20,6 +21,7 @@ interface Product {
   name: string;
   unit: string;
   category: string;
+  active_ingredient?: string;
 }
 
 interface Invoice {
@@ -89,10 +91,13 @@ export const Invoices: React.FC = () => {
     quantity: 0,
     unit_price: 0,
     category: 'Fertilizantes',
-    unit: 'L'
+    unit: 'L',
+    active_ingredient: ''
   });
   const [isNewProduct, setIsNewProduct] = useState(false);
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
+  const [officialSuggestions, setOfficialSuggestions] = useState<any[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   // Dashboard/Filter/Search State
   const [stats, setStats] = useState<DashboardStats>({ total: 0, paid: 0, pending: 0, count: 0, topCategories: [] });
@@ -273,7 +278,7 @@ export const Invoices: React.FC = () => {
     return uniqueInvoices;
   };
 
-  const handleProductChange = (val: string) => {
+  const handleProductChange = async (val: string) => {
     // Check if selecting existing or new
     // For simplicity in this UI, we treat input as name search or new name
     const existing = products.find(p => p.name.toLowerCase() === val.toLowerCase());
@@ -285,16 +290,47 @@ export const Invoices: React.FC = () => {
         product_id: existing.id,
         product_name: existing.name,
         unit: existing.unit,
-        category: existing.category
+        category: existing.category,
+        active_ingredient: existing.active_ingredient || ''
       });
+      setShowSuggestions(false);
     } else {
       setIsNewProduct(true);
       setCurrentItem({
         ...currentItem,
         product_id: 'new',
-        product_name: val
+        product_name: val,
+        active_ingredient: ''
       });
+
+      // Search Official Products
+      if (val.length >= 3) {
+          const { data } = await supabase
+              .from('official_products')
+              .select('*')
+              .ilike('commercial_name', `%${val}%`)
+              .limit(5);
+          
+          if (data && data.length > 0) {
+              setOfficialSuggestions(data);
+              setShowSuggestions(true);
+          } else {
+              setShowSuggestions(false);
+          }
+      } else {
+          setShowSuggestions(false);
+      }
     }
+  };
+
+  const selectOfficialProduct = (official: any) => {
+      setCurrentItem({
+          ...currentItem,
+          product_name: official.commercial_name,
+          active_ingredient: official.active_ingredient || '',
+          product_id: 'new' // Still new to our inventory
+      });
+      setShowSuggestions(false);
   };
 
   const addItem = () => {
@@ -308,7 +344,8 @@ export const Invoices: React.FC = () => {
       unit_price: Number(currentItem.unit_price),
       total_price: Number(currentItem.quantity) * Number(currentItem.unit_price),
       category: currentItem.category || 'Otros',
-      unit: currentItem.unit || 'un'
+      unit: currentItem.unit || 'un',
+      active_ingredient: currentItem.active_ingredient
     };
 
     if (editingItemIndex !== null) {
@@ -343,7 +380,8 @@ export const Invoices: React.FC = () => {
         quantity: item.quantity,
         unit_price: item.unit_price,
         category: item.category,
-        unit: item.unit
+        unit: item.unit,
+        active_ingredient: item.active_ingredient || ''
     });
     setEditingItemIndex(index);
   };
@@ -356,7 +394,8 @@ export const Invoices: React.FC = () => {
       quantity: 0,
       unit_price: 0,
       category: 'Fertilizantes',
-      unit: 'L'
+      unit: 'L',
+      active_ingredient: ''
     });
   };
 
@@ -657,7 +696,8 @@ export const Invoices: React.FC = () => {
         unit_price: item.unit_price,
         total_price: item.total_price,
         category: item.category,
-        unit: item.products?.unit || 'un'
+        unit: item.products?.unit || 'un',
+        active_ingredient: item.products?.active_ingredient || ''
       }));
       setItems(loadedItems);
     }
@@ -869,7 +909,8 @@ export const Invoices: React.FC = () => {
                         category: item.category,
                         unit: item.unit,
                         current_stock: 0, 
-                        average_cost: 0
+                        average_cost: 0,
+                        active_ingredient: item.active_ingredient || ''
                     }])
                     .select()
                     .single();
@@ -936,7 +977,8 @@ export const Invoices: React.FC = () => {
                       category: item.category,
                       unit: item.unit,
                       current_stock: 0, 
-                      average_cost: 0
+                      average_cost: 0,
+                      active_ingredient: item.active_ingredient || ''
                     }])
                     .select()
                     .single();
@@ -1024,7 +1066,8 @@ export const Invoices: React.FC = () => {
                   category: item.category,
                   unit: item.unit,
                   current_stock: 0, 
-                  average_cost: 0
+                  average_cost: 0,
+                  active_ingredient: item.active_ingredient || ''
                 }])
                 .select()
                 .single();
@@ -1293,21 +1336,41 @@ export const Invoices: React.FC = () => {
                 </div>
                 
                 <div className="grid grid-cols-12 gap-2 items-end">
-                  <div className="col-span-12 md:col-span-3">
+                  <div className="col-span-12 md:col-span-3 relative">
                     <label className="block text-xs font-medium text-gray-500 mb-1">Descripción</label>
                     <input
                       type="text"
-                      list="product-list"
                       value={currentItem.product_name}
                       onChange={e => handleProductChange(e.target.value)}
                       className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5"
                       placeholder="Buscar o crear..."
+                      autoComplete="off"
                     />
-                    <datalist id="product-list">
-                      {products.map(p => (
-                        <option key={p.id} value={p.name} />
-                      ))}
-                    </datalist>
+                    
+                    {showSuggestions && officialSuggestions.length > 0 && (
+                        <div className="absolute z-50 left-0 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                            <div className="px-3 py-2 text-xs font-bold text-gray-500 bg-gray-50 border-b">
+                                Sugerencias SAG (Registro Oficial)
+                            </div>
+                            {officialSuggestions.map((sug, idx) => (
+                                <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => selectOfficialProduct(sug)}
+                                    className="w-full text-left px-4 py-2 text-sm hover:bg-green-50 border-b border-gray-100 last:border-0"
+                                >
+                                    <div className="font-medium text-gray-900">{sug.commercial_name}</div>
+                                    <div className="text-xs text-gray-500 flex justify-between">
+                                        <span>{sug.active_ingredient}</span>
+                                        <span>{sug.concentration}</span>
+                                    </div>
+                                    <div className="text-[10px] text-gray-400 mt-0.5">
+                                        Reg: {sug.registration_number} • {sug.company_name}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    )}
                   </div>
                   
                   <div className="col-span-12 md:col-span-3">
