@@ -123,7 +123,7 @@ export const Irrigation: React.FC = () => {
         .from('invoice_items')
         .select(`
             id, total_price, category,
-            products (name),
+            products (name, category),
             invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
         `)
         .eq('invoices.company_id', selectedCompany.id)
@@ -133,12 +133,13 @@ export const Irrigation: React.FC = () => {
         console.error('Error fetching items:', error);
     }
 
-    const targetCategories = ['riego', 'agua', 'electricidad', 'canal', 'bomba'];
+    const targetCategories = ['riego', 'agua', 'electricidad'];
     const filteredItems = items?.filter((item: any) => {
         // Double check company_id strictly
         if (item.invoices?.company_id !== selectedCompany.id) return false;
 
-        const cat = (item.category || '').toLowerCase().trim();
+        const cat = (item.category || item.products?.category || '').toLowerCase().trim();
+        // Check if category exactly matches or contains the key terms (for cases like "Riego Tecnificado")
         return targetCategories.some(c => cat.includes(c));
     });
 

@@ -150,28 +150,36 @@ export const Machinery: React.FC = () => {
     if (!selectedCompany) return;
 
     // Load Pending Items
-    // Increased limit to ensure we see all items even with many records
+    // Increased limit and added sorting to ensure we get the latest items
     const { data: items, error } = await supabase
         .from('invoice_items')
         .select(`
             id, total_price, category,
-            products (name),
+            products (name, category),
             invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
         `)
         .eq('invoices.company_id', selectedCompany.id)
-        .range(0, 9999); // Increased limit
+        .order('id', { ascending: false }) // Show newest items first
+        .range(0, 19999); // Increased limit significantly
 
     if (error) {
         console.error('Error fetching items:', error);
     }
     
-    const targetCategories = ['maquinaria', 'repuesto', 'mantencion', 'tractor', 'implemento'];
+    // Updated filtering logic to be strict on categories as per user request
     const filteredItems = items?.filter((item: any) => {
         // Double check company_id strictly
         if (item.invoices?.company_id !== selectedCompany.id) return false;
 
-        const cat = (item.category || '').toLowerCase().trim();
-        return targetCategories.some(c => cat.includes(c));
+        // Normalize category: lower case, remove accents
+        // Fallback to product category if item category is missing
+        const rawCat = item.category || item.products?.category || '';
+        const cat = rawCat.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        
+        // Keywords (normalized)
+        const allowedKeywords = ['maquinaria', 'repuesto', 'mantencion'];
+        
+        return allowedKeywords.some(keyword => cat.includes(keyword));
     });
 
     // Optimización: Usar RPC para obtener el total asignado de manera eficiente y escalable
@@ -403,7 +411,7 @@ export const Machinery: React.FC = () => {
     try {
         const machineData = {
             name: editingMachine.name,
-            type: editingMachine.type,
+            type: editingMachine.type || 'Tractor',
             brand: editingMachine.brand,
             model: editingMachine.model,
             plate: editingMachine.plate,
@@ -639,7 +647,7 @@ export const Machinery: React.FC = () => {
         </div>
         <button
             onClick={() => {
-                setEditingMachine(null);
+                setEditingMachine({ type: 'Tractor' });
                 setShowMachineModal(true);
             }}
             className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"

@@ -25,8 +25,11 @@ interface ReportData {
   labor_cost: number;
   worker_cost: number; // New field for Plant Workers
   fuel_cost: number;
+  fuel_cost_diesel: number; // New
+  fuel_cost_gasoline: number; // New
   machinery_cost: number;
   irrigation_cost: number;
+  general_cost: number; // New field for Other Costs
 }
 
 interface MonthlyExpense {
@@ -90,6 +93,9 @@ interface IncomeEntry {
     sector_id?: string;
     fields?: { name: string };
     sectors?: { name: string };
+    quantity_kg?: number;
+    amount_usd?: number;
+    price_per_kg?: number;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#8dd1e1', '#a4de6c', '#d0ed57'];
@@ -103,7 +109,15 @@ const CHEMICAL_CATEGORIES = [
 export const Reports: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'applications' | 'monthly' | 'categories' | 'pending' | 'chemicals' | 'detailed' | 'general' | 'budget'>('general');
+  const [activeTab, setActiveTab] = useState<'applications' | 'monthly' | 'categories' | 'pending' | 'paid_payments' | 'chemicals' | 'detailed' | 'general' | 'budget'>('general');
+  
+  // Pending Invoices Filter State
+  const [pendingStartDate, setPendingStartDate] = useState<string>('');
+  const [pendingEndDate, setPendingEndDate] = useState<string>('');
+
+  // Paid Invoices Filter State
+  const [paidStartDate, setPaidStartDate] = useState<string>('');
+  const [paidEndDate, setPaidEndDate] = useState<string>('');
   
   // Data State
   const [rawFields, setRawFields] = useState<any[]>([]);
@@ -115,6 +129,7 @@ export const Reports: React.FC = () => {
   const [rawFuelConsumption, setRawFuelConsumption] = useState<any[]>([]); // New: Fuel Consumption
   const [rawMachinery, setRawMachinery] = useState<any[]>([]); 
   const [rawIrrigation, setRawIrrigation] = useState<any[]>([]); 
+  const [rawGeneralCosts, setRawGeneralCosts] = useState<any[]>([]); // New state
   const [productionRecords, setProductionRecords] = useState<any[]>([]); 
   const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([]);
 
@@ -128,6 +143,8 @@ export const Reports: React.FC = () => {
   const [editingProduction, setEditingProduction] = useState<boolean>(false); 
   const [showIncomeModal, setShowIncomeModal] = useState(false);
   const [editingIncome, setEditingIncome] = useState<Partial<IncomeEntry>>({});
+  const [distributeGeneralCosts, setDistributeGeneralCosts] = useState(false);
+  const [pdfOrientation, setPdfOrientation] = useState<'portrait' | 'landscape'>('landscape'); // Default landscape
 
   // Display State
   const [reportData, setReportData] = useState<ReportData[]>([]);
@@ -147,6 +164,30 @@ export const Reports: React.FC = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
 
+  // Filtered Pending Invoices
+  const filteredPendingInvoices = pendingInvoices.filter(invoice => {
+    if (!pendingStartDate && !pendingEndDate) return true;
+    
+    // Check against Due Date (Vencimiento) as requested "Facturas Vencidas"
+    // Or Issue Date? User said "SELECCIONAR POR FECHAS LAS FACTURAS VENCIDAS".
+    // Usually means filtering by the Due Date range.
+    const dateToCheck = new Date(invoice.due_date);
+    const start = pendingStartDate ? new Date(pendingStartDate) : null;
+    const end = pendingEndDate ? new Date(pendingEndDate) : null;
+
+    if (start) start.setHours(0, 0, 0, 0);
+    if (end) end.setHours(23, 59, 59, 999);
+
+    if (start && end) {
+      return dateToCheck >= start && dateToCheck <= end;
+    } else if (start) {
+      return dateToCheck >= start;
+    } else if (end) {
+      return dateToCheck <= end;
+    }
+    return true;
+  });
+
   useEffect(() => {
     if (selectedCompany) {
       loadRawData();
@@ -155,8 +196,11 @@ export const Reports: React.FC = () => {
 
   // Process data whenever raw data or selected season changes
   useEffect(() => {
-    processReports();
-  }, [rawFields, rawApplications, rawInvoices, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawMachinery, rawIrrigation, productionRecords, incomeEntries, selectedSeason]);
+    // Only process if we have sectors/fields loaded, otherwise wait
+    if (rawFields.length > 0) {
+        processReports();
+    }
+  }, [rawFields, rawApplications, rawInvoices, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawMachinery, rawIrrigation, rawGeneralCosts, productionRecords, incomeEntries, selectedSeason]);
 
   const loadRawData = async () => {
     if (!selectedCompany) return;
@@ -204,7 +248,7 @@ export const Reports: React.FC = () => {
       // 2d. Fetch Fuel Consumption (Stock System)
       const { data: fuelCons } = await supabase
         .from('fuel_consumption')
-        .select('sector_id, estimated_price, date') // date is the column
+        .select('sector_id, estimated_price, date, activity, liters') 
         .in('sector_id', sectorIds);
       setRawFuelConsumption(fuelCons || []);
 
@@ -221,6 +265,13 @@ export const Reports: React.FC = () => {
         .select('sector_id, assigned_amount, assigned_date')
         .in('sector_id', sectorIds);
       setRawIrrigation(irrigation || []);
+
+      // 2g. Fetch General Costs (Distributed)
+      const { data: general } = await supabase
+        .from('general_costs')
+        .select('sector_id, amount, date')
+        .in('sector_id', sectorIds);
+      setRawGeneralCosts(general || []);
 
       // 2g. Fetch Production
       const { data: prod } = await supabase
@@ -240,10 +291,10 @@ export const Reports: React.FC = () => {
       const { data: invoicesData } = await supabase
         .from('invoices')
         .select(`
-          id, invoice_number, invoice_date, total_amount, supplier, status, due_date,
+          id, invoice_number, invoice_date, total_amount, supplier, status, due_date, document_type,
           invoice_items (
             id, category, total_price, quantity,
-            products (name)
+            products (name, unit, category)
           )
         `)
         .eq('company_id', selectedCompany.id);
@@ -369,6 +420,47 @@ export const Reports: React.FC = () => {
   const processApplicationReports = () => {
     if (!rawFields.length) return;
 
+    // Calculate Average Fuel Prices (Diesel vs Gasoline) for fallback
+    let totalDieselLiters = 0;
+    let totalDieselCost = 0;
+    let totalGasLiters = 0;
+    let totalGasCost = 0;
+
+    rawInvoices.forEach(inv => {
+        inv.invoice_items?.forEach((item: any) => {
+            const cat = (item.category || item.products?.category || '').toLowerCase().trim();
+            const productName = (item.products?.name || '').toLowerCase();
+            const unit = (item.products?.unit || '').toLowerCase().trim();
+            
+            // Skip non-fuel units
+            const invalidUnits = ['un', 'unid', 'unidad', 'und', 'pieza', 'kit', 'juego', 'global', 'servicio', 'hrs', 'horas'];
+            if (invalidUnits.includes(unit)) return;
+
+            const docType = (inv.document_type || '').toLowerCase();
+            const isNC = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
+            const qty = Number(item.quantity || 0);
+            const price = Number(item.total_price || 0);
+            
+            const finalQty = isNC ? -Math.abs(qty) : qty;
+            const finalPrice = isNC ? -Math.abs(price) : price;
+
+            const isDiesel = ['petroleo', 'diesel'].some(t => cat.includes(t) || productName.includes(t));
+            const isGasoline = ['bencina', 'gasolina', 'combustible'].some(t => cat.includes(t) || productName.includes(t));
+
+            // Logic to separate Diesel from Gasoline (Gasoline takes precedence if ambiguous "Combustible" unless "Diesel" is explicit)
+            if (isDiesel && !productName.includes('bencina') && !productName.includes('gasolina')) {
+                totalDieselLiters += finalQty;
+                totalDieselCost += finalPrice;
+            } else if (isGasoline) {
+                totalGasLiters += finalQty;
+                totalGasCost += finalPrice;
+            }
+        });
+    });
+
+    const avgPriceDiesel = totalDieselLiters > 0 ? totalDieselCost / totalDieselLiters : 0;
+    const avgPriceGasoline = totalGasLiters > 0 ? totalGasCost / totalGasLiters : 0;
+
     // Filter apps by season
     const filteredApps = rawApplications.filter(app => {
       if (!app.application_date) return false;
@@ -411,6 +503,12 @@ export const Reports: React.FC = () => {
       return isDateInSeason(item.assigned_date, selectedSeason);
     });
 
+    // Filter General Costs by season
+    const filteredGeneral = rawGeneralCosts.filter(item => {
+      if (!item.date) return false;
+      return isDateInSeason(item.date, selectedSeason);
+    });
+
     const data: ReportData[] = [];
 
     rawFields.forEach(field => {
@@ -427,8 +525,37 @@ export const Reports: React.FC = () => {
 
         const sectorFuelDirect = filteredFuel.filter(item => item.sector_id === sector.id);
         const sectorFuelCons = filteredFuelConsumption.filter(item => item.sector_id === sector.id);
-        const fuelCost = sectorFuelDirect.reduce((sum, item) => sum + Number(item.assigned_amount), 0) +
-                         sectorFuelCons.reduce((sum, item) => sum + Number(item.estimated_price), 0);
+        
+        // Split fuel costs (We need to guess type from activity for Consumption, or assume Diesel for Direct)
+        // Direct Fuel Assignment is typically Diesel (old system)
+        const fuelCostDirect = sectorFuelDirect.reduce((sum, item) => sum + Number(item.assigned_amount), 0);
+        
+        let fuelCostDiesel = fuelCostDirect;
+        let fuelCostGasoline = 0;
+
+        sectorFuelCons.forEach(item => {
+            const activity = (item.activity || '').toLowerCase();
+            let cost = Number(item.estimated_price);
+            
+            const isGasoline = activity.includes('gasolina') || activity.includes('bencina');
+            
+            // Fallback: If cost is 0 but we have liters, calculate it
+            if (cost === 0 && item.liters > 0) {
+                if (isGasoline) {
+                    cost = item.liters * avgPriceGasoline;
+                } else {
+                    cost = item.liters * avgPriceDiesel;
+                }
+            }
+            
+            if (isGasoline) {
+                fuelCostGasoline += cost;
+            } else {
+                fuelCostDiesel += cost;
+            }
+        });
+
+        const fuelCost = fuelCostDiesel + fuelCostGasoline;
 
         const sectorMachinery = filteredMachinery.filter(item => item.sector_id === sector.id);
         const machineryCost = sectorMachinery.reduce((sum, item) => sum + Number(item.assigned_amount), 0);
@@ -436,8 +563,11 @@ export const Reports: React.FC = () => {
         const sectorIrrigation = filteredIrrigation.filter(item => item.sector_id === sector.id);
         const irrigationCost = sectorIrrigation.reduce((sum, item) => sum + Number(item.assigned_amount), 0);
 
-        // For General Report: Total Cost = Apps + Labor + Workers + Fuel + Machinery + Irrigation
-        const totalCostGeneral = appCost + laborCost + workerCost + fuelCost + machineryCost + irrigationCost;
+        const sectorGeneral = filteredGeneral.filter(item => item.sector_id === sector.id);
+        const generalCost = sectorGeneral.reduce((sum, item) => sum + Number(item.amount), 0);
+
+        // For General Report: Total Cost = Apps + Labor + Workers + Fuel + Machinery + Irrigation + General
+        const totalCostGeneral = appCost + laborCost + workerCost + fuelCost + machineryCost + irrigationCost + generalCost;
         const totalCostAppsOnly = appCost;
         
         const hectares = Number(sector.hectares);
@@ -464,8 +594,11 @@ export const Reports: React.FC = () => {
           labor_cost: laborCost,
           worker_cost: workerCost,
           fuel_cost: fuelCost,
+          fuel_cost_diesel: fuelCostDiesel,
+          fuel_cost_gasoline: fuelCostGasoline,
           machinery_cost: machineryCost,
-          irrigation_cost: irrigationCost
+          irrigation_cost: irrigationCost,
+          general_cost: generalCost
         });
       });
     });
@@ -645,7 +778,10 @@ export const Reports: React.FC = () => {
             description: editingIncome.description,
             season: selectedSeason, // Or derived from date
             field_id: editingIncome.field_id || null,
-            sector_id: editingIncome.sector_id || null
+            sector_id: editingIncome.sector_id || null,
+            quantity_kg: Number(editingIncome.quantity_kg) || 0,
+            amount_usd: Number(editingIncome.amount_usd) || 0,
+            price_per_kg: Number(editingIncome.price_per_kg) || 0
         };
 
         if (editingIncome.id) {
@@ -685,7 +821,7 @@ export const Reports: React.FC = () => {
   };
 
   const handleGeneratePDF = () => {
-    const doc = new jsPDF();
+    const doc = new jsPDF({ orientation: pdfOrientation });
     const title = getReportTitle();
     
     // Header
@@ -860,7 +996,14 @@ export const Reports: React.FC = () => {
 
     } else if (activeTab === 'pending') {
         // PENDING INVOICES REPORT
-        const tableBody = pendingInvoices.map(inv => [
+        if (pendingStartDate || pendingEndDate) {
+            const startStr = pendingStartDate ? new Date(pendingStartDate).toLocaleDateString() : 'Inicio';
+            const endStr = pendingEndDate ? new Date(pendingEndDate).toLocaleDateString() : 'Fin';
+            doc.text(`Rango Vencimiento: ${startStr} - ${endStr}`, 14, 45);
+            yPos += 5;
+        }
+
+        const tableBody = filteredPendingInvoices.map(inv => [
             new Date(inv.due_date).toLocaleDateString(),
             `${inv.days_overdue} días`,
             inv.supplier,
@@ -970,6 +1113,7 @@ export const Reports: React.FC = () => {
       case 'categories': return 'Gastos por Clasificación';
       case 'chemicals': return 'Insumos Químicos';
       case 'pending': return 'Facturas Pendientes';
+      case 'paid_payments': return 'Pagos Realizados por Categoría';
       case 'detailed': return 'Informe Detallado';
       default: return 'Reporte';
     }
@@ -1037,6 +1181,18 @@ export const Reports: React.FC = () => {
               {availableSeasons.map(season => (
                 <option key={season} value={season}>{season}</option>
               ))}
+            </select>
+          </div>
+
+          <div className="relative">
+            <select
+              value={pdfOrientation}
+              onChange={(e) => setPdfOrientation(e.target.value as 'portrait' | 'landscape')}
+              className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm rounded-md"
+              title="Orientación del PDF"
+            >
+              <option value="portrait">Vertical</option>
+              <option value="landscape">Horizontal</option>
             </select>
           </div>
 
@@ -1114,6 +1270,14 @@ export const Reports: React.FC = () => {
             <AlertCircle className="mr-2 h-4 w-4" /> Facturas Pendientes
           </button>
           <button
+            onClick={() => setActiveTab('paid_payments')}
+            className={`${
+              activeTab === 'paid_payments' ? 'border-green-500 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
+          >
+            <DollarSign className="mr-2 h-4 w-4" /> Pagos Realizados
+          </button>
+          <button
             onClick={() => setActiveTab('detailed')}
             className={`${
               activeTab === 'detailed' ? 'border-green-500 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -1133,6 +1297,23 @@ export const Reports: React.FC = () => {
           {/* 8. BUDGET & SALES REPORT (NEW) */}
           {activeTab === 'budget' && (
             <div className="space-y-6">
+                {/* Settings for Budget - Exchange Rate */}
+                 <div className="bg-white p-4 rounded-lg shadow border border-gray-200 flex items-center justify-between">
+                    <div>
+                        <h3 className="text-lg font-medium text-gray-900">Configuración de Cálculo</h3>
+                        <p className="text-sm text-gray-500">Defina el tipo de cambio para los cálculos automáticos de ventas</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                         <label className="text-sm font-medium text-gray-700">Dólar (CLP/USD):</label>
+                         <input
+                             type="number"
+                             value={usdExchangeRate}
+                             onChange={(e) => setUsdExchangeRate(Number(e.target.value))}
+                             className="w-28 rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm text-right"
+                         />
+                    </div>
+                 </div>
+
                 {/* Summary Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="bg-white p-6 rounded-lg shadow border-l-4 border-green-500">
@@ -1176,6 +1357,203 @@ export const Reports: React.FC = () => {
                                 </p>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                {/* Summary by Sector Table */}
+                <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+                    <div className="px-4 py-5 sm:px-6 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                        <div>
+                            <h3 className="text-lg leading-6 font-medium text-gray-900">Resumen por Sector</h3>
+                            <p className="mt-1 text-sm text-gray-500">Kilos enviados y valores totales</p>
+                        </div>
+                        <div className="mt-2 sm:mt-0 flex items-center">
+                            <label className="flex items-center space-x-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={distributeGeneralCosts}
+                                    onChange={(e) => setDistributeGeneralCosts(e.target.checked)}
+                                    className="form-checkbox h-4 w-4 text-green-600 transition duration-150 ease-in-out"
+                                />
+                                <span className="text-sm font-medium text-gray-700">Distribuir Gastos No Asignados (Proporcional a Has)</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sector / Campo</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Has</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Kilos (Kg)</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ingresos (USD)</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ingresos (CLP)</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Directos (CLP)</th>
+                                    {distributeGeneralCosts && (
+                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Gral. (CLP)</th>
+                                    )}
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Total (USD)</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Total (CLP)</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Balance (USD)</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Balance (CLP)</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Promedio USD/Kg</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {(() => {
+                                    // 0. Calculate General Distribution Factor
+                                    const totalInvoices = monthlyExpenses.reduce((sum, m) => sum + m.total, 0);
+                                    const totalAllocated = reportData.reduce((sum, r) => sum + r.total_cost, 0);
+                                    const totalHectares = reportData.reduce((sum, r) => sum + r.hectares, 0);
+                                    
+                                    // Unassigned costs = Total Invoices - Allocated Costs (Usage)
+                                    // If negative (usage > purchase), we assume 0 unassigned.
+                                    const unassignedCost = Math.max(0, totalInvoices - totalAllocated);
+                                    const distributionFactor = (distributeGeneralCosts && totalHectares > 0) 
+                                        ? unassignedCost / totalHectares 
+                                        : 0;
+
+                                    // 1. Income Aggregation
+                                    const incomeMap = incomeEntries.reduce((acc, entry) => {
+                                        const key = entry.sector_id || 'general';
+                                        const name = entry.sectors ? `${entry.sectors.name} (${entry.fields?.name})` : (entry.fields?.name || 'Empresa General');
+                                        if (!acc[key]) acc[key] = { name, kg: 0, usd: 0, clp: 0 };
+                                        acc[key].kg += Number(entry.quantity_kg || 0);
+                                        acc[key].usd += Number(entry.amount_usd || 0);
+                                        acc[key].clp += Number(entry.amount || 0);
+                                        return acc;
+                                    }, {} as Record<string, { name: string, kg: number, usd: number, clp: number }>);
+
+                                    // 2. Expense Aggregation (Direct Costs + Distributed)
+                                    const expenseMap = reportData.reduce((acc, r) => {
+                                        // Direct Cost
+                                        const direct = r.total_cost;
+                                        // Distributed Cost
+                                        const distributed = r.hectares * distributionFactor;
+                                        
+                                        acc[r.sector_id] = {
+                                            direct: direct,
+                                            distributed: distributed,
+                                            total: direct + distributed,
+                                            hectares: r.hectares
+                                        };
+                                        return acc;
+                                    }, {} as Record<string, { direct: number, distributed: number, total: number, hectares: number }>);
+
+                                    // 3. Merge
+                                    const allKeysSet = new Set([...Object.keys(incomeMap), ...Object.keys(expenseMap)]);
+                                    if (unassignedCost > 0 && !distributeGeneralCosts) {
+                                        allKeysSet.add('general');
+                                    }
+                                    const allKeys = Array.from(allKeysSet);
+                                    
+                                    const rows = allKeys.map(key => {
+                                        const inc = incomeMap[key] || { name: '', kg: 0, usd: 0, clp: 0 };
+                                        const expData = expenseMap[key] || { direct: 0, distributed: 0, total: 0, hectares: 0 };
+                                        
+                                        // Try to find name if missing in income
+                                        let displayName = inc.name;
+                                        if (!displayName && key !== 'general') {
+                                            const r = reportData.find(d => d.sector_id === key);
+                                            if (r) displayName = `${r.sector_name} (${r.field_name})`;
+                                            else displayName = 'Sector Desconocido';
+                                        } else if (!displayName) {
+                                            displayName = 'Empresa General';
+                                        }
+
+                                        // If 'general' key exists and distribute is ON, its expenses (unassigned) are distributed to sectors, so they are 0 here.
+                                        // But wait, 'unassignedCost' is calculated globally.
+                                        // The 'general' row in this table usually comes from 'incomeEntries' with no sector.
+                                        // It should not show expenses if they are distributed.
+                                        
+                                        let finalExpense = expData.total;
+                                        
+                                        // If key is 'general' and we are NOT distributing, we should probably show the unassigned cost here?
+                                        // But 'expenseMap' only has keys from 'reportData' (sectors).
+                                        // So 'general' key in 'expenseMap' is undefined unless a sector is named 'general'.
+                                        
+                                        // If we are NOT distributing, the unassigned cost is simply not shown in sector rows.
+                                        // Should we show a "General / No Asignado" row?
+                                        // Yes, if there is income there, or if we want to balance the total.
+                                        
+                                        if (key === 'general' && !distributeGeneralCosts && unassignedCost > 0) {
+                                            // Show unassigned cost in General row if not distributed
+                                            finalExpense += unassignedCost;
+                                        }
+
+                                        return {
+                                            name: displayName,
+                                            hectares: expData.hectares,
+                                            kg: inc.kg,
+                                            usd: inc.usd,
+                                            income: inc.clp,
+                                            expenseDirect: expData.direct,
+                                            expenseDistributed: expData.distributed,
+                                            expenseTotal: finalExpense,
+                                            balance: inc.clp - finalExpense
+                                        };
+                                    }).sort((a, b) => b.income - a.income);
+
+                                    const totalKg = rows.reduce((sum, r) => sum + r.kg, 0);
+                                    const totalUsd = rows.reduce((sum, r) => sum + r.usd, 0);
+                                    const totalIncome = rows.reduce((sum, r) => sum + r.income, 0);
+                                    const totalExpenseDirect = rows.reduce((sum, r) => sum + r.expenseDirect, 0);
+                                    const totalExpenseDistributed = rows.reduce((sum, r) => sum + r.expenseDistributed, 0);
+                                    const totalExpense = rows.reduce((sum, r) => sum + r.expenseTotal, 0);
+
+                                    return (
+                                        <>
+                                            {rows.map((row, idx) => (
+                                                <tr key={idx}>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{row.name}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">{row.hectares > 0 ? row.hectares : '-'}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{row.kg.toLocaleString('es-CL')}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-700 font-medium">${row.usd.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(row.income)}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.expenseDirect)}</td>
+                                                    {distributeGeneralCosts && (
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-orange-600">{formatCLP(row.expenseDistributed)}</td>
+                                                    )}
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-700 font-medium">${(row.expenseTotal / (usdExchangeRate || 1)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600 font-bold">{formatCLP(row.expenseTotal)}</td>
+                                                    <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${row.balance >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                                                        ${(row.balance / (usdExchangeRate || 1)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                    </td>
+                                                    <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${row.balance >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                                                        {formatCLP(row.balance)}
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500 font-medium">
+                                                        {row.kg > 0 ? `$${(row.usd / row.kg).toFixed(2)}` : '-'}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            <tr className="bg-gray-50 font-bold border-t-2 border-gray-300">
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">TOTAL</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">-</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{totalKg.toLocaleString('es-CL')}</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-700">${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalIncome)}</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(totalExpenseDirect)}</td>
+                                                {distributeGeneralCosts && (
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-orange-600">{formatCLP(totalExpenseDistributed)}</td>
+                                                )}
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-700 font-medium">${(totalExpense / (usdExchangeRate || 1)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600 font-bold">{formatCLP(totalExpense)}</td>
+                                                <td className={`px-6 py-4 whitespace-nowrap text-sm text-right ${totalIncome - totalExpense >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                                                    ${((totalIncome - totalExpense) / (usdExchangeRate || 1)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                                </td>
+                                                <td className={`px-6 py-4 whitespace-nowrap text-sm text-right ${totalIncome - totalExpense >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                                                    {formatCLP(totalIncome - totalExpense)}
+                                                </td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">
+                                                    {totalKg > 0 ? `$${(totalUsd / totalKg).toFixed(2)}` : '-'}
+                                                </td>
+                                            </tr>
+                                        </>
+                                    );
+                                })()}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
 
@@ -1241,7 +1619,9 @@ export const Reports: React.FC = () => {
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descripción</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Campo / Sector</th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Monto</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Kilos (Kg)</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">USD</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Monto (CLP)</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
                                 </tr>
                             </thead>
@@ -1265,8 +1645,19 @@ export const Reports: React.FC = () => {
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                 {entry.fields?.name || '-'} {entry.sectors?.name ? `/ ${entry.sectors.name}` : ''}
                                             </td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">{(entry.quantity_kg || 0).toLocaleString('es-CL')}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">${(entry.amount_usd || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-green-700">{formatCLP(entry.amount)}</td>
                                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                <button 
+                                                    onClick={() => {
+                                                        setEditingIncome(entry);
+                                                        setShowIncomeModal(true);
+                                                    }}
+                                                    className="text-indigo-600 hover:text-indigo-900 mr-4"
+                                                >
+                                                    Editar
+                                                </button>
                                                 <button 
                                                     onClick={() => handleDeleteIncome(entry.id)}
                                                     className="text-red-600 hover:text-red-900"
@@ -1340,7 +1731,9 @@ export const Reports: React.FC = () => {
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Aplicaciones</th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Maquinaria</th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Riego</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Combustible</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Petróleo</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Combustible (Bencina)</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Otros</th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total (CLP)</th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total (USD)</th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo/Ha (CLP)</th>
@@ -1380,7 +1773,9 @@ export const Reports: React.FC = () => {
                               <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-blue-600">{formatCLP(row.app_cost_only)}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-orange-600">{formatCLP(row.machinery_cost)}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-cyan-600">{formatCLP(row.irrigation_cost)}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-purple-600">{formatCLP(row.fuel_cost)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-purple-600">{formatCLP(row.fuel_cost_diesel)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-purple-800">{formatCLP(row.fuel_cost_gasoline)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-gray-600">{formatCLP(row.general_cost)}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-900">{formatCLP(row.total_cost)}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">${costUsd.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">{formatCLP(row.cost_per_ha)}</td>
@@ -1623,8 +2018,40 @@ export const Reports: React.FC = () => {
           {activeTab === 'pending' && (
             <div className="bg-white shadow overflow-hidden sm:rounded-lg">
               <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
-                <h3 className="text-lg leading-6 font-medium text-gray-900">Facturas Pendientes de Pago</h3>
-                <p className="mt-1 text-sm text-gray-500">Facturas ingresadas sin marcar como "Pagada"</p>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                        <h3 className="text-lg leading-6 font-medium text-gray-900">Facturas Pendientes de Pago</h3>
+                        <p className="mt-1 text-sm text-gray-500">Facturas ingresadas sin marcar como "Pagada"</p>
+                    </div>
+                    <div className="flex flex-wrap items-end gap-2">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Desde (Vencimiento)</label>
+                            <input 
+                                type="date" 
+                                value={pendingStartDate}
+                                onChange={(e) => setPendingStartDate(e.target.value)}
+                                className="block w-36 rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Hasta (Vencimiento)</label>
+                            <input 
+                                type="date" 
+                                value={pendingEndDate}
+                                onChange={(e) => setPendingEndDate(e.target.value)}
+                                className="block w-36 rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
+                            />
+                        </div>
+                        {(pendingStartDate || pendingEndDate) && (
+                            <button
+                                onClick={() => { setPendingStartDate(''); setPendingEndDate(''); }}
+                                className="mb-0.5 px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                            >
+                                Limpiar
+                            </button>
+                        )}
+                    </div>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
@@ -1638,12 +2065,12 @@ export const Reports: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {pendingInvoices.length === 0 ? (
+                    {filteredPendingInvoices.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-6 py-4 text-center text-gray-500">No hay facturas pendientes.</td>
+                        <td colSpan={5} className="px-6 py-4 text-center text-gray-500">No hay facturas pendientes en el rango seleccionado.</td>
                       </tr>
                     ) : (
-                      pendingInvoices.map((inv) => (
+                      filteredPendingInvoices.map((inv) => (
                         <tr key={inv.id} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             {new Date(inv.due_date).toLocaleDateString()}
@@ -1664,6 +2091,170 @@ export const Reports: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {/* 7. PAID PAYMENTS REPORT */}
+          {activeTab === 'paid_payments' && (
+            <div className="space-y-6">
+                <div className="bg-white p-4 rounded-lg shadow border border-gray-200 flex flex-wrap gap-4 items-center justify-between">
+                    <div>
+                        <h3 className="text-lg font-medium text-gray-900">Pagos Realizados</h3>
+                        <p className="text-sm text-gray-500">Segmentado por categoría y fecha de vencimiento</p>
+                    </div>
+                    <div className="flex flex-wrap items-end gap-2">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Desde (Vencimiento)</label>
+                            <input 
+                                type="date" 
+                                value={paidStartDate}
+                                onChange={(e) => setPaidStartDate(e.target.value)}
+                                className="block w-36 rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-xs"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Hasta (Vencimiento)</label>
+                            <input 
+                                type="date" 
+                                value={paidEndDate}
+                                onChange={(e) => setPaidEndDate(e.target.value)}
+                                className="block w-36 rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-xs"
+                            />
+                        </div>
+                        {(paidStartDate || paidEndDate) && (
+                            <button
+                                onClick={() => { setPaidStartDate(''); setPaidEndDate(''); }}
+                                className="mb-0.5 px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                            >
+                                Limpiar
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                {(() => {
+                    // Logic to process Paid Invoices
+                    const paidItems = rawInvoices
+                        .filter(inv => inv.status === 'Pagada')
+                        .filter(inv => {
+                            if (!paidStartDate && !paidEndDate) return true;
+                            const dateToCheck = new Date(inv.due_date || inv.invoice_date);
+                            const start = paidStartDate ? new Date(paidStartDate) : null;
+                            const end = paidEndDate ? new Date(paidEndDate) : null;
+                            
+                            if (start) start.setHours(0, 0, 0, 0);
+                            if (end) end.setHours(23, 59, 59, 999);
+
+                            if (start && end) return dateToCheck >= start && dateToCheck <= end;
+                            if (start) return dateToCheck >= start;
+                            if (end) return dateToCheck <= end;
+                            return true;
+                        });
+
+                    // Flatten items and group by category
+                    const groupedData = new Map<string, { total: number, items: any[] }>();
+
+                    paidItems.forEach(inv => {
+                        const dueDate = inv.due_date || inv.invoice_date;
+                        
+                        // If invoice has items, distribute cost. If not, put in "Sin Categoría"
+                        if (inv.invoice_items && inv.invoice_items.length > 0) {
+                            inv.invoice_items.forEach((item: any) => {
+                                const category = item.category || item.products?.category || 'Sin Categoría';
+                                if (!groupedData.has(category)) {
+                                    groupedData.set(category, { total: 0, items: [] });
+                                }
+                                const group = groupedData.get(category)!;
+                                const amount = Number(item.total_price) || 0;
+                                group.total += amount;
+                                group.items.push({
+                                    date: inv.invoice_date,
+                                    dueDate: dueDate,
+                                    supplier: inv.supplier,
+                                    invoiceNumber: inv.invoice_number,
+                                    description: item.products?.name || 'Item',
+                                    amount: amount
+                                });
+                            });
+                        } else {
+                            const category = 'Sin Categoría';
+                            if (!groupedData.has(category)) {
+                                groupedData.set(category, { total: 0, items: [] });
+                            }
+                            const group = groupedData.get(category)!;
+                            const amount = Number(inv.total_amount) || 0;
+                            group.total += amount;
+                            group.items.push({
+                                date: inv.invoice_date,
+                                dueDate: dueDate,
+                                supplier: inv.supplier,
+                                invoiceNumber: inv.invoice_number,
+                                description: 'Factura General',
+                                amount: amount
+                            });
+                        }
+                    });
+
+                    // Sort groups by total amount desc
+                    const sortedGroups = Array.from(groupedData.entries())
+                        .sort((a, b) => b[1].total - a[1].total);
+
+                    if (sortedGroups.length === 0) {
+                        return (
+                            <div className="text-center py-10 text-gray-500 bg-white rounded-lg shadow">
+                                No hay pagos registrados en el periodo seleccionado.
+                            </div>
+                        );
+                    }
+
+                    return (
+                        <div className="space-y-6">
+                            {sortedGroups.map(([category, data]) => {
+                                // Sort items by due date
+                                const sortedItems = data.items.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
+                                return (
+                                    <div key={category} className="bg-white shadow overflow-hidden sm:rounded-lg">
+                                        <div className="px-4 py-5 sm:px-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+                                            <h3 className="text-lg leading-6 font-medium text-gray-900">{category}</h3>
+                                            <span className="text-lg font-bold text-green-700">{formatCLP(data.total)}</span>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="min-w-full divide-y divide-gray-200">
+                                                <thead className="bg-white">
+                                                    <tr>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vencimiento</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha Emisión</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Proveedor</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">N° Factura</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Detalle</th>
+                                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Monto</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="bg-white divide-y divide-gray-200">
+                                                    {sortedItems.map((item, idx) => (
+                                                        <tr key={idx} className="hover:bg-gray-50">
+                                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                                {new Date(item.dueDate).toLocaleDateString()}
+                                                            </td>
+                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                                {new Date(item.date).toLocaleDateString()}
+                                                            </td>
+                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.supplier}</td>
+                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.invoiceNumber}</td>
+                                                            <td className="px-6 py-4 text-sm text-gray-500">{item.description}</td>
+                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">{formatCLP(item.amount)}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    );
+                })()}
             </div>
           )}
 
@@ -1764,6 +2355,9 @@ export const Reports: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
             <div className="bg-white rounded-lg p-6 w-full max-w-lg">
                 <h3 className="text-lg font-medium text-gray-900 mb-4">{editingIncome.id ? 'Editar Ingreso' : 'Registrar Ingreso / Presupuesto'}</h3>
+                <div className="text-sm text-gray-500 mb-4 text-right">
+                    Tipo de Cambio: ${usdExchangeRate} CLP/USD
+                </div>
                 <form onSubmit={handleSaveIncome} className="space-y-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Fecha</label>
@@ -1787,16 +2381,79 @@ export const Reports: React.FC = () => {
                             <option value="Otro Ingreso">Otro Ingreso</option>
                         </select>
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Monto</label>
-                        <input
-                            type="number"
-                            required
-                            min="0"
-                            value={editingIncome.amount || ''}
-                            onChange={e => setEditingIncome({...editingIncome, amount: Number(e.target.value)})}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
-                        />
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Kilos (Kg)</label>
+                            <input
+                                type="number"
+                                min="0"
+                                value={editingIncome.quantity_kg || ''}
+                                onChange={e => {
+                                    const kg = Number(e.target.value);
+                                    const price = editingIncome.price_per_kg || 0;
+                                    const usdVal = kg * price;
+                                    setEditingIncome({
+                                        ...editingIncome, 
+                                        quantity_kg: kg,
+                                        amount_usd: usdVal,
+                                        amount: Math.round(usdVal * usdExchangeRate)
+                                    });
+                                }}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Precio Venta (USD/Kg)</label>
+                            <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={editingIncome.price_per_kg || ''}
+                                onChange={e => {
+                                    const price = Number(e.target.value);
+                                    const kg = editingIncome.quantity_kg || 0;
+                                    const usdVal = kg * price;
+                                    setEditingIncome({
+                                        ...editingIncome, 
+                                        price_per_kg: price,
+                                        amount_usd: usdVal,
+                                        amount: Math.round(usdVal * usdExchangeRate)
+                                    });
+                                }}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                            />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Total (USD)</label>
+                            <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={editingIncome.amount_usd || ''}
+                                onChange={e => {
+                                    const usdVal = Number(e.target.value);
+                                    setEditingIncome({
+                                        ...editingIncome, 
+                                        amount_usd: usdVal,
+                                        amount: Math.round(usdVal * usdExchangeRate)
+                                    });
+                                }}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Total (CLP)</label>
+                            <input
+                                type="number"
+                                required
+                                min="0"
+                                value={editingIncome.amount || ''}
+                                onChange={e => setEditingIncome({...editingIncome, amount: Number(e.target.value)})}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                            />
+                        </div>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Descripción</label>

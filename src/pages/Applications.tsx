@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Plus, Loader2, Save, Trash2, Beaker, Calendar, Droplets, MapPin, RefreshCw, Edit, Filter, Download } from 'lucide-react';
+import { Plus, Loader2, Save, Trash2, Beaker, Calendar, Droplets, MapPin, RefreshCw, Edit, Filter, Download, Eye } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -25,6 +25,7 @@ interface Product {
   current_stock: number;
   average_cost: number;
   category: string;
+  active_ingredient?: string; // New field
 }
 
 interface ApplicationItem {
@@ -39,6 +40,7 @@ interface ApplicationItem {
   unit_cost: number;
   total_cost: number;
   unit: string; // Product unit
+  objective?: string; // New field for application objective
 }
 
 interface ApplicationHistory {
@@ -60,6 +62,7 @@ interface ApplicationHistory {
     unit: string;
     unit_cost: number;
     total_cost: number;
+    objective?: string; // New field
   }[];
 }
 
@@ -111,6 +114,7 @@ export const Applications: React.FC = () => {
   const [fields, setFields] = useState<Field[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [applications, setApplications] = useState<ApplicationHistory[]>([]);
+  const [avgFuelPrice, setAvgFuelPrice] = useState<number>(0);
   
   // Application Form State
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -132,12 +136,14 @@ export const Applications: React.FC = () => {
     dose_input_value: number;
     dose_input_type: 'ha' | 'hl';
     dose_unit: string;
+    objective: string;
   }>({
     product_id: '',
     quantity: 0,
     dose_input_value: 0,
     dose_input_type: 'ha',
-    dose_unit: ''
+    dose_unit: '',
+    objective: ''
   });
 
   useEffect(() => {
@@ -146,17 +152,32 @@ export const Applications: React.FC = () => {
     }
   }, [selectedCompany]);
 
-  // Update dose unit when product changes
+  // Update dose unit and suggest objective when product changes
   useEffect(() => {
     if (currentItem.product_id) {
       const product = products.find(p => p.id === currentItem.product_id);
       if (product) {
         // Default to product unit, but if it's L allow cc, if Kg allow gr
         const base = normalizeUnit(product.unit);
-        setCurrentItem(prev => ({ ...prev, dose_unit: product.unit })); // Default to product unit
+
+        // Find last used objective for this product
+        let lastObjective = '';
+        for (const app of applications) {
+            const item = app.items.find(i => i.product_id === currentItem.product_id);
+            if (item && item.objective) {
+                lastObjective = item.objective;
+                break;
+            }
+        }
+
+        setCurrentItem(prev => ({ 
+            ...prev, 
+            dose_unit: product.unit,
+            objective: lastObjective
+        })); 
       }
     }
-  }, [currentItem.product_id, products]);
+  }, [currentItem.product_id, products, applications]);
 
   // Recalculate quantity when dose inputs, water volume or sector changes
   useEffect(() => {
@@ -230,6 +251,47 @@ export const Applications: React.FC = () => {
     } else {
         setApplications(appsData || []);
     }
+
+    // Calculate Average Fuel Price (Diesel)
+    try {
+        const { data: fuelItems } = await supabase
+            .from('invoice_items')
+            .select(`
+                quantity, total_price, category,
+                products (name),
+                invoices!inner (document_type)
+            `)
+            .eq('invoices.company_id', selectedCompany.id);
+
+        if (fuelItems) {
+            const targetCategories = ['petroleo', 'diesel'];
+            const filtered = fuelItems.filter((item: any) => {
+                const cat = (item.category || '').toLowerCase();
+                const name = (item.products?.name || '').toLowerCase();
+                return targetCategories.some(t => cat.includes(t) || name.includes(t)) && !cat.includes('bencina') && !name.includes('gasolina');
+            });
+
+            const totalLiters = filtered.reduce((sum, item: any) => {
+                 const docType = (item.invoices.document_type || '').toLowerCase();
+                 const isNC = docType.includes('nota de cr') || docType.includes('nc');
+                 const qty = Number(item.quantity || 0);
+                 return sum + (isNC ? -qty : qty);
+            }, 0);
+
+            const totalCost = filtered.reduce((sum, item: any) => {
+                 const docType = (item.invoices.document_type || '').toLowerCase();
+                 const isNC = docType.includes('nota de cr') || docType.includes('nc');
+                 const cost = Number(item.total_price || 0);
+                 return sum + (isNC ? -cost : cost);
+            }, 0);
+
+            if (totalLiters > 0) {
+                setAvgFuelPrice(totalCost / totalLiters);
+            }
+        }
+    } catch (err) {
+        console.error('Error calculating fuel price:', err);
+    }
   };
 
   const handleAddItem = () => {
@@ -263,11 +325,12 @@ export const Applications: React.FC = () => {
       dose_unit: currentItem.dose_unit,
       unit_cost: product.average_cost,
       total_cost: currentItem.quantity * product.average_cost,
-      unit: product.unit
+      unit: product.unit,
+      objective: currentItem.objective // Save objective
     };
 
     setItems([...items, newItem]);
-    setCurrentItem({ product_id: '', quantity: 0, dose_input_value: 0, dose_input_type: 'ha', dose_unit: '' });
+    setCurrentItem({ product_id: '', quantity: 0, dose_input_value: 0, dose_input_type: 'ha', dose_unit: '', objective: '' });
   };
 
   const removeItem = (index: number) => {
@@ -290,7 +353,7 @@ export const Applications: React.FC = () => {
     }
   };
 
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = (action: 'save' | 'preview' = 'save') => {
     const doc = new jsPDF();
     const filteredApps = applications.filter(app => filterSectorId === 'all' || app.sector_id === filterSectorId);
     
@@ -315,7 +378,7 @@ export const Applications: React.FC = () => {
     // Table Data preparation
     const tableRows = filteredApps.map(app => {
         const details = app.items.map(item => 
-            `${item.product_name}: ${item.dose_per_hectare} ${item.unit}/ha`
+            `${item.product_name}${item.objective ? ` (${item.objective})` : ''}: ${item.dose_per_hectare} ${item.unit}/ha`
         ).join('\n');
         
         return [
@@ -344,7 +407,149 @@ export const Applications: React.FC = () => {
         }
     });
 
-    doc.save(`reporte_aplicaciones_${new Date().toISOString().split('T')[0]}.pdf`);
+    // --- SUMMARY SECTION ---
+    const finalY = (doc as any).lastAutoTable.finalY + 15;
+    
+    // Check if we need a new page
+    if (finalY > 250) {
+        doc.addPage();
+        doc.text('Resumen de Productos Utilizados', 14, 20);
+    } else {
+        doc.text('Resumen de Productos Utilizados', 14, finalY);
+    }
+
+    const summaryStart = finalY > 250 ? 25 : finalY + 5;
+
+    // Calculate totals
+    const productTotals: Record<string, {name: string, quantity: number, unit: string, cost: number}> = {};
+    
+    filteredApps.forEach(app => {
+        app.items.forEach(item => {
+             if (!productTotals[item.product_id]) {
+                 productTotals[item.product_id] = {
+                     name: item.product_name,
+                     quantity: 0,
+                     unit: item.unit,
+                     cost: 0
+                 };
+             }
+             productTotals[item.product_id].quantity += item.quantity_used;
+             productTotals[item.product_id].cost += item.total_cost;
+        });
+    });
+
+    const summaryRows = Object.values(productTotals)
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(p => [
+            p.name,
+            `${p.quantity.toFixed(2)} ${p.unit}`,
+            formatCLP(p.cost)
+        ]);
+
+    autoTable(doc, {
+        head: [['Producto', 'Cantidad Total', 'Costo Total']],
+        body: summaryRows,
+        startY: summaryStart,
+        theme: 'striped',
+        headStyles: { fillColor: [60, 60, 60] },
+        styles: { fontSize: 9 }
+    });
+
+    if (action === 'save') {
+        doc.save(`reporte_aplicaciones_${new Date().toISOString().split('T')[0]}.pdf`);
+    } else {
+        window.open(doc.output('bloburl'), '_blank');
+    }
+  };
+
+  const handleDownloadFieldPDF = (action: 'save' | 'preview' = 'save') => {
+    const doc = new jsPDF();
+    const filteredApps = applications.filter(app => filterSectorId === 'all' || app.sector_id === filterSectorId);
+    
+    // Title
+    doc.setFontSize(18);
+    doc.text('Orden de Aplicación (Campo)', 14, 22);
+    
+    doc.setFontSize(11);
+    doc.setTextColor(100);
+    const dateStr = new Date().toLocaleDateString();
+    let subtitle = `Generado el: ${dateStr}`;
+    
+    if (filterSectorId !== 'all') {
+        const sectorName = applications.find(a => a.sector_id === filterSectorId)?.sector_name || 'Sector Seleccionado';
+        subtitle += ` - Filtrado por Sector: ${sectorName}`;
+    } else {
+        subtitle += ' - Todos los Sectores';
+    }
+    
+    doc.text(subtitle, 14, 30);
+    
+    // Iterate over applications to create detailed field orders
+    let currentY = 40;
+
+    filteredApps.forEach((app, index) => {
+        // Add page break if needed
+        if (currentY > 250) {
+            doc.addPage();
+            currentY = 20;
+        }
+
+        // Application Header
+        doc.setFontSize(12);
+        doc.setTextColor(0);
+        doc.setFont("helvetica", "bold");
+        
+        // Ensure date is clear and formatted
+        const [y, m, d] = app.application_date.split('T')[0].split('-');
+        const appDate = `${d}/${m}/${y}`;
+
+        doc.text(`Aplicación #${index + 1} - ${appDate}`, 14, currentY);
+        currentY += 6;
+        
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        doc.text(`Campo: ${app.field_name} | Sector: ${app.sector_name} (${app.sector_hectares} ha)`, 14, currentY);
+        currentY += 5;
+        doc.text(`Tipo: ${app.application_type} | Mojamiento: ${app.water_liters_per_hectare} L/ha`, 14, currentY);
+        currentY += 8;
+
+        // Table for this application
+        const tableBody = app.items.map(item => {
+            // Find product to get active ingredient
+            // We need to look up in the 'products' state. 
+            // Note: 'products' state must be accessible here.
+            const product = products.find(p => p.id === item.product_id);
+            const activeIngredient = product?.active_ingredient || '-';
+
+            return [
+                item.product_name,
+                activeIngredient,
+                item.objective || '-',
+                `${item.dose_per_hectare} ${item.unit}/ha`,
+                `${app.water_liters_per_hectare} L/ha`,
+                `${item.quantity_used} ${item.unit}` // Added Total Quantity
+            ];
+        });
+
+        autoTable(doc, {
+            head: [['Producto', 'Ingrediente Activo', 'Objetivo', 'Dosis', 'Mojamiento', 'Total']],
+            body: tableBody,
+            startY: currentY,
+            styles: { fontSize: 9, cellPadding: 3 },
+            headStyles: { fillColor: [46, 191, 88] }, // Green header
+            margin: { left: 14, right: 14 },
+            theme: 'grid'
+        });
+
+        // Update Y for next loop
+        currentY = (doc as any).lastAutoTable.finalY + 15;
+    });
+
+    if (action === 'save') {
+        doc.save(`orden_campo_${new Date().toISOString().split('T')[0]}.pdf`);
+    } else {
+        window.open(doc.output('bloburl'), '_blank');
+    }
   };
 
   const handleDeleteAllApplications = async () => {
@@ -393,7 +598,8 @@ export const Applications: React.FC = () => {
             dose_unit: ai.unit,
             unit_cost: ai.unit_cost,
             total_cost: ai.total_cost,
-            unit: ai.unit
+            unit: ai.unit,
+            objective: ai.objective || '' // Populate objective
         };
     });
     
@@ -436,11 +642,63 @@ export const Applications: React.FC = () => {
                 quantity_used: item.quantity_used,
                 dose_per_hectare: item.dose_per_hectare,
                 unit_cost: item.unit_cost,
-                total_cost: item.total_cost
+                total_cost: item.total_cost,
+                objective: item.objective || '' // Include objective
             }))
         });
 
         if (error) throw error;
+        
+        // Update Fuel Record (Formula: 12L/ha)
+        // We do this separately. Ideally should be in the RPC but keeping it here for now.
+        // For Update, we check if record exists or create it.
+        const sector = fields.find(f => f.id === selectedFieldId)?.sectors.find(s => s.id === selectedSectorId);
+        
+        if (sector && sector.hectares > 0) {
+            // Use configured rate or default to 12
+            const rate = selectedCompany.application_fuel_rate || 12;
+            const fuelLiters = rate * sector.hectares;
+            const finalLiters = Math.max(fuelLiters, 0.01);
+            const fuelCost = finalLiters * avgFuelPrice;
+            
+            // Check if exists
+            const { data: existingFuel } = await supabase
+                .from('fuel_consumption')
+                .select('id')
+                .eq('application_id', editingId)
+                .maybeSingle();
+
+            if (existingFuel) {
+                const { error: updateError } = await supabase
+                    .from('fuel_consumption')
+                    .update({
+                        date: applicationDate,
+                        sector_id: selectedSectorId,
+                        liters: finalLiters,
+                        estimated_price: fuelCost
+                    })
+                    .eq('id', existingFuel.id);
+                
+                if (updateError) console.error('Error updating fuel record:', updateError);
+
+            } else {
+                // Create if missing
+                const { error: insertError } = await supabase
+                    .from('fuel_consumption')
+                    .insert([{
+                        company_id: selectedCompany.id,
+                        date: applicationDate,
+                        activity: 'Aplicación (Automática)',
+                        liters: finalLiters,
+                        estimated_price: fuelCost,
+                        sector_id: selectedSectorId,
+                        application_id: editingId
+                    }]);
+                
+                if (insertError) console.error('Error creating missing fuel record on update:', insertError);
+            }
+        }
+
         alert('Aplicación actualizada exitosamente');
         handleCancelEdit(); // Reset form
 
@@ -473,7 +731,8 @@ export const Applications: React.FC = () => {
               quantity_used: item.quantity_used,
               dose_per_hectare: item.dose_per_hectare, 
               unit_cost: item.unit_cost,
-              total_cost: item.total_cost
+              total_cost: item.total_cost,
+              objective: item.objective || '' // Include objective
             }])
             .select()
             .single();
@@ -501,6 +760,46 @@ export const Applications: React.FC = () => {
                   }]);
           }
         }
+
+        // 3. Create Automatic Fuel Consumption Record
+        const sector = fields.find(f => f.id === selectedFieldId)?.sectors.find(s => s.id === selectedSectorId);
+        
+        if (sector && sector.hectares > 0) {
+            // Use configured rate or default to 12
+            const rate = selectedCompany.application_fuel_rate || 12;
+            const fuelLiters = rate * sector.hectares;
+            // Ensure we have at least a small amount to pass check constraint > 0
+            const finalLiters = Math.max(fuelLiters, 0.01);
+            const fuelCost = finalLiters * avgFuelPrice;
+            
+            console.log('Attempting to create fuel record:', {
+                company_id: selectedCompany.id,
+                date: applicationDate,
+                liters: finalLiters,
+                sector_id: selectedSectorId,
+                application_id: application.id
+            });
+
+            const { error: fuelError } = await supabase
+                .from('fuel_consumption')
+                .insert([{
+                    company_id: selectedCompany.id,
+                    date: applicationDate,
+                    activity: 'Aplicación (Automática)',
+                    liters: finalLiters,
+                    estimated_price: fuelCost,
+                    sector_id: selectedSectorId,
+                    application_id: application.id
+                }]);
+            
+            if (fuelError) {
+                console.error('Error creating fuel record:', fuelError);
+                alert('La aplicación se guardó, pero hubo un error registrando el petróleo: ' + fuelError.message);
+            }
+        } else {
+            console.warn('Skipping fuel record: Sector not found or 0 hectares', sector);
+        }
+
         alert('Aplicación registrada exitosamente');
         handleCancelEdit(); // Reset form
       }
@@ -527,6 +826,36 @@ export const Applications: React.FC = () => {
     if (base === 'kg' || base === 'gr') return ['Kg', 'gr'];
     return [productUnit];
   };
+
+  // Calculate stats by objective
+  const objectiveStats = React.useMemo(() => {
+    const stats: Record<string, number> = {};
+    applications.forEach(app => {
+      if (filterSectorId === 'all' || app.sector_id === filterSectorId) {
+          app.items.forEach(item => {
+            if (item.objective) {
+               // Normalize slightly to group similar ones if needed, but strict for now
+               const key = item.objective.trim();
+               if (key) stats[key] = (stats[key] || 0) + 1;
+            }
+          });
+      }
+    });
+    return stats;
+  }, [applications, filterSectorId]);
+
+  // Derive unique objectives for autocomplete
+  const uniqueObjectives = React.useMemo(() => {
+    const objectives = new Set<string>();
+    applications.forEach(app => {
+        app.items.forEach(item => {
+            if (item.objective) {
+                objectives.add(item.objective.trim());
+            }
+        });
+    });
+    return Array.from(objectives).sort();
+  }, [applications]);
 
   return (
     <div className="space-y-6">
@@ -725,6 +1054,24 @@ export const Applications: React.FC = () => {
                     </select>
                   </div>
                 </div>
+
+                {/* Objective Input */}
+                <div className="mt-2">
+                    <label className="block text-xs font-medium text-gray-500">Objetivo (Plaga / Enfermedad / Nutrición)</label>
+                    <input
+                        type="text"
+                        list="objectives-list"
+                        value={currentItem.objective}
+                        onChange={e => setCurrentItem({...currentItem, objective: e.target.value})}
+                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                        placeholder="Ej: Arañita, Oidio, Corrector de Carencias..."
+                    />
+                    <datalist id="objectives-list">
+                        {uniqueObjectives.map((obj, idx) => (
+                            <option key={idx} value={obj} />
+                        ))}
+                    </datalist>
+                </div>
                 
                 <div className="flex flex-col sm:flex-row gap-4 items-end justify-between border-t border-gray-200 pt-3 mt-1">
                    {/* Info Display */}
@@ -766,6 +1113,7 @@ export const Applications: React.FC = () => {
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Producto</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Categoría</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Objetivo</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Dosis/Ha (Real)</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Entrada</th>
                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Usado</th>
@@ -778,6 +1126,7 @@ export const Applications: React.FC = () => {
                         <tr key={index}>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.product_name}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{item.product_category}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{item.objective || '-'}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.dose_per_hectare} {item.unit}/ha</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
                               {item.dose_input_value} {item.dose_unit} ({item.dose_input_type === 'ha' ? '/ha' : '/100L'})
@@ -794,7 +1143,7 @@ export const Applications: React.FC = () => {
                     </tbody>
                     <tfoot>
                         <tr className="bg-gray-50">
-                          <td colSpan={4} className="px-6 py-4 text-right text-sm font-bold text-gray-900">Costo Total Aplicación:</td>
+                          <td colSpan={6} className="px-6 py-4 text-right text-sm font-bold text-gray-900">Costo Total Aplicación:</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
                             {formatCLP(items.reduce((sum, item) => sum + item.total_cost, 0))}
                           </td>
@@ -838,6 +1187,22 @@ export const Applications: React.FC = () => {
         </form>
       </div>
 
+      {/* Objective Stats Summary */}
+      {Object.keys(objectiveStats).length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {Object.entries(objectiveStats).map(([obj, count]) => (
+                  <div key={obj} className="bg-white overflow-hidden shadow rounded-lg px-4 py-3 border-l-4 border-green-500">
+                      <dt className="text-sm font-medium text-gray-500 truncate">
+                          {obj}
+                      </dt>
+                      <dd className="mt-1 text-2xl font-semibold text-gray-900">
+                          {count}
+                      </dd>
+                  </div>
+              ))}
+          </div>
+      )}
+
       {/* Applications List */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
@@ -845,14 +1210,41 @@ export const Applications: React.FC = () => {
             
             {/* Sector Filter & Download */}
             <div className="flex items-center space-x-4">
-                <button
-                    onClick={handleDownloadPDF}
-                    className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                    title="Descargar PDF"
-                >
-                    <Download className="h-4 w-4 mr-2" />
-                    PDF
-                </button>
+                <div className="flex shadow-sm rounded-md">
+                    <button
+                        onClick={() => handleDownloadFieldPDF('preview')}
+                        className="inline-flex items-center px-2 py-1.5 border border-green-300 text-sm font-medium rounded-l-md text-green-700 bg-white hover:bg-green-50 focus:z-10 focus:ring-1 focus:ring-green-500 focus:border-green-500"
+                        title="Vista Previa PDF Campo"
+                    >
+                        <Eye className="h-4 w-4" />
+                    </button>
+                    <button
+                        onClick={() => handleDownloadFieldPDF('save')}
+                        className="inline-flex items-center px-3 py-1.5 border border-l-0 border-green-300 text-sm font-medium rounded-r-md text-green-700 bg-white hover:bg-green-50 focus:z-10 focus:ring-1 focus:ring-green-500 focus:border-green-500"
+                        title="Descargar PDF de Campo"
+                    >
+                        <Download className="h-4 w-4 mr-2" />
+                        PDF Campo
+                    </button>
+                </div>
+
+                <div className="flex shadow-sm rounded-md">
+                    <button
+                        onClick={() => handleDownloadPDF('preview')}
+                        className="inline-flex items-center px-2 py-1.5 border border-gray-300 text-sm font-medium rounded-l-md text-gray-700 bg-white hover:bg-gray-50 focus:z-10 focus:ring-1 focus:ring-green-500 focus:border-green-500"
+                        title="Vista Previa PDF Oficina"
+                    >
+                        <Eye className="h-4 w-4" />
+                    </button>
+                    <button
+                        onClick={() => handleDownloadPDF('save')}
+                        className="inline-flex items-center px-3 py-1.5 border border-l-0 border-gray-300 text-sm font-medium rounded-r-md text-gray-700 bg-white hover:bg-gray-50 focus:z-10 focus:ring-1 focus:ring-green-500 focus:border-green-500"
+                        title="Descargar PDF Oficina"
+                    >
+                        <Download className="h-4 w-4 mr-2" />
+                        PDF
+                    </button>
+                </div>
 
                 <div className="flex items-center space-x-2">
                     <Filter className="h-4 w-4 text-gray-400" />
@@ -925,7 +1317,8 @@ export const Applications: React.FC = () => {
                                     <ul className="list-disc pl-4 space-y-1">
                                         {app.items?.map((item, idx) => (
                                             <li key={idx} className="text-xs">
-                                                <span className="font-medium text-gray-700">{item.product_name}:</span> 
+                                                <span className="font-medium text-gray-700">{item.product_name}</span> 
+                                                {item.objective && <span className="text-green-600 font-medium"> ({item.objective})</span>}:
                                                 {' '}{item.dose_per_hectare} {item.unit}/ha
                                                 {' '}<span className="text-gray-400">({item.quantity_used} {item.unit} total)</span>
                                             </li>

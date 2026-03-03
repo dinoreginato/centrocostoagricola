@@ -40,7 +40,14 @@ export const Login: React.FC = () => {
         navigate('/');
       }
     } catch (err: any) {
-      setError(err.message || 'Error de autenticación');
+      console.error('Login error:', err);
+      if (err.message === 'Failed to fetch') {
+        setError('Error de conexión con el servidor. Posible bloqueo de red o configuración de dominio (CORS) en Supabase.');
+      } else if (err.message.includes('Invalid login credentials')) {
+        setError('Correo o contraseña incorrectos.');
+      } else {
+        setError(err.message || 'Error de autenticación');
+      }
     } finally {
       setLoading(false);
     }

@@ -19,7 +19,9 @@ import {
   Wrench,
   Droplets,
   Briefcase,
-  Building2
+  Building2,
+  LayoutList,
+  Beaker
 } from 'lucide-react';
 
 export const Layout: React.FC = () => {
@@ -52,6 +54,8 @@ export const Layout: React.FC = () => {
     { name: 'Trabajadores', href: '/trabajadores', icon: Briefcase, roles: ['admin', 'editor', 'viewer'] },
     { name: 'Bodega', href: '/bodega', icon: Package, roles: ['admin', 'editor', 'viewer'] },
     { name: 'Aplicaciones', href: '/aplicaciones', icon: ClipboardList, roles: ['admin', 'editor', 'viewer'] },
+    { name: 'Precios Químicos', href: '/precios-quimicos', icon: Beaker, roles: ['admin', 'editor', 'viewer'] },
+    { name: 'Distribución Costos', href: '/otros-costos', icon: LayoutList, roles: ['admin', 'editor', 'viewer'] },
     { name: 'Reportes', href: '/reportes', icon: BarChart3, roles: ['admin', 'viewer'] },
     // Removed "Usuarios" from sidebar for regular users, accessible via top right or special admin page
     ...(userRole === 'admin' ? [{ name: 'Usuarios', href: '/usuarios', icon: Users, roles: ['admin'] }] : []),
@@ -127,7 +131,7 @@ export const Layout: React.FC = () => {
                 >
                   <LogOut className="mr-1 h-3 w-3" /> Cerrar Sesión
                 </button>
-                <div className="text-[10px] text-gray-400 mt-1">v1.6.2 (Fix Applications)</div>
+                <div className="text-[10px] text-gray-400 mt-1">v1.7.6 (Filtros Flexibles)</div>
               </div>
             </div>
           </div>

@@ -12,6 +12,7 @@ interface Product {
   current_stock: number;
   average_cost: number;
   updated_at: string;
+  active_ingredient?: string; // New field
 }
 
 interface InventoryMovement {
@@ -170,7 +171,8 @@ export const Inventory: React.FC = () => {
       category: product.category,
       unit: product.unit,
       current_stock: product.current_stock,
-      average_cost: product.average_cost
+      average_cost: product.average_cost,
+      active_ingredient: product.active_ingredient || '' // Include new field
     });
   };
 
@@ -191,6 +193,7 @@ export const Inventory: React.FC = () => {
           unit: editForm.unit,
           current_stock: editForm.current_stock,
           average_cost: editForm.average_cost,
+          active_ingredient: editForm.active_ingredient,
           updated_at: new Date().toISOString()
         })
         .eq('id', editingProduct.id);
@@ -312,6 +315,9 @@ export const Inventory: React.FC = () => {
                         </div>
                         <div className="ml-4">
                           <div className="text-sm font-medium text-gray-900">{product.name}</div>
+                          {product.active_ingredient && (
+                              <div className="text-xs text-blue-600 font-medium">{product.active_ingredient}</div>
+                          )}
                           <div className="text-xs text-gray-500">Actualizado: {new Date(product.updated_at).toLocaleDateString()}</div>
                         </div>
                       </div>
@@ -486,6 +492,27 @@ export const Inventory: React.FC = () => {
                   value={editForm.name || ''}
                   onChange={e => setEditForm({...editForm, name: e.target.value})}
                   className="w-full border border-gray-300 rounded-md p-2"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Ingrediente Activo
+                    <a 
+                        href="https://www.sag.gob.cl/ambitos-de-accion/plaguicidas-y-fertilizantes/buscar" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="ml-2 text-xs text-blue-600 hover:text-blue-800 underline"
+                    >
+                        (Buscar en SAG ↗)
+                    </a>
+                </label>
+                <input
+                  type="text"
+                  value={editForm.active_ingredient || ''}
+                  onChange={e => setEditForm({...editForm, active_ingredient: e.target.value})}
+                  className="w-full border border-gray-300 rounded-md p-2"
+                  placeholder="Ej. Glifosato 48%"
                 />
               </div>
               

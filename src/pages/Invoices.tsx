@@ -238,13 +238,21 @@ export const Invoices: React.FC = () => {
   const getFilteredInvoices = () => {
     let filtered = allInvoices;
 
-    // Filter by Year first (Only if NOT searching)
-    // If searching, we want to search across ALL years
-    if (!searchQuery && typeof selectedYear !== 'undefined' && selectedYear) {
+    // 1. Date Range Filter
+    if (filterDateFrom) {
+      filtered = filtered.filter(inv => inv.invoice_date >= filterDateFrom);
+    }
+    if (filterDateTo) {
+      filtered = filtered.filter(inv => inv.invoice_date <= filterDateTo);
+    }
+
+    // 2. Year Filter (Only if NO Date Range and NO Search)
+    const hasDateRange = filterDateFrom || filterDateTo;
+    if (!searchQuery && !hasDateRange && typeof selectedYear !== 'undefined' && selectedYear) {
       filtered = filtered.filter(inv => inv.invoice_date.substring(0, 4) === selectedYear);
     }
 
-    // Filter by Status
+    // 3. Status Filter
     if (filterStatus !== 'Todas') {
       filtered = filtered.filter(inv => inv.status === filterStatus);
     }
@@ -629,7 +637,12 @@ export const Invoices: React.FC = () => {
     setStatus(inv.status);
     setNotes(inv.notes || '');
     setDocumentType(inv.document_type || 'Factura');
-    setTaxPercentage(inv.tax_percentage !== undefined ? inv.tax_percentage : 19);
+    // Fix for legacy data: if Exempt, force 0 tax on load
+    if (inv.document_type === 'Factura Exenta') {
+        setTaxPercentage(0);
+    } else {
+        setTaxPercentage(inv.tax_percentage !== undefined ? inv.tax_percentage : 19);
+    }
     setDiscountAmount(inv.discount_amount || 0);
     setExemptAmount(inv.exempt_amount || 0);
     setSpecialTaxAmount(inv.special_tax_amount || 0);
@@ -1209,7 +1222,16 @@ export const Invoices: React.FC = () => {
                   <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Tipo de Documento</label>
                   <select
                     value={documentType}
-                    onChange={e => setDocumentType(e.target.value)}
+                    onChange={e => {
+                        const val = e.target.value;
+                        setDocumentType(val);
+                        // Auto-set tax percentage based on type
+                        if (val === 'Factura Exenta') {
+                            setTaxPercentage(0);
+                        } else if (val === 'Factura' || val === 'Nota de Crédito' || val === 'Nota de Débito') {
+                            setTaxPercentage(19);
+                        }
+                    }}
                     className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
                   >
                     <option value="Factura">Factura</option>
@@ -1478,21 +1500,31 @@ export const Invoices: React.FC = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-400 mb-1">DESDE</label>
-              <input type="date" className="w-full bg-gray-800 border-gray-700 text-white text-sm rounded-lg p-2.5" />
+              <input 
+                type="date" 
+                value={filterDateFrom}
+                onChange={(e) => setFilterDateFrom(e.target.value)}
+                className="w-full bg-gray-800 border-gray-700 text-white text-sm rounded-lg p-2.5" 
+              />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-400 mb-1">HASTA</label>
-              <input type="date" className="w-full bg-gray-800 border-gray-700 text-white text-sm rounded-lg p-2.5" />
+              <input 
+                type="date" 
+                value={filterDateTo}
+                onChange={(e) => setFilterDateTo(e.target.value)}
+                className="w-full bg-gray-800 border-gray-700 text-white text-sm rounded-lg p-2.5" 
+              />
             </div>
           </div>
         </div>
 
         {/* Stats Cards or Search Results */}
         <div className="bg-gray-900 text-white rounded-xl p-6 shadow-sm">
-          {searchQuery ? (
+          {searchQuery || filterDateFrom || filterDateTo ? (
             <div className="space-y-4">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xs font-bold text-gray-400 uppercase">RESULTADOS DE BÚSQUEDA</h3>
+                <h3 className="text-xs font-bold text-gray-400 uppercase">RESULTADOS</h3>
                 <span className="text-xs text-gray-500">{getFilteredInvoices().length} encontrados</span>
               </div>
               

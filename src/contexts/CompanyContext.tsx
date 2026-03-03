@@ -8,6 +8,7 @@ export interface Company {
   name: string;
   rut: string | null;
   owner_id: string;
+  application_fuel_rate?: number;
 }
 
 export type UserRole = 'admin' | 'editor' | 'viewer';

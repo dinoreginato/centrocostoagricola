@@ -16,6 +16,8 @@ import { Machinery } from './pages/Machinery';
 import { Fuel } from './pages/Fuel';
 import { Irrigation } from './pages/Irrigation';
 import { Workers } from './pages/Workers';
+import { GeneralCosts } from './pages/GeneralCosts';
+import { ChemicalCosts } from './pages/ChemicalCosts';
 
 function App() {
   return (
@@ -37,6 +39,8 @@ function App() {
               <Route path="trabajadores" element={<Workers />} />
               <Route path="bodega" element={<Inventory />} />
               <Route path="aplicaciones" element={<Applications />} />
+              <Route path="otros-costos" element={<GeneralCosts />} />
+              <Route path="precios-quimicos" element={<ChemicalCosts />} />
               <Route path="reportes" element={<Reports />} />
               <Route path="usuarios" element={<Users />} />
             </Route>
