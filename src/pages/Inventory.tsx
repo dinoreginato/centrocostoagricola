@@ -602,8 +602,8 @@ export const Inventory: React.FC = () => {
                           </table>
                       </div>
                   )}
-              </div>
           </div>
+        </div>
       )}
 
       {/* Edit Modal */}
@@ -618,28 +618,40 @@ export const Inventory: React.FC = () => {
             </div>
             
             <div className="space-y-4">
-              <div className="relative">
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
-                <input
-                  type="text"
-                  value={editForm.name || ''}
-                  onChange={e => {
-                      setEditForm({...editForm, name: e.target.value});
-                      searchOfficialForEdit(e.target.value);
-                  }}
-                  className="w-full border border-gray-300 rounded-md p-2"
-                  autoComplete="off"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={editForm.name || ''}
+                    onChange={e => {
+                        setEditForm({...editForm, name: e.target.value});
+                        searchOfficialForEdit(e.target.value);
+                    }}
+                    className="w-full border border-gray-300 rounded-md p-2 pr-8"
+                    autoComplete="off"
+                    placeholder="Buscar en listado SAG..."
+                  />
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                     <Search className="h-4 w-4 text-gray-400" />
+                  </div>
+                </div>
                 {editSuggestions.length > 0 && (
                     <div className="absolute z-50 left-0 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-40 overflow-y-auto">
+                        <div className="px-3 py-2 text-xs font-bold text-gray-500 bg-gray-50 border-b">
+                            Sugerencias SAG (Click para autocompletar)
+                        </div>
                         {editSuggestions.map((sug, idx) => (
                             <button
                                 key={idx}
                                 onClick={() => selectOfficialForEdit(sug)}
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b border-gray-100"
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 border-b border-gray-100 last:border-0"
                             >
-                                <div className="font-medium">{sug.commercial_name}</div>
-                                <div className="text-xs text-gray-500">{sug.active_ingredient}</div>
+                                <div className="font-medium text-gray-900">{sug.commercial_name}</div>
+                                <div className="text-xs text-gray-500 flex justify-between">
+                                    <span>{sug.active_ingredient}</span>
+                                    <span>{sug.concentration}</span>
+                                </div>
                             </button>
                         ))}
                     </div>
@@ -649,22 +661,26 @@ export const Inventory: React.FC = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                     Ingrediente Activo
-                    <a 
-                        href="https://www.sag.gob.cl/ambitos-de-accion/plaguicidas-y-fertilizantes/buscar" 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="ml-2 text-xs text-blue-600 hover:text-blue-800 underline"
-                    >
-                        (Buscar en SAG ↗)
-                    </a>
                 </label>
-                <input
-                  type="text"
-                  value={editForm.active_ingredient || ''}
-                  onChange={e => setEditForm({...editForm, active_ingredient: e.target.value})}
-                  className="w-full border border-gray-300 rounded-md p-2"
-                  placeholder="Ej. Glifosato 48%"
-                />
+                <div className="relative">
+                    <input
+                        type="text"
+                        value={editForm.active_ingredient || ''}
+                        onChange={e => {
+                            setEditForm({...editForm, active_ingredient: e.target.value});
+                            // Optional: search official products by active ingredient if needed, 
+                            // but usually we search by name to find the ingredient.
+                        }}
+                        className="w-full border border-gray-300 rounded-md p-2 pr-8"
+                        placeholder="Ej. Glifosato 48%"
+                    />
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                        <Search className="h-4 w-4 text-gray-400" />
+                    </div>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                    * Al escribir el nombre del producto arriba, se sugerirá automáticamente el ingrediente activo si está en el registro oficial importado.
+                </p>
               </div>
               
               <div>
