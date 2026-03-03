@@ -86,16 +86,27 @@ export const Inventory: React.FC = () => {
         const firstRowKeys = Object.keys(normalizedData[0] || {});
         console.log('Columnas encontradas:', firstRowKeys);
 
-        const mappedData = normalizedData.map(row => ({
-            commercial_name: row['nombre comercial'] || row['nombre'] || row['producto'] || row['plaguicida'] || '',
-            active_ingredient: row['sustancias activas'] || row['sustancia activa'] || row['ingrediente activo'] || row['ingrediente'] || row['ia'] || '',
-            concentration: row['concentracion'] || row['concentracion'] || row['concentracion (v/v)'] || row['concentracion (p/p)'] || '',
-            company_name: row['titular'] || row['empresa'] || row['fabricante'] || '',
-            registration_number: String(row['autorizacion'] || row['n° autorizacion'] || row['registro'] || row['sag'] || row['nº autorizacion'] || row['numero autorizacion'] || '')
-        })).filter(p => p.commercial_name && p.registration_number);
+        const mappedData = normalizedData.map(row => {
+            const commercialName = row['nombre comercial'] || row['nombre'] || row['producto'] || row['plaguicida'] || '';
+            const company = row['titular'] || row['empresa'] || row['fabricante'] || row['titular autorizacion'] || '';
+            let regNum = String(row['autorizacion'] || row['n° autorizacion'] || row['registro'] || row['sag'] || row['nº autorizacion'] || row['numero autorizacion'] || '');
+            
+            // Fallback for registration number if missing (use name as ID)
+            if (!regNum && commercialName) {
+                regNum = `SAG-${commercialName.replace(/\s+/g, '-').toUpperCase()}`;
+            }
+
+            return {
+                commercial_name: commercialName,
+                active_ingredient: row['sustancias activas'] || row['sustancia activa'] || row['ingrediente activo'] || row['ingrediente'] || row['ia'] || '',
+                concentration: row['concentracion'] || row['concentracion'] || row['concentracion (v/v)'] || row['concentracion (p/p)'] || '',
+                company_name: company,
+                registration_number: regNum
+            };
+        }).filter(p => p.commercial_name && p.registration_number);
 
         if (mappedData.length === 0) {
-            alert(`No se encontraron columnas compatibles.\nColumnas detectadas: ${firstRowKeys.join(', ')}\n\nEsperadas: "Nombre Comercial", "Sustancias Activas", "Concentración", "Autorización"`);
+            alert(`No se encontraron columnas compatibles.\nColumnas detectadas: ${firstRowKeys.join(', ')}\n\nEsperadas: "Nombre Comercial", "Sustancias Activas", "Concentración", "Autorización (opcional)"`);
             return;
         }
 
