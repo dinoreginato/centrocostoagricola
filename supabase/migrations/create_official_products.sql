@@ -5,7 +5,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 -- Create official products table (SAG Registry)
 CREATE TABLE IF NOT EXISTS public.official_products (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    registration_number TEXT,
+    registration_number TEXT UNIQUE, -- Added UNIQUE constraint
     commercial_name TEXT NOT NULL,
     active_ingredient TEXT,
     concentration TEXT,

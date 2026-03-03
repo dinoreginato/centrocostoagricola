@@ -115,6 +115,7 @@ export const Inventory: React.FC = () => {
         // Batch Insert
         const chunkSize = 100;
         let insertedCount = 0;
+        let lastError = '';
         
         for (let i = 0; i < mappedData.length; i += chunkSize) {
             const chunk = mappedData.slice(i, i + chunkSize);
@@ -125,12 +126,17 @@ export const Inventory: React.FC = () => {
             
             if (error) {
                 console.error('Error importing chunk:', error);
+                lastError = error.message;
             } else {
                 insertedCount += chunk.length;
             }
         }
 
-        alert(`Importación finalizada. ${insertedCount} productos actualizados/insertados.`);
+        if (insertedCount === 0 && lastError) {
+            alert(`Error al importar: ${lastError}`);
+        } else {
+            alert(`Importación finalizada. ${insertedCount} productos actualizados/insertados.`);
+        }
 
     } catch (error: any) {
         console.error('Error importing SAG file:', error);
