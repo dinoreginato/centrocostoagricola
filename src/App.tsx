@@ -9,6 +9,7 @@ import { Fields } from './pages/Fields';
 import { Invoices } from './pages/Invoices';
 import { Inventory } from './pages/Inventory';
 import { Applications } from './pages/Applications';
+import { ApplicationOrders } from './pages/ApplicationOrders';
 import { Reports } from './pages/Reports';
 import { Users } from './pages/Users';
 import { Labors } from './pages/Labors';
@@ -39,6 +40,7 @@ function App() {
               <Route path="trabajadores" element={<Workers />} />
               <Route path="bodega" element={<Inventory />} />
               <Route path="aplicaciones" element={<Applications />} />
+              <Route path="ordenes-aplicacion" element={<ApplicationOrders />} />
               <Route path="otros-costos" element={<GeneralCosts />} />
               <Route path="precios-quimicos" element={<ChemicalCosts />} />
               <Route path="reportes" element={<Reports />} />

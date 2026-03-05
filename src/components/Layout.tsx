@@ -54,6 +54,7 @@ export const Layout: React.FC = () => {
     { name: 'Trabajadores', href: '/trabajadores', icon: Briefcase, roles: ['admin', 'editor', 'viewer'] },
     { name: 'Bodega', href: '/bodega', icon: Package, roles: ['admin', 'editor', 'viewer'] },
     { name: 'Aplicaciones', href: '/aplicaciones', icon: ClipboardList, roles: ['admin', 'editor', 'viewer'] },
+    { name: 'Ordenes de Aplicación', href: '/ordenes-aplicacion', icon: FileText, roles: ['admin', 'editor', 'viewer'] },
     { name: 'Precios Químicos', href: '/precios-quimicos', icon: Beaker, roles: ['admin', 'editor', 'viewer'] },
     { name: 'Distribución Costos', href: '/otros-costos', icon: LayoutList, roles: ['admin', 'editor', 'viewer'] },
     { name: 'Reportes', href: '/reportes', icon: BarChart3, roles: ['admin', 'viewer'] },
