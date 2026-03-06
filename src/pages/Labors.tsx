@@ -5,6 +5,7 @@ import { formatCLP } from '../lib/utils';
 import { Tractor, ArrowRight, Save, Loader2, CheckCircle2, AlertCircle, Trash2, Edit2, FileText, Printer } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { PdfPreviewModal } from '../components/PdfPreviewModal';
 
 const LABOR_TYPES = [
   'General',
@@ -86,6 +87,11 @@ export const Labors: React.FC = () => {
   // History State
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historySearch, setHistorySearch] = useState('');
+
+  // PDF Preview State
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfPreviewTitle, setPdfPreviewTitle] = useState('');
 
   useEffect(() => {
     if (selectedCompany) {
@@ -587,7 +593,10 @@ export const Labors: React.FC = () => {
           yPos = (doc as any).lastAutoTable.finalY + 15;
       });
 
-      window.open(doc.output('bloburl'), '_blank');
+      const pdfBlob = doc.output('bloburl');
+      setPdfPreviewUrl(pdfBlob.toString());
+      setPdfPreviewTitle('Informe de Labores Agrícolas');
+      setPdfPreviewOpen(true);
   };
 
   return (
@@ -958,6 +967,13 @@ export const Labors: React.FC = () => {
             </div>
         </div>
       </div>
+
+      <PdfPreviewModal 
+        isOpen={pdfPreviewOpen}
+        onClose={() => setPdfPreviewOpen(false)}
+        title={pdfPreviewTitle}
+        pdfUrl={pdfPreviewUrl}
+      />
     </div>
   );
 };

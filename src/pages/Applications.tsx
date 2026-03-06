@@ -5,6 +5,7 @@ import { formatCLP } from '../lib/utils';
 import { Plus, Loader2, Save, Trash2, Beaker, Calendar, Droplets, MapPin, RefreshCw, Edit, Filter, Download, Eye, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { PdfPreviewModal } from '../components/PdfPreviewModal';
 
 interface Field {
   id: string;
@@ -116,6 +117,11 @@ export const Applications: React.FC = () => {
   const [applications, setApplications] = useState<ApplicationHistory[]>([]);
   const [avgFuelPrice, setAvgFuelPrice] = useState<number>(0);
   
+  // PDF Preview State
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfPreviewTitle, setPdfPreviewTitle] = useState('');
+
   // Application Form State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedFieldId, setSelectedFieldId] = useState('');
@@ -472,7 +478,10 @@ export const Applications: React.FC = () => {
     if (action === 'save') {
         doc.save(`reporte_aplicaciones_${new Date().toISOString().split('T')[0]}.pdf`);
     } else {
-        window.open(doc.output('bloburl'), '_blank');
+        const pdfBlob = doc.output('bloburl');
+        setPdfPreviewUrl(pdfBlob.toString());
+        setPdfPreviewTitle('Reporte de Aplicaciones');
+        setPdfPreviewOpen(true);
     }
   };
 
@@ -562,7 +571,10 @@ export const Applications: React.FC = () => {
     if (action === 'save') {
         doc.save(`orden_campo_${new Date().toISOString().split('T')[0]}.pdf`);
     } else {
-        window.open(doc.output('bloburl'), '_blank');
+        const pdfBlob = doc.output('bloburl');
+        setPdfPreviewUrl(pdfBlob.toString());
+        setPdfPreviewTitle('Orden de Aplicación (Campo)');
+        setPdfPreviewOpen(true);
     }
   };
 
@@ -637,7 +649,10 @@ export const Applications: React.FC = () => {
     if (action === 'save') {
         doc.save(`reporte_detallado_${new Date().toISOString().split('T')[0]}.pdf`);
     } else {
-        window.open(doc.output('bloburl'), '_blank');
+        const pdfBlob = doc.output('bloburl');
+        setPdfPreviewUrl(pdfBlob.toString());
+        setPdfPreviewTitle('Reporte Detallado de Aplicaciones');
+        setPdfPreviewOpen(true);
     }
   };
 
@@ -1461,6 +1476,13 @@ export const Applications: React.FC = () => {
             </div>
         )}
       </div>
+      
+      <PdfPreviewModal 
+        isOpen={pdfPreviewOpen}
+        onClose={() => setPdfPreviewOpen(false)}
+        title={pdfPreviewTitle}
+        pdfUrl={pdfPreviewUrl}
+      />
     </div>
   );
 };

@@ -8,6 +8,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { FileDown, Loader2, Calendar, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer, Settings, DollarSign, Scale } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { PdfPreviewModal } from '../components/PdfPreviewModal';
 
 interface ReportData {
   field_name: string;
@@ -164,6 +165,7 @@ export const Reports: React.FC = () => {
   // Preview Modal State
   const [showPreview, setShowPreview] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
+  const [previewTitle, setPreviewTitle] = useState('');
 
   // Filtered Pending Invoices
   const filteredPendingInvoices = pendingInvoices.filter(invoice => {
@@ -1093,19 +1095,10 @@ export const Reports: React.FC = () => {
     }
 
     // Save or Preview
-    const pdfBlob = doc.output('blob');
-    const pdfUrl = URL.createObjectURL(pdfBlob);
-    setPreviewPdfUrl(pdfUrl);
+    const pdfBlobUrl = doc.output('bloburl');
+    setPreviewPdfUrl(pdfBlobUrl.toString());
+    setPreviewTitle(title);
     setShowPreview(true);
-  };
-
-  const downloadFromPreview = () => {
-    if (previewPdfUrl) {
-        const link = document.createElement('a');
-        link.href = previewPdfUrl;
-        link.download = `reporte_gastos_${selectedSeason}.pdf`;
-        link.click();
-    }
   };
 
   if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
@@ -1125,50 +1118,12 @@ export const Reports: React.FC = () => {
 
   return (
     <div className="space-y-6">
-        {/* PDF PREVIEW MODAL */}
-        {showPreview && (
-            <div className="fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-75 flex items-center justify-center p-4">
-                <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl h-[90vh] flex flex-col">
-                    <div className="flex justify-between items-center p-4 border-b">
-                        <h3 className="text-lg font-medium text-gray-900 flex items-center">
-                            <Printer className="mr-2 h-5 w-5 text-gray-500" />
-                            Vista Previa de Impresión
-                        </h3>
-                        <button onClick={() => setShowPreview(false)} className="text-gray-400 hover:text-gray-500">
-                            <X className="h-6 w-6" />
-                        </button>
-                    </div>
-                    <div className="flex-1 bg-gray-100 p-4 overflow-hidden">
-                        {previewPdfUrl ? (
-                            <iframe 
-                                src={previewPdfUrl} 
-                                className="w-full h-full border border-gray-300 rounded shadow" 
-                                title="PDF Preview"
-                            />
-                        ) : (
-                            <div className="flex items-center justify-center h-full">
-                                <Loader2 className="animate-spin h-8 w-8 text-gray-400" />
-                            </div>
-                        )}
-                    </div>
-                    <div className="p-4 border-t bg-gray-50 flex justify-end space-x-3">
-                        <button
-                            onClick={() => setShowPreview(false)}
-                            className="px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                        >
-                            Cerrar
-                        </button>
-                        <button
-                            onClick={downloadFromPreview}
-                            className="px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
-                        >
-                            <FileDown className="mr-2 h-4 w-4 inline" />
-                            Descargar PDF
-                        </button>
-                    </div>
-                </div>
-            </div>
-        )}
+        <PdfPreviewModal 
+            isOpen={showPreview}
+            onClose={() => setShowPreview(false)}
+            title={previewTitle}
+            pdfUrl={previewPdfUrl}
+        />
 
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center print:hidden">
         <div>

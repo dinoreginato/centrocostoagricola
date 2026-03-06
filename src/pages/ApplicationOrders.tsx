@@ -3,7 +3,8 @@ import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Plus, Loader2, Save, Trash2, Calendar, FileText, Printer, CheckCircle, XCircle, Search, Edit } from 'lucide-react';
-import jsPDF from 'jspdf'; 
+import jsPDF from 'jspdf';
+import { PdfPreviewModal } from '../components/PdfPreviewModal';
 
 // Interfaces based on DB Schema
 interface ApplicationOrder {
@@ -77,6 +78,11 @@ export const ApplicationOrders: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [machines, setMachines] = useState<Machine[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
+  
+  // PDF Preview State
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfPreviewTitle, setPdfPreviewTitle] = useState('');
 
   // Form State
   const [isEditing, setIsEditing] = useState(false);
@@ -444,7 +450,10 @@ export const ApplicationOrders: React.FC = () => {
       doc.setFontSize(8);
       doc.text('Imp. Regner Ltda. - Fono (75) 2411087 - Teno.', 105, 280, { align: 'center' });
 
-      window.open(doc.output('bloburl'), '_blank');
+      const pdfBlob = doc.output('bloburl');
+      setPdfPreviewUrl(pdfBlob.toString());
+      setPdfPreviewTitle(`Orden N° ${order.order_number}`);
+      setPdfPreviewOpen(true);
   };
 
   const getStatusColor = (status: string) => {
@@ -809,6 +818,13 @@ export const ApplicationOrders: React.FC = () => {
               </table>
           </div>
       )}
+
+      <PdfPreviewModal 
+        isOpen={pdfPreviewOpen}
+        onClose={() => setPdfPreviewOpen(false)}
+        title={pdfPreviewTitle}
+        pdfUrl={pdfPreviewUrl}
+      />
     </div>
   );
 };

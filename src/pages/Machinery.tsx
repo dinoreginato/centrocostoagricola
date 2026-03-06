@@ -5,6 +5,7 @@ import { formatCLP } from '../lib/utils';
 import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Layers, Settings, Plus, X, Printer, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { PdfPreviewModal } from '../components/PdfPreviewModal';
 
 interface MachineryItem {
   id: string; // invoice_item_id
@@ -105,6 +106,11 @@ export const Machinery: React.FC = () => {
   // History State
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historySearch, setHistorySearch] = useState('');
+
+  // PDF Preview State
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfPreviewTitle, setPdfPreviewTitle] = useState('');
 
   useEffect(() => {
     if (selectedCompany) {
@@ -720,7 +726,10 @@ export const Machinery: React.FC = () => {
           footStyles: { fillColor: [240, 240, 240], textColor: [0,0,0], fontStyle: 'bold', halign: 'right' }
       });
 
-      window.open(doc.output('bloburl'), '_blank');
+      const pdfBlob = doc.output('bloburl');
+      setPdfPreviewUrl(pdfBlob.toString());
+      setPdfPreviewTitle(`Reporte ${selectedMachineForDetail.name}`);
+      setPdfPreviewOpen(true);
   };
 
   const handlePrintGeneralReport = async () => {
@@ -819,7 +828,10 @@ export const Machinery: React.FC = () => {
         doc.setFont("helvetica", "bold");
         doc.text(`TOTAL GENERAL GASTOS MAQUINARIA: ${formatCLP(grandTotal)}`, 14, yPos);
 
-        window.open(doc.output('bloburl'), '_blank');
+        const pdfBlob = doc.output('bloburl');
+        setPdfPreviewUrl(pdfBlob.toString());
+        setPdfPreviewTitle('Reporte General de Maquinaria');
+        setPdfPreviewOpen(true);
 
     } catch (error) {
         console.error('Error generating general report:', error);
@@ -1386,6 +1398,13 @@ export const Machinery: React.FC = () => {
               </div>
           </div>
       )}
+
+      <PdfPreviewModal 
+        isOpen={pdfPreviewOpen}
+        onClose={() => setPdfPreviewOpen(false)}
+        title={pdfPreviewTitle}
+        pdfUrl={pdfPreviewUrl}
+      />
     </div>
   );
 };
