@@ -3,7 +3,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Plus, Loader2, Save, Trash2, Calendar, FileText, Printer, CheckCircle, XCircle, Search, Edit } from 'lucide-react';
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf'; // Changed import to named export
 
 // Interfaces based on DB Schema
 interface ApplicationOrder {
@@ -136,7 +136,7 @@ export const ApplicationOrders: React.FC = () => {
         // Map items to flatten structure
         const mappedOrders = ordersData?.map(o => ({
             ...o,
-            items: o.items.map((i: any) => ({
+            items: Array.isArray(o.items) ? o.items.map((i: any) => ({
                 id: i.id,
                 product_id: i.product_id,
                 product_name: i.product?.name,
@@ -147,7 +147,7 @@ export const ApplicationOrders: React.FC = () => {
                 dose_per_100l: i.dose_per_100l,
                 total_quantity: i.total_quantity,
                 objective: i.objective
-            }))
+            })) : []
         }));
         
         setOrders(mappedOrders || []);
@@ -530,7 +530,7 @@ export const ApplicationOrders: React.FC = () => {
                           className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                       >
                           <option value="">Seleccione...</option>
-                          {fields.find(f => f.id === currentOrder.field_id)?.sectors.map(s => (
+                          {fields.find(f => f.id === currentOrder.field_id)?.sectors?.map(s => (
                               <option key={s.id} value={s.id}>{s.name} ({s.hectares} ha)</option>
                           ))}
                       </select>
