@@ -4,7 +4,6 @@ import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Plus, Loader2, Save, Trash2, Calendar, FileText, Printer, CheckCircle, XCircle, Search, Edit } from 'lucide-react';
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 // Interfaces based on DB Schema
 interface ApplicationOrder {
@@ -28,6 +27,10 @@ interface ApplicationOrder {
   safety_period_hours?: number;
   grace_period_days?: number;
   
+  // New Fields
+  variety?: string;
+  objective?: string; // Global objective
+  
   // Relations
   field?: { name: string };
   sector?: { name: string; hectares: number };
@@ -49,7 +52,7 @@ interface OrderItem {
   dose_per_hectare: number;
   dose_per_100l?: number;
   total_quantity: number;
-  objective?: string;
+  objective?: string; // Per item objective (optional now)
 }
 
 // Reuse Interfaces from other parts
@@ -83,7 +86,9 @@ export const ApplicationOrders: React.FC = () => {
     application_type: 'fitosanitario',
     water_liters_per_hectare: 1000,
     tank_capacity: 2000,
-    items: []
+    items: [],
+    variety: '',
+    objective: ''
   });
   
   // Item Form State
@@ -185,8 +190,6 @@ export const ApplicationOrders: React.FC = () => {
       let totalQty = 0;
 
       // Calculation Logic
-      // Assumption: dose_unit is always product.unit for simplicity in this version, 
-      // or we handle conversion if we want to be fancy later.
       if (currentItem.dose_input_type === 'ha') {
           doseHa = currentItem.dose_input_value;
           // Calculate theoretical concentration if water volume is known
@@ -216,7 +219,7 @@ export const ApplicationOrders: React.FC = () => {
           dose_per_hectare: Number(doseHa.toFixed(4)),
           dose_per_100l: Number(dose100L.toFixed(4)),
           total_quantity: Number(totalQty.toFixed(4)),
-          objective: currentItem.objective
+          objective: currentItem.objective // Optional per item
       };
 
       setCurrentOrder(prev => ({
@@ -261,7 +264,9 @@ export const ApplicationOrders: React.FC = () => {
               notes: currentOrder.notes,
               safety_period_hours: currentOrder.safety_period_hours,
               grace_period_days: currentOrder.grace_period_days,
-              updated_at: new Date().toISOString()
+              updated_at: new Date().toISOString(),
+              variety: currentOrder.variety, // New field
+              objective: currentOrder.objective // New field
           };
 
           let orderId = currentOrder.id;
@@ -306,94 +311,138 @@ export const ApplicationOrders: React.FC = () => {
   const handlePrintOrder = (order: ApplicationOrder) => {
       const doc = new jsPDF();
       
-      // Header
-      doc.setFontSize(16);
-      doc.text('ORDEN DE APLICACIÓN', 105, 20, { align: 'center' });
-      doc.setFontSize(10);
-      doc.text(`N° Orden: ${order.order_number}`, 180, 20, { align: 'right' });
-      doc.text(`Fecha Programada: ${new Date(order.scheduled_date).toLocaleDateString()}`, 14, 30);
+      // -- Header Section --
+      doc.setFontSize(18);
+      doc.setFont("helvetica", "bold");
+      doc.text('ORDEN DE APLICACION DE AGROQUIMICOS', 105, 20, { align: 'center' });
       
-      // Info Box
+      // Folio Top Right
+      doc.setFontSize(12);
+      doc.text('FOLIO', 170, 15);
+      doc.text(`N° ${order.order_number}`, 170, 22);
+      
+      // -- Main Info Box --
       doc.setDrawColor(0);
-      doc.rect(14, 35, 182, 35);
+      doc.setLineWidth(0.5);
+      doc.rect(14, 30, 182, 230); // Main container border
       
+      let y = 45;
+      const xLabel = 20;
+      const xValue = 80;
+      const lineHeight = 12;
+
+      doc.setFontSize(11);
       doc.setFont("helvetica", "bold");
-      doc.text('Ubicación:', 16, 42);
-      doc.text('Responsables:', 100, 42);
-      
+
+      // Productor
+      doc.text('PRODUCTOR :', xLabel, y);
       doc.setFont("helvetica", "normal");
-      doc.text(`Campo: ${order.field?.name}`, 16, 48);
-      doc.text(`Sector: ${order.sector?.name} (${order.sector?.hectares} ha)`, 16, 54);
-      doc.text(`Tipo: ${order.application_type}`, 16, 60);
-      
-      doc.text(`Tractorista: ${order.driver?.name || 'Por definir'}`, 100, 48);
-      doc.text(`Tractor: ${order.tractor?.name || '-'}`, 100, 54);
-      doc.text(`Equipo: ${order.sprayer?.name || '-'}`, 100, 60);
+      doc.text(selectedCompany?.name || 'Inversiones Regis Ltda', xValue, y);
+      doc.line(xValue - 2, y + 2, 190, y + 2); // Underline
+      y += lineHeight;
 
-      // Technical Params
+      // Huerto
       doc.setFont("helvetica", "bold");
-      doc.text('Parámetros Técnicos:', 14, 80);
-      
-      const params = [
-          ['Mojamiento', `${order.water_liters_per_hectare} L/ha`],
-          ['Cap. Tanque', `${order.tank_capacity} L`],
-          ['Velocidad', order.speed ? `${order.speed} km/h` : '-'],
-          ['Presión', order.pressure ? `${order.pressure} bar` : '-'],
-          ['Boquillas', order.nozzles || '-'],
-          ['RPM', order.rpm ? `${order.rpm}` : '-'],
-      ];
-      
-      autoTable(doc, {
-          startY: 85,
-          head: [['Parámetro', 'Valor', 'Parámetro', 'Valor', 'Parámetro', 'Valor']],
-          body: [
-              [params[0][0], params[0][1], params[2][0], params[2][1], params[4][0], params[4][1]],
-              [params[1][0], params[1][1], params[3][0], params[3][1], params[5][0], params[5][1]],
-          ],
-          theme: 'plain',
-          styles: { fontSize: 10, cellPadding: 2 },
-      });
-
-      // Products Table
-      doc.text('Productos a Aplicar:', 14, (doc as any).lastAutoTable.finalY + 10);
-      
-      const productRows = order.items?.map(item => [
-          item.product_name,
-          item.active_ingredient || '-',
-          item.objective || '-',
-          `${item.dose_per_100l ? item.dose_per_100l + ' ' + item.unit + '/100L' : '-'}`,
-          `${item.dose_per_hectare} ${item.unit}/ha`,
-          `${item.total_quantity} ${item.unit}`
-      ]);
-
-      autoTable(doc, {
-          startY: (doc as any).lastAutoTable.finalY + 15,
-          head: [['Producto', 'Ing. Activo', 'Objetivo', 'Dosis (100L)', 'Dosis (Ha)', 'Total a Pedir']],
-          body: productRows,
-          headStyles: { fillColor: [46, 125, 50] },
-          styles: { fontSize: 9 }
-      });
-
-      // Instructions/Notes
-      const finalY = (doc as any).lastAutoTable.finalY + 10;
-      doc.setFont("helvetica", "bold");
-      doc.text('Instrucciones Especiales / Seguridad:', 14, finalY);
-      
+      doc.text('HUERTO :', xLabel, y);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      doc.text(`Reingreso: ${order.safety_period_hours || 0} horas`, 14, finalY + 6);
-      doc.text(`Carencia: ${order.grace_period_days || 0} días`, 60, finalY + 6);
+      doc.text(order.field?.name || '', xValue, y);
+      doc.line(xValue - 2, y + 2, 190, y + 2);
+      y += lineHeight;
+
+      // Variedad
+      doc.setFont("helvetica", "bold");
+      doc.text('VARIEDAD :', xLabel, y);
+      doc.setFont("helvetica", "normal");
+      doc.text(order.variety || order.sector?.name || '', xValue, y); // Use sector if variety empty
+      doc.line(xValue - 2, y + 2, 190, y + 2);
+      y += lineHeight;
+
+      // Fecha Inicio
+      doc.setFont("helvetica", "bold");
+      doc.text('FECHA INICIO :', xLabel, y);
+      doc.setFont("helvetica", "normal");
+      doc.text(new Date(order.scheduled_date).toLocaleDateString(), xValue, y);
+      doc.line(xValue - 2, y + 2, 190, y + 2);
+      y += lineHeight;
+
+      // Objetivo Aplicacion
+      doc.setFont("helvetica", "bold");
+      doc.text('OBJETIVO APLICACION :', xLabel, y);
+      doc.setFont("helvetica", "normal");
+      doc.text(order.objective || order.application_type || '', xValue, y);
+      doc.line(xValue - 2, y + 2, 190, y + 2);
+      y += lineHeight;
+
+      // -- Products Section (Simulating Lines) --
+      // Instead of a grid table, we list products as lines to match the form style
+      doc.setFont("helvetica", "bold");
+      doc.text('PRODUCTO :', xLabel, y);
+      y += 8; // Small gap
       
-      if (order.notes) {
-          doc.text(`Notas: ${order.notes}`, 14, finalY + 12);
+      // List products
+      order.items?.forEach((item) => {
+          doc.setFont("helvetica", "normal");
+          const productText = `${item.product_name} (${item.active_ingredient || ''})`;
+          doc.text(`- ${productText}`, xValue, y);
+          y += 8;
+      });
+      // Ensure at least some space if empty
+      if (!order.items?.length) y += 8;
+      
+      // Dosis Section
+      y += 5;
+      doc.setFont("helvetica", "bold");
+      doc.text('DOSIS :', xLabel, y);
+      y += 8;
+      
+      order.items?.forEach((item) => {
+          doc.setFont("helvetica", "normal");
+          let doseText = '';
+          if (item.dose_per_100l) doseText += `${item.dose_per_100l} ${item.unit}/100L`;
+          if (item.dose_per_hectare) doseText += `  -  ${item.dose_per_hectare} ${item.unit}/ha`;
+          
+          doc.text(`- ${doseText}`, xValue, y);
+          y += 8;
+      });
+       if (!order.items?.length) y += 8;
+
+      // Mojamiento
+      y += 5;
+      doc.setFont("helvetica", "bold");
+      doc.text('MOJAMIENTO :', xLabel, y);
+      doc.setFont("helvetica", "normal");
+      doc.text(`${order.water_liters_per_hectare} Lts / ha`, xValue, y);
+      doc.line(xValue - 2, y + 2, 190, y + 2);
+      y += lineHeight;
+
+      // Observaciones
+      doc.setFont("helvetica", "bold");
+      doc.text('OBSERVACIONES :', xLabel, y);
+      doc.setFont("helvetica", "normal");
+      
+      const notes = order.notes 
+        ? `${order.notes} (Reingreso: ${order.safety_period_hours}hrs, Carencia: ${order.grace_period_days}dias)`
+        : `Reingreso: ${order.safety_period_hours || 0} hrs. Carencia: ${order.grace_period_days || 0} días.`;
+      
+      const splitNotes = doc.splitTextToSize(notes, 100);
+      doc.text(splitNotes, xValue, y);
+      
+      // Underlines for observations
+      for(let i=0; i<3; i++) {
+          doc.line(xValue - 2, y + 2 + (i*8), 190, y + 2 + (i*8));
       }
 
-      // Signatures
-      doc.line(20, 270, 80, 270);
-      doc.text('Firma Responsable', 30, 275);
-      
-      doc.line(120, 270, 180, 270);
-      doc.text('Firma Aplicador', 135, 275);
+      // -- Machinery Info (Extra, not in original form but useful) --
+      y = 210;
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "italic");
+      doc.text(`Maquinaria: ${order.tractor?.name || '-'} / ${order.sprayer?.name || '-'}`, 20, y);
+      doc.text(`Operador: ${order.driver?.name || '-'}`, 20, y + 5);
+      doc.text(`Parámetros: ${order.speed || '-'} km/h, ${order.pressure || '-'} bar, ${order.nozzles || '-'}`, 20, y + 10);
+
+      // -- Footer --
+      doc.setFontSize(8);
+      doc.text('Imp. Regner Ltda. - Fono (75) 2411087 - Teno.', 105, 280, { align: 'center' });
 
       window.open(doc.output('bloburl'), '_blank');
   };
@@ -420,7 +469,9 @@ export const ApplicationOrders: React.FC = () => {
                         application_type: 'fitosanitario',
                         water_liters_per_hectare: 1000,
                         tank_capacity: 2000,
-                        items: []
+                        items: [],
+                        variety: '',
+                        objective: ''
                     });
                     setIsEditing(true);
                 }}
@@ -438,15 +489,25 @@ export const ApplicationOrders: React.FC = () => {
                   <button onClick={() => setIsEditing(false)} className="text-gray-500 hover:text-gray-700">Cancelar</button>
               </div>
 
-              {/* Form Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              {/* Form Header Fields */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                   <div>
-                      <label className="block text-sm font-medium text-gray-700">Fecha Programada</label>
+                      <label className="block text-sm font-medium text-gray-700">Fecha Inicio</label>
                       <input 
                           type="date" 
                           value={currentOrder.scheduled_date}
                           onChange={e => setCurrentOrder({...currentOrder, scheduled_date: e.target.value})}
                           className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                      />
+                  </div>
+                   <div>
+                      <label className="block text-sm font-medium text-gray-700">Objetivo Aplicación</label>
+                      <input 
+                          type="text" 
+                          value={currentOrder.objective || ''}
+                          onChange={e => setCurrentOrder({...currentOrder, objective: e.target.value})}
+                          className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                          placeholder="Ej: Polilla, Arañita, etc."
                       />
                   </div>
                   <div>
@@ -474,6 +535,16 @@ export const ApplicationOrders: React.FC = () => {
                           ))}
                       </select>
                   </div>
+                   <div>
+                      <label className="block text-sm font-medium text-gray-700">Variedad</label>
+                      <input 
+                          type="text" 
+                          value={currentOrder.variety || ''}
+                          onChange={e => setCurrentOrder({...currentOrder, variety: e.target.value})}
+                          className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                          placeholder="Ej: Forelle"
+                      />
+                  </div>
                   <div>
                       <label className="block text-sm font-medium text-gray-700">Tipo</label>
                       <select 
@@ -488,101 +559,9 @@ export const ApplicationOrders: React.FC = () => {
                   </div>
               </div>
 
-              {/* Machinery & Tech Specs */}
-              <div className="bg-gray-50 p-4 rounded-md mb-6">
-                  <h3 className="text-sm font-bold text-gray-700 mb-3">Maquinaria y Calibración</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                      <div>
-                          <label className="block text-xs text-gray-500">Tractor</label>
-                          <select 
-                              value={currentOrder.tractor_id || ''}
-                              onChange={e => setCurrentOrder({...currentOrder, tractor_id: e.target.value})}
-                              className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
-                          >
-                              <option value="">-</option>
-                              {machines.filter(m => m.type.toLowerCase().includes('tractor')).map(m => (
-                                  <option key={m.id} value={m.id}>{m.name}</option>
-                              ))}
-                          </select>
-                      </div>
-                      <div>
-                          <label className="block text-xs text-gray-500">Equipo (Nebulizadora)</label>
-                          <select 
-                              value={currentOrder.sprayer_id || ''}
-                              onChange={e => setCurrentOrder({...currentOrder, sprayer_id: e.target.value})}
-                              className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
-                          >
-                              <option value="">-</option>
-                              {machines.filter(m => !m.type.toLowerCase().includes('tractor')).map(m => (
-                                  <option key={m.id} value={m.id}>{m.name}</option>
-                              ))}
-                          </select>
-                      </div>
-                      <div>
-                          <label className="block text-xs text-gray-500">Operador</label>
-                          <select 
-                              value={currentOrder.tractor_driver_id || ''}
-                              onChange={e => setCurrentOrder({...currentOrder, tractor_driver_id: e.target.value})}
-                              className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
-                          >
-                              <option value="">-</option>
-                              {workers.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-                          </select>
-                      </div>
-                      <div>
-                          <label className="block text-xs text-gray-500">Mojamiento (L/ha)</label>
-                          <input 
-                              type="number" 
-                              value={currentOrder.water_liters_per_hectare}
-                              onChange={e => setCurrentOrder({...currentOrder, water_liters_per_hectare: Number(e.target.value)})}
-                              className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
-                          />
-                      </div>
-                      <div>
-                          <label className="block text-xs text-gray-500">Cap. Tanque (L)</label>
-                          <input 
-                              type="number" 
-                              value={currentOrder.tank_capacity}
-                              onChange={e => setCurrentOrder({...currentOrder, tank_capacity: Number(e.target.value)})}
-                              className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
-                          />
-                      </div>
-                      <div>
-                          <label className="block text-xs text-gray-500">Velocidad (km/h)</label>
-                          <input 
-                              type="number" 
-                              value={currentOrder.speed || ''}
-                              onChange={e => setCurrentOrder({...currentOrder, speed: Number(e.target.value)})}
-                              className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
-                              placeholder="Ej: 5.5"
-                          />
-                      </div>
-                      <div>
-                          <label className="block text-xs text-gray-500">Presión (bar)</label>
-                          <input 
-                              type="number" 
-                              value={currentOrder.pressure || ''}
-                              onChange={e => setCurrentOrder({...currentOrder, pressure: Number(e.target.value)})}
-                              className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
-                              placeholder="Ej: 10"
-                          />
-                      </div>
-                      <div>
-                          <label className="block text-xs text-gray-500">Boquillas</label>
-                          <input 
-                              type="text" 
-                              value={currentOrder.nozzles || ''}
-                              onChange={e => setCurrentOrder({...currentOrder, nozzles: e.target.value})}
-                              className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
-                              placeholder="Ej: ATR Lila"
-                          />
-                      </div>
-                  </div>
-              </div>
-
               {/* Items Section */}
               <div className="border rounded-md p-4 mb-6">
-                  <h3 className="text-sm font-bold text-gray-700 mb-3">Productos</h3>
+                  <h3 className="text-sm font-bold text-gray-700 mb-3">Productos y Dosis</h3>
                   
                   {/* Add Item Form */}
                   <div className="flex flex-wrap items-end gap-2 mb-4 bg-gray-50 p-3 rounded">
@@ -619,16 +598,6 @@ export const ApplicationOrders: React.FC = () => {
                               className="w-full border border-gray-300 rounded p-1.5 text-sm"
                           />
                       </div>
-                      <div className="flex-1 min-w-[150px]">
-                          <label className="block text-xs text-gray-500">Objetivo</label>
-                          <input 
-                              type="text" 
-                              value={currentItem.objective}
-                              onChange={e => setCurrentItem({...currentItem, objective: e.target.value})}
-                              placeholder="Ej: Polilla"
-                              className="w-full border border-gray-300 rounded p-1.5 text-sm"
-                          />
-                      </div>
                       <button 
                           onClick={handleAddItem}
                           className="bg-blue-600 text-white p-1.5 rounded hover:bg-blue-700"
@@ -653,7 +622,7 @@ export const ApplicationOrders: React.FC = () => {
                               <tr key={idx}>
                                   <td className="px-3 py-2 text-sm">
                                       <div className="font-medium">{item.product_name}</div>
-                                      <div className="text-xs text-gray-500">{item.objective}</div>
+                                      <div className="text-xs text-gray-500">{item.active_ingredient}</div>
                                   </td>
                                   <td className="px-3 py-2 text-sm">{item.dose_per_100l ? `${item.dose_per_100l} ${item.unit}` : '-'}</td>
                                   <td className="px-3 py-2 text-sm">{item.dose_per_hectare} {item.unit}</td>
@@ -669,15 +638,82 @@ export const ApplicationOrders: React.FC = () => {
                   </table>
               </div>
 
+              {/* Machinery & Tech Specs (Collapsed/Secondary) */}
+              <div className="bg-gray-50 p-4 rounded-md mb-6">
+                  <h3 className="text-sm font-bold text-gray-700 mb-3">Parámetros Técnicos y Maquinaria</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div>
+                          <label className="block text-xs text-gray-500">Mojamiento (L/ha)</label>
+                          <input 
+                              type="number" 
+                              value={currentOrder.water_liters_per_hectare}
+                              onChange={e => setCurrentOrder({...currentOrder, water_liters_per_hectare: Number(e.target.value)})}
+                              className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-xs text-gray-500">Tractor</label>
+                          <select 
+                              value={currentOrder.tractor_id || ''}
+                              onChange={e => setCurrentOrder({...currentOrder, tractor_id: e.target.value})}
+                              className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
+                          >
+                              <option value="">-</option>
+                              {machines.filter(m => m.type.toLowerCase().includes('tractor')).map(m => (
+                                  <option key={m.id} value={m.id}>{m.name}</option>
+                              ))}
+                          </select>
+                      </div>
+                      <div>
+                          <label className="block text-xs text-gray-500">Equipo</label>
+                          <select 
+                              value={currentOrder.sprayer_id || ''}
+                              onChange={e => setCurrentOrder({...currentOrder, sprayer_id: e.target.value})}
+                              className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
+                          >
+                              <option value="">-</option>
+                              {machines.filter(m => !m.type.toLowerCase().includes('tractor')).map(m => (
+                                  <option key={m.id} value={m.id}>{m.name}</option>
+                              ))}
+                          </select>
+                      </div>
+                      <div>
+                          <label className="block text-xs text-gray-500">Operador</label>
+                          <select 
+                              value={currentOrder.tractor_driver_id || ''}
+                              onChange={e => setCurrentOrder({...currentOrder, tractor_driver_id: e.target.value})}
+                              className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
+                          >
+                              <option value="">-</option>
+                              {workers.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                          </select>
+                      </div>
+                      {/* Optional Params */}
+                      <div>
+                          <label className="block text-xs text-gray-500">Velocidad</label>
+                          <input type="number" value={currentOrder.speed || ''} onChange={e => setCurrentOrder({...currentOrder, speed: Number(e.target.value)})} className="w-full border p-1 rounded text-sm"/>
+                      </div>
+                      <div>
+                          <label className="block text-xs text-gray-500">Presión</label>
+                          <input type="number" value={currentOrder.pressure || ''} onChange={e => setCurrentOrder({...currentOrder, pressure: Number(e.target.value)})} className="w-full border p-1 rounded text-sm"/>
+                      </div>
+                       <div>
+                          <label className="block text-xs text-gray-500">Boquillas</label>
+                          <input type="text" value={currentOrder.nozzles || ''} onChange={e => setCurrentOrder({...currentOrder, nozzles: e.target.value})} className="w-full border p-1 rounded text-sm"/>
+                      </div>
+                  </div>
+              </div>
+
               {/* Footer Notes */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                   <div>
-                      <label className="block text-sm font-medium text-gray-700">Notas / Instrucciones</label>
+                      <label className="block text-sm font-medium text-gray-700">Observaciones</label>
                       <textarea 
                           value={currentOrder.notes || ''}
                           onChange={e => setCurrentOrder({...currentOrder, notes: e.target.value})}
                           rows={3}
                           className="mt-1 block w-full border border-gray-300 rounded-md p-2 text-sm"
+                          placeholder="Notas adicionales..."
                       />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
@@ -720,9 +756,9 @@ export const ApplicationOrders: React.FC = () => {
                       <tr>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">N°</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lugar</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Huerto/Sector</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Objetivo</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Maquinaria</th>
                           <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
                       </tr>
                   </thead>
@@ -737,13 +773,11 @@ export const ApplicationOrders: React.FC = () => {
                                   <div>{order.field?.name}</div>
                                   <div className="text-xs text-gray-500">{order.sector?.name}</div>
                               </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{order.objective || '-'}</td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                   <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)}`}>
                                       {order.status.toUpperCase()}
                                   </span>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                  {order.tractor?.name} / {order.sprayer?.name}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end gap-2">
                                   <button 
