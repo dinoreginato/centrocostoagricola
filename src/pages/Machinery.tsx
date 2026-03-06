@@ -652,20 +652,36 @@ export const Machinery: React.FC = () => {
     setLoading(true);
     try {
         if (editingAssignmentId) {
-            // Update single assignment
-            const alloc = payload[0]; // Only one when editing
-            const { error } = await supabase
+            // Update single assignment (Sector and Amount)
+            // BUT update Date and Machine for ALL assignments of this invoice item (as per user request)
+            const alloc = payload[0]; 
+
+            // 1. Update the specific assignment (Sector, Amount, Date, Machine)
+            const { error: specificError } = await supabase
                 .from('machinery_assignments')
                 .update({
                     sector_id: alloc.sector_id,
-                    machine_id: selectedMachineId || null,
                     assigned_amount: alloc.assigned_amount,
-                    assigned_date: assignedDate
+                    assigned_date: assignedDate,
+                    machine_id: selectedMachineId || null
                 })
                 .eq('id', editingAssignmentId);
 
-            if (error) throw error;
-            alert('Asignación actualizada exitosamente');
+            if (specificError) throw specificError;
+
+            // 2. Update Date and Machine for ALL other assignments of this item to keep them synced
+            const { error: syncError } = await supabase
+                .from('machinery_assignments')
+                .update({
+                    assigned_date: assignedDate,
+                    machine_id: selectedMachineId || null
+                })
+                .eq('invoice_item_id', selectedItemId)
+                .neq('id', editingAssignmentId); // Don't update the one we just updated (redundant but safe)
+
+             if (syncError) throw syncError;
+
+            alert('Asignación actualizada (Fecha y Máquina sincronizadas en todo el item)');
         } else {
             // Insert multiple
             const { error } = await supabase

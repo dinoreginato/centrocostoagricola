@@ -56,7 +56,7 @@ interface HistoryItem {
     sector_id: string;
     invoice_item_id: string;
     labor_type?: string;
-    sectors?: { name: string };
+    sectors?: { name: string; field_id?: string };
     invoice_items?: {
         products?: { name: string };
         invoices?: { invoice_number: string };
@@ -81,6 +81,11 @@ export const Labors: React.FC = () => {
   const [selectedFieldId, setSelectedFieldId] = useState<string>('');
   const [fieldTotalAmount, setFieldTotalAmount] = useState<number>(0);
   
+  // Report Filter State
+  const [reportScope, setReportScope] = useState<'all' | 'field' | 'sector'>('all');
+  const [reportFieldId, setReportFieldId] = useState<string>('');
+  const [reportSectorId, setReportSectorId] = useState<string>('');
+
   // Editing State
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
 
@@ -257,8 +262,8 @@ export const Labors: React.FC = () => {
     const { data } = await supabase
         .from('labor_assignments')
         .select(`
-            id, assigned_amount, assigned_date, labor_type,
-            sectors (name),
+            id, assigned_amount, assigned_date, labor_type, sector_id,
+            sectors (name, field_id),
             invoice_items!inner (
                 products (name),
                 invoices!inner (invoice_number, company_id)
@@ -266,7 +271,7 @@ export const Labors: React.FC = () => {
         `)
         .eq('invoice_items.invoices.company_id', selectedCompany.id)
         .order('assigned_date', { ascending: false })
-        .limit(500);
+        .limit(1000); // Increased limit for better reporting
     
     setHistory(data as unknown as HistoryItem[] || []);
   };
@@ -535,17 +540,36 @@ export const Labors: React.FC = () => {
   };
 
   const handlePrintReport = () => {
+      // 1. Filter Data based on Scope
+      let reportData = [...history];
+      let titleSuffix = '';
+
+      if (reportScope === 'field' && reportFieldId) {
+          reportData = reportData.filter(item => item.sectors?.field_id === reportFieldId);
+          const fieldName = fields.find(f => f.id === reportFieldId)?.name || '';
+          titleSuffix = ` - Campo: ${fieldName}`;
+      } else if (reportScope === 'sector' && reportSectorId) {
+          reportData = reportData.filter(item => item.sector_id === reportSectorId);
+          const sectorName = sectors.find(s => s.id === reportSectorId)?.name || '';
+          titleSuffix = ` - Sector: ${sectorName}`;
+      }
+
+      if (reportData.length === 0) {
+          alert('No hay datos para el reporte con los filtros seleccionados.');
+          return;
+      }
+
       const doc = new jsPDF();
       
       doc.setFontSize(18);
-      doc.text('Informe de Labores Agrícolas', 14, 20);
+      doc.text(`Informe de Labores Agrícolas${titleSuffix}`, 14, 20);
       
       doc.setFontSize(12);
       doc.text(`Empresa: ${selectedCompany?.name}`, 14, 30);
       doc.text(`Fecha Emisión: ${new Date().toLocaleDateString()}`, 14, 36);
 
       // Group by Labor Type
-      const grouped = filteredHistory.reduce((acc, curr) => {
+      const grouped = reportData.reduce((acc, curr) => {
           const type = curr.labor_type || 'General';
           if (!acc[type]) acc[type] = [];
           acc[type].push(curr);
@@ -593,9 +617,21 @@ export const Labors: React.FC = () => {
           yPos = (doc as any).lastAutoTable.finalY + 15;
       });
 
+      // Add Grand Total
+      const grandTotal = reportData.reduce((sum, i) => sum + i.assigned_amount, 0);
+       if (yPos > 260) {
+            doc.addPage();
+            yPos = 20;
+        }
+        
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.text(`TOTAL GENERAL: ${formatCLP(grandTotal)}`, 14, yPos);
+
+
       const pdfBlob = doc.output('bloburl');
       setPdfPreviewUrl(pdfBlob.toString());
-      setPdfPreviewTitle('Informe de Labores Agrícolas');
+      setPdfPreviewTitle(`Informe de Labores${titleSuffix}`);
       setPdfPreviewOpen(true);
   };
 
@@ -897,6 +933,47 @@ export const Labors: React.FC = () => {
                         </button>
                     </div>
                 </div>
+                
+                {/* Report Filters */}
+                <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 flex flex-wrap gap-3 items-center">
+                    <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Filtros Reporte PDF:</span>
+                    <select 
+                        value={reportScope} 
+                        onChange={(e) => {
+                            setReportScope(e.target.value as any);
+                            setReportFieldId('');
+                            setReportSectorId('');
+                        }}
+                        className="text-xs border-gray-300 rounded-md shadow-sm focus:border-green-500 focus:ring-green-500"
+                    >
+                        <option value="all">General (Todo)</option>
+                        <option value="field">Por Campo</option>
+                        <option value="sector">Por Sector</option>
+                    </select>
+                    
+                    {reportScope === 'field' && (
+                            <select 
+                            value={reportFieldId} 
+                            onChange={(e) => setReportFieldId(e.target.value)}
+                            className="text-xs border-gray-300 rounded-md shadow-sm focus:border-green-500 focus:ring-green-500"
+                        >
+                            <option value="">Seleccione Campo...</option>
+                            {fields.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                        </select>
+                    )}
+
+                    {reportScope === 'sector' && (
+                            <select 
+                            value={reportSectorId} 
+                            onChange={(e) => setReportSectorId(e.target.value)}
+                            className="text-xs border-gray-300 rounded-md shadow-sm focus:border-green-500 focus:ring-green-500"
+                        >
+                            <option value="">Seleccione Sector...</option>
+                            {sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                    )}
+                </div>
+
                 <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50 sticky top-0">
