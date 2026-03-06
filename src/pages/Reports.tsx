@@ -50,6 +50,7 @@ interface PendingInvoice {
   due_date: string;
   total_amount: number;
   days_overdue: number;
+  notes?: string;
 }
 
 interface ProductExpense {
@@ -291,7 +292,7 @@ export const Reports: React.FC = () => {
       const { data: invoicesData } = await supabase
         .from('invoices')
         .select(`
-          id, invoice_number, invoice_date, total_amount, supplier, status, due_date, document_type,
+          id, invoice_number, invoice_date, total_amount, supplier, status, due_date, document_type, notes,
           invoice_items (
             id, category, total_price, quantity,
             products (name, unit, category)
@@ -717,7 +718,8 @@ export const Reports: React.FC = () => {
             supplier: inv.supplier || 'Desconocido',
             due_date: inv.due_date || inv.invoice_date || 'Sin fecha',
             total_amount: Number(inv.total_amount) || 0,
-            days_overdue: daysOverdue
+            days_overdue: daysOverdue,
+            notes: inv.notes || ''
           };
         } catch (e) { return null; }
       })
@@ -1008,17 +1010,19 @@ export const Reports: React.FC = () => {
             `${inv.days_overdue} días`,
             inv.supplier,
             inv.invoice_number,
-            formatCLP(inv.total_amount)
+            formatCLP(inv.total_amount),
+            inv.notes || '-'
         ]);
 
         autoTable(doc, {
             startY: yPos,
-            head: [['Vencimiento', 'Días Vencida', 'Proveedor', 'N° Factura', 'Monto']],
+            head: [['Vencimiento', 'Días Vencida', 'Proveedor', 'N° Factura', 'Monto', 'Notas']],
             body: tableBody,
             theme: 'grid',
             headStyles: { fillColor: [220, 53, 69] }, // Red
             columnStyles: {
-                4: { halign: 'right', fontStyle: 'bold' }
+                4: { halign: 'right', fontStyle: 'bold' },
+                5: { fontStyle: 'italic', cellWidth: 50 } // Smaller/italic for notes
             }
         });
 
@@ -2061,13 +2065,14 @@ export const Reports: React.FC = () => {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Proveedor</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">N° Factura</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notas</th>
                       <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Monto Total</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filteredPendingInvoices.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-6 py-4 text-center text-gray-500">No hay facturas pendientes en el rango seleccionado.</td>
+                        <td colSpan={6} className="px-6 py-4 text-center text-gray-500">No hay facturas pendientes en el rango seleccionado.</td>
                       </tr>
                     ) : (
                       filteredPendingInvoices.map((inv) => (
@@ -2084,6 +2089,7 @@ export const Reports: React.FC = () => {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{inv.supplier}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{inv.invoice_number}</td>
+                          <td className="px-6 py-4 whitespace-normal text-sm text-gray-500 italic max-w-xs">{inv.notes || '-'}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-900">{formatCLP(inv.total_amount)}</td>
                         </tr>
                       ))
