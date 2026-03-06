@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Tractor, ArrowRight, Save, Loader2, CheckCircle2, AlertCircle, Trash2, Edit2, FileText, Printer } from 'lucide-react';
+import { Tractor, ArrowRight, Save, Loader2, CheckCircle2, AlertCircle, Trash2, Edit2, FileText, Printer, RefreshCw } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
@@ -19,6 +19,18 @@ const LABOR_TYPES = [
   'Administración',
   'Otros'
 ];
+
+// Mapping of keywords to Labor Types for auto-detection
+const LABOR_KEYWORDS: Record<string, string[]> = {
+    'Cosecha': ['cosecha', 'recoleccion', 'recolección', 'picking', 'vendimia', 'cosech'],
+    'Poda': ['poda', 'pruning', 'recorte', 'despunte'],
+    'Raleo': ['raleo', 'thinning', 'entresaque', 'aclareo'],
+    'Riego': ['riego', 'irrigation', 'agua', 'regador'],
+    'Aplicaciones': ['aplicacion', 'fumigacion', 'pulverizacion', 'spray', 'tratamiento'],
+    'Mantenimiento': ['mantenimiento', 'reparacion', 'arreglo', 'taller', 'mantencion'],
+    'Plantación': ['plantacion', 'siembra', 'planting'],
+    'Administración': ['administracion', 'gestion', 'oficina', 'contabilidad'],
+};
 
 interface LaborItem {
   id: string; // invoice_item_id
@@ -298,10 +310,26 @@ export const Labors: React.FC = () => {
     setAllocations([{ sector_id: '', amount: labor.remaining_amount }]);
     setFieldTotalAmount(labor.remaining_amount);
     
-    // Try to guess labor type from description
-    const desc = labor.description.toLowerCase();
-    const matchedType = LABOR_TYPES.find(t => t !== 'General' && desc.includes(t.toLowerCase()));
-    setLaborType(matchedType || 'General');
+    // Improved auto-detection logic
+    const desc = labor.description.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    
+    let matchedType = 'General';
+    
+    // Check strict keywords first
+    for (const [type, keywords] of Object.entries(LABOR_KEYWORDS)) {
+        if (keywords.some(k => desc.includes(k))) {
+            matchedType = type;
+            break;
+        }
+    }
+    
+    // Fallback to simple matching if no keyword found
+    if (matchedType === 'General') {
+        const simpleMatch = LABOR_TYPES.find(t => t !== 'General' && desc.includes(t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")));
+        if (simpleMatch) matchedType = simpleMatch;
+    }
+
+    setLaborType(matchedType);
   };
 
   const handleEditAssignment = (assignment: HistoryItem) => {
@@ -538,6 +566,75 @@ export const Labors: React.FC = () => {
     } finally {
         setLoading(false);
     }
+  };
+
+  const handleAutoClassifyHistory = async () => {
+      if (!selectedCompany) return;
+      if (!confirm('¿Desea reclasificar automáticamente el historial de labores basado en las palabras clave? Esto actualizará las asignaciones que actualmente están como "General" o sin tipo.')) return;
+
+      setLoading(true);
+      try {
+          // 1. Fetch all assignments that are 'General' or null
+          const { data: assignments, error: fetchError } = await supabase
+              .from('labor_assignments')
+              .select(`
+                  id, labor_type,
+                  invoice_items!inner (
+                      products (name)
+                  )
+              `)
+              .eq('invoice_items.invoices.company_id', selectedCompany.id)
+              .or('labor_type.eq.General,labor_type.is.null');
+
+          if (fetchError) throw fetchError;
+
+          if (!assignments || assignments.length === 0) {
+              alert('No se encontraron asignaciones pendientes de clasificación.');
+              return;
+          }
+
+          let updatedCount = 0;
+          
+          // 2. Iterate and update
+          // We process in parallel chunks for speed
+          const updates = assignments.map(async (assignment: any) => {
+              const desc = (assignment.invoice_items?.products?.name || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+              let matchedType = null;
+
+              for (const [type, keywords] of Object.entries(LABOR_KEYWORDS)) {
+                  if (keywords.some(k => desc.includes(k))) {
+                      matchedType = type;
+                      break;
+                  }
+              }
+
+              // Also check simple match if keyword match failed
+              if (!matchedType) {
+                   const simpleMatch = LABOR_TYPES.find(t => t !== 'General' && desc.includes(t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")));
+                   if (simpleMatch) matchedType = simpleMatch;
+              }
+
+              if (matchedType && matchedType !== 'General') {
+                  updatedCount++;
+                  return supabase
+                      .from('labor_assignments')
+                      .update({ labor_type: matchedType })
+                      .eq('id', assignment.id);
+              }
+              return null;
+          });
+
+          await Promise.all(updates);
+
+          alert(`Proceso completado. Se actualizaron ${updatedCount} asignaciones.`);
+          loadData();
+
+      } catch (error: any) {
+          console.error('Error auto-classifying:', error);
+          alert('Error al clasificar: ' + error.message);
+      } finally {
+          setLoading(false);
+      }
   };
 
   const handlePrintReport = () => {
@@ -931,6 +1028,14 @@ export const Labors: React.FC = () => {
                         >
                             <FileText className="h-4 w-4 mr-1" />
                             Reporte
+                        </button>
+                        <button
+                            onClick={handleAutoClassifyHistory}
+                            className="text-xs text-white bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded transition-colors whitespace-nowrap flex items-center"
+                            title="Reclasificar historial automáticamente"
+                        >
+                            <RefreshCw className="h-4 w-4 mr-1" />
+                            Auto-Clasificar
                         </button>
                         <button
                             onClick={handleDeleteAllAssignments}
