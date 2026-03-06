@@ -580,7 +580,8 @@ export const Labors: React.FC = () => {
               .select(`
                   id, labor_type,
                   invoice_items!inner (
-                      products (name)
+                      products (name),
+                      invoices!inner (company_id)
                   )
               `)
               .eq('invoice_items.invoices.company_id', selectedCompany.id)
