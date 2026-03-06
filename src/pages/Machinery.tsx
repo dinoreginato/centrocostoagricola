@@ -1,9 +1,10 @@
-
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Layers, Settings, Plus, X } from 'lucide-react';
+import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Layers, Settings, Plus, X, Printer, FileText } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface MachineryItem {
   id: string; // invoice_item_id
@@ -59,6 +60,15 @@ interface HistoryItem {
     };
 }
 
+interface MachineExpense {
+    id: string;
+    date: string;
+    item_name: string;
+    invoice_number: string;
+    sector_name: string;
+    amount: number;
+}
+
 export const Machinery: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
@@ -86,6 +96,11 @@ export const Machinery: React.FC = () => {
   // Machine Management State
   const [showMachineModal, setShowMachineModal] = useState(false);
   const [editingMachine, setEditingMachine] = useState<Partial<Machine> | null>(null);
+
+  // Machine Detail Report State
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [selectedMachineForDetail, setSelectedMachineForDetail] = useState<Machine | null>(null);
+  const [machineExpenses, setMachineExpenses] = useState<MachineExpense[]>([]);
 
   // History State
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -282,6 +297,40 @@ export const Machinery: React.FC = () => {
     setHistory(data as unknown as HistoryItem[] || []);
   };
 
+  const loadMachineExpenses = async (machineId: string) => {
+      if (!selectedCompany) return;
+      setLoading(true);
+      try {
+          const { data } = await supabase
+              .from('machinery_assignments')
+              .select(`
+                  id, assigned_amount, assigned_date,
+                  sectors (name),
+                  invoice_items!inner (
+                      products (name),
+                      invoices!inner (invoice_number)
+                  )
+              `)
+              .eq('machine_id', machineId)
+              .order('assigned_date', { ascending: false });
+          
+          const mappedExpenses: MachineExpense[] = (data || []).map((item: any) => ({
+              id: item.id,
+              date: item.assigned_date,
+              amount: item.assigned_amount,
+              sector_name: item.sectors?.name || 'Sin sector',
+              item_name: item.invoice_items?.products?.name || 'Item desconocido',
+              invoice_number: item.invoice_items?.invoices?.invoice_number || 'S/N'
+          }));
+
+          setMachineExpenses(mappedExpenses);
+      } catch (error) {
+          console.error("Error loading machine expenses:", error);
+      } finally {
+          setLoading(false);
+      }
+  };
+
   // Filtered History for Display
   const filteredHistory = history.filter(h => {
     if (!historySearch) return true;
@@ -393,7 +442,7 @@ export const Machinery: React.FC = () => {
             }
              alert('Todas las asignaciones han sido eliminadas (Método Manual).');
              loadData();
-
+             
          } catch (manualError: any) {
             console.error('Error deleting all:', manualError);
             alert('Error al eliminar: ' + manualError.message);
@@ -635,6 +684,151 @@ export const Machinery: React.FC = () => {
     }
   };
 
+  const handlePrintMachineReport = () => {
+      if (!selectedMachineForDetail) return;
+
+      const doc = new jsPDF();
+      
+      // Header
+      doc.setFontSize(18);
+      doc.text('Informe de Gastos por Maquinaria', 14, 20);
+      
+      doc.setFontSize(12);
+      doc.text(`Empresa: ${selectedCompany?.name}`, 14, 30);
+      doc.text(`Máquina: ${selectedMachineForDetail.name} (${selectedMachineForDetail.type})`, 14, 36);
+      doc.text(`Marca/Modelo: ${selectedMachineForDetail.brand} ${selectedMachineForDetail.model}`, 14, 42);
+      doc.text(`Fecha Emisión: ${new Date().toLocaleDateString()}`, 14, 48);
+
+      const tableBody = machineExpenses.map(item => [
+          new Date(item.date).toLocaleDateString(),
+          item.item_name,
+          item.invoice_number,
+          item.sector_name,
+          formatCLP(item.amount)
+      ]);
+
+      const totalAmount = machineExpenses.reduce((sum, item) => sum + item.amount, 0);
+
+      autoTable(doc, {
+          startY: 55,
+          head: [['Fecha', 'Descripción / Item', 'Factura', 'Sector Asignado', 'Monto']],
+          body: tableBody,
+          theme: 'striped',
+          headStyles: { fillColor: [234, 88, 12] }, // Orange
+          columnStyles: { 4: { halign: 'right' } },
+          foot: [['', '', '', 'TOTAL:', formatCLP(totalAmount)]],
+          footStyles: { fillColor: [240, 240, 240], textColor: [0,0,0], fontStyle: 'bold', halign: 'right' }
+      });
+
+      window.open(doc.output('bloburl'), '_blank');
+  };
+
+  const handlePrintGeneralReport = async () => {
+    if (!selectedCompany) return;
+    setLoading(true);
+
+    try {
+        // Fetch all assignments with machine info
+        const { data } = await supabase
+            .from('machinery_assignments')
+            .select(`
+                id, assigned_amount, assigned_date,
+                sectors (name),
+                machines (name, type, brand, model),
+                invoice_items!inner (
+                    products (name),
+                    invoices!inner (invoice_number)
+                )
+            `)
+            .eq('invoice_items.invoices.company_id', selectedCompany.id)
+            .not('machine_id', 'is', null) // Only items assigned to a machine
+            .order('machine_id', { ascending: true })
+            .order('assigned_date', { ascending: false });
+
+        if (!data || data.length === 0) {
+            alert('No hay gastos de maquinaria registrados para generar el reporte.');
+            return;
+        }
+
+        const doc = new jsPDF();
+        doc.setFontSize(18);
+        doc.text('Informe General de Gastos de Maquinaria', 14, 20);
+        
+        doc.setFontSize(12);
+        doc.text(`Empresa: ${selectedCompany.name}`, 14, 30);
+        doc.text(`Fecha Emisión: ${new Date().toLocaleDateString()}`, 14, 36);
+
+        // Group by Machine
+        const grouped: Record<string, any[]> = {};
+        data.forEach((item: any) => {
+            const machineName = item.machines ? `${item.machines.name} (${item.machines.type})` : 'Desconocido';
+            if (!grouped[machineName]) grouped[machineName] = [];
+            grouped[machineName].push(item);
+        });
+
+        let yPos = 45;
+
+        Object.entries(grouped).forEach(([machineName, items]) => {
+            if (yPos > 250) {
+                doc.addPage();
+                yPos = 20;
+            }
+
+            doc.setFontSize(14);
+            doc.setTextColor(234, 88, 12); // Orange-600
+            doc.setFont("helvetica", "bold");
+            doc.text(machineName, 14, yPos);
+            doc.setTextColor(0, 0, 0);
+            doc.setFont("helvetica", "normal");
+            yPos += 5;
+
+            const tableBody = items.map(item => [
+                new Date(item.assigned_date).toLocaleDateString(),
+                item.invoice_items?.products?.name || '',
+                item.invoice_items?.invoices?.invoice_number || '',
+                item.sectors?.name || '',
+                formatCLP(item.assigned_amount)
+            ]);
+
+            const subtotal = items.reduce((sum, i) => sum + i.assigned_amount, 0);
+
+            autoTable(doc, {
+                startY: yPos,
+                head: [['Fecha', 'Item / Repuesto', 'Factura', 'Sector', 'Monto']],
+                body: tableBody,
+                theme: 'striped',
+                headStyles: { fillColor: [234, 88, 12] },
+                columnStyles: { 4: { halign: 'right' } },
+                foot: [['', '', '', 'Subtotal:', formatCLP(subtotal)]],
+                footStyles: { fillColor: [255, 237, 213], textColor: [0,0,0], fontStyle: 'bold', halign: 'right' }, // Orange-100
+                margin: { left: 14, right: 14 }
+            });
+
+            yPos = (doc as any).lastAutoTable.finalY + 15;
+        });
+
+        // Grand Total
+        const grandTotal = data.reduce((sum: number, item: any) => sum + item.assigned_amount, 0);
+        
+        if (yPos > 260) {
+            doc.addPage();
+            yPos = 20;
+        }
+        
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "bold");
+        doc.text(`TOTAL GENERAL GASTOS MAQUINARIA: ${formatCLP(grandTotal)}`, 14, yPos);
+
+        window.open(doc.output('bloburl'), '_blank');
+
+    } catch (error) {
+        console.error('Error generating general report:', error);
+        alert('Error al generar el reporte general.');
+    } finally {
+        setLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -645,16 +839,25 @@ export const Machinery: React.FC = () => {
             </h1>
             <p className="text-sm text-gray-500">Asigna costos de maquinaria y repuestos a sectores</p>
         </div>
-        <button
-            onClick={() => {
-                setEditingMachine({ type: 'Tractor' });
-                setShowMachineModal(true);
-            }}
-            className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
-        >
-            <Settings className="h-4 w-4 mr-2" />
-            Gestionar Máquinas
-        </button>
+        <div className="flex space-x-2">
+            <button
+                onClick={handlePrintGeneralReport}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            >
+                <Printer className="h-4 w-4 mr-2" />
+                Reporte General
+            </button>
+            <button
+                onClick={() => {
+                    setEditingMachine({ type: 'Tractor' });
+                    setShowMachineModal(true);
+                }}
+                className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+            >
+                <Settings className="h-4 w-4 mr-2" />
+                Gestionar Máquinas
+            </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1081,6 +1284,17 @@ export const Machinery: React.FC = () => {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{m.type}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{m.brand} {m.model}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                        <button 
+                                            onClick={() => {
+                                                setSelectedMachineForDetail(m);
+                                                loadMachineExpenses(m.id);
+                                                setShowDetailModal(true);
+                                            }}
+                                            className="text-orange-600 hover:text-orange-900 mr-4 flex items-center inline-flex"
+                                        >
+                                            <FileText className="h-4 w-4 mr-1" />
+                                            Gastos
+                                        </button>
                                         <button onClick={() => setEditingMachine(m)} className="text-blue-600 hover:text-blue-900 mr-4">Editar</button>
                                         <button onClick={() => handleDeleteMachine(m.id)} className="text-red-600 hover:text-red-900">Eliminar</button>
                                     </td>
@@ -1096,6 +1310,81 @@ export const Machinery: React.FC = () => {
                 </div>
             </div>
         </div>
+      )}
+
+      {showDetailModal && selectedMachineForDetail && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+              <div className="bg-white rounded-lg p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+                  <div className="flex justify-between items-center mb-6">
+                      <div>
+                          <h3 className="text-lg font-bold text-gray-900 flex items-center">
+                              <Tractor className="mr-2 h-5 w-5 text-orange-600" />
+                              Detalle de Gastos: {selectedMachineForDetail.name}
+                          </h3>
+                          <p className="text-sm text-gray-500">{selectedMachineForDetail.type} - {selectedMachineForDetail.brand} {selectedMachineForDetail.model}</p>
+                      </div>
+                      <button onClick={() => setShowDetailModal(false)} className="text-gray-400 hover:text-gray-600">
+                          <X className="h-6 w-6" />
+                      </button>
+                  </div>
+
+                  <div className="mb-4 flex justify-between items-end">
+                      <div className="text-2xl font-bold text-gray-900">
+                          Total: {formatCLP(machineExpenses.reduce((sum, item) => sum + item.amount, 0))}
+                      </div>
+                      <button 
+                          onClick={handlePrintMachineReport}
+                          className="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-md flex items-center text-sm"
+                      >
+                          <Printer className="h-4 w-4 mr-2" />
+                          Imprimir Detalle
+                      </button>
+                  </div>
+
+                  <div className="overflow-x-auto border rounded-lg">
+                      <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                              <tr>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descripción / Item</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Factura</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sector Asignado</th>
+                                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Monto</th>
+                              </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                              {machineExpenses.length === 0 ? (
+                                  <tr>
+                                      <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                                          No hay gastos registrados para esta máquina.
+                                      </td>
+                                  </tr>
+                              ) : (
+                                  machineExpenses.map((expense) => (
+                                      <tr key={expense.id} className="hover:bg-gray-50">
+                                          <td className="px-4 py-3 text-sm text-gray-900">
+                                              {new Date(expense.date).toLocaleDateString()}
+                                          </td>
+                                          <td className="px-4 py-3 text-sm text-gray-900">
+                                              {expense.item_name}
+                                          </td>
+                                          <td className="px-4 py-3 text-sm text-gray-500">
+                                              {expense.invoice_number}
+                                          </td>
+                                          <td className="px-4 py-3 text-sm text-gray-500">
+                                              {expense.sector_name}
+                                          </td>
+                                          <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">
+                                              {formatCLP(expense.amount)}
+                                          </td>
+                                      </tr>
+                                  ))
+                              )}
+                          </tbody>
+                      </table>
+                  </div>
+              </div>
+          </div>
       )}
     </div>
   );

@@ -2,7 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Tractor, ArrowRight, Save, Loader2, CheckCircle2, AlertCircle, Trash2, Edit2 } from 'lucide-react';
+import { Tractor, ArrowRight, Save, Loader2, CheckCircle2, AlertCircle, Trash2, Edit2, FileText, Printer } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
+const LABOR_TYPES = [
+  'General',
+  'Cosecha',
+  'Poda',
+  'Raleo',
+  'Riego',
+  'Aplicaciones',
+  'Mantenimiento',
+  'Plantación',
+  'Administración',
+  'Otros'
+];
 
 interface LaborItem {
   id: string; // invoice_item_id
@@ -39,6 +54,7 @@ interface HistoryItem {
     assigned_date: string;
     sector_id: string;
     invoice_item_id: string;
+    labor_type?: string;
     sectors?: { name: string };
     invoice_items?: {
         products?: { name: string };
@@ -59,6 +75,7 @@ export const Labors: React.FC = () => {
   const [selectedLaborId, setSelectedLaborId] = useState<string | null>(null);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
   const [assignedDate, setAssignedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [laborType, setLaborType] = useState<string>('General');
   const [distributeBy, setDistributeBy] = useState<'sector' | 'field' | 'company'>('sector');
   const [selectedFieldId, setSelectedFieldId] = useState<string>('');
   const [fieldTotalAmount, setFieldTotalAmount] = useState<number>(0);
@@ -234,7 +251,7 @@ export const Labors: React.FC = () => {
     const { data } = await supabase
         .from('labor_assignments')
         .select(`
-            id, assigned_amount, assigned_date,
+            id, assigned_amount, assigned_date, labor_type,
             sectors (name),
             invoice_items!inner (
                 products (name),
@@ -255,8 +272,9 @@ export const Labors: React.FC = () => {
     const productName = (h.invoice_items?.products?.name || '').toLowerCase();
     const invoiceNum = (h.invoice_items?.invoices?.invoice_number || '').toLowerCase();
     const sectorName = (h.sectors?.name || '').toLowerCase();
+    const type = (h.labor_type || '').toLowerCase();
     
-    return productName.includes(search) || invoiceNum.includes(search) || sectorName.includes(search);
+    return productName.includes(search) || invoiceNum.includes(search) || sectorName.includes(search) || type.includes(search);
   });
 
   const handleSelectLabor = (labor: LaborItem) => {
@@ -267,12 +285,18 @@ export const Labors: React.FC = () => {
     setDistributeBy('sector');
     setAllocations([{ sector_id: '', amount: labor.remaining_amount }]);
     setFieldTotalAmount(labor.remaining_amount);
+    
+    // Try to guess labor type from description
+    const desc = labor.description.toLowerCase();
+    const matchedType = LABOR_TYPES.find(t => t !== 'General' && desc.includes(t.toLowerCase()));
+    setLaborType(matchedType || 'General');
   };
 
   const handleEditAssignment = (assignment: HistoryItem) => {
       setEditingAssignmentId(assignment.id);
       setSelectedLaborId(assignment.invoice_item_id);
       setAssignedDate(assignment.assigned_date ? assignment.assigned_date.split('T')[0] : new Date().toISOString().split('T')[0]);
+      setLaborType(assignment.labor_type || 'General');
       
       // When editing, we need to know the original labor item to show details
       // We also need to 'free up' the amount of this assignment so it can be re-allocated
@@ -435,7 +459,8 @@ export const Labors: React.FC = () => {
                 .update({
                     sector_id: alloc.sector_id,
                     assigned_amount: alloc.amount,
-                    assigned_date: assignedDate
+                    assigned_date: assignedDate,
+                    labor_type: laborType
                 })
                 .eq('id', editingAssignmentId);
 
@@ -450,7 +475,8 @@ export const Labors: React.FC = () => {
                     invoice_item_id: selectedLaborId,
                     sector_id: a.sector_id,
                     assigned_amount: a.amount,
-                    assigned_date: assignedDate
+                    assigned_date: assignedDate,
+                    labor_type: laborType
                 }));
             } else if (distributeBy === 'field') {
                  // Distribute proportional to hectares in the selected field
@@ -464,7 +490,8 @@ export const Labors: React.FC = () => {
                      invoice_item_id: selectedLaborId,
                      sector_id: s.id,
                      assigned_amount: (Number(s.hectares) / totalHa) * fieldTotalAmount,
-                     assigned_date: assignedDate
+                     assigned_date: assignedDate,
+                     labor_type: laborType
                  }));
             } else if (distributeBy === 'company') {
                  // Distribute proportional to hectares across ALL fields
@@ -475,7 +502,8 @@ export const Labors: React.FC = () => {
                      invoice_item_id: selectedLaborId,
                      sector_id: s.id,
                      assigned_amount: (Number(s.hectares) / totalHa) * fieldTotalAmount,
-                     assigned_date: assignedDate
+                     assigned_date: assignedDate,
+                     labor_type: laborType
                  }));
             }
 
@@ -498,6 +526,68 @@ export const Labors: React.FC = () => {
     } finally {
         setLoading(false);
     }
+  };
+
+  const handlePrintReport = () => {
+      const doc = new jsPDF();
+      
+      doc.setFontSize(18);
+      doc.text('Informe de Labores Agrícolas', 14, 20);
+      
+      doc.setFontSize(12);
+      doc.text(`Empresa: ${selectedCompany?.name}`, 14, 30);
+      doc.text(`Fecha Emisión: ${new Date().toLocaleDateString()}`, 14, 36);
+
+      // Group by Labor Type
+      const grouped = filteredHistory.reduce((acc, curr) => {
+          const type = curr.labor_type || 'General';
+          if (!acc[type]) acc[type] = [];
+          acc[type].push(curr);
+          return acc;
+      }, {} as Record<string, HistoryItem[]>);
+
+      let yPos = 45;
+
+      Object.entries(grouped).forEach(([type, items]) => {
+          // Check if we need a new page
+          if (yPos > 250) {
+              doc.addPage();
+              yPos = 20;
+          }
+
+          doc.setFontSize(14);
+          doc.setTextColor(22, 163, 74); // Green-600
+          doc.setFont("helvetica", "bold");
+          doc.text(type.toUpperCase(), 14, yPos);
+          doc.setTextColor(0, 0, 0);
+          doc.setFont("helvetica", "normal");
+          yPos += 5;
+
+          const tableBody = items.map(item => [
+              new Date(item.assigned_date).toLocaleDateString(),
+              item.invoice_items?.products?.name || '',
+              item.sectors?.name || '',
+              formatCLP(item.assigned_amount)
+          ]);
+          
+          const totalAmount = items.reduce((sum, i) => sum + i.assigned_amount, 0);
+
+          autoTable(doc, {
+              startY: yPos,
+              head: [['Fecha', 'Labor / Item', 'Sector', 'Monto']],
+              body: tableBody,
+              theme: 'striped',
+              headStyles: { fillColor: [22, 163, 74] }, // Green
+              columnStyles: { 3: { halign: 'right' } },
+              foot: [['', '', 'TOTAL:', formatCLP(totalAmount)]],
+              footStyles: { fillColor: [240, 240, 240], textColor: [0,0,0], fontStyle: 'bold', halign: 'right' },
+              margin: { left: 14, right: 14 }
+          });
+
+          yPos = (doc as any).lastAutoTable.finalY + 15;
+      });
+
+      window.open(doc.output('bloburl'), '_blank');
   };
 
   return (
@@ -607,14 +697,28 @@ export const Labors: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="mt-4">
-                            <label className="block text-sm font-medium text-gray-700">Fecha de Asignación</label>
-                            <input
-                                type="date"
-                                value={assignedDate}
-                                onChange={(e) => setAssignedDate(e.target.value)}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
-                            />
+                        <div className="mt-4 grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Tipo de Labor</label>
+                                <select
+                                    value={laborType}
+                                    onChange={(e) => setLaborType(e.target.value)}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                >
+                                    {LABOR_TYPES.map(t => (
+                                        <option key={t} value={t}>{t}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Fecha de Asignación</label>
+                                <input
+                                    type="date"
+                                    value={assignedDate}
+                                    onChange={(e) => setAssignedDate(e.target.value)}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                />
+                            </div>
                         </div>
                     </div>
 
@@ -768,6 +872,14 @@ export const Labors: React.FC = () => {
                             className="text-sm border-gray-300 rounded-md shadow-sm focus:border-green-500 focus:ring-green-500 flex-1 md:w-64"
                         />
                         <button
+                            onClick={handlePrintReport}
+                            className="text-xs text-white bg-green-600 hover:bg-green-700 px-3 py-2 rounded transition-colors whitespace-nowrap flex items-center"
+                            title="Descargar Reporte PDF"
+                        >
+                            <FileText className="h-4 w-4 mr-1" />
+                            Reporte
+                        </button>
+                        <button
                             onClick={handleDeleteAllAssignments}
                             className="text-xs text-red-600 hover:text-red-800 border border-red-200 bg-red-50 hover:bg-red-100 px-3 py-2 rounded transition-colors whitespace-nowrap"
                             title="Eliminar todas las asignaciones de esta empresa"
@@ -781,6 +893,7 @@ export const Labors: React.FC = () => {
                         <thead className="bg-gray-50 sticky top-0">
                             <tr>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo Labor</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item / Factura</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sector Asignado</th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Monto</th>
@@ -791,6 +904,16 @@ export const Labors: React.FC = () => {
                                 <tr key={h.id}>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         {new Date(h.assigned_date).toLocaleDateString()}
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                            h.labor_type === 'Cosecha' ? 'bg-orange-100 text-orange-800' :
+                                            h.labor_type === 'Poda' ? 'bg-blue-100 text-blue-800' :
+                                            h.labor_type === 'Raleo' ? 'bg-purple-100 text-purple-800' :
+                                            'bg-gray-100 text-gray-800'
+                                        }`}>
+                                            {h.labor_type || 'General'}
+                                        </span>
                                     </td>
                                     <td className="px-6 py-4 text-sm text-gray-900">
                                         <div className="font-medium">{h.invoice_items?.products?.name || 'Sin nombre'}</div>
