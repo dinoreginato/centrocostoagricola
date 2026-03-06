@@ -85,6 +85,7 @@ export const Labors: React.FC = () => {
   const [reportScope, setReportScope] = useState<'all' | 'field' | 'sector'>('all');
   const [reportFieldId, setReportFieldId] = useState<string>('');
   const [reportSectorId, setReportSectorId] = useState<string>('');
+  const [reportLaborType, setReportLaborType] = useState<string>('all'); // New filter for Labor Type
 
   // Editing State
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
@@ -544,14 +545,21 @@ export const Labors: React.FC = () => {
       let reportData = [...history];
       let titleSuffix = '';
 
+      // Filter by Scope (Field/Sector)
       if (reportScope === 'field' && reportFieldId) {
           reportData = reportData.filter(item => item.sectors?.field_id === reportFieldId);
           const fieldName = fields.find(f => f.id === reportFieldId)?.name || '';
-          titleSuffix = ` - Campo: ${fieldName}`;
+          titleSuffix += ` - Campo: ${fieldName}`;
       } else if (reportScope === 'sector' && reportSectorId) {
           reportData = reportData.filter(item => item.sector_id === reportSectorId);
           const sectorName = sectors.find(s => s.id === reportSectorId)?.name || '';
-          titleSuffix = ` - Sector: ${sectorName}`;
+          titleSuffix += ` - Sector: ${sectorName}`;
+      }
+
+      // Filter by Labor Type
+      if (reportLaborType !== 'all') {
+          reportData = reportData.filter(item => (item.labor_type || 'General') === reportLaborType);
+          titleSuffix += ` - Labor: ${reportLaborType}`;
       }
 
       if (reportData.length === 0) {
@@ -972,6 +980,19 @@ export const Labors: React.FC = () => {
                             {sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                         </select>
                     )}
+
+                    <div className="h-6 w-px bg-gray-300 mx-2"></div>
+
+                    <select
+                        value={reportLaborType}
+                        onChange={(e) => setReportLaborType(e.target.value)}
+                        className="text-xs border-gray-300 rounded-md shadow-sm focus:border-green-500 focus:ring-green-500"
+                    >
+                        <option value="all">Todas las Labores</option>
+                        {LABOR_TYPES.map(t => (
+                            <option key={t} value={t}>{t}</option>
+                        ))}
+                    </select>
                 </div>
 
                 <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
