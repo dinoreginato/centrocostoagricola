@@ -3,7 +3,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Plus, Loader2, Save, Trash2, Calendar, FileText, Printer, CheckCircle, XCircle, Search, Edit } from 'lucide-react';
-import { jsPDF } from 'jspdf'; // Changed import to named export
+import jsPDF from 'jspdf'; 
 
 // Interfaces based on DB Schema
 interface ApplicationOrder {
@@ -573,7 +573,7 @@ export const ApplicationOrders: React.FC = () => {
                               className="w-full border border-gray-300 rounded p-1.5 text-sm"
                           >
                               <option value="">Seleccione...</option>
-                              {products.map(p => (
+                              {products?.map(p => (
                                   <option key={p.id} value={p.id}>{p.name} ({p.current_stock} {p.unit})</option>
                               ))}
                           </select>
@@ -659,7 +659,7 @@ export const ApplicationOrders: React.FC = () => {
                               className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
                           >
                               <option value="">-</option>
-                              {machines.filter(m => m.type.toLowerCase().includes('tractor')).map(m => (
+                              {machines.filter(m => m.type?.toLowerCase().includes('tractor')).map(m => (
                                   <option key={m.id} value={m.id}>{m.name}</option>
                               ))}
                           </select>
@@ -672,7 +672,7 @@ export const ApplicationOrders: React.FC = () => {
                               className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
                           >
                               <option value="">-</option>
-                              {machines.filter(m => !m.type.toLowerCase().includes('tractor')).map(m => (
+                              {machines.filter(m => !m.type?.toLowerCase().includes('tractor')).map(m => (
                                   <option key={m.id} value={m.id}>{m.name}</option>
                               ))}
                           </select>
@@ -685,7 +685,7 @@ export const ApplicationOrders: React.FC = () => {
                               className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
                           >
                               <option value="">-</option>
-                              {workers.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                              {workers?.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                           </select>
                       </div>
                       {/* Optional Params */}
