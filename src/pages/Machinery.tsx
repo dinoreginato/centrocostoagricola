@@ -819,7 +819,27 @@ export const Machinery: React.FC = () => {
       doc.text(`Marca/Modelo: ${selectedMachineForDetail.brand} ${selectedMachineForDetail.model}`, 14, 42);
       doc.text(`Fecha Emisión: ${new Date().toLocaleDateString()}`, 14, 48);
 
-      const tableBody = machineExpenses.map(item => [
+      // Group expenses by Invoice + Item to consolidate split sector assignments
+      const groupedExpenses: Record<string, MachineExpense> = {};
+
+      machineExpenses.forEach(item => {
+        // Create a unique key for the Invoice Item (Invoice Number + Item Name)
+        // This ensures that if an invoice has multiple items, they stay separate,
+        // but if one item is split across sectors, it gets combined.
+        const key = `${item.invoice_number}-${item.item_name}-${item.date}`;
+        
+        if (!groupedExpenses[key]) {
+            groupedExpenses[key] = { ...item };
+        } else {
+            groupedExpenses[key].amount += item.amount;
+        }
+      });
+
+      const consolidatedExpenses = Object.values(groupedExpenses).sort((a, b) => 
+          new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+
+      const tableBody = consolidatedExpenses.map(item => [
           new Date(item.date).toLocaleDateString(),
           item.item_name,
           item.invoice_number,
@@ -831,7 +851,7 @@ export const Machinery: React.FC = () => {
 
       autoTable(doc, {
           startY: 55,
-          head: [['Fecha', 'Descripción / Item', 'Factura', 'Monto']], // Removed 'Sector Asignado'
+          head: [['Fecha', 'Descripción / Item', 'Factura', 'Monto Total Item']], 
           body: tableBody,
           theme: 'striped',
           headStyles: { fillColor: [234, 88, 12] }, // Orange
