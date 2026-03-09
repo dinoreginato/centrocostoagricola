@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
@@ -804,6 +804,27 @@ export const Machinery: React.FC = () => {
     }
   };
 
+  // Consolidate expenses by Invoice + Item + Date to avoid sector splits
+  const consolidatedExpenses = useMemo(() => {
+    const grouped: Record<string, MachineExpense> = {};
+    
+    machineExpenses.forEach(item => {
+        // Create a unique key for the Invoice Item (Invoice Number + Item Name)
+        const key = `${item.invoice_number}-${item.item_name}-${item.date}`;
+        
+        if (!grouped[key]) {
+            // Create a copy so we don't mutate original
+            grouped[key] = { ...item, sector_name: 'Varios / Consolidado' }; 
+        } else {
+            grouped[key].amount += item.amount;
+        }
+    });
+    
+    return Object.values(grouped).sort((a, b) => 
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+  }, [machineExpenses]);
+
   const handlePrintMachineReport = () => {
       if (!selectedMachineForDetail) return;
 
@@ -819,31 +840,10 @@ export const Machinery: React.FC = () => {
       doc.text(`Marca/Modelo: ${selectedMachineForDetail.brand} ${selectedMachineForDetail.model}`, 14, 42);
       doc.text(`Fecha Emisión: ${new Date().toLocaleDateString()}`, 14, 48);
 
-      // Group expenses by Invoice + Item to consolidate split sector assignments
-      const groupedExpenses: Record<string, MachineExpense> = {};
-
-      machineExpenses.forEach(item => {
-        // Create a unique key for the Invoice Item (Invoice Number + Item Name)
-        // This ensures that if an invoice has multiple items, they stay separate,
-        // but if one item is split across sectors, it gets combined.
-        const key = `${item.invoice_number}-${item.item_name}-${item.date}`;
-        
-        if (!groupedExpenses[key]) {
-            groupedExpenses[key] = { ...item };
-        } else {
-            groupedExpenses[key].amount += item.amount;
-        }
-      });
-
-      const consolidatedExpenses = Object.values(groupedExpenses).sort((a, b) => 
-          new Date(b.date).getTime() - new Date(a.date).getTime()
-      );
-
       const tableBody = consolidatedExpenses.map(item => [
           new Date(item.date).toLocaleDateString(),
           item.item_name,
           item.invoice_number,
-          // item.sector_name, // Removed sector column
           formatCLP(item.amount)
       ]);
 
@@ -1501,19 +1501,18 @@ export const Machinery: React.FC = () => {
                                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
                                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descripción / Item</th>
                                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Factura</th>
-                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sector Asignado</th>
-                                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Monto</th>
+                                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Monto Total</th>
                               </tr>
                           </thead>
                           <tbody className="bg-white divide-y divide-gray-200">
-                              {machineExpenses.length === 0 ? (
+                              {consolidatedExpenses.length === 0 ? (
                                   <tr>
-                                      <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                                      <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
                                           No hay gastos registrados para esta máquina.
                                       </td>
                                   </tr>
                               ) : (
-                                  machineExpenses.map((expense) => (
+                                  consolidatedExpenses.map((expense) => (
                                       <tr key={expense.id} className="hover:bg-gray-50">
                                           <td className="px-4 py-3 text-sm text-gray-900">
                                               {new Date(expense.date).toLocaleDateString()}
@@ -1523,9 +1522,6 @@ export const Machinery: React.FC = () => {
                                           </td>
                                           <td className="px-4 py-3 text-sm text-gray-500">
                                               {expense.invoice_number}
-                                          </td>
-                                          <td className="px-4 py-3 text-sm text-gray-500">
-                                              {expense.sector_name}
                                           </td>
                                           <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">
                                               {formatCLP(expense.amount)}
