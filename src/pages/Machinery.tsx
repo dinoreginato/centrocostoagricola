@@ -823,7 +823,7 @@ export const Machinery: React.FC = () => {
           new Date(item.date).toLocaleDateString(),
           item.item_name,
           item.invoice_number,
-          item.sector_name,
+          // item.sector_name, // Removed sector column
           formatCLP(item.amount)
       ]);
 
@@ -831,12 +831,12 @@ export const Machinery: React.FC = () => {
 
       autoTable(doc, {
           startY: 55,
-          head: [['Fecha', 'Descripción / Item', 'Factura', 'Sector Asignado', 'Monto']],
+          head: [['Fecha', 'Descripción / Item', 'Factura', 'Monto']], // Removed 'Sector Asignado'
           body: tableBody,
           theme: 'striped',
           headStyles: { fillColor: [234, 88, 12] }, // Orange
-          columnStyles: { 4: { halign: 'right' } },
-          foot: [['', '', '', 'TOTAL:', formatCLP(totalAmount)]],
+          columnStyles: { 3: { halign: 'right' } }, // Adjusted column index
+          foot: [['', '', 'TOTAL:', formatCLP(totalAmount)]],
           footStyles: { fillColor: [240, 240, 240], textColor: [0,0,0], fontStyle: 'bold', halign: 'right' }
       });
 
