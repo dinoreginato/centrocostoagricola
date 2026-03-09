@@ -290,6 +290,7 @@ export const Machinery: React.FC = () => {
         .from('machinery_assignments')
         .select(`
             id, assigned_amount, assigned_date,
+            sector_id, invoice_item_id, machine_id,
             sectors (name),
             machines (name),
             invoice_items!inner (
