@@ -205,12 +205,8 @@ export const Machinery: React.FC = () => {
         const textToCheck = `${cat} ${name}`;
 
         // Keywords (normalized)
-        const allowedKeywords = [
-            'maquinaria', 'repuesto', 'mantencion', 
-            'taller', 'lubricante', 'neumatico', 
-            'aceite', 'filtro', 'bateria', 'reparacion',
-            'grasas'
-        ];
+        // User requested STRICTLY 'maquinaria' and 'repuestos'
+        const allowedKeywords = ['maquinaria', 'repuesto'];
         
         return allowedKeywords.some(keyword => textToCheck.includes(keyword));
     });
