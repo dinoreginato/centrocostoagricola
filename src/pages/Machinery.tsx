@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Layers, Settings, Plus, X, Printer, FileText } from 'lucide-react';
+import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Layers, Settings, Plus, X, Printer, FileText, RefreshCw } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
@@ -93,6 +93,7 @@ export const Machinery: React.FC = () => {
 
   // Editing State
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
+  const [editingItem, setEditingItem] = useState<MachineryItem | null>(null);
 
   // Machine Management State
   const [showMachineModal, setShowMachineModal] = useState(false);
@@ -352,6 +353,7 @@ export const Machinery: React.FC = () => {
   const handleSelectItem = (item: MachineryItem) => {
     setSelectedItemId(item.id);
     setEditingAssignmentId(null);
+    setEditingItem(null); // Clear editing item when selecting new
     setAssignedDate(item.date ? item.date.split('T')[0] : new Date().toISOString().split('T')[0]);
     setDistributeBy('sector');
     setSelectedMachineId('');
@@ -359,16 +361,73 @@ export const Machinery: React.FC = () => {
     setFieldTotalAmount(item.remaining_amount);
   };
 
-  const handleEditAssignment = (assignment: HistoryItem) => {
-      setEditingAssignmentId(assignment.id);
-      setSelectedItemId(assignment.invoice_item_id);
-      setAssignedDate(assignment.assigned_date ? assignment.assigned_date.split('T')[0] : new Date().toISOString().split('T')[0]);
-      setDistributeBy('sector'); // Edit is always single sector for now
-      setSelectedMachineId(assignment.machine_id || '');
-      setAllocations([{ 
-          sector_id: assignment.sector_id, 
-          amount: assignment.assigned_amount 
-      }]);
+  const handleEditAssignment = async (assignment: HistoryItem) => {
+      setLoading(true);
+      try {
+          // 1. Fetch the full invoice item details because it might not be in the pending list
+          const { data: itemData, error } = await supabase
+              .from('invoice_items')
+              .select(`
+                  id, total_price, category,
+                  products (name, category),
+                  invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
+              `)
+              .eq('id', assignment.invoice_item_id)
+              .single();
+
+          if (error) throw error;
+
+          // 2. Reconstruct the MachineryItem object for the form
+          const docType = (itemData.invoices.document_type || '').toLowerCase();
+          const isCreditNote = docType.includes('nota de cr') || 
+                               docType.includes('nota de cre') || 
+                               docType.includes('nota credito') ||
+                               docType.includes('credito') || 
+                               docType === 'nc';
+        
+          const taxPercent = itemData.invoices.tax_percentage !== undefined ? itemData.invoices.tax_percentage : 19;
+          const netAmount = Number(itemData.total_price);
+          const grossAmount = netAmount * (1 + (taxPercent / 100));
+
+          let total = grossAmount;
+          if (isCreditNote) {
+              total = -Math.abs(total);
+          } else {
+              total = Math.abs(total);
+          }
+
+          // We don't really care about "assigned" amount for editing context validation here as much as the total
+          // But let's be correct
+          const assigned = 0; // We don't easily know the total assigned without another query, but for editing existing record it's fine.
+          
+          const fullItem: MachineryItem = {
+                id: itemData.id,
+                invoice_id: itemData.invoices.id,
+                invoice_number: itemData.invoices.invoice_number,
+                date: itemData.invoices.invoice_date,
+                description: `${itemData.products?.name || 'Sin descripción'} ${isCreditNote ? '(NC)' : ''} [${itemData.invoices.document_type}]`,
+                total_amount: total,
+                assigned_amount: assigned,
+                remaining_amount: total - assigned // Approximate
+          };
+
+          setEditingItem(fullItem);
+          setEditingAssignmentId(assignment.id);
+          setSelectedItemId(assignment.invoice_item_id);
+          setAssignedDate(assignment.assigned_date ? assignment.assigned_date.split('T')[0] : new Date().toISOString().split('T')[0]);
+          setDistributeBy('sector'); // Edit is always single sector for now
+          setSelectedMachineId(assignment.machine_id || '');
+          setAllocations([{ 
+              sector_id: assignment.sector_id, 
+              amount: assignment.assigned_amount 
+          }]);
+
+      } catch (error: any) {
+          console.error('Error loading item for edit:', error);
+          alert('Error al cargar el item para editar: ' + error.message);
+      } finally {
+          setLoading(false);
+      }
   };
 
   const handleDeleteAssignment = async (id: string) => {
@@ -387,6 +446,35 @@ export const Machinery: React.FC = () => {
       } catch (error: any) {
           console.error('Error deleting:', error);
           alert('Error: ' + error.message);
+      } finally {
+          setLoading(false);
+      }
+  };
+
+  const handleRedistribute = async (assignment: HistoryItem) => {
+      if (!confirm('¿Desea redistribuir este item completo? Esto eliminará TODAS las asignaciones asociadas a este item y lo cargará en el formulario para que pueda asignarlo nuevamente desde cero.')) return;
+
+      setLoading(true);
+      try {
+          // 1. Delete ALL assignments for this invoice_item_id
+          const { error: deleteError } = await supabase
+              .from('machinery_assignments')
+              .delete()
+              .eq('invoice_item_id', assignment.invoice_item_id);
+
+          if (deleteError) throw deleteError;
+
+          alert('Item reseteado. Ahora aparecerá en la lista de pendientes para asignar nuevamente.');
+          await loadData();
+          
+          // Optionally, we could try to select it automatically, but let's just refresh for now as it's safer.
+          setSelectedItemId(null);
+          setEditingAssignmentId(null);
+          setEditingItem(null);
+
+      } catch (error: any) {
+          console.error('Error redistributing:', error);
+          alert('Error al redistribuir: ' + error.message);
       } finally {
           setLoading(false);
       }
@@ -539,8 +627,13 @@ export const Machinery: React.FC = () => {
   const handleSaveAssignment = async () => {
     if (!selectedItemId) return;
     
-    const selectedItem = pendingItems.find(p => p.id === selectedItemId);
-    if (!selectedItem) return;
+    // Use editingItem if available, otherwise look in pending list
+    const selectedItem = editingItem || pendingItems.find(p => p.id === selectedItemId);
+    
+    if (!selectedItem) {
+        alert('Error: No se encontró la información del item seleccionado.');
+        return;
+    }
 
     let payload: any[] = [];
 
@@ -937,7 +1030,7 @@ export const Machinery: React.FC = () => {
                     <div className="bg-gray-50 p-4 rounded-md mb-6">
                         <div className="text-sm text-gray-500">Item Seleccionado:</div>
                         <div className="font-medium text-gray-900">
-                            {pendingItems.find(p => p.id === selectedItemId)?.description}
+                            {editingItem ? editingItem.description : pendingItems.find(p => p.id === selectedItemId)?.description}
                         </div>
                         {!editingAssignmentId && (
                             <div className="text-right mt-2 text-lg font-bold text-orange-600">
@@ -1176,6 +1269,13 @@ export const Machinery: React.FC = () => {
                                         <div className="flex items-center justify-end gap-3">
                                             {formatCLP(h.assigned_amount)}
                                             <div className="flex gap-1">
+                                                <button 
+                                                    onClick={() => handleRedistribute(h)}
+                                                    className="text-orange-500 hover:text-orange-700 p-1"
+                                                    title="Redistribuir Item Completo (Borra y reinicia asignaciones)"
+                                                >
+                                                    <RefreshCw className="h-4 w-4" />
+                                                </button>
                                                 <button 
                                                     onClick={() => handleEditAssignment(h)}
                                                     className="text-blue-500 hover:text-blue-700 p-1"
