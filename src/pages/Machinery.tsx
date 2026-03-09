@@ -378,14 +378,18 @@ export const Machinery: React.FC = () => {
           if (error) throw error;
 
           // 2. Reconstruct the MachineryItem object for the form
-          const docType = (itemData.invoices.document_type || '').toLowerCase();
+          // Fix: Handle potential array response for joined tables
+          const invoice = (Array.isArray(itemData.invoices) ? itemData.invoices[0] : itemData.invoices) as any;
+          const product = (Array.isArray(itemData.products) ? itemData.products[0] : itemData.products) as any;
+
+          const docType = (invoice.document_type || '').toLowerCase();
           const isCreditNote = docType.includes('nota de cr') || 
                                docType.includes('nota de cre') || 
                                docType.includes('nota credito') ||
                                docType.includes('credito') || 
                                docType === 'nc';
         
-          const taxPercent = itemData.invoices.tax_percentage !== undefined ? itemData.invoices.tax_percentage : 19;
+          const taxPercent = invoice.tax_percentage !== undefined ? invoice.tax_percentage : 19;
           const netAmount = Number(itemData.total_price);
           const grossAmount = netAmount * (1 + (taxPercent / 100));
 
@@ -402,10 +406,10 @@ export const Machinery: React.FC = () => {
           
           const fullItem: MachineryItem = {
                 id: itemData.id,
-                invoice_id: itemData.invoices.id,
-                invoice_number: itemData.invoices.invoice_number,
-                date: itemData.invoices.invoice_date,
-                description: `${itemData.products?.name || 'Sin descripción'} ${isCreditNote ? '(NC)' : ''} [${itemData.invoices.document_type}]`,
+                invoice_id: invoice.id,
+                invoice_number: invoice.invoice_number,
+                date: invoice.invoice_date,
+                description: `${product?.name || 'Sin descripción'} ${isCreditNote ? '(NC)' : ''} [${invoice.document_type}]`,
                 total_amount: total,
                 assigned_amount: assigned,
                 remaining_amount: total - assigned // Approximate
