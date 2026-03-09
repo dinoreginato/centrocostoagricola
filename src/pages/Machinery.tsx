@@ -196,12 +196,23 @@ export const Machinery: React.FC = () => {
         // Normalize category: lower case, remove accents
         // Fallback to product category if item category is missing
         const rawCat = item.category || item.products?.category || '';
+        const rawName = item.products?.name || ''; // Also check product name for keywords
+        
         const cat = rawCat.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        const name = rawName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
         
+        // Combine text to search in both category and name
+        const textToCheck = `${cat} ${name}`;
+
         // Keywords (normalized)
-        const allowedKeywords = ['maquinaria', 'repuesto', 'mantencion'];
+        const allowedKeywords = [
+            'maquinaria', 'repuesto', 'mantencion', 
+            'taller', 'lubricante', 'neumatico', 
+            'aceite', 'filtro', 'bateria', 'reparacion',
+            'grasas'
+        ];
         
-        return allowedKeywords.some(keyword => cat.includes(keyword));
+        return allowedKeywords.some(keyword => textToCheck.includes(keyword));
     });
 
     // Optimización: Usar RPC para obtener el total asignado de manera eficiente y escalable
