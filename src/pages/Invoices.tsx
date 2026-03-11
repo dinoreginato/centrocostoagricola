@@ -819,6 +819,36 @@ export const Invoices: React.FC = () => {
     }
   };
 
+  const toggleInvoiceStatus = async (e: React.MouseEvent, invoice: Invoice) => {
+    e.stopPropagation(); // Prevent opening edit mode
+    
+    const newStatus = invoice.status === 'Pagada' ? 'Pendiente' : 'Pagada';
+    
+    try {
+        const { error } = await supabase
+            .from('invoices')
+            .update({ status: newStatus })
+            .eq('id', invoice.id);
+
+        if (error) throw error;
+
+        // Update local state directly to reflect change immediately
+        const updatedInvoices = allInvoices.map(inv => 
+            inv.id === invoice.id ? { ...inv, status: newStatus } : inv
+        );
+        setAllInvoices(updatedInvoices);
+        
+        // Also update editing form if it's the same invoice
+        if (editingInvoiceId === invoice.id) {
+            setStatus(newStatus);
+        }
+
+    } catch (error: any) {
+        console.error('Error toggling status:', error);
+        alert('Error al cambiar estado: ' + error.message);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCompany || items.length === 0) return;
@@ -1607,7 +1637,9 @@ export const Invoices: React.FC = () => {
                       <div className="flex justify-between items-start mb-1 pr-6">
                         <span className="font-bold text-sm text-white">#{inv.invoice_number}</span>
                         <div className="flex flex-col items-end">
-                          <span className={`text-xs px-2 py-0.5 rounded-full mb-1 ${
+                          <span 
+                            onClick={(e) => toggleInvoiceStatus(e, inv)}
+                            className={`text-xs px-2 py-0.5 rounded-full mb-1 cursor-pointer hover:opacity-80 transition-opacity select-none ${
                             inv.status === 'Pagada' ? 'bg-green-900 text-green-300' : 
                             inv.status === 'Pendiente' ? 'bg-yellow-900 text-yellow-300' : 'bg-red-900 text-red-300'
                           }`}>
