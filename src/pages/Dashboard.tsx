@@ -4,7 +4,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X, Trash2 } from 'lucide-react';
+import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X, Trash2, Layout } from 'lucide-react';
 import { 
   BarChart, 
   Bar, 
@@ -24,6 +24,7 @@ export const Dashboard: React.FC = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [showNewCompanyModal, setShowNewCompanyModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [simpleMode, setSimpleMode] = useState(false);
 
   const [dashboardStats, setDashboardStats] = useState({
     totalFields: 0,
@@ -356,6 +357,21 @@ export const Dashboard: React.FC = () => {
           <p className="text-sm text-gray-500">Resumen de costos y producción</p>
         </div>
         <div className="mt-4 sm:mt-0 flex items-center space-x-2">
+          <button
+            onClick={() => setSimpleMode(!simpleMode)}
+            className={`inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+                simpleMode 
+                ? 'text-blue-700 bg-blue-100 hover:bg-blue-200' 
+                : 'text-gray-700 bg-gray-100 hover:bg-gray-200'
+            }`}
+            title="Alternar Modo Simplificado"
+          >
+            <Layout className="h-4 w-4 mr-1" />
+            {simpleMode ? 'Vista Detallada' : 'Vista Zen'}
+          </button>
+
+          <div className="h-6 w-px bg-gray-300 mx-2"></div>
+
           <Building2 className="text-gray-400 h-5 w-5" />
           <select
             value={selectedCompany?.id || ''}
@@ -401,8 +417,50 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="bg-white overflow-hidden shadow rounded-lg">
+      {simpleMode ? (
+        // SIMPLE MODE UI
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mt-8">
+            <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl shadow-lg p-8 text-white transform transition hover:scale-105">
+                <div className="text-green-100 text-lg font-medium mb-2">Costo Total Acumulado</div>
+                <div className="text-5xl font-bold">{formatCLP(dashboardStats.totalCost)}</div>
+                <div className="mt-4 text-green-100 flex items-center">
+                    <TrendingUp className="h-5 w-5 mr-2" />
+                    <span>Inversión Total</span>
+                </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 transform transition hover:scale-105">
+                <div className="text-gray-500 text-lg font-medium mb-2">Costo Promedio / Hectárea</div>
+                <div className="text-5xl font-bold text-gray-800">{formatCLP(dashboardStats.costPerHectare)}</div>
+                <div className="mt-4 text-gray-400 flex items-center">
+                    <Map className="h-5 w-5 mr-2" />
+                    <span>{dashboardStats.totalHectares} Hectáreas Totales</span>
+                </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 transform transition hover:scale-105">
+                <div className="text-gray-500 text-lg font-medium mb-4">Sectores Más Costosos</div>
+                <div className="space-y-4">
+                    {sectorChartData.slice(0, 3).map((sector, idx) => (
+                        <div key={idx} className="flex justify-between items-center border-b border-gray-50 pb-2 last:border-0">
+                            <div>
+                                <div className="font-bold text-gray-800">{sector.name}</div>
+                                <div className="text-xs text-gray-400">{sector.fieldName}</div>
+                            </div>
+                            <div className="text-right">
+                                <div className="font-bold text-orange-600">{formatCLP(sector.costPerHa)}/ha</div>
+                            </div>
+                        </div>
+                    ))}
+                    {sectorChartData.length === 0 && <div className="text-gray-400 italic">Sin datos</div>}
+                </div>
+            </div>
+        </div>
+      ) : (
+        // DETAILED MODE UI (Original)
+        <>
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="bg-white overflow-hidden shadow rounded-lg">
           <div className="p-5">
             <div className="flex items-center">
               <div className="flex-shrink-0">
@@ -584,6 +642,8 @@ export const Dashboard: React.FC = () => {
             </table>
           </div>
       </div>
+      </>
+      )}
 
       {showNewCompanyModal && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center z-50">
