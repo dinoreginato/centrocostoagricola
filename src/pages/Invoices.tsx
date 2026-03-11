@@ -14,6 +14,10 @@ interface InvoiceItem {
   category: string;
   unit: string;
   active_ingredient?: string;
+  // Direct Assignment Fields
+  destination_type?: 'machine' | 'sector';
+  destination_id?: string; 
+  destination_name?: string; // Helper for UI
 }
 
 interface Product {
@@ -66,7 +70,9 @@ export const Invoices: React.FC = () => {
   const { selectedCompany, companies } = useCompany();
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
-  
+  const [machines, setMachines] = useState<{id: string, name: string}[]>([]); // New for direct assignment
+  const [sectors, setSectors] = useState<{id: string, name: string}[]>([]); // New for direct assignment
+
   // Invoice Form State
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [supplier, setSupplier] = useState('');
@@ -92,7 +98,9 @@ export const Invoices: React.FC = () => {
     unit_price: 0,
     category: 'Fertilizantes',
     unit: 'L',
-    active_ingredient: ''
+    active_ingredient: '',
+    destination_type: undefined,
+    destination_id: '',
   });
   const [isNewProduct, setIsNewProduct] = useState(false);
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
@@ -115,8 +123,33 @@ export const Invoices: React.FC = () => {
       loadProducts();
       loadStats(); // Fetches data
       loadSuppliers();
+      loadDestinations(); // Load machines and sectors
     }
   }, [selectedCompany, filterStatus]); // Reload if company or status filter changes
+
+  const loadDestinations = async () => {
+    if (!selectedCompany) return;
+    
+    // Load Machines
+    const { data: mData } = await supabase
+        .from('machinery')
+        .select('id, name, brand, model')
+        .eq('company_id', selectedCompany.id);
+    
+    if (mData) {
+        setMachines(mData.map(m => ({ id: m.id, name: `${m.name} (${m.brand} ${m.model})` })));
+    }
+
+    // Load Sectors
+    const { data: sData } = await supabase
+        .from('sectors')
+        .select('id, name, crop_variety')
+        .eq('company_id', selectedCompany.id);
+    
+    if (sData) {
+        setSectors(sData.map(s => ({ id: s.id, name: `${s.name} - ${s.crop_variety || ''}` })));
+    }
+  };
 
   // Recalculate stats when data or year changes
   useEffect(() => {
@@ -350,7 +383,12 @@ export const Invoices: React.FC = () => {
       total_price: Number(currentItem.quantity) * Number(currentItem.unit_price),
       category: currentItem.category || 'Otros',
       unit: currentItem.unit || 'un',
-      active_ingredient: currentItem.active_ingredient
+      active_ingredient: currentItem.active_ingredient,
+      destination_type: currentItem.destination_type,
+      destination_id: currentItem.destination_id,
+      destination_name: currentItem.destination_id 
+        ? (currentItem.destination_type === 'machine' ? machines.find(m => m.id === currentItem.destination_id)?.name : sectors.find(s => s.id === currentItem.destination_id)?.name)
+        : undefined
     };
 
     if (editingItemIndex !== null) {
@@ -371,7 +409,9 @@ export const Invoices: React.FC = () => {
       quantity: 0,
       unit_price: 0,
       category: 'Fertilizantes',
-      unit: 'L'
+      unit: 'L',
+      destination_id: '',
+      destination_type: undefined
     });
     setIsNewProduct(false);
   };
@@ -386,7 +426,9 @@ export const Invoices: React.FC = () => {
         unit_price: item.unit_price,
         category: item.category,
         unit: item.unit,
-        active_ingredient: item.active_ingredient || ''
+        active_ingredient: item.active_ingredient || '',
+        destination_type: item.destination_type,
+        destination_id: item.destination_id
     });
     setEditingItemIndex(index);
   };
@@ -400,7 +442,9 @@ export const Invoices: React.FC = () => {
       unit_price: 0,
       category: 'Fertilizantes',
       unit: 'L',
-      active_ingredient: ''
+      active_ingredient: '',
+      destination_id: '',
+      destination_type: undefined
     });
   };
 
@@ -1038,6 +1082,26 @@ export const Invoices: React.FC = () => {
 
             if (itemError) throw itemError;
 
+            // --- DIRECT ASSIGNMENT LOGIC ---
+            if (item.destination_type && item.destination_id) {
+               if (item.destination_type === 'machine') {
+                  // Create Machinery Assignment
+                  await supabase.from('machinery_assignments').insert([{
+                      company_id: selectedCompany.id,
+                      invoice_item_id: invoiceItem.id,
+                      machine_id: item.destination_id,
+                      date: invoiceDate, // Use invoice date as default assignment date
+                      amount: item.total_price,
+                      sector_id: null, 
+                      notes: 'Asignación automática desde Factura'
+                  }]);
+               } else if (item.destination_type === 'sector') {
+                  // Pending implementation for sectors
+                  console.log('Sector assignment pending implementation for item:', invoiceItem.id);
+               }
+            }
+            // -------------------------------
+
             // Update Inventory
             await supabase.rpc('update_inventory_with_average_cost', {
               product_id: productId,
@@ -1111,6 +1175,7 @@ export const Invoices: React.FC = () => {
               productId = newProduct.id;
             }
 
+            // Insert Invoice Item
             const { data: invoiceItem, error: itemError } = await supabase
               .from('invoice_items')
               .insert([{
@@ -1125,6 +1190,26 @@ export const Invoices: React.FC = () => {
               .single();
 
             if (itemError) throw itemError;
+
+            // --- DIRECT ASSIGNMENT LOGIC ---
+            if (item.destination_type && item.destination_id) {
+               if (item.destination_type === 'machine') {
+                  // Create Machinery Assignment
+                  await supabase.from('machinery_assignments').insert([{
+                      company_id: selectedCompany.id,
+                      invoice_item_id: invoiceItem.id,
+                      machine_id: item.destination_id,
+                      date: invoiceDate, // Use invoice date as default assignment date
+                      amount: item.total_price,
+                      sector_id: null, 
+                      notes: 'Asignación automática desde Factura'
+                  }]);
+               } else if (item.destination_type === 'sector') {
+                   // Pending
+                   console.log('Sector assignment pending implementation for item:', invoiceItem.id);
+               }
+            }
+            // -------------------------------
 
             await supabase.rpc('update_inventory_with_average_cost', {
               product_id: productId,
@@ -1458,6 +1543,43 @@ export const Invoices: React.FC = () => {
                       className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5"
                     />
                   </div>
+
+                  {/* Direct Assignment Fields */}
+                  <div className="col-span-12 md:col-span-4 bg-blue-50 p-2 rounded-lg border border-blue-100">
+                     <label className="block text-xs font-bold text-blue-800 mb-1">
+                        Asignación Inmediata (Opcional)
+                     </label>
+                     <div className="flex gap-2">
+                         <select
+                            value={currentItem.destination_type || ''}
+                            onChange={e => setCurrentItem({
+                                ...currentItem, 
+                                destination_type: e.target.value as any,
+                                destination_id: '' // Reset ID when type changes
+                            })}
+                            className="w-1/3 bg-white border border-blue-300 text-gray-900 text-xs rounded-lg p-2"
+                         >
+                            <option value="">Sin asignar</option>
+                            <option value="machine">Maquinaria</option>
+                            <option value="sector">Sector</option>
+                         </select>
+                         
+                         {currentItem.destination_type && (
+                             <select
+                                value={currentItem.destination_id || ''}
+                                onChange={e => setCurrentItem({...currentItem, destination_id: e.target.value})}
+                                className="w-2/3 bg-white border border-blue-300 text-gray-900 text-xs rounded-lg p-2"
+                             >
+                                <option value="">Seleccione...</option>
+                                {currentItem.destination_type === 'machine' ? (
+                                    machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)
+                                ) : (
+                                    sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)
+                                )}
+                             </select>
+                         )}
+                     </div>
+                  </div>
                 </div>
                 
                 <div className="mt-3 flex justify-end space-x-2">
@@ -1503,7 +1625,14 @@ export const Invoices: React.FC = () => {
                           <td className="px-4 py-2">{item.product_name}</td>
                           <td className="px-4 py-2">{item.category}</td>
                           <td className="px-4 py-2">{item.quantity} {item.unit}</td>
-                          <td className="px-4 py-2">{formatCLP(item.total_price)}</td>
+                          <td className="px-4 py-2">
+                             {formatCLP(item.total_price)}
+                             {item.destination_type && (
+                                <div className="text-[10px] text-blue-600 font-bold bg-blue-50 px-1 rounded inline-block ml-1">
+                                  ➜ {item.destination_type === 'machine' ? '🚜' : '🌱'} {item.destination_name}
+                                </div>
+                             )}
+                          </td>
                           <td className="px-4 py-2 text-right">
                             <button 
                                 type="button" 
