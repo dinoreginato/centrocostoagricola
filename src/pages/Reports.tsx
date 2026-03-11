@@ -1016,6 +1016,9 @@ export const Reports: React.FC = () => {
             inv.notes || '-'
         ]);
 
+        // Calculate Total
+        const totalAmount = filteredPendingInvoices.reduce((sum, inv) => sum + Number(inv.total_amount), 0);
+
         autoTable(doc, {
             startY: yPos,
             head: [['Vencimiento', 'Días Vencida', 'Proveedor', 'N° Factura', 'Monto', 'Notas']],
@@ -1025,7 +1028,9 @@ export const Reports: React.FC = () => {
             columnStyles: {
                 4: { halign: 'right', fontStyle: 'bold' },
                 5: { fontStyle: 'italic', cellWidth: 50 } // Smaller/italic for notes
-            }
+            },
+            foot: [['', '', '', 'TOTAL:', formatCLP(totalAmount), '']],
+            footStyles: { fillColor: [240, 240, 240], textColor: [0,0,0], fontStyle: 'bold', halign: 'right' }
         });
 
     } else if (activeTab === 'detailed') {
