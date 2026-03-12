@@ -72,6 +72,7 @@ export const Invoices: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [machines, setMachines] = useState<{id: string, name: string}[]>([]); // New for direct assignment
   const [sectors, setSectors] = useState<{id: string, name: string}[]>([]); // New for direct assignment
+  const [laborTypes, setLaborTypes] = useState<string[]>(['Cosecha', 'Poda', 'Raleo', 'Aplicación', 'Fertilización', 'Riego', 'Otros']); // Hardcoded common labor types for now
 
   // Invoice Form State
   const [invoiceNumber, setInvoiceNumber] = useState('');
@@ -130,7 +131,7 @@ export const Invoices: React.FC = () => {
   const loadDestinations = async () => {
     if (!selectedCompany) return;
     
-    // Load Machines
+    // Load Machines (Without filtering by active, unless required)
     const { data: mData } = await supabase
         .from('machinery')
         .select('id, name, brand, model')
@@ -140,14 +141,34 @@ export const Invoices: React.FC = () => {
         setMachines(mData.map(m => ({ id: m.id, name: `${m.name} (${m.brand} ${m.model})` })));
     }
 
-    // Load Sectors
-    const { data: sData } = await supabase
-        .from('sectors')
-        .select('id, name, crop_variety')
+    // Load Sectors (Get ALL sectors from all fields)
+    const { data: fieldsWithSectors } = await supabase
+        .from('fields')
+        .select('id, name, sectors(id, name, crop_variety)')
         .eq('company_id', selectedCompany.id);
     
-    if (sData) {
-        setSectors(sData.map(s => ({ id: s.id, name: `${s.name} - ${s.crop_variety || ''}` })));
+    if (fieldsWithSectors) {
+        const allSectors: {id: string, name: string}[] = [];
+        
+        // Option 1: Add a "General Field" option if needed, but user asked for sectors
+        // For now, let's flatten sectors and prefix with Field Name
+        
+        fieldsWithSectors.forEach((field: any) => {
+            // Add Field as a generic sector option? User said "INCLUIR A TODOS LOS CAMPOS"
+            // Maybe they mean assign to the field globally? 
+            // Usually costs are per sector. Let's add sectors first.
+            
+            if (field.sectors) {
+                field.sectors.forEach((s: any) => {
+                    allSectors.push({
+                        id: s.id,
+                        name: `${field.name} - ${s.name} (${s.crop_variety || ''})`
+                    });
+                });
+            }
+        });
+
+        setSectors(allSectors);
     }
   };
 
@@ -1205,8 +1226,19 @@ export const Invoices: React.FC = () => {
                       notes: 'Asignación automática desde Factura'
                   }]);
                } else if (item.destination_type === 'sector') {
-                   // Pending
-                   console.log('Sector assignment pending implementation for item:', invoiceItem.id);
+                   // Create Labor Assignment (Direct Cost to Sector)
+                   // We'll create a Labor entry of type 'Insumos' or 'Materiales'
+                   
+                   await supabase.from('labor_assignments').insert([{
+                       company_id: selectedCompany.id,
+                       invoice_item_id: invoiceItem.id,
+                       sector_id: item.destination_id,
+                       date: invoiceDate,
+                       assigned_amount: item.total_price,
+                       labor_type: 'Materiales', // Default for invoice items
+                       worker_id: null, // No worker for material
+                       notes: 'Asignación automática desde Factura (Material)'
+                   }]);
                }
             }
             // -------------------------------
@@ -1561,7 +1593,7 @@ export const Invoices: React.FC = () => {
                          >
                             <option value="">Sin asignar</option>
                             <option value="machine">Maquinaria</option>
-                            <option value="sector">Sector</option>
+                            <option value="sector">Sector / Labor</option>
                          </select>
                          
                          {currentItem.destination_type && (
