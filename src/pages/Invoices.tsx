@@ -123,6 +123,8 @@ export const Invoices: React.FC = () => {
   const [availableYears, setAvailableYears] = useState<string[]>([new Date().getFullYear().toString()]);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+  const [destinationsLoading, setDestinationsLoading] = useState(false);
+
   useEffect(() => {
     if (selectedCompany) {
       loadProducts();
@@ -135,44 +137,54 @@ export const Invoices: React.FC = () => {
   const loadDestinations = async () => {
     if (!selectedCompany) return;
     
-    // Load Machines (Without filtering by active, unless required)
-    const { data: mData } = await supabase
-        .from('machinery')
-        .select('id, name, brand, model')
-        .eq('company_id', selectedCompany.id);
-    
-    if (mData) {
-        setMachines(mData.map(m => ({ id: m.id, name: `${m.name} (${m.brand} ${m.model})` })));
-    } else {
-        setMachines([]);
-    }
-
-    // Load Sectors (Get ALL sectors from all fields)
-    const { data: fieldsWithSectors } = await supabase
-        .from('fields')
-        .select('id, name, sectors(id, name, crop_variety)')
-        .eq('company_id', selectedCompany.id);
-    
-    if (fieldsWithSectors) {
-        const allSectors: {id: string, name: string}[] = [];
+    setDestinationsLoading(true);
+    try {
+        // Load Machines (Without filtering by active, unless required)
+        const { data: mData, error: mError } = await supabase
+            .from('machinery')
+            .select('id, name, brand, model')
+            .eq('company_id', selectedCompany.id);
         
-        fieldsWithSectors.forEach((field: any) => {
-            if (field.sectors && Array.isArray(field.sectors)) {
-                field.sectors.forEach((s: any) => {
-                    allSectors.push({
-                        id: s.id,
-                        name: `${field.name} - ${s.name} (${s.crop_variety || ''})`
-                    });
-                });
-            }
-        });
+        if (mError) {
+            console.error('Error loading machinery:', mError);
+            setMachines([]);
+        } else if (mData) {
+            setMachines(mData.map(m => ({ id: m.id, name: `${m.name} (${m.brand} ${m.model})` })));
+        } else {
+            setMachines([]);
+        }
 
-        // Add a generic "Labor General" option if user wants to just assign to a field or global
-        // But for now, user asked for sectors and labors. 
-        // We will just list sectors.
-        setSectors(allSectors);
-    } else {
-        setSectors([]);
+        // Load Sectors (Get ALL sectors from all fields)
+        const { data: fieldsWithSectors, error: fError } = await supabase
+            .from('fields')
+            .select('id, name, sectors(id, name, crop_variety)')
+            .eq('company_id', selectedCompany.id);
+        
+        if (fError) {
+            console.error('Error loading sectors:', fError);
+            setSectors([]);
+        } else if (fieldsWithSectors) {
+            const allSectors: {id: string, name: string}[] = [];
+            
+            fieldsWithSectors.forEach((field: any) => {
+                if (field.sectors && Array.isArray(field.sectors)) {
+                    field.sectors.forEach((s: any) => {
+                        allSectors.push({
+                            id: s.id,
+                            name: `${field.name} - ${s.name} (${s.crop_variety || ''})`
+                        });
+                    });
+                }
+            });
+
+            setSectors(allSectors);
+        } else {
+            setSectors([]);
+        }
+    } catch (err) {
+        console.error('Critical error loading destinations:', err);
+    } finally {
+        setDestinationsLoading(false);
     }
   };
 
@@ -1613,20 +1625,23 @@ export const Invoices: React.FC = () => {
                              <select
                                 value={currentItem.destination_id || ''}
                                 onChange={e => setCurrentItem({...currentItem, destination_id: e.target.value})}
-                                className="w-2/3 bg-white border border-blue-300 text-gray-900 text-xs rounded-lg p-2"
+                                disabled={destinationsLoading}
+                                className="w-2/3 bg-white border border-blue-300 text-gray-900 text-xs rounded-lg p-2 disabled:bg-gray-100"
                              >
                                 <option value="">Seleccione...</option>
-                                {currentItem.destination_type === 'machine' ? (
+                                {destinationsLoading ? (
+                                    <option value="" disabled>Cargando datos...</option>
+                                ) : currentItem.destination_type === 'machine' ? (
                                     machines.length > 0 ? (
                                         machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)
                                     ) : (
-                                        <option value="" disabled>Cargando máquinas...</option>
+                                        <option value="" disabled>No se encontraron máquinas</option>
                                     )
                                 ) : (
                                     sectors.length > 0 ? (
                                         sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)
                                     ) : (
-                                        <option value="" disabled>Cargando sectores...</option>
+                                        <option value="" disabled>No se encontraron sectores</option>
                                     )
                                 )}
                              </select>
