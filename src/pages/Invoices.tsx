@@ -18,6 +18,7 @@ interface InvoiceItem {
   destination_type?: 'machine' | 'sector';
   destination_id?: string; 
   destination_name?: string; // Helper for UI
+  labor_type?: string; // New: Specific labor type if destination is sector
 }
 
 interface Product {
@@ -72,7 +73,10 @@ export const Invoices: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [machines, setMachines] = useState<{id: string, name: string}[]>([]); // New for direct assignment
   const [sectors, setSectors] = useState<{id: string, name: string}[]>([]); // New for direct assignment
-  const [laborTypes, setLaborTypes] = useState<string[]>(['Cosecha', 'Poda', 'Raleo', 'Aplicación', 'Fertilización', 'Riego', 'Otros']); // Hardcoded common labor types for now
+  const [labors, setLabors] = useState<{id: string, name: string}[]>([]); // To store actual labor assignments if needed, or just types
+  const laborTypes = ['Cosecha', 'Poda', 'Raleo', 'Aplicación', 'Fertilización', 'Riego', 'Siembra', 'Preparación Suelo', 'Otros']; // Hardcoded common labor types
+
+  const [laborType, setLaborType] = useState<string>(''); // For labor assignment
 
   // Invoice Form State
   const [invoiceNumber, setInvoiceNumber] = useState('');
@@ -139,6 +143,8 @@ export const Invoices: React.FC = () => {
     
     if (mData) {
         setMachines(mData.map(m => ({ id: m.id, name: `${m.name} (${m.brand} ${m.model})` })));
+    } else {
+        setMachines([]);
     }
 
     // Load Sectors (Get ALL sectors from all fields)
@@ -150,15 +156,8 @@ export const Invoices: React.FC = () => {
     if (fieldsWithSectors) {
         const allSectors: {id: string, name: string}[] = [];
         
-        // Option 1: Add a "General Field" option if needed, but user asked for sectors
-        // For now, let's flatten sectors and prefix with Field Name
-        
         fieldsWithSectors.forEach((field: any) => {
-            // Add Field as a generic sector option? User said "INCLUIR A TODOS LOS CAMPOS"
-            // Maybe they mean assign to the field globally? 
-            // Usually costs are per sector. Let's add sectors first.
-            
-            if (field.sectors) {
+            if (field.sectors && Array.isArray(field.sectors)) {
                 field.sectors.forEach((s: any) => {
                     allSectors.push({
                         id: s.id,
@@ -168,7 +167,12 @@ export const Invoices: React.FC = () => {
             }
         });
 
+        // Add a generic "Labor General" option if user wants to just assign to a field or global
+        // But for now, user asked for sectors and labors. 
+        // We will just list sectors.
         setSectors(allSectors);
+    } else {
+        setSectors([]);
     }
   };
 
@@ -407,8 +411,11 @@ export const Invoices: React.FC = () => {
       active_ingredient: currentItem.active_ingredient,
       destination_type: currentItem.destination_type,
       destination_id: currentItem.destination_id,
+      labor_type: laborType,
       destination_name: currentItem.destination_id 
-        ? (currentItem.destination_type === 'machine' ? machines.find(m => m.id === currentItem.destination_id)?.name : sectors.find(s => s.id === currentItem.destination_id)?.name)
+        ? (currentItem.destination_type === 'machine' 
+            ? machines.find(m => m.id === currentItem.destination_id)?.name 
+            : `${sectors.find(s => s.id === currentItem.destination_id)?.name}${laborType ? ` (${laborType})` : ''}`)
         : undefined
     };
 
@@ -424,6 +431,7 @@ export const Invoices: React.FC = () => {
     }
 
     // Reset form
+    setLaborType('');
     setCurrentItem({
       product_id: '',
       product_name: '',
@@ -432,7 +440,8 @@ export const Invoices: React.FC = () => {
       category: 'Fertilizantes',
       unit: 'L',
       destination_id: '',
-      destination_type: undefined
+      destination_type: undefined,
+      labor_type: undefined
     });
     setIsNewProduct(false);
   };
@@ -449,13 +458,17 @@ export const Invoices: React.FC = () => {
         unit: item.unit,
         active_ingredient: item.active_ingredient || '',
         destination_type: item.destination_type,
-        destination_id: item.destination_id
+        destination_id: item.destination_id,
+        labor_type: item.labor_type
     });
     setEditingItemIndex(index);
+    if (item.labor_type) setLaborType(item.labor_type);
+    else setLaborType('');
   };
 
   const cancelEditItem = () => {
     setEditingItemIndex(null);
+    setLaborType('');
     setCurrentItem({
       product_id: '',
       product_name: '',
@@ -465,7 +478,8 @@ export const Invoices: React.FC = () => {
       unit: 'L',
       active_ingredient: '',
       destination_id: '',
-      destination_type: undefined
+      destination_type: undefined,
+      labor_type: undefined
     });
   };
 
@@ -1227,7 +1241,6 @@ export const Invoices: React.FC = () => {
                   }]);
                } else if (item.destination_type === 'sector') {
                    // Create Labor Assignment (Direct Cost to Sector)
-                   // We'll create a Labor entry of type 'Insumos' or 'Materiales'
                    
                    await supabase.from('labor_assignments').insert([{
                        company_id: selectedCompany.id,
@@ -1235,9 +1248,9 @@ export const Invoices: React.FC = () => {
                        sector_id: item.destination_id,
                        date: invoiceDate,
                        assigned_amount: item.total_price,
-                       labor_type: 'Materiales', // Default for invoice items
+                       labor_type: item.labor_type || 'Materiales', // Use specific labor type or default
                        worker_id: null, // No worker for material
-                       notes: 'Asignación automática desde Factura (Material)'
+                       notes: `Asignación automática desde Factura ${item.labor_type ? `(${item.labor_type})` : ''}`
                    }]);
                }
             }
@@ -1604,10 +1617,32 @@ export const Invoices: React.FC = () => {
                              >
                                 <option value="">Seleccione...</option>
                                 {currentItem.destination_type === 'machine' ? (
-                                    machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)
+                                    machines.length > 0 ? (
+                                        machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)
+                                    ) : (
+                                        <option value="" disabled>Cargando máquinas...</option>
+                                    )
                                 ) : (
-                                    sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)
+                                    sectors.length > 0 ? (
+                                        sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)
+                                    ) : (
+                                        <option value="" disabled>Cargando sectores...</option>
+                                    )
                                 )}
+                             </select>
+                         )}
+                         
+                         {/* Extra selector for Labor Type if Sector is selected */}
+                         {currentItem.destination_type === 'sector' && currentItem.destination_id && (
+                             <select
+                                value={laborType}
+                                onChange={e => setLaborType(e.target.value)}
+                                className="w-1/3 bg-white border border-blue-300 text-gray-900 text-xs rounded-lg p-2"
+                             >
+                                <option value="">Tipo Labor (Opcional)</option>
+                                {laborTypes.map(l => (
+                                    <option key={l} value={l}>{l}</option>
+                                ))}
                              </select>
                          )}
                      </div>
