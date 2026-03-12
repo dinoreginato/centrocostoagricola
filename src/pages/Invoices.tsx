@@ -151,29 +151,42 @@ export const Invoices: React.FC = () => {
     setDestinationsLoading(true);
     try {
         // --- 1. Load Machines ---
+        // Using 'machines' table, not 'machinery'
         const { data: mData, error: mError } = await supabase
-            .from('machinery')
+            .from('machines')
             .select('id, name, brand, model')
             .eq('company_id', selectedCompany.id);
         
         if (mError) {
             console.error('Error loading machinery:', mError);
         } else {
-            // Always set machines, even if empty
             setMachines((mData || []).map(m => ({ id: m.id, name: `${m.name} (${m.brand} ${m.model})` })));
         }
 
         // --- 2. Load Sectors/Fields ---
-        // We need fields to get company general info and structure
-        const { data: sectorsData, error: sError } = await supabase
-            .from('sectors')
-            .select('id, name, crop_variety, fields!inner(id, name, company_id)')
-            .eq('fields.company_id', selectedCompany.id);
+        // Step 1: Fetch Fields for this company
+        const { data: fieldsData, error: fError } = await supabase
+            .from('fields')
+            .select('id, name')
+            .eq('company_id', selectedCompany.id);
 
-        if (sError) {
-             console.error('Error loading sectors:', sError);
+        if (fError) {
+             console.error('Error loading fields:', fError);
              setSectors([]);
-        } else {
+        } else if (fieldsData && fieldsData.length > 0) {
+             const fieldIds = fieldsData.map(f => f.id);
+             
+             // Step 2: Fetch Sectors for these fields
+             const { data: sectorsData, error: sError } = await supabase
+                 .from('sectors')
+                 .select('id, name, field_id')
+                 .in('field_id', fieldIds);
+
+             if (sError) {
+                 console.error('Error loading sectors:', sError);
+             }
+
+             // Step 3: Combine Data
              const allOptions: {id: string, name: string, type: 'sector' | 'field' | 'company'}[] = [];
              
              // A. Company Option
@@ -183,38 +196,47 @@ export const Invoices: React.FC = () => {
                  type: 'company'
              });
 
-             if (sectorsData && sectorsData.length > 0) {
-                 // B. Field Options
-                 const uniqueFields = new Map<string, string>();
-                 sectorsData.forEach((s: any) => {
-                     if (s.fields?.id && !uniqueFields.has(s.fields.id)) {
-                         uniqueFields.set(s.fields.id, s.fields.name);
-                         allOptions.push({
-                             id: s.fields.id,
-                             name: `🌱 [CAMPO] ${s.fields.name}`,
-                             type: 'field'
-                         });
-                     }
+             // B. Field Options
+             fieldsData.forEach(f => {
+                 allOptions.push({
+                     id: f.id,
+                     name: `🌱 [CAMPO] ${f.name}`,
+                     type: 'field'
+                 });
+             });
+
+             // C. Sector Options
+             if (sectorsData) {
+                 // Map field names to sectors for sorting
+                 const sectorsWithField = sectorsData.map(s => {
+                     const field = fieldsData.find(f => f.id === s.field_id);
+                     return { ...s, fieldName: field?.name || '' };
                  });
 
-                 // C. Sector Options
-                 // Sort by Field Name then Sector Name for cleaner list
-                 const sortedSectors = sectorsData.sort((a: any, b: any) => {
-                     const fieldCompare = (a.fields?.name || '').localeCompare(b.fields?.name || '');
+                 // Sort by Field Name then Sector Name
+                 sectorsWithField.sort((a, b) => {
+                     const fieldCompare = a.fieldName.localeCompare(b.fieldName);
                      if (fieldCompare !== 0) return fieldCompare;
                      return a.name.localeCompare(b.name);
                  });
 
-                 sortedSectors.forEach((s: any) => {
+                 sectorsWithField.forEach(s => {
                      allOptions.push({
                          id: s.id,
-                         name: `└── ${s.name} (${s.crop_variety || ''})`,
+                         name: `└── ${s.name}`,
                          type: 'sector'
                      });
                  });
              }
              
              setSectors(allOptions);
+        } else {
+             // No fields found, but still add Company option
+             setSectors([{
+                 id: 'company_general',
+                 name: `🏢 [EMPRESA] ${selectedCompany.name}`,
+                 type: 'company'
+             }]);
         }
 
     } catch (err) {
@@ -1591,19 +1613,19 @@ export const Invoices: React.FC = () => {
                 </div>
                 
                 <div className="grid grid-cols-12 gap-2 items-end">
-                  <div className="col-span-12 md:col-span-3 relative">
+                  <div className="col-span-12 md:col-span-2 relative">
                     <label className="block text-xs font-medium text-gray-500 mb-1">Descripción</label>
                     <input
                       type="text"
                       value={currentItem.product_name}
                       onChange={e => handleProductChange(e.target.value)}
                       className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5"
-                      placeholder="Buscar o crear..."
+                      placeholder="Buscar..."
                       autoComplete="off"
                     />
                     
                     {showSuggestions && officialSuggestions.length > 0 && (
-                        <div className="absolute z-50 left-0 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                        <div className="absolute z-50 left-0 w-[200%] mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
                             <div className="px-3 py-2 text-xs font-bold text-gray-500 bg-gray-50 border-b">
                                 Sugerencias SAG (Registro Oficial)
                             </div>
@@ -1688,7 +1710,7 @@ export const Invoices: React.FC = () => {
                   </div>
 
                   {/* Integrated Destination Selector */}
-                  <div className="col-span-12 md:col-span-3">
+                  <div className="col-span-12 md:col-span-4">
                      <label className="block text-xs font-medium text-gray-500 mb-1">
                         Destino / Asignación
                      </label>
