@@ -150,7 +150,7 @@ export const Invoices: React.FC = () => {
     
     setDestinationsLoading(true);
     try {
-        // Load Machines (Without filtering by active, unless required)
+        // --- 1. Load Machines ---
         const { data: mData, error: mError } = await supabase
             .from('machinery')
             .select('id, name, brand, model')
@@ -158,58 +158,65 @@ export const Invoices: React.FC = () => {
         
         if (mError) {
             console.error('Error loading machinery:', mError);
-            setMachines([]);
-        } else if (mData) {
-            setMachines(mData.map(m => ({ id: m.id, name: `${m.name} (${m.brand} ${m.model})` })));
         } else {
-            setMachines([]);
+            // Always set machines, even if empty
+            setMachines((mData || []).map(m => ({ id: m.id, name: `${m.name} (${m.brand} ${m.model})` })));
         }
 
-        // Load Sectors (Get ALL sectors via inner join with fields)
-        const { data: sectorsData, error: fError } = await supabase
+        // --- 2. Load Sectors/Fields ---
+        // We need fields to get company general info and structure
+        const { data: sectorsData, error: sError } = await supabase
             .from('sectors')
             .select('id, name, crop_variety, fields!inner(id, name, company_id)')
             .eq('fields.company_id', selectedCompany.id);
-        
-        if (fError) {
-            console.error('Error loading sectors:', fError);
-            setSectors([]);
-        } else if (sectorsData) {
-            const allOptions: {id: string, name: string, type: 'sector' | 'field' | 'company'}[] = [];
 
-            // 1. Add "Company General" option
-            allOptions.push({
-                id: 'company_general',
-                name: `🏢 [EMPRESA] ${selectedCompany.name} (Gasto General)`,
-                type: 'company'
-            });
-
-            // 2. Add "Field" options (Aggregated)
-            const uniqueFields = new Map<string, string>();
-            sectorsData.forEach((s: any) => {
-                if (s.fields?.id && !uniqueFields.has(s.fields.id)) {
-                    uniqueFields.set(s.fields.id, s.fields.name);
-                    allOptions.push({
-                        id: s.fields.id,
-                        name: `🌱 [CAMPO] ${s.fields.name} (Todos los sectores)`,
-                        type: 'field'
-                    });
-                }
-            });
-
-            // 3. Add Individual Sectors
-            sectorsData.forEach((s: any) => {
-                allOptions.push({
-                    id: s.id,
-                    name: `└── ${s.fields?.name} - ${s.name} (${s.crop_variety || ''})`,
-                    type: 'sector'
-                });
-            });
-
-            setSectors(allOptions);
+        if (sError) {
+             console.error('Error loading sectors:', sError);
+             setSectors([]);
         } else {
-            setSectors([]);
+             const allOptions: {id: string, name: string, type: 'sector' | 'field' | 'company'}[] = [];
+             
+             // A. Company Option
+             allOptions.push({
+                 id: 'company_general',
+                 name: `🏢 [EMPRESA] ${selectedCompany.name}`,
+                 type: 'company'
+             });
+
+             if (sectorsData && sectorsData.length > 0) {
+                 // B. Field Options
+                 const uniqueFields = new Map<string, string>();
+                 sectorsData.forEach((s: any) => {
+                     if (s.fields?.id && !uniqueFields.has(s.fields.id)) {
+                         uniqueFields.set(s.fields.id, s.fields.name);
+                         allOptions.push({
+                             id: s.fields.id,
+                             name: `🌱 [CAMPO] ${s.fields.name}`,
+                             type: 'field'
+                         });
+                     }
+                 });
+
+                 // C. Sector Options
+                 // Sort by Field Name then Sector Name for cleaner list
+                 const sortedSectors = sectorsData.sort((a: any, b: any) => {
+                     const fieldCompare = (a.fields?.name || '').localeCompare(b.fields?.name || '');
+                     if (fieldCompare !== 0) return fieldCompare;
+                     return a.name.localeCompare(b.name);
+                 });
+
+                 sortedSectors.forEach((s: any) => {
+                     allOptions.push({
+                         id: s.id,
+                         name: `└── ${s.name} (${s.crop_variety || ''})`,
+                         type: 'sector'
+                     });
+                 });
+             }
+             
+             setSectors(allOptions);
         }
+
     } catch (err) {
         console.error('Critical error loading destinations:', err);
     } finally {
@@ -1688,19 +1695,28 @@ export const Invoices: React.FC = () => {
                      
                      <div className="flex space-x-1">
                          <select
+                            value={currentItem.destination_type || ''}
+                            onChange={e => setCurrentItem({
+                                ...currentItem, 
+                                destination_type: e.target.value as any,
+                                destination_id: '' // Reset ID when type changes
+                            })}
+                            className="w-1/4 bg-white border border-gray-300 text-gray-900 text-xs rounded-lg p-2.5"
+                         >
+                            <option value="">Tipo...</option>
+                            <option value="sector">🌱 Sector/Campo</option>
+                            <option value="machine">🚜 Maquinaria</option>
+                         </select>
+                         
+                         <select
                             value={currentItem.destination_id || ''}
                             onChange={e => setCurrentItem({...currentItem, destination_id: e.target.value})}
-                            disabled={destinationsLoading}
+                            disabled={destinationsLoading || !currentItem.destination_type}
                             className="flex-1 bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5 disabled:bg-gray-100"
                          >
                             <option value="">
-                                {currentItem.destination_type === 'machine' ? 'Seleccione Máquina...' : (currentItem.destination_type === 'sector' ? 'Seleccione Sector...' : 'Sin Asignar')}
+                                {currentItem.destination_type === 'machine' ? 'Seleccione Máquina...' : (currentItem.destination_type === 'sector' ? 'Seleccione Destino...' : 'Seleccione Tipo ←')}
                             </option>
-                            
-                            {/* Render options based on type, OR allow manual override selection if nothing selected yet */}
-                            {(!currentItem.destination_type) && (
-                                <option value="" disabled>Seleccione Categoría primero...</option>
-                            )}
 
                             {currentItem.destination_type === 'machine' && (
                                 machines.length > 0 ? (
@@ -1710,28 +1726,10 @@ export const Invoices: React.FC = () => {
 
                             {currentItem.destination_type === 'sector' && (
                                 sectors.length > 0 ? (
-                                    sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)
+                                    sectors.map(s => <option key={s.id} value={s.id} className={s.type === 'company' ? 'font-bold text-blue-600' : (s.type === 'field' ? 'font-semibold text-green-700' : 'pl-4')}>{s.name}</option>)
                                 ) : <option value="" disabled>Sin sectores</option>
                             )}
                          </select>
-
-                         {/* Toggle Type Button (Manual Override) */}
-                         {!currentItem.destination_type && (
-                             <div className="flex">
-                                 <button 
-                                    type="button"
-                                    onClick={() => setCurrentItem({...currentItem, destination_type: 'sector'})}
-                                    className="bg-gray-200 px-2 rounded-l border-r border-gray-300 hover:bg-gray-300 text-xs"
-                                    title="Asignar a Sector"
-                                 >🌱</button>
-                                 <button 
-                                    type="button"
-                                    onClick={() => setCurrentItem({...currentItem, destination_type: 'machine'})}
-                                    className="bg-gray-200 px-2 rounded-r hover:bg-gray-300 text-xs"
-                                    title="Asignar a Maquinaria"
-                                 >🚜</button>
-                             </div>
-                         )}
                      </div>
                   </div>
                 </div>
