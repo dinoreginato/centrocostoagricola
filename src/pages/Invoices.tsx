@@ -83,7 +83,9 @@ export const Invoices: React.FC = () => {
     if (category === 'Maquinaria' || category === 'Repuesto' || category === 'Combustible' || category === 'Petroleo') {
         return 'machine';
     }
-    if (['Fertilizantes', 'Fungicida', 'Herbicida', 'Insecticida', 'Labores agrícolas', 'Riego', 'Mano de obra', 'Plaguicida', 'Quimicos'].includes(category)) {
+    // EXCLUDED: 'Fertilizantes', 'Fungicida', 'Herbicida', 'Insecticida', 'Plaguicida', 'Quimicos'
+    // These should NOT default to 'sector' as per user request (they go to inventory/bodega)
+    if (['Labores agrícolas', 'Riego', 'Mano de obra'].includes(category)) {
         return 'sector'; // Default to sector, user can change to field/company
     }
     return undefined;
@@ -432,8 +434,12 @@ export const Invoices: React.FC = () => {
         active_ingredient: ''
       });
 
-      // Search Official Products
-      if (val.length >= 3) {
+      // Search Official Products (SAG) ONLY for chemical categories
+      // But we DO NOT block the user from typing whatever they want.
+      // We just offer suggestions.
+      const isChemical = ['Fertilizantes', 'Fungicida', 'Herbicida', 'Insecticida', 'Plaguicida', 'Quimicos'].includes(currentItem.category || '');
+      
+      if (isChemical && val.length >= 3) {
           const { data } = await supabase
               .from('official_products')
               .select('*')
@@ -1620,9 +1626,13 @@ export const Invoices: React.FC = () => {
                       value={currentItem.product_name}
                       onChange={e => handleProductChange(e.target.value)}
                       className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5"
-                      placeholder="Buscar..."
+                      placeholder="Buscar o escribir nombre..."
                       autoComplete="off"
+                      list="product-suggestions" 
                     />
+                    <datalist id="product-suggestions">
+                        {products.map(p => <option key={p.id} value={p.name} />)}
+                    </datalist>
                     
                     {showSuggestions && officialSuggestions.length > 0 && (
                         <div className="absolute z-50 left-0 w-[200%] mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
