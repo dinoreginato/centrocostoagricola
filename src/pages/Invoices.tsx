@@ -15,7 +15,7 @@ interface InvoiceItem {
   unit: string;
   active_ingredient?: string;
   // Direct Assignment Fields
-  destination_type?: 'machine' | 'sector';
+  destination_type?: 'machine' | 'sector' | 'field' | 'company';
   destination_id?: string; 
   destination_name?: string; // Helper for UI
   labor_type?: string; // New: Specific labor type if destination is sector
@@ -79,12 +79,12 @@ export const Invoices: React.FC = () => {
   const [laborType, setLaborType] = useState<string>(''); // For labor assignment
 
   // Helper to auto-determine destination type based on category
-  const determineDestinationType = (category: string): 'machine' | 'sector' | undefined => {
+  const determineDestinationType = (category: string): 'machine' | 'sector' | 'field' | 'company' | undefined => {
     if (category === 'Maquinaria' || category === 'Repuesto' || category === 'Combustible' || category === 'Petroleo') {
         return 'machine';
     }
     if (['Fertilizantes', 'Fungicida', 'Herbicida', 'Insecticida', 'Labores agrícolas', 'Riego', 'Mano de obra', 'Plaguicida', 'Quimicos'].includes(category)) {
-        return 'sector';
+        return 'sector'; // Default to sector, user can change to field/company
     }
     return undefined;
   };
@@ -1288,11 +1288,11 @@ export const Invoices: React.FC = () => {
                       sector_id: null, 
                       notes: 'Asignación automática desde Factura'
                   }]);
-               } else if (item.destination_type === 'sector') {
+               } else if (['sector', 'field', 'company'].includes(item.destination_type || '')) {
                    // Determine if it's a specific sector, a whole field, or company general
                    const selectedOption = sectors.find(s => s.id === item.destination_id);
                    
-                   if (selectedOption?.type === 'company') {
+                   if (selectedOption?.type === 'company' || item.destination_type === 'company') {
                        // 1. Company General Cost
                        await supabase.from('general_costs').insert([{
                            company_id: selectedCompany.id,
@@ -1304,7 +1304,7 @@ export const Invoices: React.FC = () => {
                            sector_id: null // Explicitly null for general costs
                        }]);
 
-                   } else if (selectedOption?.type === 'field') {
+                   } else if (selectedOption?.type === 'field' || item.destination_type === 'field') {
                        // 2. Field Level -> Distribute to all sectors in this field
                        // First, find all sectors for this field
                        const { data: fieldSectors } = await supabase
@@ -1323,7 +1323,7 @@ export const Invoices: React.FC = () => {
                                assigned_amount: amountPerSector,
                                labor_type: item.labor_type || 'Materiales',
                                worker_id: null,
-                               notes: `Asignación por Campo (${selectedOption.name}): ${item.product_name}`
+                               notes: `Asignación por Campo (${selectedOption?.name || 'Campo'}): ${item.product_name}`
                            }));
 
                            await supabase.from('labor_assignments').insert(laborEntries);
@@ -1690,7 +1690,7 @@ export const Invoices: React.FC = () => {
                   {/* Integrated Destination Selector */}
                   <div className="col-span-12 md:col-span-3">
                      <label className="block text-xs font-medium text-gray-500 mb-1">
-                        Destino ({currentItem.destination_type === 'machine' ? 'Maquinaria' : (currentItem.destination_type === 'sector' ? 'Sector' : 'Opcional')})
+                        Destino / Asignación
                      </label>
                      
                      <div className="flex space-x-1">
@@ -1701,10 +1701,12 @@ export const Invoices: React.FC = () => {
                                 destination_type: e.target.value as any,
                                 destination_id: '' // Reset ID when type changes
                             })}
-                            className="w-1/4 bg-white border border-gray-300 text-gray-900 text-xs rounded-lg p-2.5"
+                            className="w-1/3 bg-white border border-gray-300 text-gray-900 text-xs rounded-lg p-2.5"
                          >
-                            <option value="">Tipo...</option>
-                            <option value="sector">🌱 Sector/Campo</option>
+                            <option value="">Seleccione Tipo...</option>
+                            <option value="sector">🌱 Sector Específico</option>
+                            <option value="field">🌳 Campo Completo</option>
+                            <option value="company">🏢 Empresa General</option>
                             <option value="machine">🚜 Maquinaria</option>
                          </select>
                          
@@ -1715,7 +1717,10 @@ export const Invoices: React.FC = () => {
                             className="flex-1 bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5 disabled:bg-gray-100"
                          >
                             <option value="">
-                                {currentItem.destination_type === 'machine' ? 'Seleccione Máquina...' : (currentItem.destination_type === 'sector' ? 'Seleccione Destino...' : 'Seleccione Tipo ←')}
+                                {currentItem.destination_type === 'machine' ? 'Seleccione Máquina...' : 
+                                 (currentItem.destination_type === 'sector' ? 'Seleccione Sector...' : 
+                                  (currentItem.destination_type === 'field' ? 'Seleccione Campo...' : 
+                                   (currentItem.destination_type === 'company' ? 'Confirme Empresa...' : 'Seleccione Tipo ←')))}
                             </option>
 
                             {currentItem.destination_type === 'machine' && (
@@ -1724,10 +1729,21 @@ export const Invoices: React.FC = () => {
                                 ) : <option value="" disabled>Sin máquinas</option>
                             )}
 
+                            {/* Filter Sectors/Fields/Company based on Type */}
                             {currentItem.destination_type === 'sector' && (
-                                sectors.length > 0 ? (
-                                    sectors.map(s => <option key={s.id} value={s.id} className={s.type === 'company' ? 'font-bold text-blue-600' : (s.type === 'field' ? 'font-semibold text-green-700' : 'pl-4')}>{s.name}</option>)
+                                sectors.filter(s => s.type === 'sector').length > 0 ? (
+                                    sectors.filter(s => s.type === 'sector').map(s => <option key={s.id} value={s.id}>{s.name.replace('└── ', '')}</option>)
                                 ) : <option value="" disabled>Sin sectores</option>
+                            )}
+
+                            {currentItem.destination_type === 'field' && (
+                                sectors.filter(s => s.type === 'field').length > 0 ? (
+                                    sectors.filter(s => s.type === 'field').map(s => <option key={s.id} value={s.id}>{s.name.replace('[CAMPO] ', '')}</option>)
+                                ) : <option value="" disabled>Sin campos</option>
+                            )}
+
+                            {currentItem.destination_type === 'company' && (
+                                sectors.filter(s => s.type === 'company').map(s => <option key={s.id} value={s.id}>{s.name.replace('[EMPRESA] ', '')}</option>)
                             )}
                          </select>
                      </div>

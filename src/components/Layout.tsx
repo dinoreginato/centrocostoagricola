@@ -132,7 +132,7 @@ export const Layout: React.FC = () => {
                 >
                   <LogOut className="mr-1 h-3 w-3" /> Cerrar Sesión
                 </button>
-                <div className="text-[10px] text-gray-400 mt-1">v1.10.0 (Asignación Directa + Zen)</div>
+                <div className="text-[10px] text-gray-400 mt-1">v1.10.1 (Asignación Segmentada + Zen)</div>
               </div>
             </div>
           </div>
