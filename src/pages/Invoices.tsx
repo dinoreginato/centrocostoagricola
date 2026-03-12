@@ -72,7 +72,7 @@ export const Invoices: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [machines, setMachines] = useState<{id: string, name: string}[]>([]); // New for direct assignment
-  const [sectors, setSectors] = useState<{id: string, name: string}[]>([]); // New for direct assignment
+  const [sectors, setSectors] = useState<{id: string, name: string, type: 'sector' | 'field' | 'company'}[]>([]); // Enhanced for multi-level assignment
   const [labors, setLabors] = useState<{id: string, name: string}[]>([]); // To store actual labor assignments if needed, or just types
   const laborTypes = ['Cosecha', 'Poda', 'Raleo', 'Aplicación', 'Fertilización', 'Riego', 'Siembra', 'Preparación Suelo', 'Otros']; // Hardcoded common labor types
 
@@ -175,11 +175,38 @@ export const Invoices: React.FC = () => {
             console.error('Error loading sectors:', fError);
             setSectors([]);
         } else if (sectorsData) {
-            const allSectors = sectorsData.map((s: any) => ({
-                id: s.id,
-                name: `${s.fields?.name} - ${s.name} (${s.crop_variety || ''})`
-            }));
-            setSectors(allSectors);
+            const allOptions: {id: string, name: string, type: 'sector' | 'field' | 'company'}[] = [];
+
+            // 1. Add "Company General" option
+            allOptions.push({
+                id: 'company_general',
+                name: `🏢 [EMPRESA] ${selectedCompany.name} (Gasto General)`,
+                type: 'company'
+            });
+
+            // 2. Add "Field" options (Aggregated)
+            const uniqueFields = new Map<string, string>();
+            sectorsData.forEach((s: any) => {
+                if (s.fields?.id && !uniqueFields.has(s.fields.id)) {
+                    uniqueFields.set(s.fields.id, s.fields.name);
+                    allOptions.push({
+                        id: s.fields.id,
+                        name: `🌱 [CAMPO] ${s.fields.name} (Todos los sectores)`,
+                        type: 'field'
+                    });
+                }
+            });
+
+            // 3. Add Individual Sectors
+            sectorsData.forEach((s: any) => {
+                allOptions.push({
+                    id: s.id,
+                    name: `└── ${s.fields?.name} - ${s.name} (${s.crop_variety || ''})`,
+                    type: 'sector'
+                });
+            });
+
+            setSectors(allOptions);
         } else {
             setSectors([]);
         }
@@ -1255,18 +1282,59 @@ export const Invoices: React.FC = () => {
                       notes: 'Asignación automática desde Factura'
                   }]);
                } else if (item.destination_type === 'sector') {
-                   // Create Labor Assignment (Direct Cost to Sector)
+                   // Determine if it's a specific sector, a whole field, or company general
+                   const selectedOption = sectors.find(s => s.id === item.destination_id);
                    
-                   await supabase.from('labor_assignments').insert([{
-                       company_id: selectedCompany.id,
-                       invoice_item_id: invoiceItem.id,
-                       sector_id: item.destination_id,
-                       date: invoiceDate,
-                       assigned_amount: item.total_price,
-                       labor_type: item.labor_type || 'Materiales', // Use specific labor type or default
-                       worker_id: null, // No worker for material
-                       notes: `Asignación automática desde Factura ${item.labor_type ? `(${item.labor_type})` : ''}`
-                   }]);
+                   if (selectedOption?.type === 'company') {
+                       // 1. Company General Cost
+                       await supabase.from('general_costs').insert([{
+                           company_id: selectedCompany.id,
+                           invoice_item_id: invoiceItem.id,
+                           amount: item.total_price,
+                           category: item.category, // e.g. 'Labores agrícolas'
+                           description: `Gasto General: ${item.product_name} (${item.labor_type || 'General'})`,
+                           date: invoiceDate,
+                           sector_id: null // Explicitly null for general costs
+                       }]);
+
+                   } else if (selectedOption?.type === 'field') {
+                       // 2. Field Level -> Distribute to all sectors in this field
+                       // First, find all sectors for this field
+                       const { data: fieldSectors } = await supabase
+                           .from('sectors')
+                           .select('id')
+                           .eq('field_id', item.destination_id); // item.destination_id is field_id here
+                       
+                       if (fieldSectors && fieldSectors.length > 0) {
+                           const amountPerSector = item.total_price / fieldSectors.length;
+                           
+                           const laborEntries = fieldSectors.map(fs => ({
+                               company_id: selectedCompany.id,
+                               invoice_item_id: invoiceItem.id,
+                               sector_id: fs.id,
+                               date: invoiceDate,
+                               assigned_amount: amountPerSector,
+                               labor_type: item.labor_type || 'Materiales',
+                               worker_id: null,
+                               notes: `Asignación por Campo (${selectedOption.name}): ${item.product_name}`
+                           }));
+
+                           await supabase.from('labor_assignments').insert(laborEntries);
+                       }
+
+                   } else {
+                       // 3. Specific Sector (Original Logic)
+                       await supabase.from('labor_assignments').insert([{
+                           company_id: selectedCompany.id,
+                           invoice_item_id: invoiceItem.id,
+                           sector_id: item.destination_id,
+                           date: invoiceDate,
+                           assigned_amount: item.total_price,
+                           labor_type: item.labor_type || 'Materiales', // Use specific labor type or default
+                           worker_id: null, // No worker for material
+                           notes: `Asignación automática desde Factura ${item.labor_type ? `(${item.labor_type})` : ''}`
+                       }]);
+                   }
                }
             }
             // -------------------------------
