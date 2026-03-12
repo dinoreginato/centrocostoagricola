@@ -165,29 +165,20 @@ export const Invoices: React.FC = () => {
             setMachines([]);
         }
 
-        // Load Sectors (Get ALL sectors from all fields)
-        const { data: fieldsWithSectors, error: fError } = await supabase
-            .from('fields')
-            .select('id, name, sectors(id, name, crop_variety)')
-            .eq('company_id', selectedCompany.id);
+        // Load Sectors (Get ALL sectors via inner join with fields)
+        const { data: sectorsData, error: fError } = await supabase
+            .from('sectors')
+            .select('id, name, crop_variety, fields!inner(id, name, company_id)')
+            .eq('fields.company_id', selectedCompany.id);
         
         if (fError) {
             console.error('Error loading sectors:', fError);
             setSectors([]);
-        } else if (fieldsWithSectors) {
-            const allSectors: {id: string, name: string}[] = [];
-            
-            fieldsWithSectors.forEach((field: any) => {
-                if (field.sectors && Array.isArray(field.sectors)) {
-                    field.sectors.forEach((s: any) => {
-                        allSectors.push({
-                            id: s.id,
-                            name: `${field.name} - ${s.name} (${s.crop_variety || ''})`
-                        });
-                    });
-                }
-            });
-
+        } else if (sectorsData) {
+            const allSectors = sectorsData.map((s: any) => ({
+                id: s.id,
+                name: `${s.fields?.name} - ${s.name} (${s.crop_variety || ''})`
+            }));
             setSectors(allSectors);
         } else {
             setSectors([]);
