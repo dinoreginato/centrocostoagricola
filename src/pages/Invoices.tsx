@@ -1621,7 +1621,7 @@ export const Invoices: React.FC = () => {
                     )}
                   </div>
                   
-                  <div className="col-span-12 md:col-span-3">
+                  <div className="col-span-12 md:col-span-2">
                     <label className="block text-xs font-medium text-gray-500 mb-1">Categoría</label>
                     <select
                       value={currentItem.category}
@@ -1642,7 +1642,7 @@ export const Invoices: React.FC = () => {
                     </select>
                   </div>
 
-                  <div className="col-span-4 md:col-span-2">
+                  <div className="col-span-4 md:col-span-1">
                     <label className="block text-xs font-medium text-gray-500 mb-1">Cant.</label>
                     <input
                       type="number"
@@ -1653,18 +1653,18 @@ export const Invoices: React.FC = () => {
                     />
                   </div>
 
-                  <div className="col-span-4 md:col-span-2">
+                  <div className="col-span-4 md:col-span-1">
                     <label className="block text-xs font-medium text-gray-500 mb-1">Unidad</label>
                     <select
                       value={currentItem.unit}
                       onChange={e => setCurrentItem({...currentItem, unit: e.target.value})}
                       className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5"
                     >
-                      <option value="L">Litros (L)</option>
-                      <option value="kg">Kilos (kg)</option>
-                      <option value="un">Unidad (un)</option>
+                      <option value="L">L</option>
+                      <option value="kg">kg</option>
+                      <option value="un">un</option>
                       <option value="m3">m3</option>
-                      <option value="g">Gramos (g)</option>
+                      <option value="g">g</option>
                       <option value="cc">cc</option>
                     </select>
                   </div>
@@ -1680,86 +1680,60 @@ export const Invoices: React.FC = () => {
                     />
                   </div>
 
-                  {/* Direct Assignment Fields - CONDITIONALLY RENDERED BASED ON CATEGORY OR MANUAL OVERRIDE */}
-                  {(currentItem.destination_type || currentItem.category) && (
-                      <div className="col-span-12 md:col-span-4 bg-blue-50 p-2 rounded-lg border border-blue-100 transition-all duration-300">
-                         <label className="block text-xs font-bold text-blue-800 mb-1 flex justify-between items-center">
-                            <span>Asignación: {currentItem.destination_type === 'machine' ? '🚜 Maquinaria' : (currentItem.destination_type === 'sector' ? '🌱 Sector / Labor' : 'Opcional')}</span>
-                            {/* Allow manual override if auto-detection didn't pick one but user wants to assign */}
-                            {!currentItem.destination_type && (
-                                <button 
+                  {/* Integrated Destination Selector */}
+                  <div className="col-span-12 md:col-span-3">
+                     <label className="block text-xs font-medium text-gray-500 mb-1">
+                        Destino ({currentItem.destination_type === 'machine' ? 'Maquinaria' : (currentItem.destination_type === 'sector' ? 'Sector' : 'Opcional')})
+                     </label>
+                     
+                     <div className="flex space-x-1">
+                         <select
+                            value={currentItem.destination_id || ''}
+                            onChange={e => setCurrentItem({...currentItem, destination_id: e.target.value})}
+                            disabled={destinationsLoading}
+                            className="flex-1 bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5 disabled:bg-gray-100"
+                         >
+                            <option value="">
+                                {currentItem.destination_type === 'machine' ? 'Seleccione Máquina...' : (currentItem.destination_type === 'sector' ? 'Seleccione Sector...' : 'Sin Asignar')}
+                            </option>
+                            
+                            {/* Render options based on type, OR allow manual override selection if nothing selected yet */}
+                            {(!currentItem.destination_type) && (
+                                <option value="" disabled>Seleccione Categoría primero...</option>
+                            )}
+
+                            {currentItem.destination_type === 'machine' && (
+                                machines.length > 0 ? (
+                                    machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)
+                                ) : <option value="" disabled>Sin máquinas</option>
+                            )}
+
+                            {currentItem.destination_type === 'sector' && (
+                                sectors.length > 0 ? (
+                                    sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)
+                                ) : <option value="" disabled>Sin sectores</option>
+                            )}
+                         </select>
+
+                         {/* Toggle Type Button (Manual Override) */}
+                         {!currentItem.destination_type && (
+                             <div className="flex">
+                                 <button 
+                                    type="button"
+                                    onClick={() => setCurrentItem({...currentItem, destination_type: 'sector'})}
+                                    className="bg-gray-200 px-2 rounded-l border-r border-gray-300 hover:bg-gray-300 text-xs"
+                                    title="Asignar a Sector"
+                                 >🌱</button>
+                                 <button 
                                     type="button"
                                     onClick={() => setCurrentItem({...currentItem, destination_type: 'machine'})}
-                                    className="text-[10px] text-blue-600 underline"
-                                >
-                                    + Asignar
-                                </button>
-                            )}
-                         </label>
-                         
-                         {currentItem.destination_type ? (
-                             <div className="flex gap-2">
-                                 {/* Only show type selector if user wants to change auto-selection or manual */}
-                                 <select
-                                    value={currentItem.destination_type || ''}
-                                    onChange={e => setCurrentItem({
-                                        ...currentItem, 
-                                        destination_type: e.target.value as any,
-                                        destination_id: '' // Reset ID when type changes
-                                    })}
-                                    className="w-1/4 bg-white border border-blue-300 text-gray-900 text-xs rounded-lg p-2"
-                                 >
-                                    <option value="machine">Maq.</option>
-                                    <option value="sector">Sec.</option>
-                                 </select>
-                                 
-                                 <select
-                                    value={currentItem.destination_id || ''}
-                                    onChange={e => setCurrentItem({...currentItem, destination_id: e.target.value})}
-                                    disabled={destinationsLoading}
-                                    className="flex-1 bg-white border border-blue-300 text-gray-900 text-xs rounded-lg p-2 disabled:bg-gray-100"
-                                 >
-                                    <option value="">
-                                        {currentItem.destination_type === 'machine' ? 'Seleccione Máquina...' : 'Seleccione Sector...'}
-                                    </option>
-                                    {destinationsLoading ? (
-                                        <option value="" disabled>Cargando datos...</option>
-                                    ) : currentItem.destination_type === 'machine' ? (
-                                        machines.length > 0 ? (
-                                            machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)
-                                        ) : (
-                                            <option value="" disabled>No se encontraron máquinas</option>
-                                        )
-                                    ) : (
-                                        sectors.length > 0 ? (
-                                            sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)
-                                        ) : (
-                                            <option value="" disabled>No se encontraron sectores</option>
-                                        )
-                                    )}
-                                 </select>
-                                 
-                                 {/* Extra selector for Labor Type if Sector is selected */}
-                                 {currentItem.destination_type === 'sector' && currentItem.destination_id && (
-                                     <select
-                                        value={laborType}
-                                        onChange={e => setLaborType(e.target.value)}
-                                        className="w-1/3 bg-white border border-blue-300 text-gray-900 text-xs rounded-lg p-2"
-                                     >
-                                        <option value="">Labor?</option>
-                                        {laborTypes.map(l => (
-                                            <option key={l} value={l}>{l}</option>
-                                        ))}
-                                     </select>
-                                 )}
+                                    className="bg-gray-200 px-2 rounded-r hover:bg-gray-300 text-xs"
+                                    title="Asignar a Maquinaria"
+                                 >🚜</button>
                              </div>
-                         ) : (
-                            <div className="text-xs text-gray-400 italic">
-                                Seleccione una categoría relevante o haga clic en + Asignar.
-                            </div>
                          )}
-                      </div>
-                  )}
+                     </div>
+                  </div>
                 </div>
                 
                 <div className="mt-3 flex justify-end space-x-2">
