@@ -78,6 +78,17 @@ export const Invoices: React.FC = () => {
 
   const [laborType, setLaborType] = useState<string>(''); // For labor assignment
 
+  // Helper to auto-determine destination type based on category
+  const determineDestinationType = (category: string): 'machine' | 'sector' | undefined => {
+    if (category === 'Maquinaria' || category === 'Repuesto' || category === 'Combustible' || category === 'Petroleo') {
+        return 'machine';
+    }
+    if (['Fertilizantes', 'Fungicida', 'Herbicida', 'Insecticida', 'Labores agrícolas', 'Riego', 'Mano de obra', 'Plaguicida', 'Quimicos'].includes(category)) {
+        return 'sector';
+    }
+    return undefined;
+  };
+
   // Invoice Form State
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [supplier, setSupplier] = useState('');
@@ -361,7 +372,8 @@ export const Invoices: React.FC = () => {
         product_name: existing.name,
         unit: existing.unit,
         category: existing.category,
-        active_ingredient: existing.active_ingredient || ''
+        active_ingredient: existing.active_ingredient || '',
+        destination_type: determineDestinationType(existing.category) // Auto-set destination type
       });
       setShowSuggestions(false);
     } else {
@@ -1554,7 +1566,15 @@ export const Invoices: React.FC = () => {
                     <label className="block text-xs font-medium text-gray-500 mb-1">Categoría</label>
                     <select
                       value={currentItem.category}
-                      onChange={e => setCurrentItem({...currentItem, category: e.target.value})}
+                      onChange={e => {
+                          const newCat = e.target.value;
+                          setCurrentItem({
+                              ...currentItem, 
+                              category: newCat,
+                              destination_type: determineDestinationType(newCat),
+                              destination_id: '' // Reset destination when category changes
+                          });
+                      }}
                       className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5"
                     >
                       {CATEGORIES.map(cat => (
@@ -1601,67 +1621,86 @@ export const Invoices: React.FC = () => {
                     />
                   </div>
 
-                  {/* Direct Assignment Fields */}
-                  <div className="col-span-12 md:col-span-4 bg-blue-50 p-2 rounded-lg border border-blue-100">
-                     <label className="block text-xs font-bold text-blue-800 mb-1">
-                        Asignación Inmediata (Opcional)
-                     </label>
-                     <div className="flex gap-2">
-                         <select
-                            value={currentItem.destination_type || ''}
-                            onChange={e => setCurrentItem({
-                                ...currentItem, 
-                                destination_type: e.target.value as any,
-                                destination_id: '' // Reset ID when type changes
-                            })}
-                            className="w-1/3 bg-white border border-blue-300 text-gray-900 text-xs rounded-lg p-2"
-                         >
-                            <option value="">Sin asignar</option>
-                            <option value="machine">Maquinaria</option>
-                            <option value="sector">Sector / Labor</option>
-                         </select>
+                  {/* Direct Assignment Fields - CONDITIONALLY RENDERED BASED ON CATEGORY OR MANUAL OVERRIDE */}
+                  {(currentItem.destination_type || currentItem.category) && (
+                      <div className="col-span-12 md:col-span-4 bg-blue-50 p-2 rounded-lg border border-blue-100 transition-all duration-300">
+                         <label className="block text-xs font-bold text-blue-800 mb-1 flex justify-between items-center">
+                            <span>Asignación: {currentItem.destination_type === 'machine' ? '🚜 Maquinaria' : (currentItem.destination_type === 'sector' ? '🌱 Sector / Labor' : 'Opcional')}</span>
+                            {/* Allow manual override if auto-detection didn't pick one but user wants to assign */}
+                            {!currentItem.destination_type && (
+                                <button 
+                                    type="button"
+                                    onClick={() => setCurrentItem({...currentItem, destination_type: 'machine'})}
+                                    className="text-[10px] text-blue-600 underline"
+                                >
+                                    + Asignar
+                                </button>
+                            )}
+                         </label>
                          
-                         {currentItem.destination_type && (
-                             <select
-                                value={currentItem.destination_id || ''}
-                                onChange={e => setCurrentItem({...currentItem, destination_id: e.target.value})}
-                                disabled={destinationsLoading}
-                                className="w-2/3 bg-white border border-blue-300 text-gray-900 text-xs rounded-lg p-2 disabled:bg-gray-100"
-                             >
-                                <option value="">Seleccione...</option>
-                                {destinationsLoading ? (
-                                    <option value="" disabled>Cargando datos...</option>
-                                ) : currentItem.destination_type === 'machine' ? (
-                                    machines.length > 0 ? (
-                                        machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)
+                         {currentItem.destination_type ? (
+                             <div className="flex gap-2">
+                                 {/* Only show type selector if user wants to change auto-selection or manual */}
+                                 <select
+                                    value={currentItem.destination_type || ''}
+                                    onChange={e => setCurrentItem({
+                                        ...currentItem, 
+                                        destination_type: e.target.value as any,
+                                        destination_id: '' // Reset ID when type changes
+                                    })}
+                                    className="w-1/4 bg-white border border-blue-300 text-gray-900 text-xs rounded-lg p-2"
+                                 >
+                                    <option value="machine">Maq.</option>
+                                    <option value="sector">Sec.</option>
+                                 </select>
+                                 
+                                 <select
+                                    value={currentItem.destination_id || ''}
+                                    onChange={e => setCurrentItem({...currentItem, destination_id: e.target.value})}
+                                    disabled={destinationsLoading}
+                                    className="flex-1 bg-white border border-blue-300 text-gray-900 text-xs rounded-lg p-2 disabled:bg-gray-100"
+                                 >
+                                    <option value="">
+                                        {currentItem.destination_type === 'machine' ? 'Seleccione Máquina...' : 'Seleccione Sector...'}
+                                    </option>
+                                    {destinationsLoading ? (
+                                        <option value="" disabled>Cargando datos...</option>
+                                    ) : currentItem.destination_type === 'machine' ? (
+                                        machines.length > 0 ? (
+                                            machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)
+                                        ) : (
+                                            <option value="" disabled>No se encontraron máquinas</option>
+                                        )
                                     ) : (
-                                        <option value="" disabled>No se encontraron máquinas</option>
-                                    )
-                                ) : (
-                                    sectors.length > 0 ? (
-                                        sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)
-                                    ) : (
-                                        <option value="" disabled>No se encontraron sectores</option>
-                                    )
-                                )}
-                             </select>
+                                        sectors.length > 0 ? (
+                                            sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)
+                                        ) : (
+                                            <option value="" disabled>No se encontraron sectores</option>
+                                        )
+                                    )}
+                                 </select>
+                                 
+                                 {/* Extra selector for Labor Type if Sector is selected */}
+                                 {currentItem.destination_type === 'sector' && currentItem.destination_id && (
+                                     <select
+                                        value={laborType}
+                                        onChange={e => setLaborType(e.target.value)}
+                                        className="w-1/3 bg-white border border-blue-300 text-gray-900 text-xs rounded-lg p-2"
+                                     >
+                                        <option value="">Labor?</option>
+                                        {laborTypes.map(l => (
+                                            <option key={l} value={l}>{l}</option>
+                                        ))}
+                                     </select>
+                                 )}
+                             </div>
+                         ) : (
+                            <div className="text-xs text-gray-400 italic">
+                                Seleccione una categoría relevante o haga clic en + Asignar.
+                            </div>
                          )}
-                         
-                         {/* Extra selector for Labor Type if Sector is selected */}
-                         {currentItem.destination_type === 'sector' && currentItem.destination_id && (
-                             <select
-                                value={laborType}
-                                onChange={e => setLaborType(e.target.value)}
-                                className="w-1/3 bg-white border border-blue-300 text-gray-900 text-xs rounded-lg p-2"
-                             >
-                                <option value="">Tipo Labor (Opcional)</option>
-                                {laborTypes.map(l => (
-                                    <option key={l} value={l}>{l}</option>
-                                ))}
-                             </select>
-                         )}
-                     </div>
-                  </div>
+                      </div>
+                  )}
                 </div>
                 
                 <div className="mt-3 flex justify-end space-x-2">
