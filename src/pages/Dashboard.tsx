@@ -477,13 +477,13 @@ export const Dashboard: React.FC = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl shadow-lg p-8 text-white transform transition hover:scale-105">
-                <div className="text-green-100 text-lg font-medium mb-2">Costo Total Acumulado</div>
-                <div className="text-5xl font-bold">{formatCLP(dashboardStats.totalCost)}</div>
-                <div className="mt-4 text-green-100 flex items-center">
-                    <TrendingUp className="h-5 w-5 mr-2" />
-                    <span>Inversión Total</span>
+                    <div className="text-green-100 text-lg font-medium mb-2">Costo Total Acumulado</div>
+                    <div className="text-5xl font-bold">{formatCLP(dashboardStats.totalCost)}</div>
+                    <div className="mt-4 text-green-100 flex items-center">
+                        <TrendingUp className="h-5 w-5 mr-2" />
+                        <span>Inversión Total</span>
+                    </div>
                 </div>
-            </div>
 
             <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 transform transition hover:scale-105">
                 <div className="text-gray-500 text-lg font-medium mb-2">Costo Promedio / Hectárea</div>
