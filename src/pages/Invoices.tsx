@@ -2147,8 +2147,8 @@ export const Invoices: React.FC = () => {
       </div>
 
       {invoiceToPrint && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-75 print:bg-white print:p-0">
-            <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto print:shadow-none print:w-full print:max-w-none print:max-h-none print:overflow-visible print:rounded-none print:h-auto print:absolute print:inset-0">
+        <div id="print-modal" className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-75 print:bg-white print:p-0 print:block">
+            <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto print:shadow-none print:w-full print:max-w-none print:max-h-none print:overflow-visible print:rounded-none print:h-auto print:absolute print:inset-0 print:block">
                 <div className="p-4 border-b bg-gray-50 flex justify-between items-center print:hidden sticky top-0 z-10">
                     <div>
                         <h2 className="text-lg font-bold text-gray-800">Vista Previa de Impresión</h2>
@@ -2179,7 +2179,32 @@ export const Invoices: React.FC = () => {
             </div>
             <style>{`
                 @media print {
-                    body > *:not(.fixed) { display: none !important; }
+                    @page { margin: 0; }
+                    body { margin: 0; padding: 0; background: white; }
+                    #root { display: none !important; }
+                    
+                    #print-modal { 
+                        position: absolute !important; 
+                        top: 0 !important; 
+                        left: 0 !important; 
+                        right: 0 !important;
+                        background: white !important;
+                        display: block !important;
+                        visibility: visible !important;
+                        height: 100%;
+                        width: 100%;
+                    }
+                    
+                    /* Ensures the content inside the modal is printed */
+                    #print-modal > div {
+                        position: absolute;
+                        top: 0;
+                        left: 0;
+                        width: 100%;
+                        height: auto;
+                        padding: 1cm !important;
+                    }
+
                     .print\\:hidden { display: none !important; }
                 }
             `}</style>
