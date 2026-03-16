@@ -34,6 +34,7 @@ export const Dashboard: React.FC = () => {
   });
   const [chartData, setChartData] = useState<any[]>([]);
   const [sectorChartData, setSectorChartData] = useState<any[]>([]);
+  const [upcomingInvoices, setUpcomingInvoices] = useState<any[]>([]);
 
   useEffect(() => {
     if (selectedCompany) {
@@ -116,6 +117,35 @@ export const Dashboard: React.FC = () => {
             .in('sector_id', sectorIds);
           irrigationAssignments = irrigations || [];
       }
+
+      // F. Upcoming Invoices for Zen Mode
+      const today = new Date();
+      const currentDay = today.getDate();
+      const currentMonth = today.getMonth();
+      const currentYear = today.getFullYear();
+      
+      let startDate, endDate;
+
+      if (currentDay <= 15) {
+          // Look for invoices due between 1st and 15th of current month
+          startDate = new Date(currentYear, currentMonth, 1);
+          endDate = new Date(currentYear, currentMonth, 15);
+      } else {
+          // Look for invoices due between 16th and end of current month
+          startDate = new Date(currentYear, currentMonth, 16);
+          endDate = new Date(currentYear, currentMonth + 1, 0); // Last day of month
+      }
+
+      const { data: invoices } = await supabase
+        .from('invoices')
+        .select('invoice_number, supplier, total_amount, due_date')
+        .eq('company_id', selectedCompany.id)
+        .eq('status', 'Pendiente')
+        .gte('due_date', startDate.toISOString().split('T')[0])
+        .lte('due_date', endDate.toISOString().split('T')[0])
+        .order('due_date', { ascending: true });
+
+      setUpcomingInvoices(invoices || []);
 
       // Calculate Totals
       const totalAppCost = applications?.reduce((sum, app) => sum + Number(app.total_cost), 0) || 0;
@@ -419,8 +449,34 @@ export const Dashboard: React.FC = () => {
 
       {simpleMode ? (
         // SIMPLE MODE UI
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mt-8">
-            <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl shadow-lg p-8 text-white transform transition hover:scale-105">
+        <div className="space-y-8 mt-8">
+            {upcomingInvoices.length > 0 && (
+                <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-r-2xl shadow-sm">
+                    <div className="flex items-center mb-4">
+                        <AlertCircle className="h-6 w-6 text-red-600 mr-2" />
+                        <h3 className="text-xl font-bold text-red-800">Facturas Próximas a Vencer ({new Date().getDate() <= 15 ? 'Quincena 1' : 'Quincena 2'})</h3>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {upcomingInvoices.map((inv, idx) => (
+                            <div key={idx} className="bg-white p-4 rounded-lg shadow border border-red-100 flex flex-col justify-between">
+                                <div>
+                                    <div className="font-semibold text-gray-800">{inv.supplier}</div>
+                                    <div className="text-sm text-gray-500">Factura: {inv.invoice_number}</div>
+                                </div>
+                                <div className="mt-3 flex justify-between items-end">
+                                    <div className="text-2xl font-bold text-red-600">{formatCLP(inv.total_amount)}</div>
+                                    <div className="text-sm font-medium text-red-500 bg-red-100 px-2 py-1 rounded">
+                                        Vence: {new Date(inv.due_date).toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl shadow-lg p-8 text-white transform transition hover:scale-105">
                 <div className="text-green-100 text-lg font-medium mb-2">Costo Total Acumulado</div>
                 <div className="text-5xl font-bold">{formatCLP(dashboardStats.totalCost)}</div>
                 <div className="mt-4 text-green-100 flex items-center">
@@ -455,6 +511,7 @@ export const Dashboard: React.FC = () => {
                     {sectorChartData.length === 0 && <div className="text-gray-400 italic">Sin datos</div>}
                 </div>
             </div>
+        </div>
         </div>
       ) : (
         // DETAILED MODE UI (Original)
