@@ -464,9 +464,11 @@ export const Dashboard: React.FC = () => {
                                     <div className="text-sm text-gray-500">Factura: {inv.invoice_number}</div>
                                 </div>
                                 <div className="mt-3 flex justify-between items-end">
-                                    <div className="text-2xl font-bold text-red-600">{formatCLP(inv.total_amount)}</div>
+                                    <div className="text-2xl font-bold text-red-600">
+                                        {inv.total_amount ? formatCLP(Number(inv.total_amount)) : '$0'}
+                                    </div>
                                     <div className="text-sm font-medium text-red-500 bg-red-100 px-2 py-1 rounded">
-                                        Vence: {new Date(inv.due_date).toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })}
+                                        Vence: {inv.due_date ? new Date(inv.due_date).toLocaleDateString('es-CL', { day: '2-digit', month: 'short' }) : 'N/A'}
                                     </div>
                                 </div>
                             </div>
