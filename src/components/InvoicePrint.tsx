@@ -22,7 +22,7 @@ export const InvoicePrint: React.FC<InvoicePrintProps> = ({ invoice, company, it
     <div className="bg-white p-8 max-w-4xl mx-auto text-black print:p-0 print:max-w-none print:mx-0 font-sans text-sm">
       {/* Header */}
       <div className="flex justify-between items-start mb-8">
-        {/* Left: Company Logo/Info */}
+        {/* Left: Supplier Info (Issuer) */}
         <div className="w-1/2 pr-8">
           <div className="flex items-center mb-4">
              {/* Placeholder for Logo */}
@@ -30,46 +30,46 @@ export const InvoicePrint: React.FC<InvoicePrintProps> = ({ invoice, company, it
                 <Building2 className="w-8 h-8 text-gray-400" />
              </div>
              <div>
-                <h1 className="text-xl font-bold uppercase text-red-700">{company?.name || 'EMPRESA AGRÍCOLA'}</h1>
-                <p className="font-bold">GIRO: AGRICULTURA Y FRUTICULTURA</p>
-                <p>CASA MATRIZ: DIRECCIÓN EMPRESA, CIUDAD</p>
-                <p>FONO: +56 9 1234 5678</p>
-                <p>EMAIL: contacto@empresa.cl</p>
+                <h1 className="text-xl font-bold uppercase text-red-700">{invoice.supplier || 'PROVEEDOR DESCONOCIDO'}</h1>
+                <p className="font-bold">GIRO: PROVEEDOR AGRÍCOLA</p>
+                <p>CASA MATRIZ: DIRECCIÓN PROVEEDOR, COMUNA</p>
+                <p>FONO: -</p>
+                <p>EMAIL: -</p>
              </div>
           </div>
         </div>
 
-        {/* Right: RUT Box (Standard Chilean Format) */}
+        {/* Right: RUT Box (Supplier RUT) */}
         <div className="w-1/3 border-4 border-red-600 p-4 text-center font-bold text-red-600">
-          <h2 className="text-xl mb-1">R.U.T.: {company?.rut || '76.XXX.XXX-X'}</h2>
+          <h2 className="text-xl mb-1">R.U.T.: {invoice.supplier_rut || 'Sin RUT'}</h2>
           <h2 className="text-lg mb-1 uppercase">{invoice.document_type || 'FACTURA ELECTRONICA'}</h2>
           <h2 className="text-xl">N° {invoice.invoice_number}</h2>
         </div>
       </div>
 
-      {/* Client / Recipient Info */}
+      {/* Client / Recipient Info (Company) */}
       <div className="border border-gray-800 p-2 mb-6 text-xs">
          <div className="grid grid-cols-12 gap-2 mb-1">
             <div className="col-span-2 font-bold">SEÑOR(ES):</div>
-            <div className="col-span-6 uppercase">{invoice.supplier}</div>
+            <div className="col-span-6 uppercase">{company?.name}</div>
             <div className="col-span-1 font-bold">FECHA:</div>
             <div className="col-span-3">{new Date(invoice.invoice_date).toLocaleDateString('es-CL')}</div>
          </div>
          <div className="grid grid-cols-12 gap-2 mb-1">
             <div className="col-span-2 font-bold">R.U.T.:</div>
-            <div className="col-span-6">UNKNOWN-K (Proveedor)</div>
+            <div className="col-span-6">{company?.rut || 'Sin RUT'}</div>
             <div className="col-span-1 font-bold">VENCE:</div>
             <div className="col-span-3">{invoice.due_date ? new Date(invoice.due_date).toLocaleDateString('es-CL') : '-'}</div>
          </div>
          <div className="grid grid-cols-12 gap-2 mb-1">
             <div className="col-span-2 font-bold">GIRO:</div>
-            <div className="col-span-6">PROVEEDOR AGRÍCOLA</div>
+            <div className="col-span-6">AGRICULTURA Y FRUTICULTURA</div>
             <div className="col-span-1 font-bold">FONO:</div>
-            <div className="col-span-3">-</div>
+            <div className="col-span-3">+56 9 1234 5678</div>
          </div>
          <div className="grid grid-cols-12 gap-2">
             <div className="col-span-2 font-bold">DIRECCIÓN:</div>
-            <div className="col-span-6">DIRECCIÓN PROVEEDOR, COMUNA</div>
+            <div className="col-span-6">DIRECCIÓN EMPRESA, CIUDAD</div>
             <div className="col-span-1 font-bold">COMUNA:</div>
             <div className="col-span-3">SANTIAGO</div>
          </div>

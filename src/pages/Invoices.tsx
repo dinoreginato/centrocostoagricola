@@ -34,6 +34,7 @@ interface Invoice {
   id: string;
   invoice_number: string;
   supplier: string;
+  supplier_rut?: string;
   invoice_date: string;
   total_amount: number;
   status: string;
@@ -95,6 +96,7 @@ export const Invoices: React.FC = () => {
   // Invoice Form State
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [supplier, setSupplier] = useState('');
+  const [supplierRut, setSupplierRut] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
   const [dueDate, setDueDate] = useState('');
   const [status, setStatus] = useState('Pendiente');
@@ -285,7 +287,7 @@ export const Invoices: React.FC = () => {
     let query = supabase
       .from('invoices')
       .select(`
-        id, invoice_number, supplier, invoice_date, total_amount, status, due_date, notes, document_type,
+        id, invoice_number, supplier, supplier_rut, invoice_date, total_amount, status, due_date, notes, document_type,
         tax_percentage, discount_amount, exempt_amount, special_tax_amount,
         invoice_items (
           id, quantity, unit_price, total_price, category, product_id,
@@ -834,6 +836,7 @@ export const Invoices: React.FC = () => {
     setEditingInvoiceId(inv.id);
     setInvoiceNumber(inv.invoice_number);
     setSupplier(inv.supplier);
+    setSupplierRut(inv.supplier_rut || '');
     setInvoiceDate(inv.invoice_date);
     setDueDate(inv.due_date || '');
     setStatus(inv.status);
@@ -870,6 +873,7 @@ export const Invoices: React.FC = () => {
     setEditingInvoiceId(null);
     setInvoiceNumber('');
     setSupplier('');
+    setSupplierRut('');
     setInvoiceDate(new Date().toISOString().split('T')[0]);
     setDueDate('');
     setStatus('Pendiente');
@@ -1024,6 +1028,7 @@ export const Invoices: React.FC = () => {
           .update({
             invoice_number: invoiceNumber,
             supplier: supplier,
+            supplier_rut: supplierRut,
             invoice_date: invoiceDate,
             due_date: dueDate || null,
             status: status,
@@ -1249,6 +1254,7 @@ export const Invoices: React.FC = () => {
             company_id: selectedCompany.id,
             invoice_number: invoiceNumber,
             supplier: supplier,
+            supplier_rut: supplierRut,
             invoice_date: invoiceDate,
             due_date: dueDate || null,
             status: status,
@@ -1389,6 +1395,7 @@ export const Invoices: React.FC = () => {
       setEditingInvoiceId(null); // Clear edit mode
       setInvoiceNumber('');
       setSupplier('');
+      setSupplierRut('');
       setItems([]);
       setNotes('');
       setDueDate('');
@@ -1500,7 +1507,29 @@ export const Invoices: React.FC = () => {
                     required
                     list="supplier-list"
                     value={supplier}
-                    onChange={e => setSupplier(e.target.value)}
+                    onChange={e => {
+                        const val = e.target.value;
+                        setSupplier(val);
+                        // Auto-fill RUT if existing supplier found in list
+                        // This is a simple heuristic: if we find a RUT associated with this supplier name in our previous data
+                        // But since we don't have a separate suppliers table, we can query recent invoices or just check local cache if we had one.
+                        // For now, let's leave it manual or maybe try to find it in the future.
+                        // A better approach: query Supabase for the latest RUT used for this supplier.
+                        if (val.length > 3) {
+                            supabase.from('invoices')
+                                .select('supplier_rut')
+                                .eq('company_id', selectedCompany.id)
+                                .eq('supplier', val)
+                                .order('created_at', { ascending: false })
+                                .limit(1)
+                                .maybeSingle()
+                                .then(({ data }) => {
+                                    if (data && data.supplier_rut) {
+                                        setSupplierRut(data.supplier_rut);
+                                    }
+                                });
+                        }
+                    }}
                     className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
                     placeholder="Nombre del prov"
                   />
@@ -1509,6 +1538,36 @@ export const Invoices: React.FC = () => {
                       <option key={idx} value={s} />
                     ))}
                   </datalist>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 uppercase mb-1">RUT Proveedor</label>
+                  <input
+                    type="text"
+                    value={supplierRut}
+                    onChange={e => setSupplierRut(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                    placeholder="Ej. 76.123.456-7"
+                  />
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={loading || items.length === 0}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-8 rounded-lg flex items-center disabled:opacity-50 text-lg shadow-lg"
+                  >
+                    {loading ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <Save className="h-5 w-5 mr-2" />}
+                    GUARDAR FACTURA
+                  </button>
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={loading || items.length === 0}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-8 rounded-lg flex items-center disabled:opacity-50 text-lg shadow-lg"
+                  >
+                    {loading ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <Save className="h-5 w-5 mr-2" />}
+                    GUARDAR FACTURA
+                  </button>
                 </div>
               </div>
 
@@ -1864,21 +1923,25 @@ export const Invoices: React.FC = () => {
                   <span>Exento: {formatCLP(exemptAmount)}</span>
                   <span>Imp. Esp: {formatCLP(specialTaxAmount)}</span>
                 </div>
-                <div className="flex justify-between items-center pt-2 border-t border-gray-700">
-                  <div className="text-sm">
-                    Impuestos: {formatCLP(tax)}
+                <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-700">
+                  <div className="flex flex-col justify-center">
+                    <div className="text-sm">
+                      Impuestos: {formatCLP(tax)}
+                    </div>
+                    <div className="text-xl font-bold">
+                      Total: {formatCLP(total)}
+                    </div>
                   </div>
-                  <div className="text-xl font-bold">
-                    Total: {formatCLP(total)}
+                  <div className="flex justify-end items-center">
+                    <button
+                      type="submit"
+                      disabled={loading || items.length === 0}
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg flex items-center disabled:opacity-50 text-lg shadow-lg w-full justify-center"
+                    >
+                      {loading ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <Save className="h-5 w-5 mr-2" />}
+                      GUARDAR
+                    </button>
                   </div>
-                  <button
-                    type="submit"
-                    disabled={loading || items.length === 0}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg flex items-center disabled:opacity-50"
-                  >
-                    {loading ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <Save className="h-5 w-5 mr-2" />}
-                    Guardar factura
-                  </button>
                 </div>
               </div>
             </form>

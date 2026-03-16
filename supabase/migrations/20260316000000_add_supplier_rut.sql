@@ -1,0 +1,1 @@
+alter table invoices add column supplier_rut text;
