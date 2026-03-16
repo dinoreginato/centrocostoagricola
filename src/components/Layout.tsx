@@ -21,14 +21,17 @@ import {
   Briefcase,
   Building2,
   LayoutList,
-  Beaker
+  Beaker,
+  Lock
 } from 'lucide-react';
+import { ChangePasswordModal } from './ChangePasswordModal';
 
 export const Layout: React.FC = () => {
   const { user, loading, signOut } = useAuth();
   const { userRole, companies, selectedCompany, selectCompany } = useCompany();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = React.useState(false);
 
   if (loading) {
     return (
