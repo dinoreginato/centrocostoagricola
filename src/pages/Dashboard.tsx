@@ -485,32 +485,32 @@ export const Dashboard: React.FC = () => {
                     </div>
                 </div>
 
-            <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 transform transition hover:scale-105">
-                <div className="text-gray-500 text-lg font-medium mb-2">Costo Promedio / Hectárea</div>
-                <div className="text-5xl font-bold text-gray-800">{formatCLP(dashboardStats.costPerHectare)}</div>
-                <div className="mt-4 text-gray-400 flex items-center">
-                    <Map className="h-5 w-5 mr-2" />
-                    <span>{dashboardStats.totalHectares} Hectáreas Totales</span>
+                <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 transform transition hover:scale-105">
+                    <div className="text-gray-500 text-lg font-medium mb-2">Costo Promedio / Hectárea</div>
+                    <div className="text-5xl font-bold text-gray-800">{formatCLP(dashboardStats.costPerHectare)}</div>
+                    <div className="mt-4 text-gray-400 flex items-center">
+                        <Map className="h-5 w-5 mr-2" />
+                        <span>{dashboardStats.totalHectares} Hectáreas Totales</span>
+                    </div>
                 </div>
-            </div>
 
-            <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 transform transition hover:scale-105">
-                <div className="text-gray-500 text-lg font-medium mb-4">Sectores Más Costosos</div>
-                <div className="space-y-4">
-                    {sectorChartData.slice(0, 3).map((sector, idx) => (
-                        <div key={idx} className="flex justify-between items-center border-b border-gray-50 pb-2 last:border-0">
-                            <div>
-                                <div className="font-bold text-gray-800">{sector.name}</div>
-                                <div className="text-xs text-gray-400">{sector.fieldName}</div>
+                <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 transform transition hover:scale-105">
+                    <div className="text-gray-500 text-lg font-medium mb-4">Sectores Más Costosos</div>
+                    <div className="space-y-4">
+                        {sectorChartData.slice(0, 3).map((sector, idx) => (
+                            <div key={idx} className="flex justify-between items-center border-b border-gray-50 pb-2 last:border-0">
+                                <div>
+                                    <div className="font-bold text-gray-800">{sector.name}</div>
+                                    <div className="text-xs text-gray-400">{sector.fieldName}</div>
+                                </div>
+                                <div className="text-right">
+                                    <div className="font-bold text-orange-600">{formatCLP(sector.costPerHa)}/ha</div>
+                                </div>
                             </div>
-                            <div className="text-right">
-                                <div className="font-bold text-orange-600">{formatCLP(sector.costPerHa)}/ha</div>
-                            </div>
-                        </div>
-                    ))}
-                    {sectorChartData.length === 0 && <div className="text-gray-400 italic">Sin datos</div>}
+                        ))}
+                        {sectorChartData.length === 0 && <div className="text-gray-400 italic">Sin datos</div>}
+                    </div>
                 </div>
-            </div>
             </div>
         </div>
       ) : (
