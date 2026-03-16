@@ -10,6 +10,7 @@ export const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSignUp, setIsSignUp] = useState(false);
+  const [isResetPassword, setIsResetPassword] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const navigate = useNavigate();
 
@@ -20,7 +21,13 @@ export const Login: React.FC = () => {
     setMessage(null);
 
     try {
-      if (isSignUp) {
+      if (isResetPassword) {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin,
+        });
+        if (error) throw error;
+        setMessage('Revisa tu correo para el enlace de recuperación.');
+      } else if (isSignUp) {
         const { error, data } = await supabase.auth.signUp({
           email,
           password,
@@ -40,7 +47,7 @@ export const Login: React.FC = () => {
         navigate('/');
       }
     } catch (err: any) {
-      console.error('Login error:', err);
+      console.error('Auth error:', err);
       if (err.message === 'Failed to fetch') {
         setError('Error de conexión con el servidor. Posible bloqueo de red o configuración de dominio (CORS) en Supabase.');
       } else if (err.message.includes('Invalid login credentials')) {
@@ -61,7 +68,11 @@ export const Login: React.FC = () => {
             Centro de Costo Agrícola
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            {isSignUp ? 'Crea una cuenta para comenzar' : 'Inicia sesión para gestionar tu campo'}
+            {isResetPassword 
+              ? 'Ingresa tu correo para recuperar tu contraseña'
+              : isSignUp 
+                ? 'Crea una cuenta para comenzar' 
+                : 'Inicia sesión para gestionar tu campo'}
           </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleAuth}>
@@ -75,26 +86,28 @@ export const Login: React.FC = () => {
                 type="email"
                 autoComplete="email"
                 required
-                className="appearance-none rounded-none rounded-t-md relative block w-full px-10 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-green-500 focus:border-green-500 focus:z-10 sm:text-sm"
+                className={`appearance-none rounded-none ${isResetPassword ? 'rounded-md' : 'rounded-t-md'} relative block w-full px-10 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-green-500 focus:border-green-500 focus:z-10 sm:text-sm`}
                 placeholder="Correo electrónico"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
-            <div className="relative">
-              <Lock className="absolute top-3 left-3 h-5 w-5 text-gray-400" />
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                className="appearance-none rounded-none rounded-b-md relative block w-full px-10 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-green-500 focus:border-green-500 focus:z-10 sm:text-sm"
-                placeholder="Contraseña"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
+            {!isResetPassword && (
+              <div className="relative">
+                <Lock className="absolute top-3 left-3 h-5 w-5 text-gray-400" />
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  className="appearance-none rounded-none rounded-b-md relative block w-full px-10 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-green-500 focus:border-green-500 focus:z-10 sm:text-sm"
+                  placeholder="Contraseña"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+            )}
           </div>
 
           {error && (
@@ -118,25 +131,47 @@ export const Login: React.FC = () => {
               {loading ? (
                 <Loader2 className="animate-spin h-5 w-5" />
               ) : (
-                isSignUp ? 'Registrarse' : 'Ingresar'
+                isResetPassword 
+                  ? 'Enviar correo de recuperación'
+                  : isSignUp ? 'Registrarse' : 'Ingresar'
               )}
             </button>
           </div>
           
-          <div className="text-center mt-4">
+          <div className="text-center mt-4 space-y-2">
             <button
               type="button"
               onClick={() => {
-                setIsSignUp(!isSignUp);
+                if (isResetPassword) {
+                  setIsResetPassword(false);
+                } else {
+                  setIsSignUp(!isSignUp);
+                }
                 setError(null);
                 setMessage(null);
               }}
-              className="text-sm text-green-600 hover:text-green-500 font-medium"
+              className="text-sm text-green-600 hover:text-green-500 font-medium block w-full"
             >
-              {isSignUp 
-                ? '¿Ya tienes cuenta? Inicia sesión aquí' 
-                : '¿No tienes cuenta? Regístrate aquí'}
+              {isResetPassword
+                ? 'Volver al inicio de sesión'
+                : isSignUp 
+                  ? '¿Ya tienes cuenta? Inicia sesión aquí' 
+                  : '¿No tienes cuenta? Regístrate aquí'}
             </button>
+            
+            {!isResetPassword && !isSignUp && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsResetPassword(true);
+                  setError(null);
+                  setMessage(null);
+                }}
+                className="text-sm text-gray-500 hover:text-gray-700 font-medium block w-full"
+              >
+                ¿Olvidaste tu contraseña?
+              </button>
+            )}
           </div>
         </form>
       </div>
