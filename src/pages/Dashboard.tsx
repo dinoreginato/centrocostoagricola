@@ -511,7 +511,6 @@ export const Dashboard: React.FC = () => {
                     {sectorChartData.length === 0 && <div className="text-gray-400 italic">Sin datos</div>}
                 </div>
             </div>
-            </div>
         </div>
       ) : (
         // DETAILED MODE UI (Original)
