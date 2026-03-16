@@ -456,19 +456,21 @@ export const Dashboard: React.FC = () => {
                         <AlertCircle className="h-6 w-6 text-red-600 mr-2" />
                         <h3 className="text-xl font-bold text-red-800">Facturas Próximas a Vencer ({new Date().getDate() <= 15 ? 'Quincena 1' : 'Quincena 2'})</h3>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                         {upcomingInvoices.map((inv, idx) => (
-                            <div key={idx} className="bg-white p-4 rounded-lg shadow border border-red-100 flex flex-col justify-between">
-                                <div>
-                                    <div className="font-semibold text-gray-800">{inv.supplier}</div>
-                                    <div className="text-sm text-gray-500">Factura: {inv.invoice_number}</div>
-                                </div>
-                                <div className="mt-3 flex justify-between items-end">
-                                    <div className="text-2xl font-bold text-red-600">
-                                        {inv.total_amount ? formatCLP(Number(inv.total_amount)) : '$0'}
+                            <div key={idx} className="bg-white p-3 rounded-md shadow-sm border border-red-100 flex flex-col justify-between h-full hover:shadow-md transition-shadow duration-200">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div className="font-bold text-gray-700 text-sm truncate pr-2 flex-1" title={inv.supplier || ''}>{inv.supplier || 'Proveedor desconocido'}</div>
+                                    <div className="text-xs text-red-600 font-bold bg-red-50 px-2 py-0.5 rounded border border-red-100 whitespace-nowrap">
+                                        {inv.due_date ? new Date(inv.due_date).toLocaleDateString('es-CL', { day: '2-digit', month: 'numeric' }) : 'N/A'}
                                     </div>
-                                    <div className="text-sm font-medium text-red-500 bg-red-100 px-2 py-1 rounded">
-                                        Vence: {inv.due_date ? new Date(inv.due_date).toLocaleDateString('es-CL', { day: '2-digit', month: 'short' }) : 'N/A'}
+                                </div>
+                                <div className="flex justify-between items-end">
+                                    <div className="text-xs text-gray-400 truncate max-w-[50%]" title={inv.invoice_number || ''}>
+                                        N° {inv.invoice_number || '-'}
+                                    </div>
+                                    <div className="text-base font-bold text-red-600">
+                                        {inv.total_amount ? formatCLP(Number(inv.total_amount)) : '$0'}
                                     </div>
                                 </div>
                             </div>
