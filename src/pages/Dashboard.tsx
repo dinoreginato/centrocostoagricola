@@ -138,7 +138,7 @@ export const Dashboard: React.FC = () => {
 
       const { data: invoices } = await supabase
         .from('invoices')
-        .select('invoice_number, supplier, total_amount, due_date')
+        .select('invoice_number, supplier, total_amount, due_date, notes')
         .eq('company_id', selectedCompany.id)
         .eq('status', 'Pendiente')
         .gte('due_date', startDate.toISOString().split('T')[0])
@@ -473,6 +473,11 @@ export const Dashboard: React.FC = () => {
                                         {inv.total_amount ? formatCLP(Number(inv.total_amount)) : '$0'}
                                     </div>
                                 </div>
+                                {inv.notes && (
+                                    <div className="mt-2 text-xs text-gray-500 italic border-t border-gray-100 pt-1 truncate" title={inv.notes}>
+                                        {inv.notes}
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>

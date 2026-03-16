@@ -137,6 +137,7 @@ export const Invoices: React.FC = () => {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const [destinationsLoading, setDestinationsLoading] = useState(false);
+  const [invoiceToPrint, setInvoiceToPrint] = useState<Invoice | null>(null);
 
   useEffect(() => {
     if (selectedCompany) {
@@ -1985,13 +1986,22 @@ export const Invoices: React.FC = () => {
                         <span className="font-bold text-gray-300">{formatCLP(inv.total_amount)}</span>
                       </div>
                       
-                      <button
-                        onClick={(e) => handleDeleteInvoice(e, inv.id)}
-                        className="absolute top-2 right-2 p-1.5 bg-red-900/50 text-red-400 rounded hover:bg-red-600 hover:text-white transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100"
-                        title="Eliminar factura"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
+                      <div className="absolute top-2 right-2 flex space-x-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setInvoiceToPrint(inv); }}
+                            className="p-1.5 bg-blue-900/50 text-blue-400 rounded hover:bg-blue-600 hover:text-white"
+                            title="Imprimir Factura"
+                        >
+                            <Printer className="h-3 w-3" />
+                        </button>
+                        <button
+                            onClick={(e) => handleDeleteInvoice(e, inv.id)}
+                            className="p-1.5 bg-red-900/50 text-red-400 rounded hover:bg-red-600 hover:text-white"
+                            title="Eliminar factura"
+                        >
+                            <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
                     </div>
                   ))
                 ) : (
@@ -2071,6 +2081,46 @@ export const Invoices: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {invoiceToPrint && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-75 print:bg-white print:p-0">
+            <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto print:shadow-none print:w-full print:max-w-none print:max-h-none print:overflow-visible print:rounded-none print:h-auto print:absolute print:inset-0">
+                <div className="p-4 border-b bg-gray-50 flex justify-between items-center print:hidden sticky top-0 z-10">
+                    <div>
+                        <h2 className="text-lg font-bold text-gray-800">Vista Previa de Impresión</h2>
+                        <p className="text-xs text-gray-500">Formato Factura Electrónica SII</p>
+                    </div>
+                    <div className="flex space-x-3">
+                        <button 
+                            onClick={() => window.print()} 
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center shadow-sm transition-colors"
+                        >
+                            <Printer className="h-4 w-4 mr-2" /> Imprimir
+                        </button>
+                        <button 
+                            onClick={() => setInvoiceToPrint(null)} 
+                            className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 px-4 py-2 rounded-lg transition-colors"
+                        >
+                            Cerrar
+                        </button>
+                    </div>
+                </div>
+                <div className="p-8 print:p-0">
+                    <InvoicePrint 
+                        invoice={invoiceToPrint} 
+                        company={selectedCompany} 
+                        items={invoiceToPrint.invoice_items || []} 
+                    />
+                </div>
+            </div>
+            <style>{`
+                @media print {
+                    body > *:not(.fixed) { display: none !important; }
+                    .print\\:hidden { display: none !important; }
+                }
+            `}</style>
+        </div>
+      )}
     </div>
   );
 };
