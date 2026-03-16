@@ -126,19 +126,34 @@ export const Layout: React.FC = () => {
             <div className="flex items-center">
               <div className="ml-3">
                 <p className="text-sm font-medium text-gray-700 truncate">{user.email}</p>
-                <button
-                  onClick={signOut}
-                  className="text-xs font-medium text-gray-500 hover:text-gray-700 flex items-center mt-1"
-                >
-                  <LogOut className="mr-1 h-3 w-3" /> Cerrar Sesión
-                </button>
-                <div className="text-[10px] text-gray-400 mt-1">v1.10.3 (Recuperación Contraseña + Fix)</div>
+                <div className="flex space-x-2 mt-1">
+                  <button
+                    onClick={() => setIsPasswordModalOpen(true)}
+                    className="text-xs font-medium text-gray-500 hover:text-green-700 flex items-center"
+                    title="Cambiar Contraseña"
+                  >
+                    <Lock className="mr-1 h-3 w-3" /> Contraseña
+                  </button>
+                  <span className="text-gray-300">|</span>
+                  <button
+                    onClick={signOut}
+                    className="text-xs font-medium text-gray-500 hover:text-red-700 flex items-center"
+                  >
+                    <LogOut className="mr-1 h-3 w-3" /> Salir
+                  </button>
+                </div>
+                <div className="text-[10px] text-gray-400 mt-1">v1.10.4 (Viewer Fix)</div>
               </div>
             </div>
           </div>
         </div>
       </div>
       </div>
+
+      <ChangePasswordModal 
+        isOpen={isPasswordModalOpen} 
+        onClose={() => setIsPasswordModalOpen(false)} 
+      />
 
       {/* Mobile menu */}
       <div className="md:hidden fixed top-0 left-0 w-full bg-white border-b border-gray-200 z-10 flex items-center justify-between px-4 h-16 print:hidden">

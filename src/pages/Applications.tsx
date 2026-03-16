@@ -110,7 +110,7 @@ const getConversionFactor = (fromUnit: string, toUnit: string): number => {
 };
 
 export const Applications: React.FC = () => {
-  const { selectedCompany } = useCompany();
+  const { selectedCompany, userRole } = useCompany();
   const [loading, setLoading] = useState(false);
   const [fields, setFields] = useState<Field[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -1454,20 +1454,24 @@ export const Applications: React.FC = () => {
                                     {formatCLP(app.total_cost)}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                    <button 
-                                        onClick={() => handleEditApplication(app)}
-                                        className="text-blue-600 hover:text-blue-900 mr-3"
-                                        title="Editar aplicación"
-                                    >
-                                        <Edit className="h-5 w-5" />
-                                    </button>
-                                    <button 
-                                        onClick={() => handleDeleteApplication(app.id)}
-                                        className="text-red-600 hover:text-red-900"
-                                        title="Eliminar y restaurar stock"
-                                    >
-                                        <Trash2 className="h-5 w-5" />
-                                    </button>
+                                    {userRole !== 'viewer' && (
+                                      <>
+                                        <button 
+                                            onClick={() => handleEditApplication(app)}
+                                            className="text-blue-600 hover:text-blue-900 mr-3"
+                                            title="Editar aplicación"
+                                        >
+                                            <Edit className="h-5 w-5" />
+                                        </button>
+                                        <button 
+                                            onClick={() => handleDeleteApplication(app.id)}
+                                            className="text-red-600 hover:text-red-900"
+                                            title="Eliminar y restaurar stock"
+                                        >
+                                            <Trash2 className="h-5 w-5" />
+                                        </button>
+                                      </>
+                                    )}
                                 </td>
                             </tr>
                         ))}

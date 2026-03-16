@@ -299,12 +299,14 @@ export const Fields: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">Gestión de Campos</h1>
           <p className="text-sm text-gray-500">Administra tus campos, sectores y cultivos</p>
         </div>
-        <button
-          onClick={() => setShowFieldForm(true)}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700"
-        >
-          <Plus className="mr-2 h-4 w-4" /> Nuevo Campo
-        </button>
+        {userRole !== 'viewer' && (
+          <button
+            onClick={() => setShowFieldForm(true)}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700"
+          >
+            <Plus className="mr-2 h-4 w-4" /> Nuevo Campo
+          </button>
+        )}
       </div>
 
       {/* Create Field Form */}
@@ -530,68 +532,72 @@ export const Fields: React.FC = () => {
                                     </div>
                                   )}
                                 </div>
-                                <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button
-                                    onClick={() => startEditingSector(sector)}
-                                    className="text-gray-400 hover:text-green-600"
-                                    title="Editar sector"
-                                  >
-                                    <Edit2 className="h-3 w-3" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteSector(sector.id, field.id)}
-                                    className="text-gray-400 hover:text-red-600"
-                                    title="Eliminar sector"
-                                  >
-                                    <Trash2 className="h-3 w-3" />
-                                  </button>
-                                </div>
+                                {userRole !== 'viewer' && (
+                                  <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button
+                                      onClick={() => startEditingSector(sector)}
+                                      className="text-gray-400 hover:text-green-600"
+                                      title="Editar sector"
+                                    >
+                                      <Edit2 className="h-3 w-3" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteSector(sector.id, field.id)}
+                                      className="text-gray-400 hover:text-red-600"
+                                      title="Eliminar sector"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                )}
                               </>
                             )}
                           </li>
                         ))}
                       </ul>
 
-                      {showSectorForm === field.id ? (
-                        <form onSubmit={(e) => handleCreateSector(e, field.id)} className="flex items-center space-x-3 mt-2">
-                          <input
-                            type="text"
-                            placeholder="Nombre Sector"
-                            required
-                            value={newSectorName}
-                            onChange={e => setNewSectorName(e.target.value)}
-                            className="block w-40 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                          />
-                          <input
-                            type="number"
-                            step="0.01"
-                            placeholder="Has"
-                            required
-                            value={newSectorHectares}
-                            onChange={e => setNewSectorHectares(e.target.value)}
-                            className="block w-24 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                          />
+                      {userRole !== 'viewer' && (
+                        showSectorForm === field.id ? (
+                          <form onSubmit={(e) => handleCreateSector(e, field.id)} className="flex items-center space-x-3 mt-2">
+                            <input
+                              type="text"
+                              placeholder="Nombre Sector"
+                              required
+                              value={newSectorName}
+                              onChange={e => setNewSectorName(e.target.value)}
+                              className="block w-40 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                            />
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder="Has"
+                              required
+                              value={newSectorHectares}
+                              onChange={e => setNewSectorHectares(e.target.value)}
+                              className="block w-24 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                            />
+                            <button
+                              type="submit"
+                              className="text-green-600 hover:text-green-800 text-sm font-medium"
+                            >
+                              Guardar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setShowSectorForm(null)}
+                              className="text-gray-500 hover:text-gray-700 text-sm"
+                            >
+                              Cancelar
+                            </button>
+                          </form>
+                        ) : (
                           <button
-                            type="submit"
-                            className="text-green-600 hover:text-green-800 text-sm font-medium"
+                            onClick={() => setShowSectorForm(field.id)}
+                            className="flex items-center text-sm text-green-600 hover:text-green-800"
                           >
-                            Guardar
+                            <Plus className="h-4 w-4 mr-1" /> Agregar Sector
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => setShowSectorForm(null)}
-                            className="text-gray-500 hover:text-gray-700 text-sm"
-                          >
-                            Cancelar
-                          </button>
-                        </form>
-                      ) : (
-                        <button
-                          onClick={() => setShowSectorForm(field.id)}
-                          className="flex items-center text-sm text-green-600 hover:text-green-800"
-                        >
-                          <Plus className="h-4 w-4 mr-1" /> Agregar Sector
-                        </button>
+                        )
                       )}
                     </div>
                   )}
