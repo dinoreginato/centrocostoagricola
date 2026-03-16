@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Plus, FileText, Calendar, Trash2, Save, Loader2, Filter, ChevronDown, Check, Download, Upload, RefreshCw, Search } from 'lucide-react';
+import { Plus, FileText, Calendar, Trash2, Save, Loader2, Filter, ChevronDown, Check, Download, Upload, RefreshCw, Search, Printer } from 'lucide-react';
+import { InvoicePrint } from '../components/InvoicePrint';
 
 interface InvoiceItem {
   id?: string;
@@ -397,10 +398,10 @@ export const Invoices: React.FC = () => {
     
     const lowerQuery = searchQuery.toLowerCase();
     filtered = filtered.filter(inv => 
-      inv.invoice_number.toLowerCase().includes(lowerQuery) ||
-      inv.supplier.toLowerCase().includes(lowerQuery) ||
+      (inv.invoice_number || '').toLowerCase().includes(lowerQuery) ||
+      (inv.supplier || '').toLowerCase().includes(lowerQuery) ||
       inv.invoice_items?.some((item: any) => 
-        item.products?.name?.toLowerCase().includes(lowerQuery)
+        (item.products?.name || '').toLowerCase().includes(lowerQuery)
       )
     );
 
