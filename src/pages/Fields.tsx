@@ -20,7 +20,7 @@ interface Field {
 }
 
 export const Fields: React.FC = () => {
-  const { selectedCompany } = useCompany();
+  const { selectedCompany, userRole } = useCompany();
   const [fields, setFields] = useState<Field[]>([]);
   const [loading, setLoading] = useState(false);
   const [expandedFieldId, setExpandedFieldId] = useState<string | null>(null);
