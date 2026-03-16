@@ -450,6 +450,7 @@ export const Dashboard: React.FC = () => {
       {simpleMode ? (
         // SIMPLE MODE UI
         <div className="space-y-8 mt-8">
+            {/* 
             {upcomingInvoices.length > 0 && (
                 <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-r-2xl shadow-sm">
                     <div className="flex items-center mb-4">
@@ -476,6 +477,7 @@ export const Dashboard: React.FC = () => {
                     </div>
                 </div>
             )}
+            */}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl shadow-lg p-8 text-white transform transition hover:scale-105">
