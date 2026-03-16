@@ -4,7 +4,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X, Trash2, Layout } from 'lucide-react';
+import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X, Trash2, Layout, AlertCircle } from 'lucide-react';
 import { 
   BarChart, 
   Bar, 
@@ -450,7 +450,6 @@ export const Dashboard: React.FC = () => {
       {simpleMode ? (
         // SIMPLE MODE UI
         <div className="space-y-8 mt-8">
-            {/* 
             {upcomingInvoices.length > 0 && (
                 <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-r-2xl shadow-sm">
                     <div className="flex items-center mb-4">
@@ -477,12 +476,11 @@ export const Dashboard: React.FC = () => {
                     </div>
                 </div>
             )}
-            */}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl shadow-lg p-8 text-white transform transition hover:scale-105">
                     <div className="text-green-100 text-lg font-medium mb-2">Costo Total Acumulado</div>
-                    <div className="text-5xl font-bold">{formatCLP(dashboardStats.totalCost)}</div>
+                    <div className="text-5xl font-bold">{formatCLP(Number(dashboardStats.totalCost) || 0)}</div>
                     <div className="mt-4 text-green-100 flex items-center">
                         <TrendingUp className="h-5 w-5 mr-2" />
                         <span>Inversión Total</span>
@@ -491,7 +489,7 @@ export const Dashboard: React.FC = () => {
 
                 <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 transform transition hover:scale-105">
                     <div className="text-gray-500 text-lg font-medium mb-2">Costo Promedio / Hectárea</div>
-                    <div className="text-5xl font-bold text-gray-800">{formatCLP(dashboardStats.costPerHectare)}</div>
+                    <div className="text-5xl font-bold text-gray-800">{formatCLP(Number(dashboardStats.costPerHectare) || 0)}</div>
                     <div className="mt-4 text-gray-400 flex items-center">
                         <Map className="h-5 w-5 mr-2" />
                         <span>{dashboardStats.totalHectares} Hectáreas Totales</span>
@@ -501,18 +499,18 @@ export const Dashboard: React.FC = () => {
                 <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 transform transition hover:scale-105">
                     <div className="text-gray-500 text-lg font-medium mb-4">Sectores Más Costosos</div>
                     <div className="space-y-4">
-                        {sectorChartData.slice(0, 3).map((sector, idx) => (
+                        {Array.isArray(sectorChartData) && sectorChartData.slice(0, 3).map((sector, idx) => (
                             <div key={idx} className="flex justify-between items-center border-b border-gray-50 pb-2 last:border-0">
                                 <div>
-                                    <div className="font-bold text-gray-800">{sector.name}</div>
-                                    <div className="text-xs text-gray-400">{sector.fieldName}</div>
+                                    <div className="font-bold text-gray-800">{sector?.name || 'Sin nombre'}</div>
+                                    <div className="text-xs text-gray-400">{sector?.fieldName || ''}</div>
                                 </div>
                                 <div className="text-right">
-                                    <div className="font-bold text-orange-600">{formatCLP(sector.costPerHa)}/ha</div>
+                                    <div className="font-bold text-orange-600">{formatCLP(Number(sector?.costPerHa) || 0)}/ha</div>
                                 </div>
                             </div>
                         ))}
-                        {sectorChartData.length === 0 && <div className="text-gray-400 italic">Sin datos</div>}
+                        {(!sectorChartData || sectorChartData.length === 0) && <div className="text-gray-400 italic">Sin datos</div>}
                     </div>
                 </div>
             </div>
