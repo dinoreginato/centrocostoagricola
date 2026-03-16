@@ -512,6 +512,7 @@ export const Dashboard: React.FC = () => {
                 </div>
             </div>
             </div>
+        </div>
       ) : (
         // DETAILED MODE UI (Original)
         <>
