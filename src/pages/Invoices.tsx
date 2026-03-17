@@ -2148,7 +2148,7 @@ export const Invoices: React.FC = () => {
 
       {invoiceToPrint && (
         <div id="print-modal" className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-75 print:bg-white print:p-0 print:block">
-            <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto print:shadow-none print:w-full print:max-w-none print:max-h-none print:overflow-visible print:rounded-none print:h-auto print:absolute print:inset-0 print:block">
+            <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto print:shadow-none print:w-full print:max-w-none print:max-h-none print:overflow-visible print:rounded-none print:h-auto print:static print:inset-0 print:block">
                 <div className="p-4 border-b bg-gray-50 flex justify-between items-center print:hidden sticky top-0 z-10">
                     <div>
                         <h2 className="text-lg font-bold text-gray-800">Vista Previa de Impresión</h2>
@@ -2179,32 +2179,43 @@ export const Invoices: React.FC = () => {
             </div>
             <style>{`
                 @media print {
-                    @page { margin: 0; }
-                    body { margin: 0; padding: 0; background: white; }
-                    #root { display: none !important; }
+                    @page { margin: 0; size: auto; }
+                    body { 
+                        visibility: hidden;
+                        margin: 0;
+                        padding: 0;
+                    }
                     
-                    #print-modal { 
-                        position: absolute !important; 
-                        top: 0 !important; 
-                        left: 0 !important; 
-                        right: 0 !important;
-                        background: white !important;
-                        display: block !important;
+                    #print-modal {
                         visibility: visible !important;
-                        height: 100%;
-                        width: 100%;
+                        position: fixed !important;
+                        left: 0 !important;
+                        top: 0 !important;
+                        width: 100vw !important;
+                        height: 100vh !important;
+                        z-index: 99999 !important;
+                        background: white !important;
+                        overflow: visible !important;
                     }
                     
-                    /* Ensures the content inside the modal is printed */
-                    #print-modal > div {
-                        position: absolute;
-                        top: 0;
-                        left: 0;
-                        width: 100%;
-                        height: auto;
-                        padding: 1cm !important;
+                    #print-modal * {
+                        visibility: visible !important;
                     }
-
+                    
+                    /* Reset modal content wrapper styles */
+                    #print-modal > div {
+                        position: static !important;
+                        width: 100% !important;
+                        max-width: none !important;
+                        height: auto !important;
+                        overflow: visible !important;
+                        box-shadow: none !important;
+                        border: none !important;
+                        margin: 0 !important;
+                        padding: 1cm !important;
+                        transform: none !important;
+                    }
+                    
                     .print\\:hidden { display: none !important; }
                 }
             `}</style>
