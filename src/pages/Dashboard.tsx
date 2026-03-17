@@ -24,7 +24,8 @@ export const Dashboard: React.FC = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [showNewCompanyModal, setShowNewCompanyModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [simpleMode, setSimpleMode] = useState(false);
+  const [simpleMode, setSimpleMode] = useState(true); // Default to Zen Mode
+  const [selectedInvoice, setSelectedInvoice] = useState<any>(null); // For invoice modal
 
   const [dashboardStats, setDashboardStats] = useState({
     totalFields: 0,
@@ -138,7 +139,21 @@ export const Dashboard: React.FC = () => {
 
       const { data: invoices } = await supabase
         .from('invoices')
-        .select('invoice_number, supplier, total_amount, due_date, notes')
+        .select(`
+          id,
+          invoice_number, 
+          supplier, 
+          total_amount, 
+          due_date, 
+          notes,
+          invoice_items (
+            quantity,
+            unit_price,
+            total_price,
+            category,
+            products (name, unit)
+          )
+        `)
         .eq('company_id', selectedCompany.id)
         .eq('status', 'Pendiente')
         .gte('due_date', startDate.toISOString().split('T')[0])
@@ -458,7 +473,11 @@ export const Dashboard: React.FC = () => {
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                         {upcomingInvoices.map((inv, idx) => (
-                            <div key={idx} className="bg-white p-3 rounded-md shadow-sm border border-red-100 flex flex-col justify-between h-full hover:shadow-md transition-shadow duration-200">
+                            <div 
+                              key={idx} 
+                              onClick={() => setSelectedInvoice(inv)}
+                              className="bg-white p-3 rounded-md shadow-sm border border-red-100 flex flex-col justify-between h-full hover:shadow-md transition-shadow duration-200 cursor-pointer hover:bg-red-50"
+                            >
                                 <div className="flex justify-between items-start mb-2">
                                     <div className="font-bold text-gray-700 text-sm truncate pr-2 flex-1" title={inv.supplier || ''}>{inv.supplier || 'Proveedor desconocido'}</div>
                                     <div className="text-xs text-red-600 font-bold bg-red-50 px-2 py-0.5 rounded border border-red-100 whitespace-nowrap">
@@ -709,6 +728,102 @@ export const Dashboard: React.FC = () => {
           </div>
       </div>
       </>
+      )}
+
+      {/* Invoice Detail Modal */}
+      {selectedInvoice && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 overflow-y-auto h-full w-full flex items-center justify-center z-50 p-4">
+          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 md:p-5 border-b rounded-t bg-gray-50">
+              <h3 className="text-xl font-semibold text-gray-900 flex items-center">
+                <DollarSign className="w-5 h-5 mr-2 text-blue-600" />
+                Detalle de Factura N° {selectedInvoice.invoice_number || '-'}
+              </h3>
+              <button
+                onClick={() => setSelectedInvoice(null)}
+                className="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ms-auto inline-flex justify-center items-center"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 md:p-5 space-y-4 overflow-y-auto">
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <p className="text-sm text-gray-500 font-medium">Proveedor</p>
+                  <p className="text-base font-semibold text-gray-900">{selectedInvoice.supplier || 'Desconocido'}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500 font-medium">Fecha de Vencimiento</p>
+                  <p className="text-base font-semibold text-red-600">
+                    {selectedInvoice.due_date ? new Date(selectedInvoice.due_date).toLocaleDateString('es-CL') : 'N/A'}
+                  </p>
+                </div>
+              </div>
+
+              {selectedInvoice.notes && (
+                <div className="mb-4 bg-yellow-50 p-3 rounded-md border border-yellow-100">
+                  <p className="text-sm text-yellow-800"><span className="font-semibold">Notas:</span> {selectedInvoice.notes}</p>
+                </div>
+              )}
+
+              <div>
+                <h4 className="text-md font-semibold text-gray-800 mb-3 border-b pb-2">Ítems de la Factura</h4>
+                {selectedInvoice.invoice_items && selectedInvoice.invoice_items.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left text-gray-500">
+                      <thead className="text-xs text-gray-700 uppercase bg-gray-100">
+                        <tr>
+                          <th className="px-4 py-2">Categoría / Producto</th>
+                          <th className="px-4 py-2 text-right">Cant.</th>
+                          <th className="px-4 py-2 text-right">Precio Unit.</th>
+                          <th className="px-4 py-2 text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedInvoice.invoice_items.map((item: any, idx: number) => (
+                          <tr key={idx} className="bg-white border-b">
+                            <td className="px-4 py-2">
+                              <div className="font-medium text-gray-900">{item.products?.name || item.category || 'Ítem'}</div>
+                              {item.category && item.products?.name && (
+                                <div className="text-xs text-gray-500">{item.category}</div>
+                              )}
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                              {item.quantity} {item.products?.unit || ''}
+                            </td>
+                            <td className="px-4 py-2 text-right">{formatCLP(item.unit_price)}</td>
+                            <td className="px-4 py-2 text-right font-medium text-gray-900">{formatCLP(item.total_price)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="font-semibold text-gray-900 bg-gray-50">
+                          <td colSpan={3} className="px-4 py-3 text-right">Total Factura:</td>
+                          <td className="px-4 py-3 text-right text-lg text-blue-600">{formatCLP(selectedInvoice.total_amount)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-gray-500 italic text-sm text-center py-4">No hay ítems registrados en esta factura.</p>
+                )}
+              </div>
+            </div>
+            
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end p-4 border-t border-gray-200 rounded-b bg-gray-50">
+              <button
+                onClick={() => setSelectedInvoice(null)}
+                className="text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showNewCompanyModal && (
