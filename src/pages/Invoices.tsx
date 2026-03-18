@@ -36,6 +36,7 @@ interface Invoice {
   supplier: string;
   supplier_rut?: string;
   invoice_date: string;
+  payment_date?: string; // Added payment date
   total_amount: number;
   status: string;
   items?: any[];
@@ -287,7 +288,7 @@ export const Invoices: React.FC = () => {
     let query = supabase
       .from('invoices')
       .select(`
-        id, invoice_number, supplier, supplier_rut, invoice_date, total_amount, status, due_date, notes, document_type,
+        id, invoice_number, supplier, supplier_rut, invoice_date, payment_date, total_amount, status, due_date, notes, document_type,
         tax_percentage, discount_amount, exempt_amount, special_tax_amount,
         invoice_items (
           id, quantity, unit_price, total_price, category, product_id,
@@ -985,18 +986,23 @@ export const Invoices: React.FC = () => {
     e.stopPropagation(); // Prevent opening edit mode
     
     const newStatus = invoice.status === 'Pagada' ? 'Pendiente' : 'Pagada';
+    // If marking as Paid, set date to today. If unmarking, clear date.
+    const newPaymentDate = newStatus === 'Pagada' ? new Date().toISOString().split('T')[0] : null;
     
     try {
         const { error } = await supabase
             .from('invoices')
-            .update({ status: newStatus })
+            .update({ 
+                status: newStatus,
+                payment_date: newPaymentDate
+            })
             .eq('id', invoice.id);
 
         if (error) throw error;
 
         // Update local state directly to reflect change immediately
         const updatedInvoices = allInvoices.map(inv => 
-            inv.id === invoice.id ? { ...inv, status: newStatus } : inv
+            inv.id === invoice.id ? { ...inv, status: newStatus, payment_date: newPaymentDate } : inv
         );
         setAllInvoices(updatedInvoices);
         
@@ -2039,6 +2045,11 @@ export const Invoices: React.FC = () => {
                           }`}>
                             {inv.status}
                           </span>
+                          {inv.status === 'Pagada' && inv.payment_date && (
+                              <span className="text-[10px] text-green-400 font-medium mt-0.5">
+                                  Pagado: {new Date(inv.payment_date).toLocaleDateString()}
+                              </span>
+                          )}
                           <span className="text-[10px] text-gray-500">
                             {inv.invoice_items?.length || 0} items
                           </span>
