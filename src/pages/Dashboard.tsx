@@ -481,7 +481,7 @@ export const Dashboard: React.FC = () => {
                                 <div className="flex justify-between items-start mb-2">
                                     <div className="font-bold text-gray-700 text-sm truncate pr-2 flex-1" title={inv.supplier || ''}>{inv.supplier || 'Proveedor desconocido'}</div>
                                     <div className="text-xs text-red-600 font-bold bg-red-50 px-2 py-0.5 rounded border border-red-100 whitespace-nowrap">
-                                        {inv.due_date ? new Date(inv.due_date).toLocaleDateString('es-CL', { day: '2-digit', month: 'numeric' }) : 'N/A'}
+                                        {inv.due_date ? new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' }) : 'N/A'}
                                     </div>
                                 </div>
                                 <div className="flex justify-between items-end">
@@ -758,7 +758,7 @@ export const Dashboard: React.FC = () => {
                 <div>
                   <p className="text-sm text-gray-500 font-medium">Fecha de Vencimiento</p>
                   <p className="text-base font-semibold text-red-600">
-                    {selectedInvoice.due_date ? new Date(selectedInvoice.due_date).toLocaleDateString('es-CL') : 'N/A'}
+                    {selectedInvoice.due_date ? new Date(selectedInvoice.due_date + 'T12:00:00').toLocaleDateString('es-CL') : 'N/A'}
                   </p>
                 </div>
               </div>

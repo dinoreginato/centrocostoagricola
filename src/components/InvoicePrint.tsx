@@ -53,13 +53,13 @@ export const InvoicePrint: React.FC<InvoicePrintProps> = ({ invoice, company, it
             <div className="col-span-2 font-bold">SEÑOR(ES):</div>
             <div className="col-span-6 uppercase">{company?.name}</div>
             <div className="col-span-1 font-bold">FECHA:</div>
-            <div className="col-span-3">{new Date(invoice.invoice_date).toLocaleDateString('es-CL')}</div>
+            <div className="col-span-3">{new Date(invoice.invoice_date + 'T12:00:00').toLocaleDateString('es-CL')}</div>
          </div>
          <div className="grid grid-cols-12 gap-2 mb-1">
             <div className="col-span-2 font-bold">R.U.T.:</div>
             <div className="col-span-6">{company?.rut || 'Sin RUT'}</div>
             <div className="col-span-1 font-bold">VENCE:</div>
-            <div className="col-span-3">{invoice.due_date ? new Date(invoice.due_date).toLocaleDateString('es-CL') : '-'}</div>
+            <div className="col-span-3">{invoice.due_date ? new Date(invoice.due_date + 'T12:00:00').toLocaleDateString('es-CL') : '-'}</div>
          </div>
          <div className="grid grid-cols-12 gap-2 mb-1">
             <div className="col-span-2 font-bold">GIRO:</div>

@@ -98,7 +98,7 @@ export const Invoices: React.FC = () => {
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [supplier, setSupplier] = useState('');
   const [supplierRut, setSupplierRut] = useState('');
-  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
+  const [invoiceDate, setInvoiceDate] = useState(new Date().toLocaleDateString('en-CA'));
   const [dueDate, setDueDate] = useState('');
   const [status, setStatus] = useState('Pendiente');
   const [notes, setNotes] = useState('');
@@ -875,7 +875,7 @@ export const Invoices: React.FC = () => {
     setInvoiceNumber('');
     setSupplier('');
     setSupplierRut('');
-    setInvoiceDate(new Date().toISOString().split('T')[0]);
+    setInvoiceDate(new Date().toLocaleDateString('en-CA'));
     setDueDate('');
     setStatus('Pendiente');
     setNotes('');
@@ -986,8 +986,12 @@ export const Invoices: React.FC = () => {
     e.stopPropagation(); // Prevent opening edit mode
     
     const newStatus = invoice.status === 'Pagada' ? 'Pendiente' : 'Pagada';
-    // If marking as Paid, set date to today. If unmarking, clear date.
-    const newPaymentDate = newStatus === 'Pagada' ? new Date().toISOString().split('T')[0] : null;
+    
+    // Use local date string (YYYY-MM-DD) to avoid timezone issues
+    const today = new Date();
+    const localDate = today.toLocaleDateString('en-CA'); // en-CA gives YYYY-MM-DD format
+    
+    const newPaymentDate = newStatus === 'Pagada' ? localDate : null;
     
     try {
         const { error } = await supabase
@@ -2047,7 +2051,7 @@ export const Invoices: React.FC = () => {
                           </span>
                           {inv.status === 'Pagada' && inv.payment_date && (
                               <span className="text-[10px] text-green-400 font-medium mt-0.5">
-                                  Pagado: {new Date(inv.payment_date).toLocaleDateString()}
+                                  Pagado: {new Date(inv.payment_date + 'T12:00:00').toLocaleDateString()}
                               </span>
                           )}
                           <span className="text-[10px] text-gray-500">
@@ -2057,7 +2061,7 @@ export const Invoices: React.FC = () => {
                       </div>
                       <div className="text-sm text-gray-300 mb-1 truncate">{inv.supplier}</div>
                       <div className="flex justify-between text-xs text-gray-500">
-                        <span>{new Date(inv.invoice_date).toLocaleDateString()}</span>
+                        <span>{new Date(inv.invoice_date + 'T12:00:00').toLocaleDateString()}</span>
                         <span className="font-bold text-gray-300">{formatCLP(inv.total_amount)}</span>
                       </div>
                       
