@@ -4,7 +4,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X, Trash2, Layout, AlertCircle, Printer, Play, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X, Trash2, Layout, AlertCircle, Play, ChevronLeft, ChevronRight } from 'lucide-react';
 import { 
   BarChart, 
   Bar, 
@@ -26,7 +26,6 @@ export const Dashboard: React.FC = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [simpleMode, setSimpleMode] = useState(true); // Default to Zen Mode
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null); // For invoice modal
-  const [isPrinting, setIsPrinting] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
 
@@ -450,21 +449,6 @@ export const Dashboard: React.FC = () => {
             Presentar
           </button>
           
-          <button
-            onClick={() => {
-                setIsPrinting(true);
-                setTimeout(() => {
-                    window.print();
-                    setIsPrinting(false);
-                }, 500);
-            }}
-            className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 shadow-sm"
-            title="Exportar a PDF / Imprimir"
-          >
-            <Printer className="h-4 w-4 mr-1" />
-            Reporte PDF
-          </button>
-          
           <div className="h-6 w-px bg-gray-300 mx-1"></div>
 
           <button
@@ -530,7 +514,7 @@ export const Dashboard: React.FC = () => {
       {simpleMode ? (
         // SIMPLE MODE UI
         <div className="space-y-8 mt-8 print:mt-4">
-            {upcomingInvoices.length > 0 && !isPrinting && (
+            {upcomingInvoices.length > 0 && (
                 <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-r-2xl shadow-sm print:hidden">
                     <div className="flex items-center mb-4">
                         <AlertCircle className="h-6 w-6 text-red-600 mr-2" />
