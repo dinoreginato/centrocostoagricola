@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Plus, FileText, Calendar, Trash2, Save, Loader2, Filter, ChevronDown, Check, Download, Upload, RefreshCw, Search, Printer } from 'lucide-react';
+import { Plus, FileText, Calendar, Trash2, Save, Loader2, Filter, ChevronDown, Check, Download, Upload, RefreshCw, Search, Printer, ChevronLeft, ChevronRight } from 'lucide-react';
 import { InvoicePrint } from '../components/InvoicePrint';
 
 interface InvoiceItem {
@@ -139,6 +139,10 @@ export const Invoices: React.FC = () => {
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
   const [availableYears, setAvailableYears] = useState<string[]>([new Date().getFullYear().toString()]);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const [destinationsLoading, setDestinationsLoading] = useState(false);
   const [invoiceToPrint, setInvoiceToPrint] = useState<Invoice | null>(null);
@@ -375,7 +379,12 @@ export const Invoices: React.FC = () => {
     }
   };
 
-  const getFilteredInvoices = () => {
+    // Reset to page 1 on search/filter
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery, filterStatus, filterDateFrom, filterDateTo, selectedYear]);
+
+    const getFilteredInvoices = () => {
     let filtered = allInvoices;
 
     // 1. Date Range Filter
@@ -2030,9 +2039,9 @@ export const Invoices: React.FC = () => {
                 <span className="text-xs text-gray-500">{getFilteredInvoices().length} encontrados</span>
               </div>
               
-              <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2">
-                {getFilteredInvoices().length > 0 ? (
-                  getFilteredInvoices().map(inv => (
+              <div className="space-y-2 pr-2">
+                {paginatedInvoices.length > 0 ? (
+                  paginatedInvoices.map(inv => (
                     <div 
                       key={inv.id} 
                       onClick={() => handleEditClick(inv)}
@@ -2089,6 +2098,29 @@ export const Invoices: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-800">
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <span className="text-xs text-gray-500">
+                    Página {currentPage} de {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="p-1 rounded-md text-gray-400 hover:text-white hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <>
