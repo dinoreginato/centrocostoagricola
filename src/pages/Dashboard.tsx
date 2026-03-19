@@ -565,24 +565,24 @@ export const Dashboard: React.FC = () => {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 print:grid-cols-4 print:gap-4">
-                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl shadow-lg p-6 lg:p-8 text-white transform transition hover:scale-105 print:transform-none print:shadow-none print:border print:border-gray-200 print:text-black print:bg-none print:bg-white flex flex-col justify-center">
-                    <div className="text-green-100 text-sm lg:text-lg font-medium mb-1 lg:mb-2 print:text-gray-600">Costo Total Acumulado</div>
-                    <div className="text-3xl lg:text-4xl xl:text-5xl font-bold truncate print:text-3xl" title={formatCLP(Number(dashboardStats.totalCost) || 0)}>
+                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl shadow-lg p-6 text-white transform transition hover:scale-105 print:transform-none print:shadow-none print:border print:border-gray-200 print:text-black print:bg-none print:bg-white flex flex-col justify-center">
+                    <div className="text-green-100 text-sm font-medium mb-1 print:text-gray-600">Costo Total Acumulado</div>
+                    <div className="text-2xl lg:text-3xl font-bold truncate print:text-2xl" title={formatCLP(Number(dashboardStats.totalCost) || 0)}>
                         {formatCLP(Number(dashboardStats.totalCost) || 0)}
                     </div>
-                    <div className="mt-2 lg:mt-4 text-green-100 flex items-center text-xs lg:text-sm print:text-gray-500 print:mt-2">
-                        <TrendingUp className="h-4 w-4 lg:h-5 lg:w-5 mr-1 lg:mr-2 print:text-gray-400" />
+                    <div className="mt-2 text-green-100 flex items-center text-xs print:text-gray-500 print:mt-2">
+                        <TrendingUp className="h-4 w-4 mr-1 print:text-gray-400" />
                         <span>Inversión Total</span>
                     </div>
                 </div>
 
-                <div className="bg-white rounded-2xl shadow-lg p-6 lg:p-8 border border-gray-100 transform transition hover:scale-105 print:transform-none print:shadow-none flex flex-col justify-center">
-                    <div className="text-gray-500 text-sm lg:text-lg font-medium mb-1 lg:mb-2">Costo Promedio / Hectárea</div>
-                    <div className="text-3xl lg:text-4xl xl:text-5xl font-bold text-gray-800 truncate print:text-3xl" title={formatCLP(Number(dashboardStats.costPerHectare) || 0)}>
+                <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 transform transition hover:scale-105 print:transform-none print:shadow-none flex flex-col justify-center">
+                    <div className="text-gray-500 text-sm font-medium mb-1">Costo Promedio / Hectárea</div>
+                    <div className="text-2xl lg:text-3xl font-bold text-gray-800 truncate print:text-2xl" title={formatCLP(Number(dashboardStats.costPerHectare) || 0)}>
                         {formatCLP(Number(dashboardStats.costPerHectare) || 0)}
                     </div>
-                    <div className="mt-2 lg:mt-4 text-gray-400 flex items-center text-xs lg:text-sm print:mt-2">
-                        <Map className="h-4 w-4 lg:h-5 lg:w-5 mr-1 lg:mr-2" />
+                    <div className="mt-2 text-gray-400 flex items-center text-xs print:mt-2">
+                        <Map className="h-4 w-4 mr-1" />
                         <span>{dashboardStats.totalHectares} Hectáreas Totales</span>
                     </div>
                 </div>
