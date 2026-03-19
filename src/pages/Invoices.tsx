@@ -422,6 +422,10 @@ export const Invoices: React.FC = () => {
     return uniqueInvoices;
   };
 
+  const filteredInvoices = getFilteredInvoices();
+  const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage);
+  const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
   const handleProductChange = async (val: string) => {
     // Check if selecting existing or new
     // For simplicity in this UI, we treat input as name search or new name
