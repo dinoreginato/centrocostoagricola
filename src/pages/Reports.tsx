@@ -146,6 +146,7 @@ export const Reports: React.FC = () => {
   const [showIncomeModal, setShowIncomeModal] = useState(false);
   const [editingIncome, setEditingIncome] = useState<Partial<IncomeEntry>>({});
   const [distributeGeneralCosts, setDistributeGeneralCosts] = useState(false);
+  const [pdfOrientation, setPdfOrientation] = useState<'portrait' | 'landscape'>('landscape'); // Default landscape
 
   // Display State
   const [reportData, setReportData] = useState<ReportData[]>([]);
@@ -168,6 +169,7 @@ export const Reports: React.FC = () => {
 
   // Presentation State
   const [presentationMode, setPresentationMode] = useState(false);
+  const [currentSlide, setCurrentSlide] = useState(0);
 
   // Filtered Pending Invoices
   const filteredPendingInvoices = pendingInvoices.filter(invoice => {
@@ -202,7 +204,14 @@ export const Reports: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!presentationMode) return;
-      if (e.key === 'Escape') {
+      
+      if (e.key === 'ArrowRight' || e.key === ' ') {
+        e.preventDefault();
+        setCurrentSlide(s => Math.min(s + 1, 1)); // 2 slides total (0 to 1)
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setCurrentSlide(s => Math.max(s - 1, 0));
+      } else if (e.key === 'Escape') {
         exitPresentation();
       }
     };
@@ -212,6 +221,7 @@ export const Reports: React.FC = () => {
 
   const startPresentation = () => {
     setPresentationMode(true);
+    setCurrentSlide(0);
     const elem = document.documentElement;
     if (elem.requestFullscreen) {
       elem.requestFullscreen().catch(err => console.log('Error attempting to enable fullscreen:', err));
