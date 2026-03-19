@@ -5,7 +5,7 @@ import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { getSeasonFromDate, getSeasonRange, isDateInSeason } from '../lib/seasonUtils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { FileDown, Loader2, Calendar, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer, Settings, DollarSign, Scale } from 'lucide-react';
+import { FileDown, Loader2, Calendar, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer, Settings, DollarSign, Scale, Play, ChevronLeft, ChevronRight } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
@@ -167,6 +167,9 @@ export const Reports: React.FC = () => {
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState('');
 
+  // Presentation State
+  const [presentationMode, setPresentationMode] = useState(false);
+
   // Filtered Pending Invoices
   const filteredPendingInvoices = pendingInvoices.filter(invoice => {
     if (!pendingStartDate && !pendingEndDate) return true;
@@ -196,6 +199,32 @@ export const Reports: React.FC = () => {
       loadRawData();
     }
   }, [selectedCompany]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!presentationMode) return;
+      if (e.key === 'Escape') {
+        exitPresentation();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [presentationMode]);
+
+  const startPresentation = () => {
+    setPresentationMode(true);
+    const elem = document.documentElement;
+    if (elem.requestFullscreen) {
+      elem.requestFullscreen().catch(err => console.log('Error attempting to enable fullscreen:', err));
+    }
+  };
+
+  const exitPresentation = () => {
+    setPresentationMode(false);
+    if (document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(err => console.log('Error attempting to exit fullscreen:', err));
+    }
+  };
 
   // Process data whenever raw data or selected season changes
   useEffect(() => {
@@ -1147,6 +1176,14 @@ export const Reports: React.FC = () => {
               ))}
             </select>
           </div>
+
+          <button
+            onClick={startPresentation}
+            className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+            title="Iniciar Presentación a Pantalla Completa"
+          >
+            <Play className="mr-2 h-4 w-4" /> Presentar
+          </button>
 
           <div className="relative">
             <select
@@ -2478,6 +2515,194 @@ export const Reports: React.FC = () => {
             </div>
         </div>
       )}
+      {/* PRESENTATION MODE OVERLAY */}
+      {presentationMode && (
+        <div className="fixed inset-0 z-[99999] bg-slate-50 flex flex-col font-sans text-slate-900">
+          {/* Top Bar (Auto-hides slightly, visible on hover) */}
+          <div className="flex justify-between items-center p-6 opacity-30 hover:opacity-100 transition-opacity absolute top-0 left-0 right-0 z-10">
+            <div className="text-xl font-bold text-slate-400">{selectedCompany?.name} - {getReportTitle()}</div>
+            <button onClick={exitPresentation} className="text-slate-400 hover:text-red-500 bg-white/80 rounded-full p-2">
+              <X className="w-8 h-8" />
+            </button>
+          </div>
+
+          {/* Slides */}
+          <div className="flex-1 flex flex-col items-center justify-center p-12 relative w-full max-w-[95vw] mx-auto overflow-hidden">
+            
+            {/* Slide 0: Title */}
+            {currentSlide === 0 && (
+              <div className="text-center animate-fade-in-up w-full">
+                <FileText className="w-32 h-32 text-purple-600 mx-auto mb-8" />
+                <h1 className="text-5xl lg:text-6xl font-extrabold text-slate-800 mb-6">Reporte: {getReportTitle()}</h1>
+                <h2 className="text-3xl lg:text-4xl text-purple-600 font-medium mb-12">{selectedCompany?.name}</h2>
+                <p className="text-xl lg:text-2xl text-slate-500">
+                  Temporada {selectedSeason}
+                </p>
+              </div>
+            )}
+
+            {/* Slide 1: Content depending on active tab */}
+            {currentSlide === 1 && (
+              <div className="w-full h-full flex flex-col animate-fade-in-up pt-10">
+                <h2 className="text-4xl lg:text-5xl font-bold text-slate-800 mb-8 text-center">{getReportTitle()}</h2>
+                
+                <div className="flex-1 bg-white rounded-3xl shadow-xl p-8 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 200px)' }}>
+                  
+                  {/* General Report */}
+                  {activeTab === 'general' && (
+                    <table className="w-full text-left text-lg">
+                      <thead className="text-xl text-slate-500 bg-slate-50 sticky top-0">
+                        <tr>
+                          <th className="p-4">Sector/Campo</th>
+                          <th className="p-4 text-right">Hectáreas</th>
+                          <th className="p-4 text-right">Prod (Kg)</th>
+                          <th className="p-4 text-right">Total (CLP)</th>
+                          <th className="p-4 text-right font-bold text-purple-700">Costo/Ha (CLP)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {reportData.map((row, idx) => (
+                          <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
+                            <td className="p-4">
+                              <div className="font-bold text-slate-800">{row.sector_name}</div>
+                              <div className="text-base text-slate-500">{row.field_name}</div>
+                            </td>
+                            <td className="p-4 text-right">{row.hectares}</td>
+                            <td className="p-4 text-right">{(row.kg_produced || 0).toLocaleString('es-CL')}</td>
+                            <td className="p-4 text-right">{formatCLP(row.total_cost)}</td>
+                            <td className="p-4 text-right font-bold text-purple-600">{formatCLP(row.cost_per_ha)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+
+                  {/* Monthly Expenses */}
+                  {activeTab === 'monthly' && (
+                    <div className="h-full min-h-[400px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={monthlyExpenses} margin={{ top: 20, right: 30, left: 60, bottom: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                          <XAxis dataKey="month" tick={{fontSize: 16, fill: '#475569'}} axisLine={false} tickLine={false} dy={10} />
+                          <YAxis tickFormatter={(value) => formatCLP(value)} tick={{fontSize: 16, fill: '#475569'}} axisLine={false} tickLine={false} dx={-10} />
+                          <Tooltip formatter={(value) => formatCLP(Number(value))} cursor={{fill: '#f1f5f9'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}} />
+                          <Bar dataKey="total" name="Total Gastado" fill="#8b5cf6" radius={[8, 8, 0, 0]} barSize={60} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+
+                  {/* Categories */}
+                  {activeTab === 'categories' && (
+                     <div className="h-full min-h-[500px] flex justify-center">
+                        <ResponsiveContainer width="80%" height="100%">
+                            <PieChart>
+                                <Pie
+                                    data={categoryExpenses.sort((a,b) => b.total - a.total).slice(0, 10)} // Top 10 for presentation
+                                    cx="50%"
+                                    cy="50%"
+                                    labelLine={true}
+                                    label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                                    outerRadius={200}
+                                    fill="#8884d8"
+                                    dataKey="total"
+                                    nameKey="category"
+                                >
+                                    {categoryExpenses.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                    ))}
+                                </Pie>
+                                <Tooltip formatter={(value: number) => formatCLP(value)} />
+                                <Legend wrapperStyle={{ fontSize: '18px' }}/>
+                            </PieChart>
+                        </ResponsiveContainer>
+                     </div>
+                  )}
+
+                  {/* Pending Invoices */}
+                  {activeTab === 'pending' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                      {filteredPendingInvoices.map((inv, idx) => (
+                        <div key={idx} className="bg-white p-8 rounded-2xl shadow border-l-8 border-red-500 flex flex-col">
+                          <div className="text-2xl font-bold text-slate-800 mb-2 truncate" title={inv.supplier}>{inv.supplier}</div>
+                          <div className="text-xl text-slate-500 mb-6">N° {inv.invoice_number}</div>
+                          <div className="flex justify-between items-end mt-auto pt-4 border-t border-slate-100">
+                            <div>
+                              <div className="text-sm text-slate-400 uppercase tracking-wider mb-1">Vencimiento</div>
+                              <div className="text-xl font-semibold text-red-600">
+                                {new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })}
+                              </div>
+                            </div>
+                            <div className="text-3xl font-bold text-slate-800">{formatCLP(inv.total_amount)}</div>
+                          </div>
+                        </div>
+                      ))}
+                      {filteredPendingInvoices.length === 0 && (
+                         <div className="col-span-full text-center text-3xl text-slate-400 py-20">No hay facturas pendientes.</div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Add fallback for other tabs to show a simple table or message */}
+                  {!['general', 'monthly', 'categories', 'pending'].includes(activeTab) && (
+                      <div className="text-center text-3xl text-slate-400 py-20 flex flex-col items-center">
+                          <AlertCircle className="w-20 h-20 mb-6 text-slate-300" />
+                          <p>Para esta vista, recomendamos generar el PDF o usar la tabla detallada.</p>
+                          <button onClick={exitPresentation} className="mt-8 px-6 py-3 bg-purple-100 text-purple-700 rounded-lg font-medium text-xl hover:bg-purple-200">
+                              Volver a la vista normal
+                          </button>
+                      </div>
+                  )}
+
+                </div>
+              </div>
+            )}
+            
+          </div>
+
+          {/* Bottom Bar / Controls */}
+          <div className="flex justify-between items-center p-6 bg-white/80 backdrop-blur-sm absolute bottom-0 left-0 right-0 z-10 border-t border-slate-200">
+            <div className="text-slate-400 text-sm lg:text-base flex items-center">
+              <span className="hidden sm:inline">Use las flechas del teclado </span>
+              <span className="font-mono bg-slate-100 px-2 py-1 rounded ml-2">←</span>
+              <span className="font-mono bg-slate-100 px-2 py-1 rounded ml-1">→</span>
+              <span className="hidden sm:inline ml-2"> para navegar, o </span>
+              <span className="font-mono bg-slate-100 px-2 py-1 rounded ml-2">ESC</span>
+              <span className="hidden sm:inline ml-2"> para salir</span>
+            </div>
+            <div className="flex items-center space-x-2 sm:space-x-6">
+              <button 
+                onClick={() => setCurrentSlide(s => Math.max(s - 1, 0))}
+                disabled={currentSlide === 0}
+                className="p-2 sm:p-3 rounded-full hover:bg-slate-200 text-slate-600 disabled:opacity-30 transition-colors"
+              >
+                <ChevronLeft className="w-6 h-6 sm:w-8 sm:h-8" />
+              </button>
+              <div className="text-xl sm:text-2xl font-bold text-slate-500 w-16 text-center">
+                {currentSlide + 1} / 2
+              </div>
+              <button 
+                onClick={() => setCurrentSlide(s => Math.min(s + 1, 1))}
+                disabled={currentSlide === 1}
+                className="p-2 sm:p-3 rounded-full hover:bg-slate-200 text-slate-600 disabled:opacity-30 transition-colors"
+              >
+                <ChevronRight className="w-6 h-6 sm:w-8 sm:h-8" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CSS para impresión y animaciones */}
+      <style>{`
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in-up {
+          animation: fadeInUp 0.5s ease-out forwards;
+        }
+      `}</style>
     </div>
   );
 };
