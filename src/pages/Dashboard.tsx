@@ -564,44 +564,44 @@ export const Dashboard: React.FC = () => {
                 </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 print:grid-cols-4 print:gap-4">
-                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl shadow-lg p-6 text-white transform transition hover:scale-105 print:transform-none print:shadow-none print:border print:border-gray-200 print:text-black print:bg-none print:bg-white flex flex-col justify-center">
-                    <div className="text-green-100 text-sm font-medium mb-1 print:text-gray-600">Costo Total Acumulado</div>
-                    <div className="text-2xl lg:text-3xl font-bold truncate print:text-2xl" title={formatCLP(Number(dashboardStats.totalCost) || 0)}>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 print:grid-cols-4 print:gap-4">
+                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-sm p-4 lg:p-5 text-white transform transition hover:scale-105 print:transform-none print:shadow-none print:border print:border-gray-200 print:text-black print:bg-none print:bg-white flex flex-col justify-center">
+                    <div className="text-green-100 text-xs lg:text-sm font-medium mb-1 print:text-gray-600">Costo Total Acumulado</div>
+                    <div className="text-xl lg:text-2xl font-bold truncate print:text-xl" title={formatCLP(Number(dashboardStats.totalCost) || 0)}>
                         {formatCLP(Number(dashboardStats.totalCost) || 0)}
                     </div>
-                    <div className="mt-2 text-green-100 flex items-center text-xs print:text-gray-500 print:mt-2">
-                        <TrendingUp className="h-4 w-4 mr-1 print:text-gray-400" />
+                    <div className="mt-2 text-green-100 flex items-center text-[10px] lg:text-xs print:text-gray-500 print:mt-2">
+                        <TrendingUp className="h-3 w-3 mr-1 print:text-gray-400" />
                         <span>Inversión Total</span>
                     </div>
                 </div>
 
-                <div className="bg-white rounded-2xl shadow-lg p-6 border border-gray-100 transform transition hover:scale-105 print:transform-none print:shadow-none flex flex-col justify-center">
-                    <div className="text-gray-500 text-sm font-medium mb-1">Costo Promedio / Hectárea</div>
-                    <div className="text-2xl lg:text-3xl font-bold text-gray-800 truncate print:text-2xl" title={formatCLP(Number(dashboardStats.costPerHectare) || 0)}>
+                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-5 border border-gray-100 transform transition hover:scale-105 print:transform-none print:shadow-none flex flex-col justify-center">
+                    <div className="text-gray-500 text-xs lg:text-sm font-medium mb-1">Costo Promedio / Hectárea</div>
+                    <div className="text-xl lg:text-2xl font-bold text-gray-800 truncate print:text-xl" title={formatCLP(Number(dashboardStats.costPerHectare) || 0)}>
                         {formatCLP(Number(dashboardStats.costPerHectare) || 0)}
                     </div>
-                    <div className="mt-2 text-gray-400 flex items-center text-xs print:mt-2">
-                        <Map className="h-4 w-4 mr-1" />
+                    <div className="mt-2 text-gray-400 flex items-center text-[10px] lg:text-xs print:mt-2">
+                        <Map className="h-3 w-3 mr-1" />
                         <span>{dashboardStats.totalHectares} Hectáreas Totales</span>
                     </div>
                 </div>
 
-                <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 transform transition hover:scale-105 print:transform-none print:shadow-none">
-                    <div className="text-gray-500 text-lg font-medium mb-4 print:mb-2">Sectores Más Costosos</div>
-                    <div className="space-y-4">
+                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-5 border border-gray-100 transform transition hover:scale-105 print:transform-none print:shadow-none">
+                    <div className="text-gray-500 text-xs lg:text-sm font-medium mb-3 print:mb-2">Sectores Más Costosos</div>
+                    <div className="space-y-3">
                         {Array.isArray(sectorChartData) && sectorChartData.slice(0, 3).map((sector, idx) => (
-                            <div key={idx} className="flex justify-between items-center border-b border-gray-50 pb-2 last:border-0">
+                            <div key={idx} className="flex justify-between items-center border-b border-gray-50 pb-1.5 last:border-0">
                                 <div>
-                                    <div className="font-bold text-gray-800">{sector?.name || 'Sin nombre'}</div>
-                                    <div className="text-xs text-gray-400">{sector?.fieldName || ''}</div>
+                                    <div className="font-bold text-gray-800 text-xs lg:text-sm truncate max-w-[100px]">{sector?.name || 'Sin nombre'}</div>
+                                    <div className="text-[10px] text-gray-400">{sector?.fieldName || ''}</div>
                                 </div>
                                 <div className="text-right">
-                                    <div className="font-bold text-orange-600">{formatCLP(Number(sector?.costPerHa) || 0)}/ha</div>
+                                    <div className="font-bold text-orange-600 text-xs lg:text-sm">{formatCLP(Number(sector?.costPerHa) || 0)}/ha</div>
                                 </div>
                             </div>
                         ))}
-                        {(!sectorChartData || sectorChartData.length === 0) && <div className="text-gray-400 italic">Sin datos</div>}
+                        {(!sectorChartData || sectorChartData.length === 0) && <div className="text-xs text-gray-400 italic">Sin datos</div>}
                     </div>
                 </div>
 

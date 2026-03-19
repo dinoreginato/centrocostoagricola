@@ -26,6 +26,18 @@ import {
 } from 'lucide-react';
 import { ChangePasswordModal } from './ChangePasswordModal';
 
+type NavItem = {
+  name: string;
+  href: string;
+  icon: any;
+  roles: string[];
+};
+
+type NavGroup = {
+  title: string;
+  items: NavItem[];
+};
+
 export const Layout: React.FC = () => {
   const { user, loading, signOut } = useAuth();
   const { userRole, companies, selectedCompany, selectCompany } = useCompany();
@@ -45,29 +57,54 @@ export const Layout: React.FC = () => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Define navigation items
-  const allNavItems = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin', 'viewer'] },
-    { name: 'Campos', href: '/campos', icon: Map, roles: ['admin', 'viewer'] },
-    { name: 'Facturas', href: '/facturas', icon: FileText, roles: ['admin'] },
-    { name: 'Labores', href: '/labores', icon: Users, roles: ['admin', 'editor', 'viewer'] },
-    { name: 'Maquinaria', href: '/maquinaria', icon: Tractor, roles: ['admin', 'editor', 'viewer'] },
-    { name: 'Riego', href: '/riego', icon: Droplets, roles: ['admin', 'editor', 'viewer'] },
-    { name: 'Petróleo', href: '/petroleo', icon: Fuel, roles: ['admin', 'editor', 'viewer'] },
-    { name: 'Trabajadores', href: '/trabajadores', icon: Briefcase, roles: ['admin', 'editor', 'viewer'] },
-    { name: 'Bodega', href: '/bodega', icon: Package, roles: ['admin', 'editor', 'viewer'] },
-    { name: 'Aplicaciones', href: '/aplicaciones', icon: ClipboardList, roles: ['admin', 'editor', 'viewer'] },
-    { name: 'Ordenes de Aplicación', href: '/ordenes-aplicacion', icon: FileText, roles: ['admin', 'editor', 'viewer'] },
-    { name: 'Precios Químicos', href: '/precios-quimicos', icon: Beaker, roles: ['admin', 'editor', 'viewer'] },
-    { name: 'Distribución Costos', href: '/otros-costos', icon: LayoutList, roles: ['admin', 'editor', 'viewer'] },
-    { name: 'Reportes', href: '/reportes', icon: BarChart3, roles: ['admin', 'viewer'] },
-    // Removed "Usuarios" from sidebar for regular users, accessible via top right or special admin page
-    ...(userRole === 'admin' ? [{ name: 'Usuarios', href: '/usuarios', icon: Users, roles: ['admin'] }] : []),
+  // Define navigation groups
+  const navGroups: NavGroup[] = [
+    {
+      title: 'Principal',
+      items: [
+        { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin', 'viewer'] },
+        { name: 'Reportes', href: '/reportes', icon: BarChart3, roles: ['admin', 'viewer'] },
+      ]
+    },
+    {
+      title: 'Finanzas y Costos',
+      items: [
+        { name: 'Facturas', href: '/facturas', icon: FileText, roles: ['admin'] },
+        { name: 'Distribución Costos', href: '/otros-costos', icon: LayoutList, roles: ['admin', 'editor', 'viewer'] },
+      ]
+    },
+    {
+      title: 'Operaciones',
+      items: [
+        { name: 'Labores', href: '/labores', icon: Users, roles: ['admin', 'editor', 'viewer'] },
+        { name: 'Maquinaria', href: '/maquinaria', icon: Tractor, roles: ['admin', 'editor', 'viewer'] },
+        { name: 'Riego', href: '/riego', icon: Droplets, roles: ['admin', 'editor', 'viewer'] },
+        { name: 'Petróleo', href: '/petroleo', icon: Fuel, roles: ['admin', 'editor', 'viewer'] },
+      ]
+    },
+    {
+      title: 'Inventario (Bodega)',
+      items: [
+        { name: 'Bodega', href: '/bodega', icon: Package, roles: ['admin', 'editor', 'viewer'] },
+        { name: 'Aplicaciones', href: '/aplicaciones', icon: ClipboardList, roles: ['admin', 'editor', 'viewer'] },
+        { name: 'Ordenes de Aplic.', href: '/ordenes-aplicacion', icon: FileText, roles: ['admin', 'editor', 'viewer'] },
+      ]
+    },
+    {
+      title: 'Administración',
+      items: [
+        { name: 'Campos', href: '/campos', icon: Map, roles: ['admin', 'viewer'] },
+        { name: 'Trabajadores', href: '/trabajadores', icon: Briefcase, roles: ['admin', 'editor', 'viewer'] },
+        { name: 'Precios Químicos', href: '/precios-quimicos', icon: Beaker, roles: ['admin', 'editor', 'viewer'] },
+        ...(userRole === 'admin' ? [{ name: 'Usuarios', href: '/usuarios', icon: Users, roles: ['admin'] }] : []),
+      ]
+    }
   ];
 
-  const navigation = allNavItems.filter(item => 
-    !userRole || item.roles.includes(userRole)
-  );
+  // Helper to check if a group has any visible items for the user
+  const filterGroupItems = (items: NavItem[]) => {
+    return items.filter(item => !userRole || item.roles.includes(userRole));
+  };
 
   return (
     <div className="min-h-screen bg-gray-100 flex">
@@ -100,26 +137,40 @@ export const Layout: React.FC = () => {
           </div>
 
           <div className="flex-1 flex flex-col overflow-y-auto pt-2 pb-4">
-          <nav className="mt-5 flex-1 px-2 space-y-1">
-            {navigation.map((item) => {
-              const isActive = location.pathname === item.href;
+          <nav className="mt-2 flex-1 px-2 space-y-4">
+            {navGroups.map((group, idx) => {
+              const groupItems = filterGroupItems(group.items);
+              if (groupItems.length === 0) return null;
+
               return (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-                    isActive
-                      ? 'bg-green-50 text-green-700'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                  }`}
-                >
-                  <item.icon
-                    className={`mr-3 flex-shrink-0 h-6 w-6 ${
-                      isActive ? 'text-green-700' : 'text-gray-400 group-hover:text-gray-500'
-                    }`}
-                  />
-                  {item.name}
-                </Link>
+                <div key={group.title} className={idx > 0 ? 'pt-4 border-t border-gray-100' : ''}>
+                  <p className="px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                    {group.title}
+                  </p>
+                  <div className="space-y-1">
+                    {groupItems.map((item) => {
+                      const isActive = location.pathname === item.href;
+                      return (
+                        <Link
+                          key={item.name}
+                          to={item.href}
+                          className={`group flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                            isActive
+                              ? 'bg-green-50 text-green-700'
+                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                          }`}
+                        >
+                          <item.icon
+                            className={`mr-3 flex-shrink-0 h-5 w-5 transition-colors ${
+                              isActive ? 'text-green-700' : 'text-gray-400 group-hover:text-gray-500'
+                            }`}
+                          />
+                          {item.name}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
               );
             })}
           </nav>
@@ -185,32 +236,54 @@ export const Layout: React.FC = () => {
                    ))}
                </select>
            </div>
-           <nav className="mt-2 px-2 space-y-1">
-            {navigation.map((item) => (
-              <Link
-                key={item.name}
-                to={item.href}
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50"
+           <nav className="mt-2 px-2 space-y-4">
+            {navGroups.map((group, idx) => {
+              const groupItems = filterGroupItems(group.items);
+              if (groupItems.length === 0) return null;
+
+              return (
+                <div key={group.title} className={idx > 0 ? 'pt-4 border-t border-gray-200' : ''}>
+                  <p className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    {group.title}
+                  </p>
+                  <div className="space-y-1">
+                    {groupItems.map((item) => {
+                      const isActive = location.pathname === item.href;
+                      return (
+                        <Link
+                          key={item.name}
+                          to={item.href}
+                          onClick={() => setIsMobileMenuOpen(false)}
+                          className={`block px-3 py-2 rounded-md text-base font-medium ${
+                            isActive ? 'text-green-700 bg-green-50' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-center">
+                            <item.icon className={`mr-4 h-6 w-6 ${isActive ? 'text-green-700' : 'text-gray-500'}`} />
+                            {item.name}
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+            
+            <div className="pt-4 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  signOut();
+                  setIsMobileMenuOpen(false);
+                }}
+                className="w-full text-left block px-3 py-2 rounded-md text-base font-medium text-red-600 hover:bg-red-50"
               >
                 <div className="flex items-center">
-                  <item.icon className="mr-4 h-6 w-6 text-gray-500" />
-                  {item.name}
+                  <LogOut className="mr-4 h-6 w-6" />
+                  Cerrar Sesión
                 </div>
-              </Link>
-            ))}
-            <button
-              onClick={() => {
-                signOut();
-                setIsMobileMenuOpen(false);
-              }}
-              className="w-full text-left block px-3 py-2 rounded-md text-base font-medium text-red-600 hover:bg-red-50"
-            >
-              <div className="flex items-center">
-                <LogOut className="mr-4 h-6 w-6" />
-                Cerrar Sesión
-              </div>
-            </button>
+              </button>
+            </div>
           </nav>
         </div>
       )}
