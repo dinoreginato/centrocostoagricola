@@ -4,7 +4,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X, Trash2, Layout, AlertCircle } from 'lucide-react';
+import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X, Trash2, Layout, AlertCircle, Printer } from 'lucide-react';
 import { 
   BarChart, 
   Bar, 
@@ -26,6 +26,7 @@ export const Dashboard: React.FC = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [simpleMode, setSimpleMode] = useState(true); // Default to Zen Mode
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null); // For invoice modal
+  const [isPrinting, setIsPrinting] = useState(false);
 
   const [dashboardStats, setDashboardStats] = useState({
     totalFields: 0,
@@ -398,10 +399,27 @@ export const Dashboard: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded-lg shadow-sm">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard General</h1>
-          <p className="text-sm text-gray-500">Resumen de costos y producción</p>
+          <h1 className="text-2xl font-bold text-gray-900 print:text-3xl print:mb-2">Dashboard General</h1>
+          <p className="text-sm text-gray-500 print:hidden">Resumen de costos y producción</p>
         </div>
-        <div className="mt-4 sm:mt-0 flex items-center space-x-2">
+        <div className="mt-4 sm:mt-0 flex items-center space-x-2 print:hidden">
+          <button
+            onClick={() => {
+                setIsPrinting(true);
+                setTimeout(() => {
+                    window.print();
+                    setIsPrinting(false);
+                }, 500);
+            }}
+            className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 shadow-sm"
+            title="Exportar a PDF / Imprimir"
+          >
+            <Printer className="h-4 w-4 mr-1" />
+            Reporte PDF
+          </button>
+          
+          <div className="h-6 w-px bg-gray-300 mx-1"></div>
+
           <button
             onClick={() => setSimpleMode(!simpleMode)}
             className={`inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
@@ -464,9 +482,9 @@ export const Dashboard: React.FC = () => {
 
       {simpleMode ? (
         // SIMPLE MODE UI
-        <div className="space-y-8 mt-8">
-            {upcomingInvoices.length > 0 && (
-                <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-r-2xl shadow-sm">
+        <div className="space-y-8 mt-8 print:mt-4">
+            {upcomingInvoices.length > 0 && !isPrinting && (
+                <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-r-2xl shadow-sm print:hidden">
                     <div className="flex items-center mb-4">
                         <AlertCircle className="h-6 w-6 text-red-600 mr-2" />
                         <h3 className="text-xl font-bold text-red-800">Facturas Próximas a Vencer ({new Date().getDate() <= 15 ? 'Quincena 1' : 'Quincena 2'})</h3>
@@ -503,27 +521,27 @@ export const Dashboard: React.FC = () => {
                 </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl shadow-lg p-8 text-white transform transition hover:scale-105">
-                    <div className="text-green-100 text-lg font-medium mb-2">Costo Total Acumulado</div>
-                    <div className="text-5xl font-bold">{formatCLP(Number(dashboardStats.totalCost) || 0)}</div>
-                    <div className="mt-4 text-green-100 flex items-center">
-                        <TrendingUp className="h-5 w-5 mr-2" />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 print:grid-cols-3 print:gap-4">
+                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl shadow-lg p-8 text-white transform transition hover:scale-105 print:transform-none print:shadow-none print:border print:border-gray-200 print:text-black print:bg-none print:bg-white">
+                    <div className="text-green-100 text-lg font-medium mb-2 print:text-gray-600">Costo Total Acumulado</div>
+                    <div className="text-5xl font-bold print:text-3xl">{formatCLP(Number(dashboardStats.totalCost) || 0)}</div>
+                    <div className="mt-4 text-green-100 flex items-center print:text-gray-500 print:mt-2">
+                        <TrendingUp className="h-5 w-5 mr-2 print:text-gray-400" />
                         <span>Inversión Total</span>
                     </div>
                 </div>
 
-                <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 transform transition hover:scale-105">
+                <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 transform transition hover:scale-105 print:transform-none print:shadow-none">
                     <div className="text-gray-500 text-lg font-medium mb-2">Costo Promedio / Hectárea</div>
-                    <div className="text-5xl font-bold text-gray-800">{formatCLP(Number(dashboardStats.costPerHectare) || 0)}</div>
-                    <div className="mt-4 text-gray-400 flex items-center">
+                    <div className="text-5xl font-bold text-gray-800 print:text-3xl">{formatCLP(Number(dashboardStats.costPerHectare) || 0)}</div>
+                    <div className="mt-4 text-gray-400 flex items-center print:mt-2">
                         <Map className="h-5 w-5 mr-2" />
                         <span>{dashboardStats.totalHectares} Hectáreas Totales</span>
                     </div>
                 </div>
 
-                <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 transform transition hover:scale-105">
-                    <div className="text-gray-500 text-lg font-medium mb-4">Sectores Más Costosos</div>
+                <div className="bg-white rounded-2xl shadow-lg p-8 border border-gray-100 transform transition hover:scale-105 print:transform-none print:shadow-none">
+                    <div className="text-gray-500 text-lg font-medium mb-4 print:mb-2">Sectores Más Costosos</div>
                     <div className="space-y-4">
                         {Array.isArray(sectorChartData) && sectorChartData.slice(0, 3).map((sector, idx) => (
                             <div key={idx} className="flex justify-between items-center border-b border-gray-50 pb-2 last:border-0">
@@ -544,11 +562,11 @@ export const Dashboard: React.FC = () => {
       ) : (
         // DETAILED MODE UI (Original)
         <>
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="bg-white overflow-hidden shadow rounded-lg">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-4 print:gap-4 print:mt-4">
+          <div className="bg-white overflow-hidden shadow rounded-lg print:shadow-none print:border print:border-gray-200">
           <div className="p-5">
             <div className="flex items-center">
-              <div className="flex-shrink-0">
+              <div className="flex-shrink-0 print:hidden">
                 <Map className="h-6 w-6 text-gray-400" aria-hidden="true" />
               </div>
               <div className="ml-5 w-0 flex-1">
@@ -563,10 +581,10 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white overflow-hidden shadow rounded-lg">
+        <div className="bg-white overflow-hidden shadow rounded-lg print:shadow-none print:border print:border-gray-200">
           <div className="p-5">
             <div className="flex items-center">
-              <div className="flex-shrink-0">
+              <div className="flex-shrink-0 print:hidden">
                 <TrendingUp className="h-6 w-6 text-gray-400" aria-hidden="true" />
               </div>
               <div className="ml-5 w-0 flex-1">
@@ -581,10 +599,10 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white overflow-hidden shadow rounded-lg">
+        <div className="bg-white overflow-hidden shadow rounded-lg print:shadow-none print:border print:border-gray-200">
           <div className="p-5">
             <div className="flex items-center">
-              <div className="flex-shrink-0">
+              <div className="flex-shrink-0 print:hidden">
                 <DollarSign className="h-6 w-6 text-gray-400" aria-hidden="true" />
               </div>
               <div className="ml-5 w-0 flex-1">
@@ -599,10 +617,10 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white overflow-hidden shadow rounded-lg">
+        <div className="bg-white overflow-hidden shadow rounded-lg print:shadow-none print:border print:border-gray-200">
           <div className="p-5">
             <div className="flex items-center">
-              <div className="flex-shrink-0">
+              <div className="flex-shrink-0 print:hidden">
                 <BarChart3 className="h-6 w-6 text-gray-400" aria-hidden="true" />
               </div>
               <div className="ml-5 w-0 flex-1">
@@ -618,10 +636,10 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white p-6 rounded-lg shadow">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 print:grid-cols-2 print:gap-4 print:mt-4 print:break-inside-avoid">
+          <div className="bg-white p-6 rounded-lg shadow print:shadow-none print:border print:border-gray-200">
             <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Costos por Campo</h3>
-            <div className="h-80 w-full">
+            <div className="h-80 w-full print:h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={chartData}
@@ -638,9 +656,9 @@ export const Dashboard: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-lg shadow">
+          <div className="bg-white p-6 rounded-lg shadow print:shadow-none print:border print:border-gray-200">
             <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Costo / Hectárea por Sector</h3>
-            <div className="h-80 w-full">
+            <div className="h-80 w-full print:h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={sectorChartData.slice(0, 10)} 
@@ -663,7 +681,7 @@ export const Dashboard: React.FC = () => {
           </div>
       </div>
 
-      <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+      <div className="bg-white shadow overflow-hidden sm:rounded-lg print:shadow-none print:border print:border-gray-200 print:mt-4 print:break-inside-avoid">
           <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
             <h3 className="text-lg leading-6 font-medium text-gray-900">Desglose de Costos por Sector</h3>
             <p className="mt-1 text-sm text-gray-500">Detalle de costos acumulados (Aplicaciones + Labores)</p>
@@ -880,6 +898,37 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
       )}
+      {/* CSS para impresión */}
+      <style>{`
+        @media print {
+            @page {
+                size: landscape;
+                margin: 1cm;
+            }
+            body {
+                background-color: white;
+            }
+            nav, header, aside, .sidebar {
+                display: none !important;
+            }
+            .min-h-screen {
+                min-height: auto !important;
+            }
+            main {
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            /* Fix for Recharts in print */
+            .recharts-wrapper {
+                width: 100% !important;
+                height: 100% !important;
+            }
+            .recharts-surface {
+                width: 100% !important;
+                height: 100% !important;
+            }
+        }
+      `}</style>
     </div>
   );
 };
