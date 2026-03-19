@@ -16,6 +16,8 @@ import {
   Legend
 } from 'recharts';
 
+import { WeatherWidget } from '../components/WeatherWidget';
+
 export const Dashboard: React.FC = () => {
   const { companies, selectedCompany, loading, selectCompany, addCompany, refreshCompanies } = useCompany();
   const { user } = useAuth();
@@ -563,7 +565,7 @@ export const Dashboard: React.FC = () => {
                 </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 print:grid-cols-3 print:gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 print:grid-cols-3 print:gap-4">
                 <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl shadow-lg p-8 text-white transform transition hover:scale-105 print:transform-none print:shadow-none print:border print:border-gray-200 print:text-black print:bg-none print:bg-white">
                     <div className="text-green-100 text-lg font-medium mb-2 print:text-gray-600">Costo Total Acumulado</div>
                     <div className="text-5xl font-bold print:text-3xl">{formatCLP(Number(dashboardStats.totalCost) || 0)}</div>
@@ -598,6 +600,11 @@ export const Dashboard: React.FC = () => {
                         ))}
                         {(!sectorChartData || sectorChartData.length === 0) && <div className="text-gray-400 italic">Sin datos</div>}
                     </div>
+                </div>
+
+                {/* Weather Widget Component */}
+                <div className="transform transition hover:scale-105 print:hidden">
+                    <WeatherWidget />
                 </div>
             </div>
         </div>

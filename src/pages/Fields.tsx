@@ -8,6 +8,7 @@ interface Sector {
   id: string;
   name: string;
   hectares: number;
+  budget?: number;
   total_labor_cost?: number;
 }
 
@@ -34,6 +35,7 @@ export const Fields: React.FC = () => {
   const [showSectorForm, setShowSectorForm] = useState<string | null>(null); // Field ID
   const [newSectorName, setNewSectorName] = useState('');
   const [newSectorHectares, setNewSectorHectares] = useState('');
+  const [newSectorBudget, setNewSectorBudget] = useState('');
 
   // Edit Field states
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
@@ -45,6 +47,7 @@ export const Fields: React.FC = () => {
   const [editingSectorId, setEditingSectorId] = useState<string | null>(null);
   const [editSectorName, setEditSectorName] = useState('');
   const [editSectorHectares, setEditSectorHectares] = useState('');
+  const [editSectorBudget, setEditSectorBudget] = useState('');
 
   useEffect(() => {
     if (selectedCompany) {
@@ -196,7 +199,8 @@ export const Fields: React.FC = () => {
         .insert([{
           field_id: fieldId,
           name: newSectorName,
-          hectares: parseFloat(newSectorHectares)
+          hectares: parseFloat(newSectorHectares),
+          budget: newSectorBudget ? parseFloat(newSectorBudget) : 0
         }])
         .select()
         .single();
@@ -216,6 +220,7 @@ export const Fields: React.FC = () => {
       setShowSectorForm(null);
       setNewSectorName('');
       setNewSectorHectares('');
+      setNewSectorBudget('');
     } catch (error) {
       console.error('Error creating sector:', error);
     }
@@ -225,12 +230,14 @@ export const Fields: React.FC = () => {
     setEditingSectorId(sector.id);
     setEditSectorName(sector.name);
     setEditSectorHectares(sector.hectares.toString());
+    setEditSectorBudget(sector.budget ? sector.budget.toString() : '');
   };
 
   const cancelEditingSector = () => {
     setEditingSectorId(null);
     setEditSectorName('');
     setEditSectorHectares('');
+    setEditSectorBudget('');
   };
 
   const handleUpdateSector = async (e: React.FormEvent, sectorId: string, fieldId: string) => {
@@ -240,7 +247,8 @@ export const Fields: React.FC = () => {
         .from('sectors')
         .update({
           name: editSectorName,
-          hectares: parseFloat(editSectorHectares)
+          hectares: parseFloat(editSectorHectares),
+          budget: editSectorBudget ? parseFloat(editSectorBudget) : 0
         })
         .eq('id', sectorId)
         .select()
@@ -496,6 +504,13 @@ export const Fields: React.FC = () => {
                                   placeholder="Has"
                                   required
                                 />
+                                <input
+                                  type="number"
+                                  value={editSectorBudget}
+                                  onChange={(e) => setEditSectorBudget(e.target.value)}
+                                  className="block w-32 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                                  placeholder="Ppto/Ha ($)"
+                                />
                                 <button
                                   type="submit"
                                   className="text-green-600 hover:text-green-800"
@@ -519,6 +534,15 @@ export const Fields: React.FC = () => {
                                   <span className="font-medium mr-2">{sector.name}</span>
                                   <span className="text-gray-400 mr-6">({sector.hectares} ha)</span>
                                   
+                                  {sector.budget > 0 && (
+                                    <div className="hidden sm:flex items-center mr-6 text-sm">
+                                      <div className="flex flex-col">
+                                        <span className="text-[10px] uppercase text-gray-400 font-bold">Ppto / Ha</span>
+                                        <span className="font-medium text-blue-600">{formatCLP(sector.budget)}</span>
+                                      </div>
+                                    </div>
+                                  )}
+
                                   {(sector.total_labor_cost || 0) > 0 && (
                                     <div className="hidden sm:flex items-center space-x-6 text-sm">
                                         <div className="flex flex-col">
@@ -575,6 +599,13 @@ export const Fields: React.FC = () => {
                               value={newSectorHectares}
                               onChange={e => setNewSectorHectares(e.target.value)}
                               className="block w-24 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                            />
+                            <input
+                              type="number"
+                              placeholder="Ppto/Ha ($)"
+                              value={newSectorBudget}
+                              onChange={e => setNewSectorBudget(e.target.value)}
+                              className="block w-32 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
                             />
                             <button
                               type="submit"

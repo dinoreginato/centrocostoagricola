@@ -146,7 +146,6 @@ export const Reports: React.FC = () => {
   const [showIncomeModal, setShowIncomeModal] = useState(false);
   const [editingIncome, setEditingIncome] = useState<Partial<IncomeEntry>>({});
   const [distributeGeneralCosts, setDistributeGeneralCosts] = useState(false);
-  const [pdfOrientation, setPdfOrientation] = useState<'portrait' | 'landscape'>('landscape'); // Default landscape
 
   // Display State
   const [reportData, setReportData] = useState<ReportData[]>([]);
@@ -1164,7 +1163,7 @@ export const Reports: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">Reportes de Gestión</h1>
           <p className="text-sm text-gray-500">Vista integral de costos y gastos</p>
         </div>
-        <div className="mt-4 sm:mt-0 flex items-center space-x-3">
+        <div className="mt-4 sm:mt-0 flex flex-wrap items-center gap-3">
           <div className="relative">
             <select
               value={selectedSeason}
@@ -1183,25 +1182,6 @@ export const Reports: React.FC = () => {
             title="Iniciar Presentación a Pantalla Completa"
           >
             <Play className="mr-2 h-4 w-4" /> Presentar
-          </button>
-
-          <div className="relative">
-            <select
-              value={pdfOrientation}
-              onChange={(e) => setPdfOrientation(e.target.value as 'portrait' | 'landscape')}
-              className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm rounded-md"
-              title="Orientación del PDF"
-            >
-              <option value="portrait">Vertical</option>
-              <option value="landscape">Horizontal</option>
-            </select>
-          </div>
-
-          <button 
-            onClick={handleGeneratePDF}
-            className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-          >
-            <Printer className="mr-2 h-4 w-4" /> Generar Informe PDF
           </button>
         </div>
       </div>
@@ -2693,16 +2673,7 @@ export const Reports: React.FC = () => {
         </div>
       )}
 
-      {/* CSS para impresión y animaciones */}
-      <style>{`
-        @keyframes fadeInUp {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in-up {
-          animation: fadeInUp 0.5s ease-out forwards;
-        }
-      `}</style>
+      {/* Add specific CSS for print mode here if needed or use tailwind print classes */}
     </div>
   );
 };
