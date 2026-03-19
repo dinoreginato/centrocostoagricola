@@ -2569,8 +2569,8 @@ export const Reports: React.FC = () => {
               </div>
             )}
 
-            {/* Slide 1: Content depending on active tab */}
-            {currentSlide === 1 && (
+            {/* Slide 1 or 2: Content depending on active tab */}
+            {(currentSlide === 1 || currentSlide === 2) && (
               <div className="w-full h-full flex flex-col animate-fade-in-up pt-10">
                 <h2 className="text-4xl lg:text-5xl font-bold text-slate-800 mb-8 text-center">{getReportTitle()}</h2>
                 
