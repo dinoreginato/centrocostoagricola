@@ -2576,34 +2576,34 @@ export const Reports: React.FC = () => {
 
             {/* Slide 1 or 2: Content depending on active tab */}
             {(currentSlide === 1 || currentSlide === 2) && (
-              <div className="w-full h-full flex flex-col animate-fade-in-up pt-10">
-                <h2 className="text-4xl lg:text-5xl font-bold text-slate-800 mb-8 text-center">{getReportTitle()}</h2>
+              <div className="w-full h-full flex flex-col animate-fade-in-up pt-4">
+                <h2 className="text-3xl lg:text-4xl font-bold text-slate-800 mb-6 text-center">{getReportTitle()}</h2>
                 
-                <div className="flex-1 bg-white rounded-3xl shadow-xl p-8 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 200px)' }}>
+                <div className="flex-1 bg-white rounded-3xl shadow-xl p-6 overflow-y-auto pb-24" style={{ maxHeight: 'calc(100vh - 120px)' }}>
                   
                   {/* General Report - Overview */}
                   {activeTab === 'general' && currentSlide === 1 && (
-                    <table className="w-full text-left text-lg">
-                      <thead className="text-xl text-slate-500 bg-slate-50 sticky top-0">
+                    <table className="w-full text-left text-base lg:text-lg">
+                      <thead className="text-lg lg:text-xl text-slate-500 bg-slate-50 sticky top-0">
                         <tr>
-                          <th className="p-4">Sector/Campo</th>
-                          <th className="p-4 text-right">Hectáreas</th>
-                          <th className="p-4 text-right">Prod (Kg)</th>
-                          <th className="p-4 text-right">Total (CLP)</th>
-                          <th className="p-4 text-right font-bold text-purple-700">Costo/Ha (CLP)</th>
+                          <th className="p-3 lg:p-4">Sector/Campo</th>
+                          <th className="p-3 lg:p-4 text-right">Hectáreas</th>
+                          <th className="p-3 lg:p-4 text-right">Prod (Kg)</th>
+                          <th className="p-3 lg:p-4 text-right">Total (CLP)</th>
+                          <th className="p-3 lg:p-4 text-right font-bold text-purple-700">Costo/Ha (CLP)</th>
                         </tr>
                       </thead>
                       <tbody>
                         {reportData.map((row, idx) => (
                           <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
-                            <td className="p-4">
+                            <td className="p-3 lg:p-4">
                               <div className="font-bold text-slate-800">{row.sector_name}</div>
-                              <div className="text-base text-slate-500">{row.field_name}</div>
+                              <div className="text-sm lg:text-base text-slate-500">{row.field_name}</div>
                             </td>
-                            <td className="p-4 text-right">{row.hectares}</td>
-                            <td className="p-4 text-right">{(row.kg_produced || 0).toLocaleString('es-CL')}</td>
-                            <td className="p-4 text-right">{formatCLP(row.total_cost)}</td>
-                            <td className="p-4 text-right font-bold text-purple-600">{formatCLP(row.cost_per_ha)}</td>
+                            <td className="p-3 lg:p-4 text-right">{row.hectares}</td>
+                            <td className="p-3 lg:p-4 text-right">{(row.kg_produced || 0).toLocaleString('es-CL')}</td>
+                            <td className="p-3 lg:p-4 text-right">{formatCLP(row.total_cost)}</td>
+                            <td className="p-3 lg:p-4 text-right font-bold text-purple-600">{formatCLP(row.cost_per_ha)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -2612,45 +2612,45 @@ export const Reports: React.FC = () => {
 
                   {/* General Report - Cost/Kg & Labor Breakdown */}
                   {activeTab === 'general' && currentSlide === 2 && (
-                    <div className="space-y-8">
-                        <h3 className="text-2xl font-bold text-slate-700 border-b pb-4">Análisis por Kilo y Desglose Operativo</h3>
-                        <table className="w-full text-left text-lg">
-                          <thead className="text-xl text-slate-500 bg-slate-50 sticky top-0">
+                    <div className="space-y-4 lg:space-y-8">
+                        <h3 className="text-xl lg:text-2xl font-bold text-slate-700 border-b pb-2 lg:pb-4">Análisis por Kilo y Desglose Operativo</h3>
+                        <table className="w-full text-left text-base lg:text-lg">
+                          <thead className="text-lg lg:text-xl text-slate-500 bg-slate-50 sticky top-0">
                             <tr>
-                              <th className="p-4">Sector/Campo</th>
-                              <th className="p-4 text-right text-blue-700 font-bold">Costo / Kg</th>
-                              <th className="p-4 text-right">Mano de Obra (Labores)</th>
-                              <th className="p-4 text-right">Insumos (Aplic.)</th>
-                              <th className="p-4 text-right">Maquinaria</th>
+                              <th className="p-3 lg:p-4">Sector/Campo</th>
+                              <th className="p-3 lg:p-4 text-right text-blue-700 font-bold">Costo / Kg</th>
+                              <th className="p-3 lg:p-4 text-right">Mano de Obra (Labores)</th>
+                              <th className="p-3 lg:p-4 text-right">Insumos (Aplic.)</th>
+                              <th className="p-3 lg:p-4 text-right">Maquinaria</th>
                             </tr>
                           </thead>
                           <tbody>
                             {reportData.map((row, idx) => (
                               <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
-                                <td className="p-4">
+                                <td className="p-3 lg:p-4">
                                   <div className="font-bold text-slate-800">{row.sector_name}</div>
-                                  <div className="text-base text-slate-500">Prod: {(row.kg_produced || 0).toLocaleString('es-CL')} Kg</div>
+                                  <div className="text-sm lg:text-base text-slate-500">Prod: {(row.kg_produced || 0).toLocaleString('es-CL')} Kg</div>
                                 </td>
-                                <td className="p-4 text-right font-bold">
+                                <td className="p-3 lg:p-4 text-right font-bold">
                                   <div className="text-blue-600">{row.cost_per_kg > 0 ? formatCLP(row.cost_per_kg) : '-'}</div>
                                   {row.cost_per_kg > 0 && (
-                                    <div className="text-sm text-green-600 mt-1">
+                                    <div className="text-xs lg:text-sm text-green-600 mt-1">
                                       US$ {(row.cost_per_kg / (usdExchangeRate || 1)).toFixed(2)}
                                     </div>
                                   )}
                                 </td>
-                                <td className="p-4 text-right">
+                                <td className="p-3 lg:p-4 text-right">
                                     <div className="text-slate-800 font-medium">{formatCLP(row.labor_cost)}</div>
                                     {row.labor_cost > 0 && (
-                                        <div className="text-sm text-slate-500 flex flex-col items-end mt-1">
+                                        <div className="text-xs lg:text-sm text-slate-500 flex flex-col items-end mt-1">
                                             {row.labor_cosecha_cost > 0 && <span>Cosecha: {formatCLP(row.labor_cosecha_cost)}</span>}
                                             {row.labor_poda_cost > 0 && <span>Poda: {formatCLP(row.labor_poda_cost)}</span>}
                                             {row.labor_raleo_cost > 0 && <span>Raleo: {formatCLP(row.labor_raleo_cost)}</span>}
                                         </div>
                                     )}
                                 </td>
-                                <td className="p-4 text-right text-slate-600">{formatCLP(row.app_cost_only)}</td>
-                                <td className="p-4 text-right text-slate-600">{formatCLP(row.machinery_cost)}</td>
+                                <td className="p-3 lg:p-4 text-right text-slate-600">{formatCLP(row.app_cost_only)}</td>
+                                <td className="p-3 lg:p-4 text-right text-slate-600">{formatCLP(row.machinery_cost)}</td>
                               </tr>
                             ))}
                           </tbody>
