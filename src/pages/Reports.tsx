@@ -27,6 +27,7 @@ interface ReportData {
   labor_cost: number;
   labor_cosecha_cost: number;
   labor_poda_cost: number;
+  labor_raleo_cost: number;
   labor_otros_cost: number;
   worker_cost: number; // New field for Plant Workers
   fuel_cost: number;
@@ -574,6 +575,7 @@ export const Reports: React.FC = () => {
         
         let labor_cosecha_cost = 0;
         let labor_poda_cost = 0;
+        let labor_raleo_cost = 0;
         let labor_otros_cost = 0;
 
         sectorLabor.forEach(lab => {
@@ -583,6 +585,8 @@ export const Reports: React.FC = () => {
                 labor_cosecha_cost += amount;
             } else if (type.includes('poda')) {
                 labor_poda_cost += amount;
+            } else if (type.includes('raleo')) {
+                labor_raleo_cost += amount;
             } else {
                 labor_otros_cost += amount;
             }
@@ -663,6 +667,7 @@ export const Reports: React.FC = () => {
           labor_cost: laborCost,
           labor_cosecha_cost,
           labor_poda_cost,
+          labor_raleo_cost,
           labor_otros_cost,
           worker_cost: workerCost,
           fuel_cost: fuelCost,
@@ -2640,6 +2645,7 @@ export const Reports: React.FC = () => {
                                         <div className="text-sm text-slate-500 flex flex-col items-end mt-1">
                                             {row.labor_cosecha_cost > 0 && <span>Cosecha: {formatCLP(row.labor_cosecha_cost)}</span>}
                                             {row.labor_poda_cost > 0 && <span>Poda: {formatCLP(row.labor_poda_cost)}</span>}
+                                            {row.labor_raleo_cost > 0 && <span>Raleo: {formatCLP(row.labor_raleo_cost)}</span>}
                                         </div>
                                     )}
                                 </td>
