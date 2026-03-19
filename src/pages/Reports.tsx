@@ -2626,8 +2626,13 @@ export const Reports: React.FC = () => {
                                   <div className="font-bold text-slate-800">{row.sector_name}</div>
                                   <div className="text-base text-slate-500">Prod: {(row.kg_produced || 0).toLocaleString('es-CL')} Kg</div>
                                 </td>
-                                <td className="p-4 text-right font-bold text-blue-600">
-                                  {row.cost_per_kg > 0 ? formatCLP(row.cost_per_kg) : '-'}
+                                <td className="p-4 text-right font-bold">
+                                  <div className="text-blue-600">{row.cost_per_kg > 0 ? formatCLP(row.cost_per_kg) : '-'}</div>
+                                  {row.cost_per_kg > 0 && (
+                                    <div className="text-sm text-green-600 mt-1">
+                                      US$ {(row.cost_per_kg / (usdExchangeRate || 1)).toFixed(2)}
+                                    </div>
+                                  )}
                                 </td>
                                 <td className="p-4 text-right">
                                     <div className="text-slate-800 font-medium">{formatCLP(row.labor_cost)}</div>
