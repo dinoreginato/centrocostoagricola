@@ -15,6 +15,7 @@ import {
   ResponsiveContainer,
   Legend
 } from 'recharts';
+import { WeatherWidget } from '../components/WeatherWidget';
 
 export const Dashboard: React.FC = () => {
   const { companies, selectedCompany, loading, selectCompany, addCompany, refreshCompanies } = useCompany();
