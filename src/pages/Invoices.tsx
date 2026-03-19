@@ -108,9 +108,19 @@ export const Invoices: React.FC = () => {
   const [exemptAmount, setExemptAmount] = useState(0);
   const [specialTaxAmount, setSpecialTaxAmount] = useState(0);
   
+  // Track total explicitly from input when not using items (though here we use items)
   const [items, setItems] = useState<InvoiceItem[]>([]);
   const [suppliers, setSuppliers] = useState<string[]>([]);
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
+
+  // When Net Amount changes, auto-calculate tax
+  const handleNetTotalChange = (neto: number) => {
+      // Find the "total" item if it exists, or create a generic one
+      if (items.length === 0) {
+          // If no items, we can't easily set net, but if they enter it, we could create a dummy item
+          // For now, we rely on items to build the net.
+      }
+  };
 
   // Item Form State
   const [currentItem, setCurrentItem] = useState<Partial<InvoiceItem>>({
@@ -261,6 +271,15 @@ export const Invoices: React.FC = () => {
   useEffect(() => {
     processStatsAndYears(allInvoices);
   }, [allInvoices, selectedYear]);
+
+  // Handle document type change to auto-set tax percentage
+  useEffect(() => {
+    if (documentType === 'Factura Exenta' || documentType === 'Honorarios') {
+      setTaxPercentage(0);
+    } else if (documentType === 'Factura' || documentType === 'Nota de Crédito') {
+      setTaxPercentage(19);
+    }
+  }, [documentType]);
 
   const loadSuppliers = async () => {
     if (!selectedCompany) return;
@@ -1041,6 +1060,8 @@ export const Invoices: React.FC = () => {
     setLoading(true);
     try {
       let invoiceId = editingInvoiceId;
+      
+      const total = calculateFinalTotal(); // Fix the reference to total
 
       if (editingInvoiceId) {
         // --- UPDATE EXISTING INVOICE (DIFFING STRATEGY) ---
@@ -1576,20 +1597,10 @@ export const Invoices: React.FC = () => {
                   <button
                     type="submit"
                     disabled={loading || items.length === 0}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-8 rounded-lg flex items-center disabled:opacity-50 text-lg shadow-lg"
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-8 rounded-lg flex items-center disabled:opacity-50 text-lg shadow-lg w-full justify-center"
                   >
                     {loading ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <Save className="h-5 w-5 mr-2" />}
-                    GUARDAR FACTURA
-                  </button>
-                </div>
-                <div className="mt-4 flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={loading || items.length === 0}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-8 rounded-lg flex items-center disabled:opacity-50 text-lg shadow-lg"
-                  >
-                    {loading ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <Save className="h-5 w-5 mr-2" />}
-                    GUARDAR FACTURA
+                    {editingInvoiceId ? 'ACTUALIZAR' : 'GUARDAR FACTURA'}
                   </button>
                 </div>
               </div>
@@ -1655,14 +1666,25 @@ export const Invoices: React.FC = () => {
               </div>
 
               {/* Row 4: Financials */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6 bg-blue-50 p-4 rounded-xl border border-blue-100">
+                <div>
+                  <label className="block text-xs font-medium text-blue-700 uppercase mb-1">Monto Neto (Items)</label>
+                  <input
+                    type="number"
+                    value={calculateInvoiceTotal()}
+                    readOnly
+                    className="w-full bg-blue-100 border border-blue-200 text-blue-900 text-sm rounded-lg block p-2.5 font-bold"
+                    placeholder="Auto calculado"
+                  />
+                  <div className="text-[10px] text-blue-500 mt-1">Suma de items</div>
+                </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Impuesto (%)</label>
                   <input
                     type="number"
                     value={taxPercentage}
                     onChange={e => setTaxPercentage(Number(e.target.value))}
-                    className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                    className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
                   />
                 </div>
                 <div>
@@ -1671,7 +1693,7 @@ export const Invoices: React.FC = () => {
                     type="number"
                     value={discountAmount}
                     onChange={e => setDiscountAmount(Number(e.target.value))}
-                    className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                    className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
                   />
                 </div>
                 <div>
@@ -1680,7 +1702,7 @@ export const Invoices: React.FC = () => {
                     type="number"
                     value={exemptAmount}
                     onChange={e => setExemptAmount(Number(e.target.value))}
-                    className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                    className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
                     placeholder="Ej. 0"
                   />
                 </div>
@@ -1690,9 +1712,13 @@ export const Invoices: React.FC = () => {
                     type="number"
                     value={specialTaxAmount}
                     onChange={e => setSpecialTaxAmount(Number(e.target.value))}
-                    className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                    className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
                     placeholder="Ej. 0"
                   />
+                </div>
+                <div className="md:col-span-5 flex justify-end items-center mt-2 pt-2 border-t border-blue-200">
+                    <span className="text-sm text-blue-800 font-medium mr-4">TOTAL FACTURA:</span>
+                    <span className="text-2xl font-bold text-blue-900">{formatCLP(calculateFinalTotal())}</span>
                 </div>
               </div>
 
