@@ -434,80 +434,91 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded-lg shadow-sm">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded-lg shadow-sm print:hidden">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 print:text-3xl print:mb-2">Dashboard General</h1>
-          <p className="text-sm text-gray-500 print:hidden">Resumen de costos y producción</p>
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard General</h1>
+          <p className="text-sm text-gray-500">Resumen de costos y producción</p>
         </div>
-        <div className="mt-4 sm:mt-0 flex flex-wrap gap-2 items-center print:hidden">
-          <button
-            onClick={startPresentation}
-            className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 shadow-sm"
-            title="Iniciar Presentación a Pantalla Completa"
-          >
-            <Play className="h-4 w-4 mr-1" />
-            Presentar
-          </button>
-          
-          <div className="h-6 w-px bg-gray-300 mx-1"></div>
+        
+        {/* Right Action Section */}
+        <div className="mt-4 sm:mt-0 flex flex-wrap items-center gap-3">
+          {/* Main Actions */}
+          <div className="flex items-center space-x-2">
+              <button
+                onClick={startPresentation}
+                className="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 shadow-sm"
+                title="Iniciar Presentación a Pantalla Completa"
+              >
+                <Play className="h-4 w-4 mr-2" />
+                Presentar
+              </button>
 
-          <button
-            onClick={() => setSimpleMode(!simpleMode)}
-            className={`inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
-                simpleMode 
-                ? 'text-blue-700 bg-blue-100 hover:bg-blue-200' 
-                : 'text-gray-700 bg-gray-100 hover:bg-gray-200'
-            }`}
-            title="Alternar Modo Simplificado"
-          >
-            <Layout className="h-4 w-4 mr-1" />
-            {simpleMode ? 'Vista Detallada' : 'Vista Zen'}
-          </button>
+              <button
+                onClick={() => setSimpleMode(!simpleMode)}
+                className={`inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-sm ${
+                    simpleMode 
+                    ? 'text-blue-700 bg-blue-100 hover:bg-blue-200' 
+                    : 'text-gray-700 bg-gray-100 hover:bg-gray-200'
+                }`}
+                title="Alternar Modo Simplificado"
+              >
+                <Layout className="h-4 w-4 mr-2" />
+                {simpleMode ? 'Vista Detallada' : 'Vista Zen'}
+              </button>
+          </div>
 
-          <div className="h-6 w-px bg-gray-300 mx-2"></div>
+          <div className="h-6 w-px bg-gray-300 hidden sm:block mx-1"></div>
 
-          <Building2 className="text-gray-400 h-5 w-5" />
-          <select
-            value={selectedCompany?.id || ''}
-            onChange={(e) => selectCompany(e.target.value)}
-            className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm rounded-md"
-          >
-            {companies.map((company) => (
-              <option key={company.id} value={company.id}>
-                {company.name}
-              </option>
-            ))}
-          </select>
-          <button
-             type="button"
-             onClick={() => {
-                if (user?.email !== 'dino.reginato@gmail.com') {
-                    alert('Solo el administrador del sistema puede crear nuevas empresas.');
-                    return;
-                }
-                setShowNewCompanyModal(true);
-             }}
-             className={`inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 ${
-                user?.email === 'dino.reginato@gmail.com' 
-                ? 'text-green-700 bg-green-100 hover:bg-green-200' 
-                : 'text-gray-400 bg-gray-100 cursor-not-allowed'
-             }`}
-             title={user?.email === 'dino.reginato@gmail.com' ? 'Crear nueva empresa' : 'Solo el administrador puede crear empresas'}
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            Nueva Empresa
-          </button>
-          
-          {selectedCompany && user && (selectedCompany.owner_id === user.id || user.email === 'dino.reginato@gmail.com') && (
-            <button
-              onClick={handleDeleteCompany}
-              disabled={isDeleting}
-              className="ml-2 inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
-              title="Eliminar Empresa Actual"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          )}
+          {/* Company Controls */}
+          <div className="flex items-center space-x-2">
+              <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Building2 className="text-gray-400 h-4 w-4" />
+                  </div>
+                  <select
+                    value={selectedCompany?.id || ''}
+                    onChange={(e) => selectCompany(e.target.value)}
+                    className="block w-full pl-9 pr-10 py-2 text-sm border-gray-300 focus:outline-none focus:ring-green-500 focus:border-green-500 rounded-md font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 cursor-pointer shadow-sm"
+                  >
+                    {companies.map((company) => (
+                      <option key={company.id} value={company.id}>
+                        {company.name}
+                      </option>
+                    ))}
+                  </select>
+              </div>
+
+              <button
+                 type="button"
+                 onClick={() => {
+                    if (user?.email !== 'dino.reginato@gmail.com') {
+                        alert('Solo el administrador del sistema puede crear nuevas empresas.');
+                        return;
+                    }
+                    setShowNewCompanyModal(true);
+                 }}
+                 className={`inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 shadow-sm ${
+                    user?.email === 'dino.reginato@gmail.com' 
+                    ? 'text-white bg-green-600 hover:bg-green-700' 
+                    : 'text-gray-400 bg-gray-100 cursor-not-allowed'
+                 }`}
+                 title={user?.email === 'dino.reginato@gmail.com' ? 'Crear nueva empresa' : 'Solo el administrador puede crear empresas'}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                <span className="hidden sm:inline">Nueva Empresa</span>
+              </button>
+              
+              {selectedCompany && user && (selectedCompany.owner_id === user.id || user.email === 'dino.reginato@gmail.com') && (
+                <button
+                  onClick={handleDeleteCompany}
+                  disabled={isDeleting}
+                  className="inline-flex items-center p-2 border border-transparent text-sm font-medium rounded-md text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 shadow-sm"
+                  title="Eliminar Empresa Actual"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
+          </div>
         </div>
       </div>
 
