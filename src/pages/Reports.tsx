@@ -17,6 +17,7 @@ interface ReportData {
   hectares: number;
   total_cost: number;
   cost_per_ha: number;
+  cost_per_kg: number;
   application_count: number;
   kg_produced?: number;
   // Separate costs for specific reports
@@ -24,6 +25,9 @@ interface ReportData {
   app_cost_per_ha: number;
   // Detailed costs
   labor_cost: number;
+  labor_cosecha_cost: number;
+  labor_poda_cost: number;
+  labor_otros_cost: number;
   worker_cost: number; // New field for Plant Workers
   fuel_cost: number;
   fuel_cost_diesel: number; // New
@@ -171,6 +175,10 @@ export const Reports: React.FC = () => {
   const [presentationMode, setPresentationMode] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
 
+  // Production Record Input State
+  const [editingProdSectorId, setEditingProdSectorId] = useState<string | null>(null);
+  const [editingProdKg, setEditingProdKg] = useState<string>('');
+
   // Filtered Pending Invoices
   const filteredPendingInvoices = pendingInvoices.filter(invoice => {
     if (!pendingStartDate && !pendingEndDate) return true;
@@ -201,13 +209,16 @@ export const Reports: React.FC = () => {
     }
   }, [selectedCompany]);
 
+  // Update presentation logic to support 3 slides for General tab
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!presentationMode) return;
       
+      const maxSlides = activeTab === 'general' ? 2 : 1; // 0=Title, 1=Main Data, 2=Extra Data (if general)
+      
       if (e.key === 'ArrowRight' || e.key === ' ') {
         e.preventDefault();
-        setCurrentSlide(s => Math.min(s + 1, 1)); // 2 slides total (0 to 1)
+        setCurrentSlide(s => Math.min(s + 1, maxSlides));
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
         setCurrentSlide(s => Math.max(s - 1, 0));
@@ -217,7 +228,7 @@ export const Reports: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [presentationMode]);
+  }, [presentationMode, activeTab]);
 
   const startPresentation = () => {
     setPresentationMode(true);
@@ -268,7 +279,7 @@ export const Reports: React.FC = () => {
       // 2b. Fetch Labor Assignments
       const { data: labor } = await supabase
         .from('labor_assignments')
-        .select('sector_id, assigned_amount, assigned_date')
+        .select('sector_id, assigned_amount, assigned_date, labor_type')
         .in('sector_id', sectorIds);
       setRawLabor(labor || []);
 
@@ -560,6 +571,22 @@ export const Reports: React.FC = () => {
         
         const sectorLabor = filteredLabor.filter(lab => lab.sector_id === sector.id);
         const laborCost = sectorLabor.reduce((sum, lab) => sum + Number(lab.assigned_amount), 0);
+        
+        let labor_cosecha_cost = 0;
+        let labor_poda_cost = 0;
+        let labor_otros_cost = 0;
+
+        sectorLabor.forEach(lab => {
+            const amount = Number(lab.assigned_amount);
+            const type = (lab.labor_type || '').toLowerCase();
+            if (type.includes('cosecha')) {
+                labor_cosecha_cost += amount;
+            } else if (type.includes('poda')) {
+                labor_poda_cost += amount;
+            } else {
+                labor_otros_cost += amount;
+            }
+        });
 
         const sectorWorkers = filteredWorkerCosts.filter(w => w.sector_id === sector.id);
         const workerCost = sectorWorkers.reduce((sum, w) => sum + Number(w.amount), 0);
@@ -627,12 +654,16 @@ export const Reports: React.FC = () => {
           hectares: hectares,
           total_cost: totalCostGeneral, // Default for General Table
           cost_per_ha: hectares > 0 ? totalCostGeneral / hectares : 0, // Default for General Table
+          cost_per_kg: kgProduced > 0 ? totalCostGeneral / kgProduced : 0, // NEW: Cost per Kg
           application_count: sectorApps.length,
           kg_produced: kgProduced,
           // Specific Costs
           app_cost_only: totalCostAppsOnly,
           app_cost_per_ha: hectares > 0 ? totalCostAppsOnly / hectares : 0,
           labor_cost: laborCost,
+          labor_cosecha_cost,
+          labor_poda_cost,
+          labor_otros_cost,
           worker_cost: workerCost,
           fuel_cost: fuelCost,
           fuel_cost_diesel: fuelCostDiesel,
@@ -1187,11 +1218,14 @@ export const Reports: React.FC = () => {
           </div>
 
           <button
-            onClick={startPresentation}
+            onClick={() => {
+              setActiveTab('general');
+              startPresentation();
+            }}
             className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
             title="Iniciar Presentación a Pantalla Completa"
           >
-            <Play className="mr-2 h-4 w-4" /> Presentar
+            <Play className="mr-2 h-4 w-4" /> Presentar Modo Ejecutivo
           </button>
         </div>
       </div>
@@ -1823,6 +1857,8 @@ export const Reports: React.FC = () => {
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Campo</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sector</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hectáreas</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prod (Kg)</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Costo / Kg</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Costo Total</th>
                         <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Costo / Ha</th>
                       </tr>
@@ -1833,6 +1869,8 @@ export const Reports: React.FC = () => {
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{row.field_name}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.sector_name}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.hectares}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{(row.kg_produced || 0).toLocaleString('es-CL')}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-600">{row.cost_per_kg > 0 ? formatCLP(row.cost_per_kg) : '-'}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCLP(row.app_cost_only)}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-green-700">{formatCLP(row.app_cost_per_ha)}</td>
                         </tr>
@@ -2538,8 +2576,8 @@ export const Reports: React.FC = () => {
                 
                 <div className="flex-1 bg-white rounded-3xl shadow-xl p-8 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 200px)' }}>
                   
-                  {/* General Report */}
-                  {activeTab === 'general' && (
+                  {/* General Report - Overview */}
+                  {activeTab === 'general' && currentSlide === 1 && (
                     <table className="w-full text-left text-lg">
                       <thead className="text-xl text-slate-500 bg-slate-50 sticky top-0">
                         <tr>
@@ -2565,6 +2603,48 @@ export const Reports: React.FC = () => {
                         ))}
                       </tbody>
                     </table>
+                  )}
+
+                  {/* General Report - Cost/Kg & Labor Breakdown */}
+                  {activeTab === 'general' && currentSlide === 2 && (
+                    <div className="space-y-8">
+                        <h3 className="text-2xl font-bold text-slate-700 border-b pb-4">Análisis por Kilo y Desglose Operativo</h3>
+                        <table className="w-full text-left text-lg">
+                          <thead className="text-xl text-slate-500 bg-slate-50 sticky top-0">
+                            <tr>
+                              <th className="p-4">Sector/Campo</th>
+                              <th className="p-4 text-right text-blue-700 font-bold">Costo / Kg</th>
+                              <th className="p-4 text-right">Mano de Obra (Labores)</th>
+                              <th className="p-4 text-right">Insumos (Aplic.)</th>
+                              <th className="p-4 text-right">Maquinaria</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {reportData.map((row, idx) => (
+                              <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
+                                <td className="p-4">
+                                  <div className="font-bold text-slate-800">{row.sector_name}</div>
+                                  <div className="text-base text-slate-500">Prod: {(row.kg_produced || 0).toLocaleString('es-CL')} Kg</div>
+                                </td>
+                                <td className="p-4 text-right font-bold text-blue-600">
+                                  {row.cost_per_kg > 0 ? formatCLP(row.cost_per_kg) : '-'}
+                                </td>
+                                <td className="p-4 text-right">
+                                    <div className="text-slate-800 font-medium">{formatCLP(row.labor_cost)}</div>
+                                    {row.labor_cost > 0 && (
+                                        <div className="text-sm text-slate-500 flex flex-col items-end mt-1">
+                                            {row.labor_cosecha_cost > 0 && <span>Cosecha: {formatCLP(row.labor_cosecha_cost)}</span>}
+                                            {row.labor_poda_cost > 0 && <span>Poda: {formatCLP(row.labor_poda_cost)}</span>}
+                                        </div>
+                                    )}
+                                </td>
+                                <td className="p-4 text-right text-slate-600">{formatCLP(row.app_cost_only)}</td>
+                                <td className="p-4 text-right text-slate-600">{formatCLP(row.machinery_cost)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                    </div>
                   )}
 
                   {/* Monthly Expenses */}
@@ -2668,12 +2748,12 @@ export const Reports: React.FC = () => {
               >
                 <ChevronLeft className="w-6 h-6 sm:w-8 sm:h-8" />
               </button>
-              <div className="text-xl sm:text-2xl font-bold text-slate-500 w-16 text-center">
-                {currentSlide + 1} / 2
+              <div className="text-xl sm:text-2xl font-bold text-slate-500 w-24 text-center">
+                {currentSlide + 1} / {activeTab === 'general' ? 3 : 2}
               </div>
               <button 
-                onClick={() => setCurrentSlide(s => Math.min(s + 1, 1))}
-                disabled={currentSlide === 1}
+                onClick={() => setCurrentSlide(s => Math.min(s + 1, activeTab === 'general' ? 2 : 1))}
+                disabled={currentSlide === (activeTab === 'general' ? 2 : 1)}
                 className="p-2 sm:p-3 rounded-full hover:bg-slate-200 text-slate-600 disabled:opacity-30 transition-colors"
               >
                 <ChevronRight className="w-6 h-6 sm:w-8 sm:h-8" />
