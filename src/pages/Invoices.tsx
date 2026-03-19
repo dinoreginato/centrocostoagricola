@@ -603,6 +603,21 @@ export const Invoices: React.FC = () => {
     setItems(newItems);
   };
 
+  const calculateInvoiceTotal = () => {
+    return items.reduce((sum, item) => sum + (Number(item.total_price) || 0), 0);
+  };
+
+  const calculateFinalTotal = () => {
+    const isCreditNote = documentType === 'Nota de Crédito';
+    const multiplier = isCreditNote ? -1 : 1;
+    
+    const subtotal = calculateInvoiceTotal();
+    const netAfterDiscount = subtotal - discountAmount;
+    const tax = documentType === 'Factura Exenta' ? 0 : (netAfterDiscount * (taxPercentage / 100));
+    
+    return (netAfterDiscount + tax + exemptAmount + specialTaxAmount) * multiplier;
+  };
+
   const calculateTotals = () => {
     // Basic Sum of Items (Net Prices)
     const subtotal = items.reduce((sum, item) => sum + item.total_price, 0);
