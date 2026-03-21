@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Layers, Settings, Plus, X, Printer, FileText, RefreshCw } from 'lucide-react';
+import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Layers, Settings, Plus, X, Printer, FileText, RefreshCw, AlertTriangle } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
