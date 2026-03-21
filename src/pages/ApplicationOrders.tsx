@@ -317,6 +317,29 @@ export const ApplicationOrders: React.FC = () => {
       }
   };
 
+  const handleDeleteOrder = async (id: string) => {
+      if (!window.confirm('¿Está seguro de eliminar esta orden de aplicación? Esta acción no se puede deshacer.')) {
+          return;
+      }
+
+      setLoading(true);
+      try {
+          // First delete items to avoid foreign key constraints
+          await supabase.from('application_order_items').delete().eq('order_id', id);
+          
+          // Then delete the order
+          const { error } = await supabase.from('application_orders').delete().eq('id', id);
+          if (error) throw error;
+          
+          loadData();
+      } catch (error: any) {
+          console.error('Error deleting order:', error);
+          alert('Error al eliminar: ' + error.message);
+      } finally {
+          setLoading(false);
+      }
+  };
+
   const handlePrintOrder = (order: ApplicationOrder) => {
       const doc = new jsPDF();
       
@@ -828,6 +851,13 @@ export const ApplicationOrders: React.FC = () => {
                                       title="Editar"
                                   >
                                       <Edit className="h-5 w-5" />
+                                  </button>
+                                  <button 
+                                      onClick={() => handleDeleteOrder(order.id)}
+                                      className="text-red-600 hover:text-red-900 ml-2"
+                                      title="Eliminar"
+                                  >
+                                      <Trash2 className="h-5 w-5" />
                                   </button>
                               </td>
                           </tr>
