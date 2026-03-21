@@ -1796,16 +1796,52 @@ export const Reports: React.FC = () => {
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">{row.hectares}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-right bg-green-50">
-                                  {editingProduction ? (
-                                      <input 
-                                          type="number" 
-                                          className="w-24 text-right text-sm border-gray-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500 p-1"
-                                          defaultValue={row.kg_produced || 0}
-                                          onBlur={(e) => handleSaveProduction(row.sector_id, Number(e.target.value))}
-                                      />
-                                  ) : (
-                                      <span className="font-medium text-gray-900">{(row.kg_produced || 0).toLocaleString('es-CL')}</span>
-                                  )}
+                                  <div className="flex flex-col items-end gap-1">
+                                      {editingProduction ? (
+                                          <div className="flex flex-col gap-1 w-full max-w-[120px]">
+                                            <input 
+                                                type="number" 
+                                                placeholder="Kg"
+                                                className="w-full text-right text-xs border-gray-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500 p-1"
+                                                defaultValue={row.kg_produced || ''}
+                                                onBlur={(e) => {
+                                                    const kg = Number(e.target.value);
+                                                    const priceInput = e.target.parentElement?.querySelector('input[placeholder="US$/Kg"]') as HTMLInputElement;
+                                                    const price = Number(priceInput?.value || row.price_per_kg || 0);
+                                                    // Solo guardar si hay cambios, se maneja de forma simplificada por ahora o delegar a un botón "Guardar" global
+                                                }}
+                                            />
+                                            <input 
+                                                type="number" 
+                                                step="0.01"
+                                                placeholder="US$/Kg"
+                                                className="w-full text-right text-xs border-gray-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500 p-1"
+                                                defaultValue={row.price_per_kg || ''}
+                                            />
+                                            <button 
+                                                onClick={(e) => {
+                                                    const parent = e.currentTarget.parentElement;
+                                                    const kg = Number((parent?.querySelector('input[placeholder="Kg"]') as HTMLInputElement)?.value || 0);
+                                                    const price = Number((parent?.querySelector('input[placeholder="US$/Kg"]') as HTMLInputElement)?.value || 0);
+                                                    
+                                                    // Reuse existing function logic for inline edit
+                                                    setEditingProdKg(kg.toString());
+                                                    setEditingProdPrice(price.toString());
+                                                    handleUpdateProduction(row.sector_id);
+                                                    // Quick hack to force blur/save logic if needed, but better to use the main table
+                                                }}
+                                                className="text-[10px] bg-green-100 text-green-800 px-2 py-0.5 rounded w-full"
+                                            >
+                                                Guardar
+                                            </button>
+                                          </div>
+                                      ) : (
+                                          <>
+                                            <span className="font-medium text-gray-900">{(row.kg_produced || 0).toLocaleString('es-CL')} Kg</span>
+                                            {row.price_per_kg > 0 && <span className="text-xs text-green-600 font-medium">US$ {row.price_per_kg}/Kg</span>}
+                                          </>
+                                      )}
+                                  </div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-gray-600">{formatCLP(row.labor_cost)}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-indigo-600">{formatCLP(row.worker_cost)}</td>
