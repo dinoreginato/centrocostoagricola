@@ -39,6 +39,7 @@ interface ReportData {
   budget_per_ha: number;
   total_budget: number;
   price_per_kg: number;
+  income_estimated: number;
 }
 
 interface MonthlyExpense {
@@ -119,7 +120,8 @@ const CHEMICAL_CATEGORIES = [
 export const Reports: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'applications' | 'monthly' | 'categories' | 'pending' | 'paid_payments' | 'chemicals' | 'detailed' | 'general' | 'budget'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'applications' | 'monthly' | 'categories' | 'pending' | 'paid_payments' | 'chemicals' | 'detailed' | 'budget'>('general');
+  const [activeGroup, setActiveGroup] = useState<'general' | 'financial' | 'inventory'>('general');
   
   // Pending Invoices Filter State
   const [pendingStartDate, setPendingStartDate] = useState<string>('');
@@ -670,6 +672,7 @@ export const Reports: React.FC = () => {
           price_per_kg: pricePerKg,
           budget_per_ha: budgetPerHa,
           total_budget: budgetPerHa * hectares,
+          income_estimated: kgProduced * pricePerKg * (usdExchangeRate || 1), // New pre-calculated field
           // Specific Costs
           app_cost_only: totalCostAppsOnly,
           app_cost_per_ha: hectares > 0 ? totalCostAppsOnly / hectares : 0,
@@ -1261,81 +1264,122 @@ export const Reports: React.FC = () => {
         <p className="text-sm text-gray-400 mt-1">Generado el {new Date().toLocaleDateString()}</p>
       </div>
 
-      <div className="border-b border-gray-200 print:hidden">
-        <nav className="-mb-px flex space-x-8 overflow-x-auto">
+      <div className="border-b border-gray-200 print:hidden mb-4">
+        <nav className="-mb-px flex space-x-8">
           <button
-            onClick={() => setActiveTab('general')}
+            onClick={() => { setActiveGroup('general'); setActiveTab('general'); }}
             className={`${
-              activeTab === 'general' ? 'border-green-500 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              activeGroup === 'general' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
           >
-            <Scale className="mr-2 h-4 w-4" /> Costos Generales (USD/Kg)
+            <Scale className="mr-2 h-4 w-4" /> Costos y Producción
           </button>
           <button
-            onClick={() => setActiveTab('budget')}
+            onClick={() => { setActiveGroup('financial'); setActiveTab('monthly'); }}
             className={`${
-              activeTab === 'budget' ? 'border-green-500 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              activeGroup === 'financial' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
           >
-            <DollarSign className="mr-2 h-4 w-4" /> Presupuesto y Ventas
+            <DollarSign className="mr-2 h-4 w-4" /> Resumen Financiero
           </button>
           <button
-            onClick={() => setActiveTab('applications')}
+            onClick={() => { setActiveGroup('inventory'); setActiveTab('chemicals'); }}
             className={`${
-              activeTab === 'applications' ? 'border-green-500 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              activeGroup === 'inventory' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
           >
-            <PieChartIcon className="mr-2 h-4 w-4" /> Costos de Aplicación
-          </button>
-          <button
-            onClick={() => setActiveTab('monthly')}
-            className={`${
-              activeTab === 'monthly' ? 'border-green-500 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
-          >
-            <Calendar className="mr-2 h-4 w-4" /> Gastos Mensuales
-          </button>
-          <button
-            onClick={() => setActiveTab('categories')}
-            className={`${
-              activeTab === 'categories' ? 'border-green-500 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
-          >
-            <PieChartIcon className="mr-2 h-4 w-4" /> Por Clasificación
-          </button>
-          <button
-            onClick={() => setActiveTab('chemicals')}
-            className={`${
-              activeTab === 'chemicals' ? 'border-green-500 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
-          >
-            <Beaker className="mr-2 h-4 w-4" /> Insumos Químicos
-          </button>
-          <button
-            onClick={() => setActiveTab('pending')}
-            className={`${
-              activeTab === 'pending' ? 'border-green-500 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
-          >
-            <AlertCircle className="mr-2 h-4 w-4" /> Facturas Pendientes
-          </button>
-          <button
-            onClick={() => setActiveTab('paid_payments')}
-            className={`${
-              activeTab === 'paid_payments' ? 'border-green-500 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
-          >
-            <DollarSign className="mr-2 h-4 w-4" /> Pagos Realizados
-          </button>
-          <button
-            onClick={() => setActiveTab('detailed')}
-            className={`${
-              activeTab === 'detailed' ? 'border-green-500 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
-          >
-            <FileText className="mr-2 h-4 w-4" /> Informe Detallado
+            <Beaker className="mr-2 h-4 w-4" /> Insumos y Detalle
           </button>
         </nav>
+      </div>
+
+      <div className="border-b border-gray-100 print:hidden mb-6 bg-slate-50 p-2 rounded-t-lg">
+        {activeGroup === 'general' && (
+            <nav className="flex space-x-4 overflow-x-auto">
+              <button
+                onClick={() => setActiveTab('general')}
+                className={`${
+                  activeTab === 'general' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Costos Generales (USD/Kg)
+              </button>
+              <button
+                onClick={() => setActiveTab('budget')}
+                className={`${
+                  activeTab === 'budget' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Presupuesto y Ventas
+              </button>
+            </nav>
+        )}
+        
+        {activeGroup === 'financial' && (
+            <nav className="flex space-x-4 overflow-x-auto">
+              <button
+                onClick={() => setActiveTab('monthly')}
+                className={`${
+                  activeTab === 'monthly' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Gastos Mensuales
+              </button>
+              <button
+                onClick={() => setActiveTab('categories')}
+                className={`${
+                  activeTab === 'categories' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Por Clasificación
+              </button>
+              <button
+                onClick={() => setActiveTab('pending')}
+                className={`${
+                  activeTab === 'pending' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Facturas Pendientes
+              </button>
+              <button
+                onClick={() => setActiveTab('paid_payments')}
+                className={`${
+                  activeTab === 'paid_payments' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Pagos Realizados
+              </button>
+            </nav>
+        )}
+
+        {activeGroup === 'inventory' && (
+            <nav className="flex space-x-4 overflow-x-auto">
+              <button
+                onClick={() => setActiveTab('chemicals')}
+                className={`${
+                  activeTab === 'chemicals' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Insumos Químicos
+              </button>
+              <button
+                onClick={() => setActiveTab('applications')}
+                className={`${
+                  activeTab === 'applications' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Costos de Aplicación
+              </button>
+              <button
+                onClick={() => setActiveTab('detailed')}
+                className={`${
+                  activeTab === 'detailed' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Informe Detallado (Excel)
+              </button>
+            </nav>
+        )}
       </div>
 
       {loading ? (
@@ -1765,9 +1809,53 @@ export const Reports: React.FC = () => {
 
             {/* Main Table */}
             <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-                <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
-                  <h3 className="text-lg leading-6 font-medium text-gray-900">Costos Generales y Producción ({selectedSeason})</h3>
-                  <p className="mt-1 text-sm text-gray-500">Resumen por Sector incluyendo Labores y Aplicaciones</p>
+                <div className="flex justify-between items-center px-4 py-5 sm:px-6 border-b border-gray-200">
+                  <div>
+                    <h3 className="text-lg leading-6 font-medium text-gray-900">Costos Generales y Producción ({selectedSeason})</h3>
+                    <p className="mt-1 text-sm text-gray-500">Resumen por Sector incluyendo Labores y Aplicaciones</p>
+                  </div>
+                  <button
+                      onClick={() => {
+                          const rows = [['Campo', 'Sector', 'Has', 'Prod. (Kg)', 'Mano Obra', 'Personal', 'Aplicaciones', 'Maquinaria', 'Riego', 'Petróleo', 'Combustible (Bencina)', 'Otros', 'Total (CLP)', 'Total (USD)', 'Costo/Ha (CLP)', 'Costo/Ha (USD)', 'Costo/Kg (CLP)', 'Costo/Kg (USD)']];
+                          reportData.forEach(row => {
+                              const costUsd = row.total_cost / (usdExchangeRate || 1);
+                              const costPerHaUsd = row.cost_per_ha / (usdExchangeRate || 1);
+                              const costPerKgClp = (row.kg_produced || 0) > 0 ? row.total_cost / row.kg_produced! : 0;
+                              const costPerKgUsd = (row.kg_produced || 0) > 0 ? costUsd / row.kg_produced! : 0;
+                              rows.push([
+                                  row.field_name,
+                                  row.sector_name,
+                                  row.hectares.toString(),
+                                  (row.kg_produced || 0).toString(),
+                                  row.labor_cost.toString(),
+                                  row.worker_cost.toString(),
+                                  row.app_cost_only.toString(),
+                                  row.machinery_cost.toString(),
+                                  row.irrigation_cost.toString(),
+                                  row.fuel_cost_diesel.toString(),
+                                  row.fuel_cost_gasoline.toString(),
+                                  row.general_cost.toString(),
+                                  row.total_cost.toString(),
+                                  costUsd.toFixed(2),
+                                  row.cost_per_ha.toString(),
+                                  costPerHaUsd.toFixed(2),
+                                  costPerKgClp.toFixed(2),
+                                  costPerKgUsd.toFixed(2)
+                              ]);
+                          });
+                          const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
+                          const encodedUri = encodeURI(csvContent);
+                          const link = document.createElement("a");
+                          link.setAttribute("href", encodedUri);
+                          link.setAttribute("download", `Costos_Generales_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.csv`);
+                          document.body.appendChild(link);
+                          link.click();
+                          document.body.removeChild(link);
+                      }}
+                      className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-green-700 bg-green-100 hover:bg-green-200"
+                  >
+                      <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
+                  </button>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
@@ -2378,6 +2466,47 @@ export const Reports: React.FC = () => {
                     </div>
                 </div>
 
+                <div className="flex justify-end mb-4">
+                    <button
+                        onClick={() => {
+                            // Simple CSV export for detailed report
+                            const rows = [['Mes', 'Categoría', 'Fecha', 'Proveedor', 'N° Factura', 'Detalle', 'Monto (CLP)']];
+                            
+                            detailedReport
+                                .filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth)
+                                .forEach(month => {
+                                    month.categories
+                                        .filter(c => filterCategory === 'all' || c.name === filterCategory)
+                                        .forEach(cat => {
+                                            cat.items.forEach(item => {
+                                                rows.push([
+                                                    month.monthName,
+                                                    cat.name,
+                                                    new Date(item.date).toLocaleDateString('es-CL'),
+                                                    `"${item.supplier.replace(/"/g, '""')}"`,
+                                                    item.invoiceNumber,
+                                                    `"${item.description.replace(/"/g, '""')}"`,
+                                                    item.total.toString()
+                                                ]);
+                                            });
+                                        });
+                                });
+
+                            const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
+                            const encodedUri = encodeURI(csvContent);
+                            const link = document.createElement("a");
+                            link.setAttribute("href", encodedUri);
+                            link.setAttribute("download", `Reporte_Detallado_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.csv`);
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                        }}
+                        className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+                    >
+                        <FileText className="mr-2 h-4 w-4" /> Exportar a Excel (CSV)
+                    </button>
+                </div>
+
                 {detailedReport
                     .filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth)
                     .map(month => {
@@ -2728,6 +2857,7 @@ export const Reports: React.FC = () => {
                             <tr>
                               <th className="p-3 lg:p-4">Sector/Campo</th>
                               <th className="p-3 lg:p-4 text-right">Prod (Kg)</th>
+                              <th className="p-3 lg:p-4 text-right">Precio Venta (US$)</th>
                               <th className="p-3 lg:p-4 text-right">Ingreso Estimado (CLP)</th>
                               <th className="p-3 lg:p-4 text-right">Costo Total (CLP)</th>
                               <th className="p-3 lg:p-4 text-right font-bold text-green-700">Rentabilidad Neta (CLP)</th>
@@ -2735,18 +2865,19 @@ export const Reports: React.FC = () => {
                           </thead>
                           <tbody>
                             {reportData.map((row, idx) => {
-                                const totalIncomeCLP = (row.kg_produced || 0) * (row.price_per_kg || 0) * (usdExchangeRate || 1);
+                                const totalIncomeCLP = row.income_estimated || 0;
                                 const netProfit = totalIncomeCLP - row.total_cost;
                                 const isProfitable = netProfit > 0;
                                 return (
                               <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
                                 <td className="p-3 lg:p-4">
                                   <div className="font-bold text-slate-800">{row.sector_name}</div>
-                                  <div className="text-sm lg:text-base text-slate-500">
-                                      {row.price_per_kg > 0 ? `Precio: US$ ${row.price_per_kg}` : 'Sin precio asignado'}
-                                  </div>
+                                  <div className="text-sm lg:text-base text-slate-500">{row.field_name}</div>
                                 </td>
                                 <td className="p-3 lg:p-4 text-right">{(row.kg_produced || 0).toLocaleString('es-CL')}</td>
+                                <td className="p-3 lg:p-4 text-right text-green-600 font-medium">
+                                    {row.price_per_kg > 0 ? `US$ ${row.price_per_kg}` : '-'}
+                                </td>
                                 <td className="p-3 lg:p-4 text-right text-slate-600">
                                     {row.price_per_kg > 0 ? formatCLP(totalIncomeCLP) : '-'}
                                     {row.price_per_kg > 0 && <div className="text-xs text-green-600 mt-1">US$ {(totalIncomeCLP / (usdExchangeRate || 1)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>}
