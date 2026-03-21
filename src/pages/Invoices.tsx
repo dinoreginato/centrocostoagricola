@@ -148,7 +148,6 @@ export const Invoices: React.FC = () => {
   const [filterDateTo, setFilterDateTo] = useState('');
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
   const [availableYears, setAvailableYears] = useState<string[]>([new Date().getFullYear().toString()]);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -728,7 +727,7 @@ export const Invoices: React.FC = () => {
                 }
 
                 setItems(parsedItems);
-                setIsFormOpen(true);
+                // The form is always visible in this layout, so no need for setIsFormOpen
                 alert("Factura cargada exitosamente desde el XML. Revise los ítems y las asignaciones.");
 
             } catch (error) {
