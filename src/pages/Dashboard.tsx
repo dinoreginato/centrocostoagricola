@@ -40,7 +40,12 @@ export const Dashboard: React.FC = () => {
   const [sectorChartData, setSectorChartData] = useState<any[]>([]);
   const [upcomingInvoices, setUpcomingInvoices] = useState<any[]>([]);
   const [criticalStock, setCriticalStock] = useState<any[]>([]); 
-  const [sectorSafetyStatus, setSectorSafetyStatus] = useState<any[]>([]); // New State
+  const [sectorSafetyStatus, setSectorSafetyStatus] = useState<any[]>([]); 
+  
+  // Rain State
+  const [rainLogs, setRainLogs] = useState<any[]>([]);
+  const [newRainDate, setNewRainDate] = useState(new Date().toLocaleDateString('en-CA'));
+  const [newRainMm, setNewRainMm] = useState<number | ''>('');// New State
 
   useEffect(() => {
     if (selectedCompany) {
@@ -81,6 +86,29 @@ export const Dashboard: React.FC = () => {
     setPresentationMode(false);
     if (document.fullscreenElement && document.exitFullscreen) {
       document.exitFullscreen().catch(err => console.log('Error attempting to exit fullscreen:', err));
+    }
+  };
+
+  const handleSaveRain = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCompany || !newRainMm) return;
+
+    try {
+        const { error } = await supabase
+            .from('rain_logs')
+            .insert([{
+                company_id: selectedCompany.id,
+                date: newRainDate,
+                rain_mm: Number(newRainMm)
+            }]);
+
+        if (error) throw error;
+        
+        setNewRainMm('');
+        loadDashboardData();
+    } catch (err) {
+        console.error('Error saving rain:', err);
+        alert('Error al registrar lluvia');
     }
   };
 
@@ -313,16 +341,33 @@ export const Dashboard: React.FC = () => {
 
       setSectorChartData(sectorCosts);
 
-      // 5. Load Critical Stock
+      // 5. Load Critical Stock & Expiring Products
       const { data: stockData } = await supabase
         .from('products')
-        .select('name, current_stock, minimum_stock, unit')
-        .eq('company_id', selectedCompany.id)
-        .gt('minimum_stock', 0);
+        .select('name, current_stock, minimum_stock, unit, expiration_date')
+        .eq('company_id', selectedCompany.id);
 
       if (stockData) {
-          const critical = stockData.filter(p => p.current_stock <= p.minimum_stock);
-          setCriticalStock(critical);
+          const critical = stockData.filter(p => p.minimum_stock > 0 && p.current_stock <= p.minimum_stock);
+          
+          // Check for expiring products (within 30 days)
+          const today = new Date();
+          const nextMonth = new Date(today);
+          nextMonth.setDate(today.getDate() + 30);
+          
+          const expiring = stockData.filter(p => {
+              if (!p.expiration_date) return false;
+              const expDate = new Date(p.expiration_date);
+              return expDate <= nextMonth;
+          }).map(p => ({
+              ...p,
+              isExpired: new Date(p.expiration_date) < today
+          }));
+
+          setCriticalStock([...critical, ...expiring.map(p => ({
+              ...p,
+              is_expiration_warning: true
+          }))]);
       }
 
       // 6. Load Safety Status (Application Orders)
@@ -355,6 +400,17 @@ export const Dashboard: React.FC = () => {
           // Only keep red and yellow for the widget to keep it clean
           setSectorSafetyStatus(safetyStatus.filter(s => s.status !== 'verde'));
       }
+
+      // 7. Load Rain Logs
+      const currentYear = new Date().getFullYear();
+      const { data: rainData } = await supabase
+        .from('rain_logs')
+        .select('*')
+        .eq('company_id', selectedCompany.id)
+        .gte('date', `${currentYear}-01-01`)
+        .order('date', { ascending: false });
+        
+      setRainLogs(rainData || []);
 
     } catch (error) {
       console.error('Error loading dashboard data:', error);
@@ -609,7 +665,7 @@ export const Dashboard: React.FC = () => {
                 </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-6 print:grid-cols-4 print:gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 lg:gap-6 print:grid-cols-4 print:gap-4">
                 <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-sm p-4 lg:p-5 text-white transform transition hover:scale-105 print:transform-none print:shadow-none print:border print:border-gray-200 print:text-black print:bg-none print:bg-white flex flex-col justify-center">
                     <div className="text-green-100 text-xs lg:text-sm font-medium mb-1 print:text-gray-600">Costo Total Acumulado</div>
                     <div className="text-xl lg:text-2xl font-bold truncate print:text-xl" title={formatCLP(Number(dashboardStats.totalCost) || 0)}>
@@ -675,10 +731,10 @@ export const Dashboard: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Critical Stock Widget */}
+                {/* Critical Stock & Expiration Widget */}
                 <div className="bg-white rounded-xl shadow-sm p-4 lg:p-5 border border-gray-100 transform transition hover:scale-105 print:hidden">
                     <div className="flex items-center justify-between mb-3">
-                        <div className="text-red-500 text-xs lg:text-sm font-medium">Stock Crítico</div>
+                        <div className="text-red-500 text-xs lg:text-sm font-medium">Alertas Bodega</div>
                         <AlertTriangle className="h-4 w-4 text-red-500" />
                     </div>
                     <div className="space-y-3 max-h-32 overflow-y-auto">
@@ -687,8 +743,16 @@ export const Dashboard: React.FC = () => {
                                 <div key={idx} className="flex justify-between items-center border-b border-gray-50 pb-1.5 last:border-0">
                                     <div className="font-medium text-gray-800 text-xs lg:text-sm truncate max-w-[120px]">{item.name}</div>
                                     <div className="text-right">
-                                        <div className="font-bold text-red-600 text-xs lg:text-sm">{item.current_stock} {item.unit}</div>
-                                        <div className="text-[10px] text-gray-400">Mín: {item.minimum_stock}</div>
+                                        {item.is_expiration_warning ? (
+                                            <div className="font-bold text-red-600 text-xs lg:text-sm">
+                                                {item.isExpired ? 'Vencido' : 'Por vencer'}
+                                            </div>
+                                        ) : (
+                                            <div className="font-bold text-red-600 text-xs lg:text-sm">{item.current_stock} {item.unit}</div>
+                                        )}
+                                        <div className="text-[10px] text-gray-400">
+                                            {item.is_expiration_warning ? `Vence: ${new Date(item.expiration_date).toLocaleDateString()}` : `Mín: ${item.minimum_stock}`}
+                                        </div>
                                     </div>
                                 </div>
                             ))
@@ -697,6 +761,40 @@ export const Dashboard: React.FC = () => {
                                 <CheckCircle className="h-3 w-3 mr-1" /> Todo en orden
                             </div>
                         )}
+                    </div>
+                </div>
+
+                {/* Rain Gauge Widget */}
+                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-5 border border-gray-100 transform transition hover:scale-105 print:hidden">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="text-blue-500 text-xs lg:text-sm font-medium">Pluviómetro (Lluvia)</div>
+                        <svg className="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                        </svg>
+                    </div>
+                    <form onSubmit={handleSaveRain} className="flex gap-2 mb-3">
+                        <input 
+                            type="number" 
+                            step="0.1"
+                            value={newRainMm}
+                            onChange={e => setNewRainMm(Number(e.target.value))}
+                            placeholder="mm"
+                            className="w-16 text-xs border border-gray-300 rounded p-1"
+                            required
+                        />
+                        <button type="submit" className="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded hover:bg-blue-200 font-medium">Añadir</button>
+                    </form>
+                    <div className="space-y-2 max-h-20 overflow-y-auto">
+                        {rainLogs.slice(0, 5).map((log, idx) => (
+                            <div key={idx} className="flex justify-between items-center text-xs">
+                                <span className="text-gray-500">{new Date(log.date).toLocaleDateString('es-CL', {day: '2-digit', month: 'short'})}</span>
+                                <span className="font-bold text-blue-600">{log.rain_mm} mm</span>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="mt-2 pt-2 border-t border-gray-100 flex justify-between items-center text-xs font-bold text-gray-700">
+                        <span>Total Año:</span>
+                        <span className="text-blue-600">{rainLogs.reduce((sum, log) => sum + Number(log.rain_mm), 0).toFixed(1)} mm</span>
                     </div>
                 </div>
 

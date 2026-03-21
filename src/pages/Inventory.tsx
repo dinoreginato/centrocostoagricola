@@ -15,6 +15,8 @@ interface Product {
   average_cost: number;
   updated_at: string;
   active_ingredient?: string; // New field
+  lot_number?: string;
+  expiration_date?: string;
 }
 
 interface InventoryMovement {
@@ -266,8 +268,11 @@ export const Inventory: React.FC = () => {
       category: product.category,
       unit: product.unit,
       current_stock: product.current_stock,
+      minimum_stock: product.minimum_stock,
       average_cost: product.average_cost,
-      active_ingredient: product.active_ingredient || '' // Include new field
+      active_ingredient: product.active_ingredient || '', // Include new field
+      lot_number: product.lot_number || '',
+      expiration_date: product.expiration_date || ''
     });
   };
 
@@ -318,6 +323,8 @@ export const Inventory: React.FC = () => {
           minimum_stock: editForm.minimum_stock,
           average_cost: editForm.average_cost,
           active_ingredient: editForm.active_ingredient,
+          lot_number: editForm.lot_number,
+          expiration_date: editForm.expiration_date ? editForm.expiration_date : null,
           updated_at: new Date().toISOString()
         })
         .eq('id', editingProduct.id);
@@ -466,6 +473,16 @@ export const Inventory: React.FC = () => {
                       <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800 capitalize">
                         {product.category}
                       </span>
+                      {(product.lot_number || product.expiration_date) && (
+                          <div className="mt-1 flex flex-col gap-0.5">
+                              {product.lot_number && <span className="text-[10px] text-gray-500">Lote: {product.lot_number}</span>}
+                              {product.expiration_date && (
+                                  <span className={`text-[10px] font-medium ${new Date(product.expiration_date) < new Date(new Date().setDate(new Date().getDate() + 30)) ? 'text-red-600' : 'text-gray-500'}`}>
+                                      Vence: {new Date(product.expiration_date).toLocaleDateString()}
+                                  </span>
+                              )}
+                          </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900 font-medium">{product.current_stock}</div>
@@ -754,6 +771,28 @@ export const Inventory: React.FC = () => {
                     step="0.01"
                     value={editForm.average_cost || 0}
                     onChange={e => setEditForm({...editForm, average_cost: Number(e.target.value)})}
+                    className="w-full border border-gray-300 rounded-md p-2"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">N° de Lote</label>
+                  <input
+                    type="text"
+                    value={editForm.lot_number || ''}
+                    onChange={e => setEditForm({...editForm, lot_number: e.target.value})}
+                    className="w-full border border-gray-300 rounded-md p-2"
+                    placeholder="Ej. L-202305"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Vencimiento</label>
+                  <input
+                    type="date"
+                    value={editForm.expiration_date || ''}
+                    onChange={e => setEditForm({...editForm, expiration_date: e.target.value})}
                     className="w-full border border-gray-300 rounded-md p-2"
                   />
                 </div>

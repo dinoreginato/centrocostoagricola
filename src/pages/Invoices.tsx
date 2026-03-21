@@ -648,8 +648,100 @@ export const Invoices: React.FC = () => {
 
   const { subtotal, tax, total, isCreditNote } = calculateTotals();
 
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const xmlInputRef = React.useRef<HTMLInputElement>(null); // New ref for XML
+
   const handleImportClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleXmlImportClick = () => {
+    xmlInputRef.current?.click();
+  };
+
+  const handleXmlUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.name.toLowerCase().endsWith('.xml')) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const xmlText = event.target?.result as string;
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+
+                let enc = xmlDoc.getElementsByTagName("Encabezado")[0];
+                if (!enc) enc = xmlDoc.getElementsByTagName("ns0:Encabezado")[0];
+
+                if (!enc) {
+                    alert("El archivo XML no parece ser un DTE válido del SII.");
+                    return;
+                }
+
+                const folio = (enc.getElementsByTagName("Folio")[0] || enc.getElementsByTagName("ns0:Folio")[0])?.textContent || "";
+                const fchEmis = (enc.getElementsByTagName("FchEmis")[0] || enc.getElementsByTagName("ns0:FchEmis")[0])?.textContent || "";
+                const rutEmisor = (enc.getElementsByTagName("RUTEmisor")[0] || enc.getElementsByTagName("ns0:RUTEmisor")[0])?.textContent || "";
+                const rznSoc = (enc.getElementsByTagName("RznSoc")[0] || enc.getElementsByTagName("ns0:RznSoc")[0])?.textContent || "";
+                
+                const tipoDte = (enc.getElementsByTagName("TipoDTE")[0] || enc.getElementsByTagName("ns0:TipoDTE")[0])?.textContent;
+                if (tipoDte === "34") {
+                    setDocumentType("Factura Exenta");
+                    setTaxPercentage(0);
+                } else {
+                    setDocumentType("Factura");
+                    setTaxPercentage(19);
+                }
+
+                const mntExe = (enc.getElementsByTagName("MntExe")[0] || enc.getElementsByTagName("ns0:MntExe")[0])?.textContent || "0";
+
+                setInvoiceNumber(folio);
+                setInvoiceDate(fchEmis);
+                setSupplier(rznSoc);
+                setSupplierRut(rutEmisor);
+                setExemptAmount(Number(mntExe));
+
+                let detalles = xmlDoc.getElementsByTagName("Detalle");
+                if (detalles.length === 0) detalles = xmlDoc.getElementsByTagName("ns0:Detalle");
+
+                const parsedItems: InvoiceItem[] = [];
+
+                for (let i = 0; i < detalles.length; i++) {
+                    const nmbItem = (detalles[i].getElementsByTagName("NmbItem")[0] || detalles[i].getElementsByTagName("ns0:NmbItem")[0])?.textContent || "Item";
+                    const qtyItem = Number((detalles[i].getElementsByTagName("QtyItem")[0] || detalles[i].getElementsByTagName("ns0:QtyItem")[0])?.textContent || 1);
+                    const prcItem = Number((detalles[i].getElementsByTagName("PrcItem")[0] || detalles[i].getElementsByTagName("ns0:PrcItem")[0])?.textContent || 0);
+                    const montoItem = Number((detalles[i].getElementsByTagName("MontoItem")[0] || detalles[i].getElementsByTagName("ns0:MontoItem")[0])?.textContent || (qtyItem * prcItem));
+
+                    const guessedCategory = guessCategory(nmbItem);
+
+                    parsedItems.push({
+                        product_id: '',
+                        product_name: nmbItem,
+                        quantity: qtyItem,
+                        unit_price: prcItem,
+                        total_price: montoItem,
+                        category: guessedCategory,
+                        unit: 'un',
+                        active_ingredient: '',
+                        destination_type: determineDestinationType(guessedCategory)
+                    });
+                }
+
+                setItems(parsedItems);
+                setIsFormOpen(true);
+                alert("Factura cargada exitosamente desde el XML. Revise los ítems y las asignaciones.");
+
+            } catch (error) {
+                console.error("Error parsing XML:", error);
+                alert("Hubo un error al procesar el archivo XML.");
+            } finally {
+                if (xmlInputRef.current) xmlInputRef.current.value = '';
+            }
+        };
+        reader.readAsText(file);
+    } else {
+        alert("Por favor seleccione un archivo XML.");
+    }
   };
 
   // Helper to normalize strings for comparison (remove accents, lowercase, trim)
@@ -1496,6 +1588,20 @@ export const Invoices: React.FC = () => {
                   </button>
                 </>
               )}
+              <input 
+                type="file" 
+                accept=".xml" 
+                className="hidden" 
+                ref={xmlInputRef}
+                onChange={handleXmlUpload} 
+              />
+              <button 
+                onClick={handleXmlImportClick}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm flex items-center font-bold"
+                title="Cargar Factura desde XML (SII)"
+              >
+                <FileText className="h-4 w-4 mr-1" /> XML (SII)
+              </button>
               <button 
                 onClick={handleCleanDuplicates}
                 className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-sm flex items-center font-bold"

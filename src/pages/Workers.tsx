@@ -19,6 +19,11 @@ interface WorkerCost {
   sector_id: string;
   workers?: { name: string };
   sectors?: { name: string };
+  is_piece_rate?: boolean;
+  piece_quantity?: number;
+  piece_price?: number;
+  worker_name?: string;
+  labor_type?: string;
 }
 
 interface Sector {
@@ -57,6 +62,13 @@ export const Workers: React.FC = () => {
   const [description, setDescription] = useState('');
   const [selectedSectorId, setSelectedSectorId] = useState('');
   const [selectedFieldId, setSelectedFieldId] = useState('');
+  
+  // Piece-rate State
+  const [isPieceRate, setIsPieceRate] = useState(false);
+  const [pieceQuantity, setPieceQuantity] = useState<number | ''>('');
+  const [piecePrice, setPiecePrice] = useState<number | ''>('');
+  const [workerName, setWorkerName] = useState('');
+  const [laborType, setLaborType] = useState('');
 
   useEffect(() => {
     if (selectedCompany) {
@@ -149,23 +161,36 @@ export const Workers: React.FC = () => {
 
   const handleSaveCost = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCompany || !amount || !selectedWorkerId || !description) {
-        alert('Complete todos los campos obligatorios');
-        return;
-    }
+    
+    if (!selectedCompany) return;
 
-    if (distributeBy === 'sector' && !selectedSectorId) {
-        alert('Seleccione un sector');
-        return;
-    }
-    if (distributeBy === 'field' && !selectedFieldId) {
-        alert('Seleccione un campo');
-        return;
+    if (isPieceRate) {
+        if (!pieceQuantity || !piecePrice || !workerName || !laborType) {
+            alert('Complete todos los campos del trato');
+            return;
+        }
+        if (distributeBy === 'sector' && !selectedSectorId) {
+            alert('Seleccione un sector');
+            return;
+        }
+    } else {
+        if (!amount || !selectedWorkerId || !description) {
+            alert('Complete todos los campos obligatorios');
+            return;
+        }
+        if (distributeBy === 'sector' && !selectedSectorId) {
+            alert('Seleccione un sector');
+            return;
+        }
+        if (distributeBy === 'field' && !selectedFieldId) {
+            alert('Seleccione un campo');
+            return;
+        }
     }
 
     setLoading(true);
     try {
-        const totalAmount = Number(amount);
+        const totalAmount = isPieceRate ? (Number(pieceQuantity) * Number(piecePrice)) : Number(amount);
         
         if (distributeBy === 'company') {
             // Distribute by Company (All Fields)
@@ -236,11 +261,16 @@ export const Workers: React.FC = () => {
                 .from('worker_costs')
                 .insert({
                     company_id: selectedCompany.id,
-                    worker_id: selectedWorkerId,
+                    worker_id: isPieceRate ? null : selectedWorkerId,
                     date,
-                    description,
+                    description: isPieceRate ? `Trato: ${laborType} - ${workerName} (${pieceQuantity} x $${piecePrice})` : description,
                     amount: totalAmount,
-                    sector_id: selectedSectorId
+                    sector_id: selectedSectorId,
+                    is_piece_rate: isPieceRate,
+                    piece_quantity: isPieceRate ? Number(pieceQuantity) : null,
+                    piece_price: isPieceRate ? Number(piecePrice) : null,
+                    worker_name: isPieceRate ? workerName : null,
+                    labor_type: isPieceRate ? laborType : null
                 });
 
             if (error) throw error;
@@ -249,6 +279,10 @@ export const Workers: React.FC = () => {
         // Reset form partial
         setAmount('');
         setDescription('');
+        setPieceQuantity('');
+        setPiecePrice('');
+        setWorkerName('');
+        setLaborType('');
         
         // Reload
         await loadCosts();
@@ -333,10 +367,24 @@ export const Workers: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Cost Registration Form */}
         <div className="lg:col-span-1 bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-                <Users className="h-5 w-5 mr-2 text-indigo-500" />
-                Registrar Costo (Sueldo/Bono)
-            </h3>
+            <div className="flex items-center justify-between mb-4 border-b pb-2">
+                <h3 className="text-lg font-medium text-gray-900 flex items-center">
+                    <Users className="h-5 w-5 mr-2 text-indigo-500" />
+                    Registrar Costo
+                </h3>
+                <div className="flex items-center space-x-2">
+                    <span className="text-xs text-gray-500 font-medium">Jornal</span>
+                    <button
+                        type="button"
+                        onClick={() => setIsPieceRate(!isPieceRate)}
+                        className={`relative inline-flex h-5 w-10 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${isPieceRate ? 'bg-indigo-600' : 'bg-gray-200'}`}
+                    >
+                        <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${isPieceRate ? 'translate-x-5' : 'translate-x-0'}`} />
+                    </button>
+                    <span className="text-xs text-indigo-600 font-bold">Trato</span>
+                </div>
+            </div>
+
             <form onSubmit={handleSaveCost} className="space-y-4">
                 <div>
                     <label className="block text-sm font-medium text-gray-700">Fecha</label>
@@ -347,29 +395,79 @@ export const Workers: React.FC = () => {
                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                     />
                 </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700">Trabajador</label>
-                    <select
-                        value={selectedWorkerId}
-                        onChange={e => setSelectedWorkerId(e.target.value)}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    >
-                        <option value="">Seleccione...</option>
-                        {workers.map(w => (
-                            <option key={w.id} value={w.id}>{w.name} ({w.role})</option>
-                        ))}
-                    </select>
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700">Descripción</label>
-                    <input
-                        type="text"
-                        placeholder="Ej: Sueldo Enero 2026"
-                        value={description}
-                        onChange={e => setDescription(e.target.value)}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                    />
-                </div>
+
+                {!isPieceRate ? (
+                    <>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Trabajador Fijo</label>
+                            <select
+                                value={selectedWorkerId}
+                                onChange={e => setSelectedWorkerId(e.target.value)}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            >
+                                <option value="">Seleccione...</option>
+                                {workers.map(w => (
+                                    <option key={w.id} value={w.id}>{w.name} ({w.role})</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Descripción</label>
+                            <input
+                                type="text"
+                                placeholder="Ej: Sueldo Enero 2026"
+                                value={description}
+                                onChange={e => setDescription(e.target.value)}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            />
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Nombre del Contratista / Trabajador</label>
+                            <input
+                                type="text"
+                                placeholder="Ej: Cuadrilla Juan Pérez"
+                                value={workerName}
+                                onChange={e => setWorkerName(e.target.value)}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Labor / Tipo de Trato</label>
+                            <input
+                                type="text"
+                                placeholder="Ej: Cosecha de Pera"
+                                value={laborType}
+                                onChange={e => setLaborType(e.target.value)}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Cantidad</label>
+                                <input
+                                    type="number"
+                                    placeholder="Ej: 50"
+                                    value={pieceQuantity}
+                                    onChange={e => setPieceQuantity(Number(e.target.value))}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Precio x Unidad</label>
+                                <input
+                                    type="number"
+                                    placeholder="Ej: 500"
+                                    value={piecePrice}
+                                    onChange={e => setPiecePrice(Number(e.target.value))}
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                                />
+                            </div>
+                        </div>
+                    </>
+                )}
                 
                 {/* Distribution Logic */}
                 <div>
@@ -448,21 +546,23 @@ export const Workers: React.FC = () => {
                     </div>
                 )}
 
-                <div>
-                    <label className="block text-sm font-medium text-gray-700">Monto Total (CLP)</label>
-                    <div className="mt-1 relative rounded-md shadow-sm">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <span className="text-gray-500 sm:text-sm">$</span>
+                {!isPieceRate && (
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Monto Total (CLP)</label>
+                        <div className="mt-1 relative rounded-md shadow-sm">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <span className="text-gray-500 sm:text-sm">$</span>
+                            </div>
+                            <input
+                                type="number"
+                                value={amount}
+                                onChange={e => setAmount(Number(e.target.value))}
+                                className="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-7 pr-12 sm:text-sm border-gray-300 rounded-md"
+                                placeholder="0"
+                            />
                         </div>
-                        <input
-                            type="number"
-                            value={amount}
-                            onChange={e => setAmount(Number(e.target.value))}
-                            className="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-7 pr-12 sm:text-sm border-gray-300 rounded-md"
-                            placeholder="0"
-                        />
                     </div>
-                </div>
+                )}
 
                 <div className="pt-4">
                     <button
@@ -504,7 +604,13 @@ export const Workers: React.FC = () => {
                                         {new Date(cost.date).toLocaleDateString()}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                        {cost.workers?.name}
+                                        {cost.is_piece_rate ? (
+                                            <div className="flex flex-col">
+                                                <span>{cost.worker_name} <span className="text-xs font-normal text-indigo-600">(Trato)</span></span>
+                                            </div>
+                                        ) : (
+                                            cost.workers?.name
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         {cost.description}
