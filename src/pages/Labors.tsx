@@ -87,7 +87,7 @@ export const Labors: React.FC = () => {
   // Selection State
   const [selectedLaborId, setSelectedLaborId] = useState<string | null>(null);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
-  const [assignedDate, setAssignedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [assignedDate, setAssignedDate] = useState(new Date().toLocaleDateString('en-CA'));
   const [laborType, setLaborType] = useState<string>('General');
   const [distributeBy, setDistributeBy] = useState<'sector' | 'field' | 'company'>('sector');
   const [selectedFieldId, setSelectedFieldId] = useState<string>('');

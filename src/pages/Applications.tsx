@@ -126,7 +126,7 @@ export const Applications: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedFieldId, setSelectedFieldId] = useState('');
   const [selectedSectorId, setSelectedSectorId] = useState('');
-  const [applicationDate, setApplicationDate] = useState(new Date().toISOString().split('T')[0]);
+  const [applicationDate, setApplicationDate] = useState(new Date().toLocaleDateString('en-CA'));
   const [applicationType, setApplicationType] = useState('fertilizacion');
   const [waterVolumePerHectare, setWaterVolumePerHectare] = useState<number>(0); 
   const [items, setItems] = useState<ApplicationItem[]>([]);

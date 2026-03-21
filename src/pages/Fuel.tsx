@@ -60,7 +60,7 @@ export const Fuel: React.FC = () => {
   // Form State
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const [distributeBy, setDistributeBy] = useState<'sector' | 'field' | 'company'>('sector');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(new Date().toLocaleDateString('en-CA'));
   const [activity, setActivity] = useState('');
   const [liters, setLiters] = useState<number | ''>('');
   const [selectedSectorId, setSelectedSectorId] = useState('');

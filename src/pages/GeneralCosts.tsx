@@ -62,7 +62,7 @@ export const GeneralCosts: React.FC = () => {
   // Selection State
   const [selectedCostId, setSelectedCostId] = useState<string | null>(null);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
-  const [assignedDate, setAssignedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [assignedDate, setAssignedDate] = useState<string>(new Date().toLocaleDateString('en-CA'));
   const [distributeBy, setDistributeBy] = useState<'sector' | 'field' | 'company'>('sector');
   const [selectedFieldId, setSelectedFieldId] = useState<string>('');
   const [fieldTotalAmount, setFieldTotalAmount] = useState<number>(0);

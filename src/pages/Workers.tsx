@@ -51,7 +51,7 @@ export const Workers: React.FC = () => {
 
   // Cost Form State
   const [distributeBy, setDistributeBy] = useState<'sector' | 'field' | 'company'>('sector');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(new Date().toLocaleDateString('en-CA'));
   const [selectedWorkerId, setSelectedWorkerId] = useState('');
   const [amount, setAmount] = useState<number | ''>('');
   const [description, setDescription] = useState('');

@@ -4,6 +4,7 @@ import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Plus, Loader2, Save, Trash2, Calendar, FileText, Printer, CheckCircle, XCircle, Search, Edit } from 'lucide-react';
 import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 
 // Interfaces based on DB Schema
@@ -87,7 +88,7 @@ export const ApplicationOrders: React.FC = () => {
   // Form State
   const [isEditing, setIsEditing] = useState(false);
   const [currentOrder, setCurrentOrder] = useState<Partial<ApplicationOrder>>({
-    scheduled_date: new Date().toISOString().split('T')[0],
+    scheduled_date: new Date().toLocaleDateString('en-CA'),
     status: 'pendiente',
     application_type: 'fitosanitario',
     water_liters_per_hectare: 1000,
@@ -320,137 +321,143 @@ export const ApplicationOrders: React.FC = () => {
       const doc = new jsPDF();
       
       // -- Header Section --
-      doc.setFontSize(18);
+      doc.setFontSize(16);
       doc.setFont("helvetica", "bold");
-      doc.text('ORDEN DE APLICACION DE AGROQUIMICOS', 105, 20, { align: 'center' });
+      doc.text('ORDEN DE APLICACIÓN DE AGROQUÍMICOS', 105, 20, { align: 'center' });
       
       // Folio Top Right
-      doc.setFontSize(12);
-      doc.text('FOLIO', 170, 15);
-      doc.text(`N° ${order.order_number}`, 170, 22);
+      doc.setFontSize(10);
+      doc.text('FOLIO N°', 170, 15);
+      doc.setFontSize(14);
+      doc.setTextColor(220, 38, 38); // Red color for folio
+      doc.text(`${order.order_number}`, 170, 22);
+      doc.setTextColor(0, 0, 0); // Reset color
       
-      // -- Main Info Box --
-      doc.setDrawColor(0);
-      doc.setLineWidth(0.5);
-      doc.rect(14, 30, 182, 230); // Main container border
+      // -- Box 1: General Info --
+      doc.setDrawColor(200);
+      doc.setFillColor(245, 245, 245);
+      doc.roundedRect(14, 30, 182, 45, 3, 3, 'FD'); // Box
       
-      let y = 45;
-      const xLabel = 20;
-      const xValue = 80;
-      const lineHeight = 12;
-
-      doc.setFontSize(11);
+      doc.setFontSize(10);
       doc.setFont("helvetica", "bold");
-
-      // Productor
-      doc.text('PRODUCTOR :', xLabel, y);
-      doc.setFont("helvetica", "normal");
-      doc.text(selectedCompany?.name || 'Inversiones Regis Ltda', xValue, y);
-      doc.line(xValue - 2, y + 2, 190, y + 2); // Underline
-      y += lineHeight;
-
-      // Huerto
-      doc.setFont("helvetica", "bold");
-      doc.text('HUERTO :', xLabel, y);
-      doc.setFont("helvetica", "normal");
-      doc.text(order.field?.name || '', xValue, y);
-      doc.line(xValue - 2, y + 2, 190, y + 2);
-      y += lineHeight;
-
-      // Variedad
-      doc.setFont("helvetica", "bold");
-      doc.text('VARIEDAD :', xLabel, y);
-      doc.setFont("helvetica", "normal");
-      doc.text(order.variety || order.sector?.name || '', xValue, y); // Use sector if variety empty
-      doc.line(xValue - 2, y + 2, 190, y + 2);
-      y += lineHeight;
-
-      // Fecha Inicio
-      doc.setFont("helvetica", "bold");
-      doc.text('FECHA INICIO :', xLabel, y);
-      doc.setFont("helvetica", "normal");
-      doc.text(new Date(order.scheduled_date).toLocaleDateString(), xValue, y);
-      doc.line(xValue - 2, y + 2, 190, y + 2);
-      y += lineHeight;
-
-      // Objetivo Aplicacion
-      doc.setFont("helvetica", "bold");
-      doc.text('OBJETIVO APLICACION :', xLabel, y);
-      doc.setFont("helvetica", "normal");
-      doc.text(order.objective || order.application_type || '', xValue, y);
-      doc.line(xValue - 2, y + 2, 190, y + 2);
-      y += lineHeight;
-
-      // -- Products Section (Simulating Lines) --
-      // Instead of a grid table, we list products as lines to match the form style
-      doc.setFont("helvetica", "bold");
-      doc.text('PRODUCTO :', xLabel, y);
-      y += 8; // Small gap
       
-      // List products
-      order.items?.forEach((item) => {
-          doc.setFont("helvetica", "normal");
-          const productText = `${item.product_name} (${item.active_ingredient || ''})`;
-          doc.text(`- ${productText}`, xValue, y);
-          y += 8;
+      // Row 1
+      doc.text('PRODUCTOR:', 18, 40);
+      doc.setFont("helvetica", "normal");
+      doc.text(selectedCompany?.name || 'Inversiones Regis Ltda', 45, 40);
+      
+      doc.setFont("helvetica", "bold");
+      doc.text('FECHA:', 120, 40);
+      doc.setFont("helvetica", "normal");
+      // Format date to local to avoid timezone shift
+      const localDate = new Date(order.scheduled_date + 'T00:00:00');
+      doc.text(localDate.toLocaleDateString('es-CL'), 140, 40);
+
+      // Row 2
+      doc.setFont("helvetica", "bold");
+      doc.text('HUERTO:', 18, 50);
+      doc.setFont("helvetica", "normal");
+      doc.text(order.field?.name || '', 45, 50);
+
+      doc.setFont("helvetica", "bold");
+      doc.text('SECTOR:', 90, 50);
+      doc.setFont("helvetica", "normal");
+      doc.text(order.sector?.name || '', 110, 50);
+
+      doc.setFont("helvetica", "bold");
+      doc.text('HAS:', 155, 50);
+      doc.setFont("helvetica", "normal");
+      doc.text(order.sector?.hectares ? order.sector.hectares.toString() : '', 165, 50);
+
+      // Row 3
+      doc.setFont("helvetica", "bold");
+      doc.text('VARIEDAD:', 18, 60);
+      doc.setFont("helvetica", "normal");
+      doc.text(order.variety || '', 45, 60);
+
+      doc.setFont("helvetica", "bold");
+      doc.text('OBJETIVO:', 90, 60);
+      doc.setFont("helvetica", "normal");
+      doc.text(order.objective || order.application_type || '', 110, 60);
+
+      // Row 4
+      doc.setFont("helvetica", "bold");
+      doc.text('MOJAMIENTO:', 18, 70);
+      doc.setFont("helvetica", "normal");
+      doc.text(`${order.water_liters_per_hectare || 0} Lts / ha`, 45, 70);
+      
+      // -- Products Table --
+      const tableData = order.items?.map(item => [
+          item.product_name,
+          item.active_ingredient || '-',
+          item.dose_per_100l ? `${item.dose_per_100l} ${item.unit || 'L/Kg'}` : '-',
+          item.dose_per_hectare ? `${item.dose_per_hectare} ${item.unit || 'L/Kg'}` : '-',
+          `${item.total_quantity} ${item.unit || 'L/Kg'}`
+      ]) || [];
+
+      autoTable(doc, {
+          startY: 82,
+          head: [['PRODUCTO', 'INGREDIENTE ACTIVO', 'DOSIS / 100L', 'DOSIS / Ha', 'TOTAL A PEDIR']],
+          body: tableData,
+          theme: 'grid',
+          headStyles: { fillColor: [41, 128, 185], fontSize: 9 },
+          styles: { fontSize: 9, cellPadding: 4 },
+          columnStyles: {
+              0: { cellWidth: 50 },
+              2: { halign: 'center' },
+              3: { halign: 'center' },
+              4: { halign: 'center', fontStyle: 'bold', textColor: [41, 128, 185] }
+          }
       });
-      // Ensure at least some space if empty
-      if (!order.items?.length) y += 8;
-      
-      // Dosis Section
-      y += 5;
-      doc.setFont("helvetica", "bold");
-      doc.text('DOSIS :', xLabel, y);
-      y += 8;
-      
-      order.items?.forEach((item) => {
-          doc.setFont("helvetica", "normal");
-          let doseText = '';
-          if (item.dose_per_100l) doseText += `${item.dose_per_100l} ${item.unit || 'L/Kg'}/100L`;
-          if (item.dose_per_hectare) doseText += `  -  ${item.dose_per_hectare} ${item.unit || 'L/Kg'}/ha`;
-          
-          doc.text(`- ${doseText}`, xValue, y);
-          y += 8;
-      });
-       if (!order.items?.length) y += 8;
 
-      // Mojamiento
-      y += 5;
-      doc.setFont("helvetica", "bold");
-      doc.text('MOJAMIENTO :', xLabel, y);
-      doc.setFont("helvetica", "normal");
-      doc.text(`${order.water_liters_per_hectare} Lts / ha`, xValue, y);
-      doc.line(xValue - 2, y + 2, 190, y + 2);
-      y += lineHeight;
+      let currentY = (doc as any).lastAutoTable.finalY + 15;
 
-      // Observaciones
-      doc.setFont("helvetica", "bold");
-      doc.text('OBSERVACIONES :', xLabel, y);
-      doc.setFont("helvetica", "normal");
-      
-      const notes = order.notes 
-        ? `${order.notes} (Reingreso: ${order.safety_period_hours}hrs, Carencia: ${order.grace_period_days}dias)`
-        : `Reingreso: ${order.safety_period_hours || 0} hrs. Carencia: ${order.grace_period_days || 0} días.`;
-      
-      const splitNotes = doc.splitTextToSize(notes, 100);
-      doc.text(splitNotes, xValue, y);
-      
-      // Underlines for observations
-      for(let i=0; i<3; i++) {
-          doc.line(xValue - 2, y + 2 + (i*8), 190, y + 2 + (i*8));
-      }
+      // -- Box 2: Machinery & Observations --
+      doc.setDrawColor(200);
+      doc.setFillColor(250, 250, 250);
+      doc.roundedRect(14, currentY, 182, 65, 3, 3, 'FD');
 
-      // -- Machinery Info (Extra, not in original form but useful) --
-      y = 210;
+      doc.setFont("helvetica", "bold");
+      doc.text('DATOS DE APLICACIÓN Y MAQUINARIA', 18, currentY + 8);
+      
       doc.setFontSize(9);
-      doc.setFont("helvetica", "italic");
-      doc.text(`Maquinaria: ${order.tractor?.name || '-'} / ${order.sprayer?.name || '-'}`, 20, y);
-      doc.text(`Operador: ${order.driver?.name || '-'}`, 20, y + 5);
-      doc.text(`Parámetros: ${order.speed || '-'} km/h, ${order.pressure || '-'} bar, ${order.nozzles || '-'}`, 20, y + 10);
+      doc.text('Maquinaria:', 18, currentY + 18);
+      doc.setFont("helvetica", "normal");
+      doc.text(`${order.tractor?.name || '-'} / ${order.sprayer?.name || '-'}`, 45, currentY + 18);
+
+      doc.setFont("helvetica", "bold");
+      doc.text('Operador:', 100, currentY + 18);
+      doc.setFont("helvetica", "normal");
+      doc.text(`${order.driver?.name || '-'}`, 120, currentY + 18);
+
+      doc.setFont("helvetica", "bold");
+      doc.text('Parámetros:', 18, currentY + 28);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Velocidad: ${order.speed || '-'} km/h  |  Presión: ${order.pressure || '-'} bar  |  RPM: ${order.rpm || '-'}  |  Boquillas: ${order.nozzles || '-'}`, 45, currentY + 28);
+
+      doc.setFont("helvetica", "bold");
+      doc.text('Carencia/Reingreso:', 18, currentY + 38);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Reingreso: ${order.safety_period_hours || 0} hrs  |  Carencia: ${order.grace_period_days || 0} días`, 55, currentY + 38);
+
+      doc.setFont("helvetica", "bold");
+      doc.text('Observaciones:', 18, currentY + 48);
+      doc.setFont("helvetica", "normal");
+      const splitNotes = doc.splitTextToSize(order.notes || 'Ninguna.', 150);
+      doc.text(splitNotes, 45, currentY + 48);
+
+      // -- Signatures --
+      currentY += 90;
+      doc.line(30, currentY, 80, currentY);
+      doc.text('Firma Preparador / Entrega', 35, currentY + 5);
+
+      doc.line(130, currentY, 180, currentY);
+      doc.text('Firma Operador / Recibe', 135, currentY + 5);
 
       // -- Footer --
       doc.setFontSize(8);
-      doc.text('Imp. Regner Ltda. - Fono (75) 2411087 - Teno.', 105, 280, { align: 'center' });
+      doc.setTextColor(150);
+      doc.text('Documento generado por Sistema de Control Agrícola', 105, 285, { align: 'center' });
 
       const pdfBlob = doc.output('bloburl');
       setPdfPreviewUrl(pdfBlob.toString());
@@ -475,7 +482,7 @@ export const ApplicationOrders: React.FC = () => {
             <button
                 onClick={() => {
                     setCurrentOrder({
-                        scheduled_date: new Date().toISOString().split('T')[0],
+                        scheduled_date: new Date().toLocaleDateString('en-CA'),
                         status: 'pendiente',
                         application_type: 'fitosanitario',
                         water_liters_per_hectare: 1000,
