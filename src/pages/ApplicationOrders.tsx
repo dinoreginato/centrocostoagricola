@@ -103,11 +103,13 @@ export const ApplicationOrders: React.FC = () => {
     dose_input_value: number;
     dose_input_type: 'ha' | 'hl';
     objective: string;
+    unit_override: string; // New field for specific unit (cc, L, kg, gr)
   }>({
     product_id: '',
     dose_input_value: 0,
     dose_input_type: 'hl', // Default to concentration for orders usually
-    objective: ''
+    objective: '',
+    unit_override: ''
   });
 
   useEffect(() => {
@@ -220,7 +222,7 @@ export const ApplicationOrders: React.FC = () => {
           product_name: product.name,
           active_ingredient: product.active_ingredient,
           category: product.category,
-          unit: product.unit,
+          unit: currentItem.unit_override || product.unit,
           stock: product.current_stock,
           dose_per_hectare: Number(doseHa.toFixed(4)),
           dose_per_100l: Number(dose100L.toFixed(4)),
@@ -233,7 +235,7 @@ export const ApplicationOrders: React.FC = () => {
           items: [...(prev.items || []), newItem]
       }));
 
-      setCurrentItem({ product_id: '', dose_input_value: 0, dose_input_type: 'hl', objective: '' });
+      setCurrentItem({ product_id: '', dose_input_value: 0, dose_input_type: 'hl', objective: '', unit_override: '' });
   };
 
   const handleRemoveItem = (index: number) => {
@@ -404,8 +406,8 @@ export const ApplicationOrders: React.FC = () => {
       order.items?.forEach((item) => {
           doc.setFont("helvetica", "normal");
           let doseText = '';
-          if (item.dose_per_100l) doseText += `${item.dose_per_100l} ${item.unit}/100L`;
-          if (item.dose_per_hectare) doseText += `  -  ${item.dose_per_hectare} ${item.unit}/ha`;
+          if (item.dose_per_100l) doseText += `${item.dose_per_100l} ${item.unit || 'L/Kg'}/100L`;
+          if (item.dose_per_hectare) doseText += `  -  ${item.dose_per_hectare} ${item.unit || 'L/Kg'}/ha`;
           
           doc.text(`- ${doseText}`, xValue, y);
           y += 8;
@@ -606,6 +608,20 @@ export const ApplicationOrders: React.FC = () => {
                               onChange={e => setCurrentItem({...currentItem, dose_input_value: Number(e.target.value)})}
                               className="w-full border border-gray-300 rounded p-1.5 text-sm"
                           />
+                      </div>
+                      <div className="w-24">
+                          <label className="block text-xs text-gray-500">Unidad</label>
+                          <select 
+                              value={currentItem.unit_override}
+                              onChange={e => setCurrentItem({...currentItem, unit_override: e.target.value})}
+                              className="w-full border border-gray-300 rounded p-1.5 text-sm"
+                          >
+                              <option value="">Auto</option>
+                              <option value="L">L</option>
+                              <option value="cc">cc</option>
+                              <option value="Kg">Kg</option>
+                              <option value="gr">gr</option>
+                          </select>
                       </div>
                       <button 
                           onClick={handleAddItem}
