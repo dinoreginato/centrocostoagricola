@@ -26,6 +26,9 @@ interface Machine {
     model: string;
     plate: string;
     description: string;
+    current_hours: number;
+    maintenance_interval_hours: number;
+    last_maintenance_hours: number;
 }
 
 interface Sector {
@@ -161,7 +164,7 @@ export const Machinery: React.FC = () => {
       if (!selectedCompany) return;
       const { data } = await supabase
           .from('machines')
-          .select('*')
+          .select('id, name, type, brand, model, plate, description, current_hours, maintenance_interval_hours, last_maintenance_hours')
           .eq('company_id', selectedCompany.id)
           .eq('is_active', true)
           .order('name');
@@ -362,7 +365,7 @@ export const Machinery: React.FC = () => {
     setSelectedItemId(item.id);
     setEditingAssignmentId(null);
     setEditingItem(null); // Clear editing item when selecting new
-    setAssignedDate(item.date ? item.date.split('T')[0] : new Date().toISOString().split('T')[0]);
+    setAssignedDate(item.date ? item.date.split('T')[0] : new Date().toLocaleDateString('en-CA'));
     setDistributeBy('sector');
     setSelectedMachineId('');
     setAllocations([{ sector_id: '', amount: item.remaining_amount }]);
@@ -426,7 +429,7 @@ export const Machinery: React.FC = () => {
           setEditingItem(fullItem);
           setEditingAssignmentId(assignment.id);
           setSelectedItemId(assignment.invoice_item_id);
-          setAssignedDate(assignment.assigned_date ? assignment.assigned_date.split('T')[0] : new Date().toISOString().split('T')[0]);
+          setAssignedDate(assignment.assigned_date ? assignment.assigned_date.split('T')[0] : new Date().toLocaleDateString('en-CA'));
           setDistributeBy('sector'); // Edit is always single sector for now
           setSelectedMachineId(assignment.machine_id || '');
           setAllocations([{ 
@@ -571,6 +574,9 @@ export const Machinery: React.FC = () => {
             model: editingMachine.model,
             plate: editingMachine.plate,
             description: editingMachine.description,
+            current_hours: editingMachine.current_hours || 0,
+            maintenance_interval_hours: editingMachine.maintenance_interval_hours || 250,
+            last_maintenance_hours: editingMachine.last_maintenance_hours || 0,
             company_id: selectedCompany.id
         };
 
@@ -1407,6 +1413,33 @@ export const Machinery: React.FC = () => {
                                 onChange={e => setEditingMachine({...editingMachine, plate: e.target.value})}
                             />
                         </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500">Horómetro Actual</label>
+                            <input
+                                type="number"
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                value={editingMachine?.current_hours || 0}
+                                onChange={e => setEditingMachine({...editingMachine, current_hours: Number(e.target.value)})}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500">Mantención cada (Hrs)</label>
+                            <input
+                                type="number"
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                value={editingMachine?.maintenance_interval_hours || 250}
+                                onChange={e => setEditingMachine({...editingMachine, maintenance_interval_hours: Number(e.target.value)})}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500">Última Mantención (Hr)</label>
+                            <input
+                                type="number"
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                value={editingMachine?.last_maintenance_hours || 0}
+                                onChange={e => setEditingMachine({...editingMachine, last_maintenance_hours: Number(e.target.value)})}
+                            />
+                        </div>
                         <div className="md:col-span-2 flex justify-end gap-2 mt-2">
                              <button
                                 type="button"
@@ -1434,15 +1467,39 @@ export const Machinery: React.FC = () => {
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nombre</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Marca/Modelo</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mantención (Hrs)</th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                            {machines.map((m) => (
+                            {machines.map((m) => {
+                                const nextMaintenance = (m.last_maintenance_hours || 0) + (m.maintenance_interval_hours || 250);
+                                const isDue = (m.current_hours || 0) >= nextMaintenance;
+                                const isWarning = (m.current_hours || 0) >= (nextMaintenance - 50);
+
+                                return (
                                 <tr key={m.id}>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{m.name}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{m.type}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{m.brand} {m.model}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                        <div className="flex items-center">
+                                            <span className="font-medium mr-2">{m.current_hours || 0} / {nextMaintenance}</span>
+                                            {isDue ? (
+                                                <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 flex items-center">
+                                                    <AlertTriangle className="h-3 w-3 mr-1" /> Vencida
+                                                </span>
+                                            ) : isWarning ? (
+                                                <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                                                    Pronta
+                                                </span>
+                                            ) : (
+                                                <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                                    Al día
+                                                </span>
+                                            )}
+                                        </div>
+                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                         <button 
                                             onClick={() => {
@@ -1459,7 +1516,7 @@ export const Machinery: React.FC = () => {
                                         <button onClick={() => handleDeleteMachine(m.id)} className="text-red-600 hover:text-red-900">Eliminar</button>
                                     </td>
                                 </tr>
-                            ))}
+                            )})}
                             {machines.length === 0 && (
                                 <tr>
                                     <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500">No hay máquinas registradas.</td>

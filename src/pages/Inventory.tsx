@@ -11,6 +11,7 @@ interface Product {
   category: string;
   unit: string;
   current_stock: number;
+  minimum_stock: number; // New field
   average_cost: number;
   updated_at: string;
   active_ingredient?: string; // New field
@@ -314,6 +315,7 @@ export const Inventory: React.FC = () => {
           category: editForm.category,
           unit: editForm.unit,
           current_stock: editForm.current_stock,
+          minimum_stock: editForm.minimum_stock,
           average_cost: editForm.average_cost,
           active_ingredient: editForm.active_ingredient,
           updated_at: new Date().toISOString()
@@ -468,6 +470,9 @@ export const Inventory: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900 font-medium">{product.current_stock}</div>
                       <div className="text-xs text-gray-500">{product.unit}</div>
+                      {product.minimum_stock > 0 && (
+                          <div className="text-[10px] text-orange-500">Mín: {product.minimum_stock}</div>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-900">{formatCLP(product.average_cost)}</div>
@@ -481,6 +486,10 @@ export const Inventory: React.FC = () => {
                       {product.current_stock <= 0 ? (
                         <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
                           Sin Stock
+                        </span>
+                      ) : product.minimum_stock > 0 && product.current_stock <= product.minimum_stock ? (
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 flex items-center">
+                          <AlertTriangle className="h-3 w-3 mr-1" /> Crítico
                         </span>
                       ) : product.current_stock < 10 ? (
                         <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800 flex items-center">
@@ -710,6 +719,20 @@ export const Inventory: React.FC = () => {
                   />
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Stock Mínimo (Alerta)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editForm.minimum_stock || 0}
+                    onChange={e => setEditForm({...editForm, minimum_stock: Number(e.target.value)})}
+                    className="w-full border border-gray-300 rounded-md p-2 bg-orange-50 focus:ring-orange-500 focus:border-orange-500"
+                    placeholder="Ej. 10"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label>
                   <select
                     value={editForm.unit || 'un'}
@@ -724,17 +747,16 @@ export const Inventory: React.FC = () => {
                     <option value="cc">cc</option>
                   </select>
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Costo Promedio</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={editForm.average_cost || 0}
-                  onChange={e => setEditForm({...editForm, average_cost: Number(e.target.value)})}
-                  className="w-full border border-gray-300 rounded-md p-2"
-                />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Costo Promedio</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editForm.average_cost || 0}
+                    onChange={e => setEditForm({...editForm, average_cost: Number(e.target.value)})}
+                    className="w-full border border-gray-300 rounded-md p-2"
+                  />
+                </div>
               </div>
 
               <div className="flex justify-end pt-4 gap-2">

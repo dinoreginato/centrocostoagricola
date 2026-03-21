@@ -4,7 +4,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X, Trash2, Layout, AlertCircle, Play, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X, Trash2, Layout, AlertCircle, Play, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, ShieldAlert } from 'lucide-react';
 import { 
   BarChart, 
   Bar, 
@@ -39,6 +39,8 @@ export const Dashboard: React.FC = () => {
   const [chartData, setChartData] = useState<any[]>([]);
   const [sectorChartData, setSectorChartData] = useState<any[]>([]);
   const [upcomingInvoices, setUpcomingInvoices] = useState<any[]>([]);
+  const [criticalStock, setCriticalStock] = useState<any[]>([]); 
+  const [sectorSafetyStatus, setSectorSafetyStatus] = useState<any[]>([]); // New State
 
   useEffect(() => {
     if (selectedCompany) {
@@ -311,6 +313,49 @@ export const Dashboard: React.FC = () => {
 
       setSectorChartData(sectorCosts);
 
+      // 5. Load Critical Stock
+      const { data: stockData } = await supabase
+        .from('products')
+        .select('name, current_stock, minimum_stock, unit')
+        .eq('company_id', selectedCompany.id)
+        .gt('minimum_stock', 0);
+
+      if (stockData) {
+          const critical = stockData.filter(p => p.current_stock <= p.minimum_stock);
+          setCriticalStock(critical);
+      }
+
+      // 6. Load Safety Status (Application Orders)
+      const { data: ordersData } = await supabase
+        .from('application_orders')
+        .select('sector_id, scheduled_date, safety_period_hours, grace_period_days, sector:sectors(name)')
+        .eq('company_id', selectedCompany.id)
+        .order('scheduled_date', { ascending: false });
+
+      if (ordersData) {
+          const now = new Date();
+          const safetyStatus = allSectors.map(sector => {
+              // Get the most recent order for this sector
+              const recentOrder = ordersData.find(o => o.sector_id === sector.id);
+              if (!recentOrder) return { sectorName: sector.name, status: 'verde', message: 'Sin aplicaciones recientes' };
+
+              const orderDate = new Date(recentOrder.scheduled_date + 'T00:00:00');
+              const reentryDate = new Date(orderDate.getTime() + (recentOrder.safety_period_hours || 0) * 60 * 60 * 1000);
+              const graceDate = new Date(orderDate.getTime() + (recentOrder.grace_period_days || 0) * 24 * 60 * 60 * 1000);
+
+              if (now < reentryDate) {
+                  return { sectorName: sector.name, status: 'rojo', message: `Prohibido entrar hasta ${reentryDate.toLocaleDateString()}` };
+              } else if (now < graceDate) {
+                  return { sectorName: sector.name, status: 'amarillo', message: `No cosechar hasta ${graceDate.toLocaleDateString()}` };
+              } else {
+                  return { sectorName: sector.name, status: 'verde', message: 'Seguro para reingreso y cosecha' };
+              }
+          });
+
+          // Only keep red and yellow for the widget to keep it clean
+          setSectorSafetyStatus(safetyStatus.filter(s => s.status !== 'verde'));
+      }
+
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     }
@@ -564,7 +609,7 @@ export const Dashboard: React.FC = () => {
                 </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 print:grid-cols-4 print:gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-6 print:grid-cols-4 print:gap-4">
                 <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-sm p-4 lg:p-5 text-white transform transition hover:scale-105 print:transform-none print:shadow-none print:border print:border-gray-200 print:text-black print:bg-none print:bg-white flex flex-col justify-center">
                     <div className="text-green-100 text-xs lg:text-sm font-medium mb-1 print:text-gray-600">Costo Total Acumulado</div>
                     <div className="text-xl lg:text-2xl font-bold truncate print:text-xl" title={formatCLP(Number(dashboardStats.totalCost) || 0)}>
@@ -602,6 +647,56 @@ export const Dashboard: React.FC = () => {
                             </div>
                         ))}
                         {(!sectorChartData || sectorChartData.length === 0) && <div className="text-xs text-gray-400 italic">Sin datos</div>}
+                    </div>
+                </div>
+
+                {/* Sector Safety Status Widget */}
+                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-5 border border-gray-100 transform transition hover:scale-105 print:hidden">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="text-orange-600 text-xs lg:text-sm font-medium">Reingreso / Carencia</div>
+                        <ShieldAlert className="h-4 w-4 text-orange-500" />
+                    </div>
+                    <div className="space-y-3 max-h-32 overflow-y-auto">
+                        {sectorSafetyStatus.length > 0 ? (
+                            sectorSafetyStatus.map((status, idx) => (
+                                <div key={idx} className="flex justify-between items-center border-b border-gray-50 pb-1.5 last:border-0">
+                                    <div className="font-medium text-gray-800 text-xs lg:text-sm truncate max-w-[100px]">{status.sectorName}</div>
+                                    <div className="text-right flex items-center">
+                                        <div className={`w-2 h-2 rounded-full mr-1.5 ${status.status === 'rojo' ? 'bg-red-500' : 'bg-yellow-400'}`}></div>
+                                        <div className="text-[10px] text-gray-500 max-w-[90px] truncate" title={status.message}>{status.message}</div>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="text-xs text-green-600 italic flex items-center">
+                                <CheckCircle className="h-3 w-3 mr-1" /> Campos seguros
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Critical Stock Widget */}
+                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-5 border border-gray-100 transform transition hover:scale-105 print:hidden">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="text-red-500 text-xs lg:text-sm font-medium">Stock Crítico</div>
+                        <AlertTriangle className="h-4 w-4 text-red-500" />
+                    </div>
+                    <div className="space-y-3 max-h-32 overflow-y-auto">
+                        {criticalStock.length > 0 ? (
+                            criticalStock.map((item, idx) => (
+                                <div key={idx} className="flex justify-between items-center border-b border-gray-50 pb-1.5 last:border-0">
+                                    <div className="font-medium text-gray-800 text-xs lg:text-sm truncate max-w-[120px]">{item.name}</div>
+                                    <div className="text-right">
+                                        <div className="font-bold text-red-600 text-xs lg:text-sm">{item.current_stock} {item.unit}</div>
+                                        <div className="text-[10px] text-gray-400">Mín: {item.minimum_stock}</div>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="text-xs text-green-600 italic flex items-center">
+                                <CheckCircle className="h-3 w-3 mr-1" /> Todo en orden
+                            </div>
+                        )}
                     </div>
                 </div>
 

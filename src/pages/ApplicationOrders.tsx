@@ -218,6 +218,10 @@ export const ApplicationOrders: React.FC = () => {
 
       totalQty = doseHa * sector.hectares;
 
+      if (totalQty > product.current_stock) {
+          alert(`¡Advertencia de Stock!\n\nEstás ordenando aplicar ${totalQty.toFixed(2)} ${currentItem.unit_override || product.unit} de ${product.name}, pero solo tienes ${product.current_stock} en bodega.`);
+      }
+
       const newItem: OrderItem = {
           product_id: product.id,
           product_name: product.name,
