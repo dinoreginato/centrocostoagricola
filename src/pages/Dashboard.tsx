@@ -402,12 +402,12 @@ export const Dashboard: React.FC = () => {
       }
 
       // 7. Load Rain Logs
-      const currentYear = new Date().getFullYear();
+      const activeYear = new Date().getFullYear();
       const { data: rainData } = await supabase
         .from('rain_logs')
         .select('*')
         .eq('company_id', selectedCompany.id)
-        .gte('date', `${currentYear}-01-01`)
+        .gte('date', `${activeYear}-01-01`)
         .order('date', { ascending: false });
         
       setRainLogs(rainData || []);
