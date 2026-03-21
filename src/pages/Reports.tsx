@@ -814,22 +814,28 @@ export const Reports: React.FC = () => {
     setPendingInvoices(pending);
   };
 
-  const handleSaveProduction = async (sectorId: string, kg: number) => {
+  const handleSaveProduction = async (sectorId: string, kg: number, pricePerKg?: number) => {
     try {
         if (!selectedCompany) return;
         // Use the start year of the season for storage
         const seasonStartYear = parseInt(selectedSeason.split('-')[0]);
         
+        const payload: any = {
+            sector_id: sectorId,
+            season_year: seasonStartYear,
+            kg_produced: kg,
+            company_id: selectedCompany.id,
+            updated_at: new Date().toISOString()
+        };
+
+        if (pricePerKg !== undefined) {
+            payload.price_per_kg = pricePerKg;
+        }
+
         // Upsert production record
         const { error } = await supabase
             .from('production_records')
-            .upsert({
-                sector_id: sectorId,
-                season_year: seasonStartYear,
-                kg_produced: kg,
-                company_id: selectedCompany.id,
-                updated_at: new Date().toISOString()
-            }, { onConflict: 'sector_id, season_year' });
+            .upsert(payload, { onConflict: 'sector_id, season_year' });
 
         if (error) throw error;
 
@@ -839,11 +845,16 @@ export const Reports: React.FC = () => {
             if (existing >= 0) {
                 const newArr = [...prev];
                 newArr[existing] = { ...newArr[existing], kg_produced: kg };
+                if (pricePerKg !== undefined) {
+                    newArr[existing].price_per_kg = pricePerKg;
+                }
                 return newArr;
             } else {
-                return [...prev, { sector_id: sectorId, season_year: seasonStartYear, kg_produced: kg }];
+                return [...prev, { sector_id: sectorId, season_year: seasonStartYear, kg_produced: kg, price_per_kg: pricePerKg }];
             }
         });
+        
+        loadRawData(); // Reload to refresh all calculations
 
     } catch (error: any) {
         console.error('Error saving production:', error);
@@ -1824,11 +1835,7 @@ export const Reports: React.FC = () => {
                                                     const kg = Number((parent?.querySelector('input[placeholder="Kg"]') as HTMLInputElement)?.value || 0);
                                                     const price = Number((parent?.querySelector('input[placeholder="US$/Kg"]') as HTMLInputElement)?.value || 0);
                                                     
-                                                    // Reuse existing function logic for inline edit
-                                                    setEditingProdKg(kg.toString());
-                                                    setEditingProdPrice(price.toString());
-                                                    handleUpdateProduction(row.sector_id);
-                                                    // Quick hack to force blur/save logic if needed, but better to use the main table
+                                                    handleSaveProduction(row.sector_id, kg, price);
                                                 }}
                                                 className="text-[10px] bg-green-100 text-green-800 px-2 py-0.5 rounded w-full"
                                             >
