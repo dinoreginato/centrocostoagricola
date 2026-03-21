@@ -680,8 +680,18 @@ export const Invoices: React.FC = () => {
 
                 const folio = (enc.getElementsByTagName("Folio")[0] || enc.getElementsByTagName("ns0:Folio")[0])?.textContent || "";
                 const fchEmis = (enc.getElementsByTagName("FchEmis")[0] || enc.getElementsByTagName("ns0:FchEmis")[0])?.textContent || "";
+                const fchVenc = (enc.getElementsByTagName("FchVenc")[0] || enc.getElementsByTagName("ns0:FchVenc")[0])?.textContent || ""; // New Due Date
+                
+                // Helper to decode HTML entities for correct text rendering (ñ, accents)
+                const decodeHtml = (html: string) => {
+                    const txt = document.createElement("textarea");
+                    txt.innerHTML = html;
+                    return txt.value;
+                };
+
                 const rutEmisor = (enc.getElementsByTagName("RUTEmisor")[0] || enc.getElementsByTagName("ns0:RUTEmisor")[0])?.textContent || "";
-                const rznSoc = (enc.getElementsByTagName("RznSoc")[0] || enc.getElementsByTagName("ns0:RznSoc")[0])?.textContent || "";
+                const rznSocRaw = (enc.getElementsByTagName("RznSoc")[0] || enc.getElementsByTagName("ns0:RznSoc")[0])?.textContent || "";
+                const rznSoc = decodeHtml(rznSocRaw);
                 
                 const tipoDte = (enc.getElementsByTagName("TipoDTE")[0] || enc.getElementsByTagName("ns0:TipoDTE")[0])?.textContent;
                 if (tipoDte === "34") {
@@ -696,6 +706,7 @@ export const Invoices: React.FC = () => {
 
                 setInvoiceNumber(folio);
                 setInvoiceDate(fchEmis);
+                if (fchVenc) setDueDate(fchVenc); // Set Due Date if exists
                 setSupplier(rznSoc);
                 setSupplierRut(rutEmisor);
                 setExemptAmount(Number(mntExe));
@@ -706,7 +717,8 @@ export const Invoices: React.FC = () => {
                 const parsedItems: InvoiceItem[] = [];
 
                 for (let i = 0; i < detalles.length; i++) {
-                    const nmbItem = (detalles[i].getElementsByTagName("NmbItem")[0] || detalles[i].getElementsByTagName("ns0:NmbItem")[0])?.textContent || "Item";
+                    const nmbItemRaw = (detalles[i].getElementsByTagName("NmbItem")[0] || detalles[i].getElementsByTagName("ns0:NmbItem")[0])?.textContent || "Item";
+                    const nmbItem = decodeHtml(nmbItemRaw);
                     const qtyItem = Number((detalles[i].getElementsByTagName("QtyItem")[0] || detalles[i].getElementsByTagName("ns0:QtyItem")[0])?.textContent || 1);
                     const prcItem = Number((detalles[i].getElementsByTagName("PrcItem")[0] || detalles[i].getElementsByTagName("ns0:PrcItem")[0])?.textContent || 0);
                     const montoItem = Number((detalles[i].getElementsByTagName("MontoItem")[0] || detalles[i].getElementsByTagName("ns0:MontoItem")[0])?.textContent || (qtyItem * prcItem));
