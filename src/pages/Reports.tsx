@@ -2742,6 +2742,7 @@ export const Reports: React.FC = () => {
                                 <td className="p-3 lg:p-4 text-right">{(row.kg_produced || 0).toLocaleString('es-CL')}</td>
                                 <td className="p-3 lg:p-4 text-right text-slate-600">
                                     {row.price_per_kg > 0 ? formatCLP(totalIncomeCLP) : '-'}
+                                    {row.price_per_kg > 0 && <div className="text-xs text-green-600 mt-1">US$ {(totalIncomeCLP / (usdExchangeRate || 1)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>}
                                 </td>
                                 <td className="p-3 lg:p-4 text-right text-red-600">{formatCLP(row.total_cost)}</td>
                                 <td className={`p-3 lg:p-4 text-right font-bold ${row.price_per_kg > 0 ? (isProfitable ? 'text-green-600' : 'text-red-600') : 'text-gray-400'}`}>
