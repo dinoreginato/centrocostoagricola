@@ -16,7 +16,7 @@ interface InvoiceItem {
   unit: string;
   active_ingredient?: string;
   // Direct Assignment Fields
-  destination_type?: 'machine' | 'sector' | 'field' | 'company';
+  destination_type?: 'machine' | 'sector' | 'field' | 'company' | 'none';
   destination_id?: string; 
   destination_name?: string; // Helper for UI
   labor_type?: string; // New: Specific labor type if destination is sector
@@ -137,7 +137,7 @@ export const Invoices: React.FC = () => {
     category: 'Fertilizantes',
     unit: 'L',
     active_ingredient: '',
-    destination_type: undefined,
+    destination_type: 'none',
     destination_id: '',
   });
   const [isNewProduct, setIsNewProduct] = useState(false);
@@ -561,7 +561,7 @@ export const Invoices: React.FC = () => {
       category: 'Fertilizantes',
       unit: 'L',
       destination_id: '',
-      destination_type: undefined,
+      destination_type: 'none',
       labor_type: undefined
     });
     setIsNewProduct(false);
@@ -599,7 +599,7 @@ export const Invoices: React.FC = () => {
       unit: 'L',
       active_ingredient: '',
       destination_id: '',
-      destination_type: undefined,
+      destination_type: 'none',
       labor_type: undefined
     });
   };
@@ -2146,13 +2146,13 @@ export const Invoices: React.FC = () => {
                           <td className="px-4 py-2">{item.category}</td>
                           <td className="px-4 py-2">{item.quantity} {item.unit}</td>
                           <td className="px-4 py-2">
-                             {formatCLP(item.total_price)}
-                             {item.destination_type && (
-                                <div className="text-[10px] text-blue-600 font-bold bg-blue-50 px-1 rounded inline-block ml-1">
-                                  ➜ {item.destination_type === 'machine' ? '🚜' : '🌱'} {item.destination_name}
-                                </div>
-                             )}
-                          </td>
+                     {formatCLP(item.total_price)}
+                     {item.destination_type && item.destination_type !== 'none' && (
+                        <div className="text-[10px] text-blue-600 font-bold bg-blue-50 px-1 rounded inline-block ml-1">
+                          ➜ {item.destination_type === 'machine' ? '🚜' : '🌱'} {item.destination_name}
+                        </div>
+                     )}
+                  </td>
                           <td className="px-4 py-2 text-right">
                             <button 
                                 type="button" 
