@@ -439,6 +439,34 @@ export const Fuel: React.FC = () => {
                 
                 if (error) throw error;
     
+            } else if (distributeBy === 'company') {
+                // Company Distribution Logic
+                const totalHa = sectors.reduce((sum, s) => sum + Number(s.hectares), 0);
+                if (totalHa === 0) {
+                    alert('No hay sectores con hectáreas definidas para distribuir.');
+                    setLoading(false);
+                    return;
+                }
+    
+                const logsToInsert = sectors.map(s => {
+                    const sectorLiters = (Number(s.hectares) / totalHa) * totalLiters;
+                    const sectorCost = sectorLiters * stats.avgPrice;
+                    return {
+                        company_id: selectedCompany.id,
+                        date,
+                        activity: `${finalActivity} (Dist. Empresa)`,
+                        liters: sectorLiters,
+                        estimated_price: sectorCost,
+                        sector_id: s.id
+                    };
+                });
+    
+                const { error } = await supabase
+                    .from('fuel_consumption')
+                    .insert(logsToInsert);
+                
+                if (error) throw error;
+                
             } else if (distributeBy === 'field') {
                 // Distribute by Field Logic
                 const fieldSectors = sectors.filter(s => s.field_id === selectedFieldId);
@@ -789,24 +817,22 @@ export const Fuel: React.FC = () => {
                                 distributeBy === 'field'
                                     ? 'bg-indigo-600 border-indigo-600 text-white'
                                     : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                            } ${activeTab === 'gasoline' ? '' : 'rounded-r-md'} ${editingLogId ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            } ${editingLogId ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                             Todo un Campo
                         </button>
-                        {activeTab === 'gasoline' && (
-                            <button
-                                type="button"
-                                onClick={() => setDistributeBy('company')}
-                                disabled={!!editingLogId}
-                                className={`-ml-px relative inline-flex items-center px-4 py-2 rounded-r-md border text-sm font-medium focus:z-10 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 ${
-                                    distributeBy === 'company'
-                                        ? 'bg-indigo-600 border-indigo-600 text-white'
-                                        : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                                } ${editingLogId ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            >
-                                Empresa General
-                            </button>
-                        )}
+                        <button
+                            type="button"
+                            onClick={() => setDistributeBy('company')}
+                            disabled={!!editingLogId}
+                            className={`-ml-px relative inline-flex items-center px-4 py-2 rounded-r-md border text-sm font-medium focus:z-10 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 ${
+                                distributeBy === 'company'
+                                    ? 'bg-indigo-600 border-indigo-600 text-white'
+                                    : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                            } ${editingLogId ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                            Empresa General
+                        </button>
                     </div>
                     {editingLogId && <p className="text-xs text-gray-500 mt-1">Modo edición: Solo se puede editar el registro individual.</p>}
                 </div>
