@@ -563,39 +563,51 @@ export const ApplicationOrders: React.FC = () => {
       // -- Box 2: Machinery & Observations --
       doc.setDrawColor(200);
       doc.setFillColor(250, 250, 250);
-      doc.roundedRect(14, currentY, 182, 65, 3, 3, 'FD');
+      
+      const isFertirriego = order.application_type === 'fertirriego';
+      const boxHeight = isFertirriego ? 45 : 65; // Smaller box if no machinery
+      
+      doc.roundedRect(14, currentY, 182, boxHeight, 3, 3, 'FD');
 
       doc.setFont("helvetica", "bold");
-      doc.text('DATOS DE APLICACIÓN Y MAQUINARIA', 18, currentY + 8);
+      doc.text(isFertirriego ? 'DATOS DE APLICACIÓN' : 'DATOS DE APLICACIÓN Y MAQUINARIA', 18, currentY + 8);
       
       doc.setFontSize(9);
-      doc.text('Maquinaria:', 18, currentY + 18);
-      doc.setFont("helvetica", "normal");
-      doc.text(`${order.tractor?.name || '-'} / ${order.sprayer?.name || '-'}`, 45, currentY + 18);
+      
+      let textY = currentY + 18;
+      
+      if (!isFertirriego) {
+          doc.text('Maquinaria:', 18, textY);
+          doc.setFont("helvetica", "normal");
+          doc.text(`${order.tractor?.name || '-'} / ${order.sprayer?.name || '-'}`, 45, textY);
+
+          doc.setFont("helvetica", "bold");
+          doc.text('Operador:', 100, textY);
+          doc.setFont("helvetica", "normal");
+          doc.text(`${order.driver?.name || '-'}`, 120, textY);
+
+          textY += 10;
+          doc.setFont("helvetica", "bold");
+          doc.text('Parámetros:', 18, textY);
+          doc.setFont("helvetica", "normal");
+          doc.text(`Velocidad: ${order.speed || '-'} km/h  |  Presión: ${order.pressure || '-'} bar  |  RPM: ${order.rpm || '-'}  |  Boquillas: ${order.nozzles || '-'}`, 45, textY);
+          textY += 10;
+      }
 
       doc.setFont("helvetica", "bold");
-      doc.text('Operador:', 100, currentY + 18);
+      doc.text('Carencia/Reingreso:', 18, textY);
       doc.setFont("helvetica", "normal");
-      doc.text(`${order.driver?.name || '-'}`, 120, currentY + 18);
+      doc.text(`Reingreso: ${order.safety_period_hours || 0} hrs  |  Carencia: ${order.grace_period_days || 0} días`, 55, textY);
 
+      textY += 10;
       doc.setFont("helvetica", "bold");
-      doc.text('Parámetros:', 18, currentY + 28);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Velocidad: ${order.speed || '-'} km/h  |  Presión: ${order.pressure || '-'} bar  |  RPM: ${order.rpm || '-'}  |  Boquillas: ${order.nozzles || '-'}`, 45, currentY + 28);
-
-      doc.setFont("helvetica", "bold");
-      doc.text('Carencia/Reingreso:', 18, currentY + 38);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Reingreso: ${order.safety_period_hours || 0} hrs  |  Carencia: ${order.grace_period_days || 0} días`, 55, currentY + 38);
-
-      doc.setFont("helvetica", "bold");
-      doc.text('Observaciones:', 18, currentY + 48);
+      doc.text('Observaciones:', 18, textY);
       doc.setFont("helvetica", "normal");
       const splitNotes = doc.splitTextToSize(order.notes || 'Ninguna.', 150);
-      doc.text(splitNotes, 45, currentY + 48);
+      doc.text(splitNotes, 45, textY);
 
       // -- Signatures --
-      currentY += 90;
+      currentY += boxHeight + 25;
       doc.line(30, currentY, 80, currentY);
       doc.text('Firma Preparador / Entrega', 35, currentY + 5);
 
