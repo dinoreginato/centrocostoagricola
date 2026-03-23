@@ -121,13 +121,13 @@ export const GeneralCosts: React.FC = () => {
   const loadPendingCosts = async () => {
     if (!selectedCompany) return;
 
-    // 1. Fetch Invoice Items
+    // 1. Fetch Invoice Items with Exempt Amounts
     const { data: items, error } = await supabase
         .from('invoice_items')
         .select(`
             id, total_price, category,
             products (name, category),
-            invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
+            invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage, exempt_amount, subtotal)
         `)
         .eq('invoices.company_id', selectedCompany.id)
         .range(0, 9999);
@@ -185,14 +185,31 @@ export const GeneralCosts: React.FC = () => {
         const isCreditNote = docType.includes('nota de cr') || docType.includes('nc');
 
         // Logic for Tax Calculation
-        // If it's "Factura Exenta" or tax_percentage is 0, the total price is the final price.
-        // Otherwise we add the standard tax.
-        const taxPercent = item.invoices.tax_percentage !== undefined ? item.invoices.tax_percentage : 19;
-        const netAmount = Number(item.total_price);
+        // Invoices table might have tax_percentage. If not, default to 19.
+        // However, if the item total price is just the net, and it has exempt amounts, 
+        // the item level doesn't know it's exempt unless we check the invoice document_type.
+        let taxPercent = item.invoices.tax_percentage !== undefined ? item.invoices.tax_percentage : 19;
         
-        // If the invoice is exempt, tax is 0. If it has tax, we calculate gross.
-        // This ensures the full amount is available to distribute.
-        const grossAmount = taxPercent === 0 ? netAmount : netAmount * (1 + (taxPercent / 100));
+        // Force 0% tax for Exenta documents to ensure we don't add IVA
+        if (docType.includes('exenta') || docType.includes('honorario')) {
+            taxPercent = 0;
+        }
+
+        // Calculate the item's proportional share of the invoice's exempt amount
+        const invoiceSubtotal = Number(item.invoices.subtotal) || 1; // Prevent div by 0
+        const invoiceExempt = Number(item.invoices.exempt_amount) || 0;
+        const itemNet = Number(item.total_price);
+        
+        // The item's share of the exempt amount based on its proportion of the subtotal
+        const itemExemptShare = invoiceSubtotal > 0 ? (itemNet / invoiceSubtotal) * invoiceExempt : 0;
+        
+        // If the invoice is entirely exempt, tax is 0. If it has tax, we calculate gross for the taxable part.
+        // Total Item Gross = (Net Amount + Tax) + Exempt Share
+        const taxableAmount = taxPercent === 0 ? itemNet : itemNet;
+        const taxAmount = taxableAmount * (taxPercent / 100);
+        
+        // The final gross amount to distribute is the item's taxable amount + its tax + its share of the exempt amount
+        const grossAmount = taxableAmount + taxAmount + itemExemptShare;
         
         let total = isCreditNote ? -Math.abs(grossAmount) : Math.abs(grossAmount);
         
