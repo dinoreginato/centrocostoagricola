@@ -135,7 +135,7 @@ export const ApplicationOrders: React.FC = () => {
                 driver:workers(name),
                 items:application_order_items(
                     *,
-                    product:products(name, unit, active_ingredient, category)
+                    product:products(name, unit, active_ingredient, category, average_cost)
                 )
             `)
             .eq('company_id', selectedCompany.id)
@@ -152,6 +152,7 @@ export const ApplicationOrders: React.FC = () => {
                 product_name: i.product?.name,
                 active_ingredient: i.product?.active_ingredient,
                 category: i.product?.category,
+                average_cost: i.product?.average_cost || 0,
                 unit: i.unit,
                 dose_per_hectare: i.dose_per_hectare,
                 dose_per_100l: i.dose_per_100l,
@@ -341,6 +342,123 @@ export const ApplicationOrders: React.FC = () => {
       } catch (error: any) {
           console.error('Error deleting order:', error);
           alert('Error al eliminar: ' + error.message);
+      } finally {
+          setLoading(false);
+      }
+  };
+
+  const handleMarkAsCompleted = async (order: ApplicationOrder, completedDate: string) => {
+      setLoading(true);
+      try {
+          // 1. Update Order Status
+          const { error: orderError } = await supabase
+              .from('application_orders')
+              .update({ 
+                  status: 'completada',
+                  completed_date: completedDate
+              })
+              .eq('id', order.id);
+          
+          if (orderError) throw orderError;
+
+          // 2. Calculate Total Cost from items
+          let totalCost = 0;
+          const itemsData = order.items.map(item => {
+              const unitCost = item.average_cost || 0;
+              const itemTotal = unitCost * item.total_quantity;
+              totalCost += itemTotal;
+              return {
+                  product_id: item.product_id,
+                  quantity_used: item.total_quantity,
+                  dose_per_hectare: item.dose_per_hectare,
+                  unit_cost: unitCost,
+                  total_cost: itemTotal,
+                  objective: item.objective || ''
+              };
+          });
+
+          // 3. Insert into Applications (Actual Execution)
+          const { data: application, error: appError } = await supabase
+              .from('applications')
+              .insert([{
+                  field_id: order.field_id,
+                  sector_id: order.sector_id,
+                  application_date: completedDate,
+                  application_type: order.application_type,
+                  total_cost: totalCost,
+                  water_liters_per_hectare: order.water_liters_per_hectare || 0
+              }])
+              .select()
+              .single();
+
+          if (appError) throw appError;
+
+          // 4. Insert Application Items & Deduct Stock
+          for (const itemData of itemsData) {
+              const { data: savedItem, error: itemError } = await supabase
+                  .from('application_items')
+                  .insert([{
+                      application_id: application.id,
+                      ...itemData
+                  }])
+                  .select()
+                  .single();
+
+              if (itemError) throw itemError;
+
+              // Deduct stock and create movement
+              const product = products.find(p => p.id === itemData.product_id);
+              if (product) {
+                  const newStock = product.current_stock - itemData.quantity_used;
+                  await supabase
+                      .from('products')
+                      .update({ current_stock: newStock })
+                      .eq('id', itemData.product_id);
+
+                  await supabase
+                      .from('inventory_movements')
+                      .insert([{
+                          product_id: itemData.product_id,
+                          movement_type: 'salida',
+                          quantity: itemData.quantity_used,
+                          unit_cost: itemData.unit_cost,
+                          application_item_id: savedItem.id
+                      }]);
+              }
+          }
+
+          // 5. Automatic Fuel Consumption (Skip if 'fertirriego')
+          if (order.application_type !== 'fertirriego') {
+              const sector = fields.find(f => f.id === order.field_id)?.sectors.find(s => s.id === order.sector_id);
+              if (sector && sector.hectares > 0) {
+                  const rate = selectedCompany.application_fuel_rate || 12;
+                  const fuelLiters = Math.max(rate * sector.hectares, 0.01);
+                  // Assume average diesel price around $1050 if we don't have it, or fetch from DB. 
+                  // For simplicity, we use 1050 as fallback. 
+                  const { data: fuelStats } = await supabase.rpc('get_fuel_stats', { p_company_id: selectedCompany.id, p_type: 'diesel' });
+                  const avgFuelPrice = fuelStats?.[0]?.avg_price || 1050;
+                  
+                  const fuelCost = fuelLiters * avgFuelPrice;
+
+                  await supabase
+                      .from('fuel_consumption')
+                      .insert([{
+                          company_id: selectedCompany.id,
+                          date: completedDate,
+                          activity: `Aplicación Orden #${order.order_number}`,
+                          liters: fuelLiters,
+                          estimated_price: fuelCost,
+                          sector_id: order.sector_id,
+                          application_id: application.id
+                      }]);
+              }
+          }
+
+          alert('Orden completada exitosamente. Se ha registrado la aplicación y descontado el inventario.');
+          loadData();
+      } catch (error: any) {
+          console.error('Error completing order:', error);
+          alert('Error al completar la orden: ' + error.message);
       } finally {
           setLoading(false);
       }
@@ -553,37 +671,18 @@ export const ApplicationOrders: React.FC = () => {
                           value={currentOrder.status}
                           onChange={e => {
                               const newStatus = e.target.value;
-                              const updates: any = { status: newStatus };
                               if (newStatus === 'completada') {
-                                  // Asignar fecha de completado automáticamente a hoy si no la tiene
-                                  if (!currentOrder.completed_date) {
-                                      updates.completed_date = new Date().toLocaleDateString('en-CA');
-                                  }
-                              } else {
-                                  // Limpiar fecha completada si se pasa a pendiente o cancelada
-                                  updates.completed_date = null;
+                                  alert('Para marcar como completada y registrar el consumo en inventario, use el botón de "PENDIENTE" en la tabla principal.');
+                                  return;
                               }
-                              setCurrentOrder({...currentOrder, ...updates});
+                              setCurrentOrder({...currentOrder, status: newStatus as any});
                           }}
                           className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                       >
                           <option value="pendiente">Pendiente</option>
-                          <option value="completada">Completada / Realizada</option>
                           <option value="cancelada">Cancelada</option>
                       </select>
                   </div>
-                  {currentOrder.status === 'completada' && (
-                      <div>
-                          <label className="block text-sm font-medium text-gray-700">Fecha de Realización</label>
-                          <input 
-                              type="date" 
-                              value={currentOrder.completed_date || ''}
-                              onChange={e => setCurrentOrder({...currentOrder, completed_date: e.target.value})}
-                              className="mt-1 block w-full border border-gray-300 rounded-md p-2 bg-green-50 border-green-200"
-                              required
-                          />
-                      </div>
-                  )}
                   <div>
                       <label className="block text-sm font-medium text-gray-700">Objetivo Aplicación</label>
                       <input 
@@ -639,6 +738,7 @@ export const ApplicationOrders: React.FC = () => {
                           <option value="fitosanitario">Fitosanitario</option>
                           <option value="fertilizacion">Fertilización</option>
                           <option value="herbicida">Herbicida</option>
+                          <option value="fertirriego">Fertirriego (Riego)</option>
                       </select>
                   </div>
               </div>
@@ -737,6 +837,7 @@ export const ApplicationOrders: React.FC = () => {
               </div>
 
               {/* Machinery & Tech Specs (Collapsed/Secondary) */}
+              {currentOrder.application_type !== 'fertirriego' && (
               <div className="bg-gray-50 p-4 rounded-md mb-6">
                   <h3 className="text-sm font-bold text-gray-700 mb-3">Parámetros Técnicos y Maquinaria</h3>
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -801,6 +902,7 @@ export const ApplicationOrders: React.FC = () => {
                       </div>
                   </div>
               </div>
+              )}
 
               {/* Footer Notes */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
@@ -882,20 +984,7 @@ export const ApplicationOrders: React.FC = () => {
                                               e.stopPropagation();
                                               const userInputDate = prompt('Marcar orden como Realizada.\nIngrese la fecha de realización (YYYY-MM-DD):', new Date().toLocaleDateString('en-CA'));
                                               if (userInputDate) {
-                                                  try {
-                                                      const { error } = await supabase
-                                                          .from('application_orders')
-                                                          .update({ 
-                                                              status: 'completada',
-                                                              completed_date: userInputDate
-                                                          })
-                                                          .eq('id', order.id);
-                                                      if (error) throw error;
-                                                      alert('Orden marcada como completada');
-                                                      loadData();
-                                                  } catch (err) {
-                                                      alert('Error al actualizar la orden');
-                                                  }
+                                                  await handleMarkAsCompleted(order, userInputDate);
                                               }
                                           }}
                                           className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)} hover:bg-green-100 hover:text-green-800 transition-colors cursor-pointer border border-transparent hover:border-green-300`}
