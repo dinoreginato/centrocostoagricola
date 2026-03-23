@@ -177,6 +177,15 @@ export const Reports: React.FC = () => {
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState('');
 
+  // Update orientation when tab changes
+  useEffect(() => {
+    if (activeTab === 'general' || activeTab === 'detailed') {
+      setPdfOrientation('landscape');
+    } else {
+      setPdfOrientation('portrait');
+    }
+  }, [activeTab]);
+
   // Presentation State
   const [presentationMode, setPresentationMode] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -1233,6 +1242,14 @@ export const Reports: React.FC = () => {
           <p className="text-sm text-gray-500">Vista integral de costos y gastos</p>
         </div>
         <div className="mt-4 sm:mt-0 flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleGeneratePDF}
+            className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+            title="Generar y Previsualizar Informe PDF"
+          >
+            <Printer className="mr-2 h-4 w-4 text-gray-500" /> Imprimir PDF
+          </button>
+          
           <div className="relative">
             <select
               value={selectedSeason}
@@ -1244,14 +1261,6 @@ export const Reports: React.FC = () => {
               ))}
             </select>
           </div>
-
-          <button
-            onClick={handleGeneratePDF}
-            className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-            title="Generar y Previsualizar Informe PDF"
-          >
-            <Printer className="mr-2 h-4 w-4 text-gray-500" /> Imprimir PDF
-          </button>
 
           <button
             onClick={() => {
