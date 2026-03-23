@@ -184,9 +184,16 @@ export const GeneralCosts: React.FC = () => {
         const docType = (item.invoices.document_type || '').toLowerCase();
         const isCreditNote = docType.includes('nota de cr') || docType.includes('nc');
 
+        // Logic for Tax Calculation
+        // If it's "Factura Exenta" or tax_percentage is 0, the total price is the final price.
+        // Otherwise we add the standard tax.
         const taxPercent = item.invoices.tax_percentage !== undefined ? item.invoices.tax_percentage : 19;
         const netAmount = Number(item.total_price);
-        const grossAmount = netAmount * (1 + (taxPercent / 100));
+        
+        // If the invoice is exempt, tax is 0. If it has tax, we calculate gross.
+        // This ensures the full amount is available to distribute.
+        const grossAmount = taxPercent === 0 ? netAmount : netAmount * (1 + (taxPercent / 100));
+        
         let total = isCreditNote ? -Math.abs(grossAmount) : Math.abs(grossAmount);
         
         // Ensure total is positive for logic, we handle negative signs if needed but usually costs are positive to distribute
