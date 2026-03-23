@@ -127,7 +127,7 @@ export const GeneralCosts: React.FC = () => {
         .select(`
             id, total_price, category,
             products (name, category),
-            invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage, exempt_amount, subtotal)
+            invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage, exempt_amount, special_tax_amount, total_amount)
         `)
         .eq('invoices.company_id', selectedCompany.id)
         .range(0, 9999);
@@ -179,6 +179,14 @@ export const GeneralCosts: React.FC = () => {
         assignmentMap.set(a.invoice_item_id, Number(a.total_assigned));
     });
 
+    // Pre-calculate subtotal for each invoice to properly apportion exempt/special taxes
+    const invoiceSubtotals = new Map<string, number>();
+    items?.forEach((item: any) => {
+        const invId = item.invoices.id;
+        const currentSum = invoiceSubtotals.get(invId) || 0;
+        invoiceSubtotals.set(invId, currentSum + (Number(item.total_price) || 0));
+    });
+
     const pending: GeneralCostItem[] = [];
     filteredItems?.forEach((item: any) => {
         const docType = (item.invoices.document_type || '').toLowerCase();
@@ -195,21 +203,26 @@ export const GeneralCosts: React.FC = () => {
             taxPercent = 0;
         }
 
-        // Calculate the item's proportional share of the invoice's exempt amount
-        const invoiceSubtotal = Number(item.invoices.subtotal) || 1; // Prevent div by 0
+        const itemNet = Number(item.total_price) || 0;
+        
+        // Use the pre-calculated subtotal of all items in this invoice
+        const invId = item.invoices.id;
+        const invoiceSubtotal = invoiceSubtotals.get(invId) || 0;
+        
         const invoiceExempt = Number(item.invoices.exempt_amount) || 0;
-        const itemNet = Number(item.total_price);
+        const invoiceSpecial = Number(item.invoices.special_tax_amount) || 0;
         
-        // The item's share of the exempt amount based on its proportion of the subtotal
-        const itemExemptShare = invoiceSubtotal > 0 ? (itemNet / invoiceSubtotal) * invoiceExempt : 0;
+        // Proportion of this item relative to the total of all items
+        // If subtotal is 0 (e.g. items with 0 price), we just split equally among items or give 100% if it's the only one.
+        // For simplicity, if subtotal is 0, we can't easily apportion. We'll default to 1 if it's the only item, or 0.
+        const itemProportion = invoiceSubtotal > 0 ? (itemNet / invoiceSubtotal) : 1;
         
-        // If the invoice is entirely exempt, tax is 0. If it has tax, we calculate gross for the taxable part.
-        // Total Item Gross = (Net Amount + Tax) + Exempt Share
-        const taxableAmount = taxPercent === 0 ? itemNet : itemNet;
-        const taxAmount = taxableAmount * (taxPercent / 100);
+        const itemExemptShare = itemProportion * invoiceExempt;
+        const itemSpecialShare = itemProportion * invoiceSpecial;
         
-        // The final gross amount to distribute is the item's taxable amount + its tax + its share of the exempt amount
-        const grossAmount = taxableAmount + taxAmount + itemExemptShare;
+        // The final gross amount to distribute is the item's taxable amount + its tax + its share of the exempt/special amounts
+        const itemTaxAmount = itemNet * (taxPercent / 100);
+        const grossAmount = itemNet + itemTaxAmount + itemExemptShare + itemSpecialShare;
         
         let total = isCreditNote ? -Math.abs(grossAmount) : Math.abs(grossAmount);
         
