@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Plus, FileText, Calendar, Trash2, Save, Loader2, Filter, ChevronDown, Check, Download, Upload, RefreshCw, Search, Printer, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, FileText, Calendar, Trash2, Save, Loader2, Filter, ChevronDown, Check, Download, Upload, RefreshCw, Search, Printer, ChevronLeft, ChevronRight, MapPin, Database } from 'lucide-react';
 import { InvoicePrint } from '../components/InvoicePrint';
 
 interface InvoiceItem {
@@ -466,7 +466,7 @@ export const Invoices: React.FC = () => {
         unit: existing.unit,
         category: existing.category,
         active_ingredient: existing.active_ingredient || '',
-        destination_type: determineDestinationType(existing.category) // Auto-set destination type
+        destination_type: determineDestinationType(existing.category) as any // Auto-set destination type
       });
       setShowSuggestions(false);
     } else {
@@ -762,7 +762,7 @@ export const Invoices: React.FC = () => {
                         category: guessedCategory,
                         unit: 'un',
                         active_ingredient: '',
-                        destination_type: determineDestinationType(guessedCategory)
+                        destination_type: determineDestinationType(guessedCategory) as any
                     });
                 }
 
@@ -1991,7 +1991,7 @@ export const Invoices: React.FC = () => {
                           setCurrentItem({
                               ...currentItem, 
                               category: newCat,
-                              destination_type: determineDestinationType(newCat),
+                              destination_type: determineDestinationType(newCat) as any,
                               destination_id: '' // Reset destination when category changes
                           });
                       }}
