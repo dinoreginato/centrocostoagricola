@@ -91,8 +91,11 @@ export const Invoices: React.FC = () => {
     if (['Fertilizantes', 'Fungicida', 'Herbicida', 'Insecticida', 'Plaguicida', 'Quimicos'].includes(category)) {
         return 'none';
     }
-    if (['Labores agrícolas', 'Riego', 'Mano de obra', 'Gastos Generales'].includes(category)) {
+    if (['Labores agrícolas', 'Mano de obra', 'Gastos Generales'].includes(category)) {
         return 'company'; // Default to company, user can change to field/sector
+    }
+    if (category === 'Riego') {
+        return 'company'; // Same for riego, user can change
     }
     return 'none';
   };
@@ -1255,6 +1258,7 @@ export const Invoices: React.FC = () => {
           } else if (['sector', 'field', 'company'].includes(formItem.destination_type)) {
               const selectedOption = sectors.find(s => s.id === formItem.destination_id);
               const isLabor = formItem.category === 'Mano de obra' || formItem.category === 'Labores agrícolas';
+              const isIrrigation = formItem.category === 'Riego';
               
               const baseAssignment = {
                   company_id: selectedCompany.id,
@@ -1270,6 +1274,13 @@ export const Invoices: React.FC = () => {
                           assigned_amount: amount,
                           labor_type: formItem.labor_type || 'General',
                           worker_id: null,
+                          notes: notesStr
+                      }]);
+                  } else if (isIrrigation) {
+                      await supabase.from('irrigation_assignments').insert([{
+                          ...baseAssignment,
+                          sector_id: sectorId,
+                          amount: amount,
                           notes: notesStr
                       }]);
                   } else {
