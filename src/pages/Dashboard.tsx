@@ -695,30 +695,30 @@ export const Dashboard: React.FC = () => {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 lg:gap-6 print:grid-cols-4 print:gap-4 mb-8">
-                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-sm p-4 lg:p-6 text-white transform transition hover:scale-[1.02] print:transform-none print:shadow-none print:border print:border-gray-200 print:text-black print:bg-none print:bg-white flex flex-col justify-center relative overflow-hidden">
+                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-sm p-4 lg:p-6 text-white transform transition hover:scale-[1.02] print:transform-none print:shadow-none print:border print:border-gray-200 print:text-black print:bg-none print:bg-white flex flex-col justify-center relative overflow-hidden col-span-1 lg:col-span-2">
                     <div className="absolute -right-4 -top-4 opacity-10">
                         <TrendingUp className="w-24 h-24" />
                     </div>
                     <div className="text-green-50 text-xs font-bold uppercase tracking-wider mb-2 print:text-gray-600 relative z-10">Costo Total Acumulado</div>
-                    <div className="text-xl lg:text-2xl font-black truncate print:text-xl relative z-10" title={formatCLP(Number(dashboardStats.totalCost) || 0)}>
+                    <div className="text-xl lg:text-3xl font-black truncate print:text-xl relative z-10" title={formatCLP(Number(dashboardStats.totalCost) || 0)}>
                         {formatCLP(Number(dashboardStats.totalCost) || 0)}
                     </div>
                     <div className="mt-3 bg-white/20 text-white py-1.5 px-3 rounded-md inline-flex items-center text-[10px] font-medium print:text-gray-500 print:bg-gray-50 print:mt-2 self-start relative z-10">
-                        <DollarSign className="h-3 w-3 mr-1.5 print:text-gray-400" />
+                        <DollarSign className="h-3 w-3 mr-1 print:text-gray-400 flex-shrink-0" />
                         <span>Inversión Total en la Empresa</span>
                     </div>
                 </div>
 
-                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 transform transition hover:scale-[1.02] print:transform-none print:shadow-none flex flex-col justify-center relative overflow-hidden">
+                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 transform transition hover:scale-[1.02] print:transform-none print:shadow-none flex flex-col justify-center relative overflow-hidden col-span-1 lg:col-span-2">
                     <div className="absolute -right-4 -top-4 opacity-5">
                         <Map className="w-24 h-24" />
                     </div>
                     <div className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-2">Costo Promedio / Hectárea</div>
-                    <div className="text-xl lg:text-2xl font-black text-blue-900 truncate print:text-xl" title={formatCLP(Number(dashboardStats.costPerHectare) || 0)}>
+                    <div className="text-xl lg:text-3xl font-black text-blue-900 truncate print:text-xl" title={formatCLP(Number(dashboardStats.costPerHectare) || 0)}>
                         {formatCLP(Number(dashboardStats.costPerHectare) || 0)}
                     </div>
                     <div className="mt-3 bg-blue-50 text-blue-700 py-1.5 px-3 rounded-md inline-flex items-center text-[10px] font-medium print:mt-2 self-start">
-                        <Map className="h-3 w-3 mr-1.5" />
+                        <Map className="h-3 w-3 mr-1 flex-shrink-0" />
                         <span>{dashboardStats.totalHectares} Hectáreas Totales</span>
                     </div>
                 </div>
