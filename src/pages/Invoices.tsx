@@ -666,7 +666,9 @@ export const Invoices: React.FC = () => {
         const reader = new FileReader();
         reader.onload = (event) => {
             try {
-                const xmlText = event.target?.result as string;
+                // Ensure proper decoding of ISO-8859-1 which is common in Chilean SII XMLs
+                let xmlText = event.target?.result as string;
+                
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(xmlText, "text/xml");
 
@@ -682,16 +684,34 @@ export const Invoices: React.FC = () => {
                 const fchEmis = (enc.getElementsByTagName("FchEmis")[0] || enc.getElementsByTagName("ns0:FchEmis")[0])?.textContent || "";
                 const fchVenc = (enc.getElementsByTagName("FchVenc")[0] || enc.getElementsByTagName("ns0:FchVenc")[0])?.textContent || ""; // New Due Date
                 
-                // Helper to decode HTML entities for correct text rendering (ñ, accents)
-                const decodeHtml = (html: string) => {
-                    const txt = document.createElement("textarea");
-                    txt.innerHTML = html;
-                    return txt.value;
+                // Advanced text decoder to handle specific SII encoding issues (ISO-8859-1 to UTF-8 mess)
+                const decodeSiiText = (text: string) => {
+                    if (!text) return "";
+                    try {
+                        // This handles cases where UTF-8 is misread as ISO-8859-1 (the "�" symbol issue)
+                        return decodeURIComponent(escape(text));
+                    } catch (e) {
+                        // Fallback replacement for common corrupted Spanish characters
+                        return text
+                            .replace(/Ã‘/g, 'Ñ')
+                            .replace(/Ã±/g, 'ñ')
+                            .replace(/Ã /g, 'Á')
+                            .replace(/Ã¡/g, 'á')
+                            .replace(/Ã‰/g, 'É')
+                            .replace(/Ã©/g, 'é')
+                            .replace(/Ã /g, 'Í')
+                            .replace(/Ã­/g, 'í')
+                            .replace(/Ã“/g, 'Ó')
+                            .replace(/Ã³/g, 'ó')
+                            .replace(/Ãš/g, 'Ú')
+                            .replace(/Ãº/g, 'ú')
+                            .replace(/�/g, 'Ñ'); // The generic replacement character often hides an Ñ in company names
+                    }
                 };
 
                 const rutEmisor = (enc.getElementsByTagName("RUTEmisor")[0] || enc.getElementsByTagName("ns0:RUTEmisor")[0])?.textContent || "";
                 const rznSocRaw = (enc.getElementsByTagName("RznSoc")[0] || enc.getElementsByTagName("ns0:RznSoc")[0])?.textContent || "";
-                const rznSoc = decodeHtml(rznSocRaw);
+                const rznSoc = decodeSiiText(rznSocRaw);
                 
                 const tipoDte = (enc.getElementsByTagName("TipoDTE")[0] || enc.getElementsByTagName("ns0:TipoDTE")[0])?.textContent;
                 if (tipoDte === "34") {
@@ -718,7 +738,7 @@ export const Invoices: React.FC = () => {
 
                 for (let i = 0; i < detalles.length; i++) {
                     const nmbItemRaw = (detalles[i].getElementsByTagName("NmbItem")[0] || detalles[i].getElementsByTagName("ns0:NmbItem")[0])?.textContent || "Item";
-                    const nmbItem = decodeHtml(nmbItemRaw);
+                    const nmbItem = decodeSiiText(nmbItemRaw);
                     const qtyItem = Number((detalles[i].getElementsByTagName("QtyItem")[0] || detalles[i].getElementsByTagName("ns0:QtyItem")[0])?.textContent || 1);
                     const prcItem = Number((detalles[i].getElementsByTagName("PrcItem")[0] || detalles[i].getElementsByTagName("ns0:PrcItem")[0])?.textContent || 0);
                     const montoItem = Number((detalles[i].getElementsByTagName("MontoItem")[0] || detalles[i].getElementsByTagName("ns0:MontoItem")[0])?.textContent || (qtyItem * prcItem));
