@@ -876,9 +876,38 @@ export const ApplicationOrders: React.FC = () => {
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{order.objective || '-'}</td>
                               <td className="px-6 py-4 whitespace-nowrap">
-                                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)}`}>
-                                      {order.status.toUpperCase()}
-                                  </span>
+                                  {order.status === 'pendiente' ? (
+                                      <button
+                                          onClick={async (e) => {
+                                              e.stopPropagation();
+                                              const userInputDate = prompt('Marcar orden como Realizada.\nIngrese la fecha de realización (YYYY-MM-DD):', new Date().toLocaleDateString('en-CA'));
+                                              if (userInputDate) {
+                                                  try {
+                                                      const { error } = await supabase
+                                                          .from('application_orders')
+                                                          .update({ 
+                                                              status: 'completada',
+                                                              completed_date: userInputDate
+                                                          })
+                                                          .eq('id', order.id);
+                                                      if (error) throw error;
+                                                      alert('Orden marcada como completada');
+                                                      loadData();
+                                                  } catch (err) {
+                                                      alert('Error al actualizar la orden');
+                                                  }
+                                              }
+                                          }}
+                                          className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)} hover:bg-green-100 hover:text-green-800 transition-colors cursor-pointer border border-transparent hover:border-green-300`}
+                                          title="Click para marcar como Realizada"
+                                      >
+                                          {order.status.toUpperCase()}
+                                      </button>
+                                  ) : (
+                                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)}`}>
+                                          {order.status.toUpperCase()}
+                                      </span>
+                                  )}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end gap-2">
                                   <button 
