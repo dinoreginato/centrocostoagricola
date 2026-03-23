@@ -628,20 +628,26 @@ export const Dashboard: React.FC = () => {
         // SIMPLE MODE UI
         <div className="space-y-8 mt-8 print:mt-4">
             {upcomingInvoices.length > 0 && (
-                <div className="bg-red-50 border-l-4 border-red-500 p-6 rounded-r-2xl shadow-sm print:hidden">
-                    <div className="flex items-center mb-4">
-                        <AlertCircle className="h-6 w-6 text-red-600 mr-2" />
-                        <h3 className="text-xl font-bold text-red-800">Facturas Próximas a Vencer ({new Date().getDate() <= 15 ? 'Quincena 1' : 'Quincena 2'})</h3>
+                <div className="bg-red-50/80 border border-red-200 p-6 rounded-2xl shadow-sm print:hidden">
+                    <div className="flex items-center mb-5">
+                        <div className="bg-red-100 p-2 rounded-lg mr-3">
+                            <AlertCircle className="h-6 w-6 text-red-600" />
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-bold text-red-900">Facturas por Vencer</h3>
+                            <p className="text-xs text-red-600 font-medium">Prioridad de pago ({new Date().getDate() <= 15 ? 'Quincena 1' : 'Quincena 2'})</p>
+                        </div>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                         {upcomingInvoices.map((inv, idx) => (
                             <div 
                               key={idx} 
                               onClick={() => setSelectedInvoice(inv)}
-                              className="bg-white p-3 rounded-md shadow-sm border border-red-100 flex flex-col justify-between h-full hover:shadow-md transition-shadow duration-200 cursor-pointer hover:bg-red-50"
+                              className="bg-white p-4 rounded-xl shadow-sm border border-red-100 flex flex-col justify-between h-full hover:shadow-md transition-all duration-200 cursor-pointer hover:-translate-y-1 relative overflow-hidden group"
                             >
-                                <div className="flex justify-between items-start mb-2">
-                                    <div className="font-bold text-gray-700 text-sm truncate pr-2 flex-1" title={inv.supplier || ''}>{inv.supplier || 'Proveedor desconocido'}</div>
+                                <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
+                                <div className="flex justify-between items-start mb-3 pl-2">
+                                    <div className="font-bold text-gray-800 text-sm truncate pr-2 flex-1" title={inv.supplier || ''}>{inv.supplier || 'Proveedor desconocido'}</div>
                                     <button 
                                         onClick={async (e) => {
                                             e.stopPropagation();
@@ -663,22 +669,22 @@ export const Dashboard: React.FC = () => {
                                                 }
                                             }
                                         }}
-                                        className="text-[10px] text-red-600 font-bold bg-red-50 hover:bg-green-100 hover:text-green-700 hover:border-green-300 px-2 py-1 rounded border border-red-100 whitespace-nowrap transition-colors"
+                                        className="text-[10px] text-red-700 font-bold bg-red-50 group-hover:bg-green-500 group-hover:text-white px-2.5 py-1.5 rounded-md transition-colors"
                                         title="Click para marcar como Pagada"
                                     >
                                         Vence: {inv.due_date ? new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' }) : 'N/A'}
                                     </button>
                                 </div>
-                                <div className="flex justify-between items-end">
-                                    <div className="text-xs text-gray-400 truncate max-w-[50%]" title={inv.invoice_number || ''}>
-                                        N° {inv.invoice_number || '-'}
+                                <div className="flex justify-between items-end pl-2">
+                                    <div className="text-xs font-medium text-gray-500 truncate max-w-[50%]" title={inv.invoice_number || ''}>
+                                        Doc N° {inv.invoice_number || '-'}
                                     </div>
-                                    <div className="text-base font-bold text-red-600">
+                                    <div className="text-lg font-black text-red-600">
                                         {inv.total_amount ? formatCLP(Number(inv.total_amount)) : '$0'}
                                     </div>
                                 </div>
                                 {inv.notes && (
-                                    <div className="mt-2 text-xs text-gray-500 italic border-t border-gray-100 pt-1 truncate" title={inv.notes}>
+                                    <div className="mt-3 text-xs text-gray-500 italic border-t border-gray-100 pt-2 pl-2 truncate" title={inv.notes}>
                                         {inv.notes}
                                     </div>
                                 )}
@@ -688,142 +694,164 @@ export const Dashboard: React.FC = () => {
                 </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 lg:gap-6 print:grid-cols-4 print:gap-4">
-                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-sm p-4 lg:p-5 text-white transform transition hover:scale-105 print:transform-none print:shadow-none print:border print:border-gray-200 print:text-black print:bg-none print:bg-white flex flex-col justify-center">
-                    <div className="text-green-100 text-xs lg:text-sm font-medium mb-1 print:text-gray-600">Costo Total Acumulado</div>
-                    <div className="text-xl lg:text-2xl font-bold truncate print:text-xl" title={formatCLP(Number(dashboardStats.totalCost) || 0)}>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 lg:gap-6 print:grid-cols-4 print:gap-4 mb-8">
+                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-sm p-4 lg:p-6 text-white transform transition hover:scale-[1.02] print:transform-none print:shadow-none print:border print:border-gray-200 print:text-black print:bg-none print:bg-white flex flex-col justify-center relative overflow-hidden">
+                    <div className="absolute -right-4 -top-4 opacity-10">
+                        <TrendingUp className="w-24 h-24" />
+                    </div>
+                    <div className="text-green-50 text-xs lg:text-sm font-bold uppercase tracking-wider mb-2 print:text-gray-600 relative z-10">Costo Total Acumulado</div>
+                    <div className="text-2xl lg:text-3xl font-black truncate print:text-xl relative z-10" title={formatCLP(Number(dashboardStats.totalCost) || 0)}>
                         {formatCLP(Number(dashboardStats.totalCost) || 0)}
                     </div>
-                    <div className="mt-2 text-green-100 flex items-center text-[10px] lg:text-xs print:text-gray-500 print:mt-2">
-                        <TrendingUp className="h-3 w-3 mr-1 print:text-gray-400" />
-                        <span>Inversión Total</span>
+                    <div className="mt-3 bg-white/20 text-white py-1.5 px-3 rounded-md inline-flex items-center text-[10px] lg:text-xs font-medium print:text-gray-500 print:bg-gray-50 print:mt-2 self-start relative z-10">
+                        <DollarSign className="h-3 w-3 mr-1.5 print:text-gray-400" />
+                        <span>Inversión Total en la Empresa</span>
                     </div>
                 </div>
 
-                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-5 border border-gray-100 transform transition hover:scale-105 print:transform-none print:shadow-none flex flex-col justify-center">
-                    <div className="text-gray-500 text-xs lg:text-sm font-medium mb-1">Costo Promedio / Hectárea</div>
-                    <div className="text-xl lg:text-2xl font-bold text-gray-800 truncate print:text-xl" title={formatCLP(Number(dashboardStats.costPerHectare) || 0)}>
+                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 transform transition hover:scale-[1.02] print:transform-none print:shadow-none flex flex-col justify-center relative overflow-hidden">
+                    <div className="absolute -right-4 -top-4 opacity-5">
+                        <Map className="w-24 h-24" />
+                    </div>
+                    <div className="text-gray-500 text-xs lg:text-sm font-bold uppercase tracking-wider mb-2">Costo Promedio / Hectárea</div>
+                    <div className="text-2xl lg:text-3xl font-black text-blue-900 truncate print:text-xl" title={formatCLP(Number(dashboardStats.costPerHectare) || 0)}>
                         {formatCLP(Number(dashboardStats.costPerHectare) || 0)}
                     </div>
-                    <div className="mt-2 text-gray-400 flex items-center text-[10px] lg:text-xs print:mt-2">
-                        <Map className="h-3 w-3 mr-1" />
+                    <div className="mt-3 bg-blue-50 text-blue-700 py-1.5 px-3 rounded-md inline-flex items-center text-[10px] lg:text-xs font-medium print:mt-2 self-start">
+                        <Map className="h-3 w-3 mr-1.5" />
                         <span>{dashboardStats.totalHectares} Hectáreas Totales</span>
                     </div>
                 </div>
 
-                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-5 border border-gray-100 transform transition hover:scale-105 print:transform-none print:shadow-none">
-                    <div className="text-gray-500 text-xs lg:text-sm font-medium mb-3 print:mb-2">Sectores Más Costosos</div>
+                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 transform transition hover:scale-[1.02] print:transform-none print:shadow-none col-span-1 lg:col-span-2">
+                    <div className="flex items-center justify-between mb-4 print:mb-2">
+                        <div className="text-gray-500 text-xs lg:text-sm font-bold uppercase tracking-wider">Sectores Más Costosos</div>
+                        <div className="bg-orange-50 p-1.5 rounded-lg">
+                            <TrendingUp className="h-4 w-4 text-orange-500" />
+                        </div>
+                    </div>
                     <div className="space-y-3">
                         {Array.isArray(sectorChartData) && sectorChartData.slice(0, 3).map((sector, idx) => (
-                            <div key={idx} className="flex justify-between items-center border-b border-gray-50 pb-1.5 last:border-0">
+                            <div key={idx} className="flex justify-between items-center border-b border-gray-100 pb-2 last:border-0 last:pb-0">
                                 <div>
-                                    <div className="font-bold text-gray-800 text-xs lg:text-sm truncate max-w-[100px]">{sector?.name || 'Sin nombre'}</div>
-                                    <div className="text-[10px] text-gray-400">{sector?.fieldName || ''}</div>
+                                    <div className="font-bold text-gray-800 text-sm">{sector?.name || 'Sin nombre'}</div>
+                                    <div className="text-[10px] text-gray-400 font-medium uppercase">{sector?.fieldName || ''}</div>
                                 </div>
-                                <div className="text-right">
-                                    <div className="font-bold text-orange-600 text-xs lg:text-sm">{formatCLP(Number(sector?.costPerHa) || 0)}/ha</div>
+                                <div className="text-right bg-orange-50 px-3 py-1 rounded-lg">
+                                    <div className="font-black text-orange-600 text-sm">{formatCLP(Number(sector?.costPerHa) || 0)}</div>
+                                    <div className="text-[9px] text-orange-400 uppercase font-bold tracking-wide">por hectárea</div>
                                 </div>
                             </div>
                         ))}
-                        {(!sectorChartData || sectorChartData.length === 0) && <div className="text-xs text-gray-400 italic">Sin datos</div>}
+                        {(!sectorChartData || sectorChartData.length === 0) && <div className="text-xs text-gray-400 italic bg-gray-50 p-3 rounded-lg text-center font-medium">Aún no hay costos registrados</div>}
                     </div>
                 </div>
 
+                <div className="col-span-1 lg:col-span-2 transform transition hover:scale-[1.02] print:hidden h-full">
+                    <WeatherWidget />
+                </div>
+            </div>
+
+            {/* Second Row of Widgets (Alerts & Weather Tools) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6 print:hidden">
                 {/* Sector Safety Status Widget */}
-                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-5 border border-gray-100 transform transition hover:scale-105 print:hidden">
-                    <div className="flex items-center justify-between mb-3">
-                        <div className="text-orange-600 text-xs lg:text-sm font-medium">Reingreso / Carencia</div>
-                        <ShieldAlert className="h-4 w-4 text-orange-500" />
+                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="text-gray-500 text-xs lg:text-sm font-bold uppercase tracking-wider">Carencia / Reingreso</div>
+                        <div className="bg-red-50 p-1.5 rounded-lg">
+                            <ShieldAlert className="h-4 w-4 text-red-500" />
+                        </div>
                     </div>
-                    <div className="space-y-3 max-h-32 overflow-y-auto">
+                    <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
                         {sectorSafetyStatus.length > 0 ? (
                             sectorSafetyStatus.map((status, idx) => (
-                                <div key={idx} className="flex justify-between items-center border-b border-gray-50 pb-1.5 last:border-0">
-                                    <div className="font-medium text-gray-800 text-xs lg:text-sm truncate max-w-[100px]">{status.sectorName}</div>
-                                    <div className="text-right flex items-center">
-                                        <div className={`w-2 h-2 rounded-full mr-1.5 ${status.status === 'rojo' ? 'bg-red-500' : 'bg-yellow-400'}`}></div>
-                                        <div className="text-[10px] text-gray-500 max-w-[90px] truncate" title={status.message}>{status.message}</div>
+                                <div key={idx} className="flex justify-between items-center border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+                                    <div className="font-bold text-gray-800 text-sm">{status.sectorName}</div>
+                                    <div className="text-right flex items-center bg-gray-50 px-2 py-1.5 rounded-lg border border-gray-100">
+                                        <div className={`w-2.5 h-2.5 rounded-full mr-2 shadow-sm ${status.status === 'rojo' ? 'bg-red-500 animate-pulse' : 'bg-yellow-400'}`}></div>
+                                        <div className="text-xs font-bold text-gray-600 max-w-[120px] truncate" title={status.message}>{status.message}</div>
                                     </div>
                                 </div>
                             ))
                         ) : (
-                            <div className="text-xs text-green-600 italic flex items-center">
-                                <CheckCircle className="h-3 w-3 mr-1" /> Campos seguros
+                            <div className="text-sm text-green-700 bg-green-50 p-4 rounded-xl font-bold flex flex-col items-center justify-center text-center h-24 border border-green-100">
+                                <CheckCircle className="h-6 w-6 mb-2" /> Todos los campos son seguros para transitar
                             </div>
                         )}
                     </div>
                 </div>
 
                 {/* Critical Stock & Expiration Widget */}
-                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-5 border border-gray-100 transform transition hover:scale-105 print:hidden">
-                    <div className="flex items-center justify-between mb-3">
-                        <div className="text-red-500 text-xs lg:text-sm font-medium">Alertas Bodega</div>
-                        <AlertTriangle className="h-4 w-4 text-red-500" />
+                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="text-gray-500 text-xs lg:text-sm font-bold uppercase tracking-wider">Alertas de Bodega</div>
+                        <div className="bg-orange-50 p-1.5 rounded-lg">
+                            <AlertTriangle className="h-4 w-4 text-orange-500" />
+                        </div>
                     </div>
-                    <div className="space-y-3 max-h-32 overflow-y-auto">
+                    <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
                         {criticalStock.length > 0 ? (
                             criticalStock.map((item, idx) => (
-                                <div key={idx} className="flex justify-between items-center border-b border-gray-50 pb-1.5 last:border-0">
-                                    <div className="font-medium text-gray-800 text-xs lg:text-sm truncate max-w-[120px]">{item.name}</div>
+                                <div key={idx} className="flex justify-between items-center border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+                                    <div className="font-bold text-gray-800 text-sm truncate max-w-[140px]">{item.name}</div>
                                     <div className="text-right">
                                         {item.is_expiration_warning ? (
-                                            <div className="font-bold text-red-600 text-xs lg:text-sm">
-                                                {item.isExpired ? 'Vencido' : 'Por vencer'}
+                                            <div className="font-bold text-red-600 text-xs bg-red-50 px-2.5 py-1 rounded-md border border-red-100 inline-block mb-1">
+                                                {item.isExpired ? '⚠️ Vencido' : '⏱️ Por vencer'}
                                             </div>
                                         ) : (
-                                            <div className="font-bold text-red-600 text-xs lg:text-sm">{item.current_stock} {item.unit}</div>
+                                            <div className="font-bold text-orange-600 text-xs bg-orange-50 px-2.5 py-1 rounded-md border border-orange-100 inline-block mb-1">
+                                                ⚠️ {item.current_stock} {item.unit}
+                                            </div>
                                         )}
-                                        <div className="text-[10px] text-gray-400">
-                                            {item.is_expiration_warning ? `Vence: ${new Date(item.expiration_date).toLocaleDateString()}` : `Mín: ${item.minimum_stock}`}
+                                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+                                            {item.is_expiration_warning ? `Vence: ${new Date(item.expiration_date).toLocaleDateString()}` : `Mínimo: ${item.minimum_stock}`}
                                         </div>
                                     </div>
                                 </div>
                             ))
                         ) : (
-                            <div className="text-xs text-green-600 italic flex items-center">
-                                <CheckCircle className="h-3 w-3 mr-1" /> Todo en orden
+                            <div className="text-sm text-green-700 bg-green-50 p-4 rounded-xl font-bold flex flex-col items-center justify-center text-center h-24 border border-green-100">
+                                <CheckCircle className="h-6 w-6 mb-2" /> Inventario con stock suficiente y sin vencimientos
                             </div>
                         )}
                     </div>
                 </div>
 
                 {/* Rain Gauge Widget */}
-                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-5 border border-gray-100 transform transition hover:scale-105 print:hidden">
-                    <div className="flex items-center justify-between mb-3">
-                        <div className="text-blue-500 text-xs lg:text-sm font-medium">Pluviómetro (Lluvia)</div>
-                        <svg className="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
-                        </svg>
+                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 flex flex-col">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="text-gray-500 text-xs lg:text-sm font-bold uppercase tracking-wider">Pluviómetro</div>
+                        <div className="bg-blue-50 p-1.5 rounded-lg">
+                            <svg className="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+                            </svg>
+                        </div>
                     </div>
-                    <form onSubmit={handleSaveRain} className="flex gap-2 mb-3">
+                    <form onSubmit={handleSaveRain} className="flex gap-2 mb-5">
                         <input 
                             type="number" 
                             step="0.1"
-                            value={newRainMm}
+                            value={newRainMm || ''}
                             onChange={e => setNewRainMm(Number(e.target.value))}
-                            placeholder="mm"
-                            className="w-16 text-xs border border-gray-300 rounded p-1"
+                            placeholder="Ej. 15.5 mm"
+                            className="flex-1 text-sm border border-gray-200 bg-gray-50 rounded-lg p-2.5 focus:ring-blue-500 focus:border-blue-500 font-medium"
                             required
                         />
-                        <button type="submit" className="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded hover:bg-blue-200 font-medium">Añadir</button>
+                        <button type="submit" className="bg-blue-600 text-white text-sm px-5 py-2.5 rounded-lg hover:bg-blue-700 font-bold shadow-sm transition-colors">Guardar</button>
                     </form>
-                    <div className="space-y-2 max-h-20 overflow-y-auto">
-                        {rainLogs.slice(0, 5).map((log, idx) => (
-                            <div key={idx} className="flex justify-between items-center text-xs">
-                                <span className="text-gray-500">{new Date(log.date).toLocaleDateString('es-CL', {day: '2-digit', month: 'short'})}</span>
-                                <span className="font-bold text-blue-600">{log.rain_mm} mm</span>
+                    <div className="space-y-2 max-h-24 overflow-y-auto pr-1 flex-1">
+                        {rainLogs.slice(0, 4).map((log, idx) => (
+                            <div key={idx} className="flex justify-between items-center text-sm border-b border-gray-50 pb-2 last:border-0 last:pb-0">
+                                <span className="text-gray-500 font-bold text-xs uppercase tracking-wide">{new Date(log.date).toLocaleDateString('es-CL', {day: '2-digit', month: 'short'})}</span>
+                                <span className="font-bold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-md">{log.rain_mm} mm</span>
                             </div>
                         ))}
                     </div>
-                    <div className="mt-2 pt-2 border-t border-gray-100 flex justify-between items-center text-xs font-bold text-gray-700">
-                        <span>Total Año:</span>
-                        <span className="text-blue-600">{rainLogs.reduce((sum, log) => sum + Number(log.rain_mm), 0).toFixed(1)} mm</span>
+                    <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center bg-gray-50 p-3 rounded-lg">
+                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">Acumulado del Año</span>
+                        <span className="text-blue-700 text-xl font-black">{rainLogs.reduce((sum, log) => sum + Number(log.rain_mm), 0).toFixed(1)} mm</span>
                     </div>
-                </div>
-
-                {/* Weather Widget Component */}
-                <div className="transform transition hover:scale-105 print:hidden h-full">
-                    <WeatherWidget />
                 </div>
             </div>
         </div>
