@@ -699,11 +699,11 @@ export const Dashboard: React.FC = () => {
                     <div className="absolute -right-4 -top-4 opacity-10">
                         <TrendingUp className="w-24 h-24" />
                     </div>
-                    <div className="text-green-50 text-xs lg:text-sm font-bold uppercase tracking-wider mb-2 print:text-gray-600 relative z-10">Costo Total Acumulado</div>
-                    <div className="text-2xl lg:text-3xl font-black truncate print:text-xl relative z-10" title={formatCLP(Number(dashboardStats.totalCost) || 0)}>
+                    <div className="text-green-50 text-xs font-bold uppercase tracking-wider mb-2 print:text-gray-600 relative z-10">Costo Total Acumulado</div>
+                    <div className="text-xl lg:text-2xl font-black truncate print:text-xl relative z-10" title={formatCLP(Number(dashboardStats.totalCost) || 0)}>
                         {formatCLP(Number(dashboardStats.totalCost) || 0)}
                     </div>
-                    <div className="mt-3 bg-white/20 text-white py-1.5 px-3 rounded-md inline-flex items-center text-[10px] lg:text-xs font-medium print:text-gray-500 print:bg-gray-50 print:mt-2 self-start relative z-10">
+                    <div className="mt-3 bg-white/20 text-white py-1.5 px-3 rounded-md inline-flex items-center text-[10px] font-medium print:text-gray-500 print:bg-gray-50 print:mt-2 self-start relative z-10">
                         <DollarSign className="h-3 w-3 mr-1.5 print:text-gray-400" />
                         <span>Inversión Total en la Empresa</span>
                     </div>
@@ -713,11 +713,11 @@ export const Dashboard: React.FC = () => {
                     <div className="absolute -right-4 -top-4 opacity-5">
                         <Map className="w-24 h-24" />
                     </div>
-                    <div className="text-gray-500 text-xs lg:text-sm font-bold uppercase tracking-wider mb-2">Costo Promedio / Hectárea</div>
-                    <div className="text-2xl lg:text-3xl font-black text-blue-900 truncate print:text-xl" title={formatCLP(Number(dashboardStats.costPerHectare) || 0)}>
+                    <div className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-2">Costo Promedio / Hectárea</div>
+                    <div className="text-xl lg:text-2xl font-black text-blue-900 truncate print:text-xl" title={formatCLP(Number(dashboardStats.costPerHectare) || 0)}>
                         {formatCLP(Number(dashboardStats.costPerHectare) || 0)}
                     </div>
-                    <div className="mt-3 bg-blue-50 text-blue-700 py-1.5 px-3 rounded-md inline-flex items-center text-[10px] lg:text-xs font-medium print:mt-2 self-start">
+                    <div className="mt-3 bg-blue-50 text-blue-700 py-1.5 px-3 rounded-md inline-flex items-center text-[10px] font-medium print:mt-2 self-start">
                         <Map className="h-3 w-3 mr-1.5" />
                         <span>{dashboardStats.totalHectares} Hectáreas Totales</span>
                     </div>
