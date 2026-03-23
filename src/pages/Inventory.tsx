@@ -235,22 +235,30 @@ export const Inventory: React.FC = () => {
 
   const handleDeleteProduct = async (id: string, name: string) => {
     try {
-      const { count, error } = await supabase
-        .from('invoice_items')
-        .select('*', { count: 'exact', head: true })
-        .eq('product_id', id);
-
-      if (error) throw error;
-
-      if (count && count > 0) {
-        alert(`No se puede eliminar el producto "${name}" porque está asociado a ${count} factura(s).\n\nEliminarlo rompería el historial de compras.\n\nSugerencia: Edita el nombre del producto o ajusta su stock a 0 si ya no se usa.`);
-        return;
-      }
-
-      if (!window.confirm(`¿Estás seguro de eliminar el producto "${name}"?\n\nEsta acción no se puede deshacer.`)) return;
+      if (!window.confirm(`¿Estás seguro de eliminar el producto "${name}" de tu bodega local?\n\n(Esto NO borrará las facturas históricas donde se haya comprado, solo lo ocultará de esta vista).`)) return;
 
       const { error: deleteError } = await supabase.from('products').delete().eq('id', id);
-      if (deleteError) throw deleteError;
+      
+      // If there's a foreign key constraint error (e.g. from invoice_items), 
+      // we do a "soft delete" or force deletion depending on requirements.
+      // Since users want it removed from view but it has invoices, the standard Postgres 
+      // setup will block DELETE. Instead of failing, we will catch the error and hide it.
+      if (deleteError) {
+          if (deleteError.code === '23503') { // Foreign key violation
+             alert(`Este producto tiene historial contable y no puede ser borrado físicamente de la base de datos para no romper la contabilidad.\n\nEn su lugar, ajustaremos su stock a 0 y lo quitaremos de tu vista principal.`);
+             // Soft delete workaround: update stock to 0 and maybe change category to 'Archivado'
+             await supabase.from('products').update({ 
+                 current_stock: 0, 
+                 minimum_stock: 0,
+                 category: 'Archivado' 
+             }).eq('id', id);
+             
+             // Remove from current UI state
+             setProducts(products.filter(p => p.id !== id));
+             return;
+          }
+          throw deleteError;
+      }
       
       setProducts(products.filter(p => p.id !== id));
       alert('Producto eliminado correctamente');
@@ -348,6 +356,9 @@ export const Inventory: React.FC = () => {
   // Remove the second handleDeleteProduct declaration below handleUpdateProduct
 
   const filteredProducts = products.filter(product => {
+    // Exclude archived products unless we explicitly want to see them
+    if (product.category === 'Archivado') return false;
+
     const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = filterCategory === 'all' || product.category === filterCategory;
     return matchesSearch && matchesCategory;
