@@ -74,24 +74,27 @@ export const Invoices: React.FC = () => {
   const { selectedCompany, companies } = useCompany();
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
-  const [machines, setMachines] = useState<{id: string, name: string}[]>([]); // New for direct assignment
-  const [sectors, setSectors] = useState<{id: string, name: string, type: 'sector' | 'field' | 'company'}[]>([]); // Enhanced for multi-level assignment
+  const [machines, setMachines] = useState<{id: string, name: string}[]>([]);
+  const [sectors, setSectors] = useState<{id: string, name: string, type: 'sector' | 'field' | 'company', hectares?: number, field_id?: string}[]>([]); // Enhanced for multi-level assignment
   const [labors, setLabors] = useState<{id: string, name: string}[]>([]); // To store actual labor assignments if needed, or just types
   const laborTypes = ['Cosecha', 'Poda', 'Raleo', 'Aplicación', 'Fertilización', 'Riego', 'Siembra', 'Preparación Suelo', 'Otros']; // Hardcoded common labor types
 
   const [laborType, setLaborType] = useState<string>(''); // For labor assignment
 
   // Helper to auto-determine destination type based on category
-  const determineDestinationType = (category: string): 'machine' | 'sector' | 'field' | 'company' | undefined => {
+  const determineDestinationType = (category: string): 'machine' | 'sector' | 'field' | 'company' | 'none' | undefined => {
     if (category === 'Maquinaria' || category === 'Repuesto' || category === 'Combustible' || category === 'Petroleo') {
         return 'machine';
     }
     // EXCLUDED: 'Fertilizantes', 'Fungicida', 'Herbicida', 'Insecticida', 'Plaguicida', 'Quimicos'
     // These should NOT default to 'sector' as per user request (they go to inventory/bodega)
-    if (['Labores agrícolas', 'Riego', 'Mano de obra'].includes(category)) {
-        return 'sector'; // Default to sector, user can change to field/company
+    if (['Fertilizantes', 'Fungicida', 'Herbicida', 'Insecticida', 'Plaguicida', 'Quimicos'].includes(category)) {
+        return 'none';
     }
-    return undefined;
+    if (['Labores agrícolas', 'Riego', 'Mano de obra', 'Gastos Generales'].includes(category)) {
+        return 'company'; // Default to company, user can change to field/sector
+    }
+    return 'none';
   };
 
   // Invoice Form State
@@ -199,7 +202,7 @@ export const Invoices: React.FC = () => {
              // Step 2: Fetch Sectors for these fields
              const { data: sectorsData, error: sError } = await supabase
                  .from('sectors')
-                 .select('id, name, field_id')
+                 .select('id, name, field_id, hectares')
                  .in('field_id', fieldIds);
 
              if (sError) {
@@ -207,7 +210,7 @@ export const Invoices: React.FC = () => {
              }
 
              // Step 3: Combine Data
-             const allOptions: {id: string, name: string, type: 'sector' | 'field' | 'company'}[] = [];
+             const allOptions: {id: string, name: string, type: 'sector' | 'field' | 'company', hectares?: number, field_id?: string}[] = [];
              
              // A. Company Option
              allOptions.push({
@@ -244,7 +247,9 @@ export const Invoices: React.FC = () => {
                      allOptions.push({
                          id: s.id,
                          name: `└── ${s.name}`,
-                         type: 'sector'
+                         type: 'sector',
+                         hectares: s.hectares,
+                         field_id: s.field_id
                      });
                  });
              }
@@ -1198,11 +1203,110 @@ export const Invoices: React.FC = () => {
     e.preventDefault();
     if (!selectedCompany || items.length === 0) return;
 
+    // Validate unique items
+    const hasDuplicates = items.some((item, index) => 
+      items.findIndex(i => i.product_name === item.product_name) !== index
+    );
+
+    if (hasDuplicates) {
+      if (!window.confirm('Hay productos duplicados en la factura. ¿Deseas continuar de todos modos?')) {
+        setLoading(false);
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       let invoiceId = editingInvoiceId;
       
       const total = calculateFinalTotal(); // Fix the reference to total
+
+      // --- HELPER: Process Direct Assignment ---
+      const processDirectAssignment = async (formItem: any, dbInvoiceItem: any) => {
+          if (!formItem.destination_type || !formItem.destination_id || formItem.destination_type === 'none') return;
+
+          const invoiceTotalValue = total;
+          const invoiceExempt = exemptAmount || 0;
+          const invoiceSpecial = specialTaxAmount || 0;
+          const currentTaxPct = documentType === 'Factura Exenta' ? 0 : taxPercentage;
+          
+          const invoiceTaxablePlusTax = invoiceTotalValue - invoiceExempt - invoiceSpecial;
+          const invoiceTaxable = invoiceTaxablePlusTax / (1 + (currentTaxPct / 100));
+          
+          const itemNet = formItem.total_price;
+          const itemProportion = invoiceTaxable > 0.01 ? (itemNet / invoiceTaxable) : (itemNet > 0 ? 1 : 0);
+          
+          const itemExemptShare = itemProportion * invoiceExempt;
+          const itemSpecialShare = itemProportion * invoiceSpecial;
+          const itemTaxAmount = itemNet * (currentTaxPct / 100);
+          
+          const itemGrossAmount = itemNet + itemTaxAmount + itemExemptShare + itemSpecialShare;
+
+          if (formItem.destination_type === 'machine') {
+             await supabase.from('machinery_assignments').insert([{
+                 company_id: selectedCompany.id,
+                 invoice_item_id: dbInvoiceItem.id,
+                 machine_id: formItem.destination_id,
+                 date: invoiceDate,
+                 amount: itemGrossAmount,
+                 sector_id: null, 
+                 notes: 'Asignación automática desde Factura'
+             }]);
+          } else if (['sector', 'field', 'company'].includes(formItem.destination_type)) {
+              const selectedOption = sectors.find(s => s.id === formItem.destination_id);
+              const isLabor = formItem.category === 'Mano de obra' || formItem.category === 'Labores agrícolas';
+              
+              const baseAssignment = {
+                  company_id: selectedCompany.id,
+                  invoice_item_id: dbInvoiceItem.id,
+                  date: invoiceDate,
+              };
+
+              const insertAssignment = async (sectorId: string, amount: number, notesStr: string) => {
+                  if (isLabor) {
+                      await supabase.from('labor_assignments').insert([{
+                          ...baseAssignment,
+                          sector_id: sectorId,
+                          assigned_amount: amount,
+                          labor_type: formItem.labor_type || 'General',
+                          worker_id: null,
+                          notes: notesStr
+                      }]);
+                  } else {
+                      await supabase.from('general_costs').insert([{
+                          ...baseAssignment,
+                          sector_id: sectorId,
+                          amount: amount,
+                          category: formItem.category,
+                          description: notesStr
+                      }]);
+                  }
+              };
+              
+              if (selectedOption?.type === 'company' || formItem.destination_type === 'company') {
+                  const targetSectors = sectors.filter(s => s.type === 'sector');
+                  const totalHa = targetSectors.reduce((sum, s) => sum + Number(s.hectares || 0), 0);
+                  if (totalHa > 0) {
+                      for (const s of targetSectors) {
+                          const shareAmount = (Number(s.hectares || 0) / totalHa) * itemGrossAmount;
+                          await insertAssignment(s.id, shareAmount, `Gasto Empresa (Dist. Proporcional): ${formItem.product_name}`);
+                      }
+                  }
+              } else if (selectedOption?.type === 'field' || formItem.destination_type === 'field') {
+                  const targetSectors = sectors.filter(s => s.type === 'sector' && s.field_id === formItem.destination_id);
+                  const totalHa = targetSectors.reduce((sum, s) => sum + Number(s.hectares || 0), 0);
+                  if (totalHa > 0) {
+                      for (const s of targetSectors) {
+                          const shareAmount = (Number(s.hectares || 0) / totalHa) * itemGrossAmount;
+                          await insertAssignment(s.id, shareAmount, `Gasto Campo (Dist. Proporcional): ${formItem.product_name}`);
+                      }
+                  }
+              } else {
+                  await insertAssignment(formItem.destination_id, itemGrossAmount, `Asignación Directa: ${formItem.product_name}`);
+              }
+          }
+      };
+      // ----------------------------------------------
 
       if (editingInvoiceId) {
         // --- UPDATE EXISTING INVOICE (DIFFING STRATEGY) ---
@@ -1386,25 +1490,7 @@ export const Invoices: React.FC = () => {
 
             if (itemError) throw itemError;
 
-            // --- DIRECT ASSIGNMENT LOGIC ---
-            if (item.destination_type && item.destination_id) {
-               if (item.destination_type === 'machine') {
-                  // Create Machinery Assignment
-                  await supabase.from('machinery_assignments').insert([{
-                      company_id: selectedCompany.id,
-                      invoice_item_id: invoiceItem.id,
-                      machine_id: item.destination_id,
-                      date: invoiceDate, // Use invoice date as default assignment date
-                      amount: item.total_price,
-                      sector_id: null, 
-                      notes: 'Asignación automática desde Factura'
-                  }]);
-               } else if (item.destination_type === 'sector') {
-                  // Pending implementation for sectors
-                  console.log('Sector assignment pending implementation for item:', invoiceItem.id);
-               }
-            }
-            // -------------------------------
+            await processDirectAssignment(item, invoiceItem);
 
             // Update Inventory
             await supabase.rpc('update_inventory_with_average_cost', {
@@ -1496,76 +1582,7 @@ export const Invoices: React.FC = () => {
 
             if (itemError) throw itemError;
 
-            // --- DIRECT ASSIGNMENT LOGIC ---
-            if (item.destination_type && item.destination_id) {
-               if (item.destination_type === 'machine') {
-                  // Create Machinery Assignment
-                  await supabase.from('machinery_assignments').insert([{
-                      company_id: selectedCompany.id,
-                      invoice_item_id: invoiceItem.id,
-                      machine_id: item.destination_id,
-                      date: invoiceDate, // Use invoice date as default assignment date
-                      amount: item.total_price,
-                      sector_id: null, 
-                      notes: 'Asignación automática desde Factura'
-                  }]);
-               } else if (['sector', 'field', 'company'].includes(item.destination_type || '')) {
-                   // Determine if it's a specific sector, a whole field, or company general
-                   const selectedOption = sectors.find(s => s.id === item.destination_id);
-                   
-                   if (selectedOption?.type === 'company' || item.destination_type === 'company') {
-                       // 1. Company General Cost
-                       await supabase.from('general_costs').insert([{
-                           company_id: selectedCompany.id,
-                           invoice_item_id: invoiceItem.id,
-                           amount: item.total_price,
-                           category: item.category, // e.g. 'Labores agrícolas'
-                           description: `Gasto General: ${item.product_name} (${item.labor_type || 'General'})`,
-                           date: invoiceDate,
-                           sector_id: null // Explicitly null for general costs
-                       }]);
-
-                   } else if (selectedOption?.type === 'field' || item.destination_type === 'field') {
-                       // 2. Field Level -> Distribute to all sectors in this field
-                       // First, find all sectors for this field
-                       const { data: fieldSectors } = await supabase
-                           .from('sectors')
-                           .select('id')
-                           .eq('field_id', item.destination_id); // item.destination_id is field_id here
-                       
-                       if (fieldSectors && fieldSectors.length > 0) {
-                           const amountPerSector = item.total_price / fieldSectors.length;
-                           
-                           const laborEntries = fieldSectors.map(fs => ({
-                               company_id: selectedCompany.id,
-                               invoice_item_id: invoiceItem.id,
-                               sector_id: fs.id,
-                               date: invoiceDate,
-                               assigned_amount: amountPerSector,
-                               labor_type: item.labor_type || 'Materiales',
-                               worker_id: null,
-                               notes: `Asignación por Campo (${selectedOption?.name || 'Campo'}): ${item.product_name}`
-                           }));
-
-                           await supabase.from('labor_assignments').insert(laborEntries);
-                       }
-
-                   } else {
-                       // 3. Specific Sector (Original Logic)
-                       await supabase.from('labor_assignments').insert([{
-                           company_id: selectedCompany.id,
-                           invoice_item_id: invoiceItem.id,
-                           sector_id: item.destination_id,
-                           date: invoiceDate,
-                           assigned_amount: item.total_price,
-                           labor_type: item.labor_type || 'Materiales', // Use specific labor type or default
-                           worker_id: null, // No worker for material
-                           notes: `Asignación automática desde Factura ${item.labor_type ? `(${item.labor_type})` : ''}`
-                       }]);
-                   }
-               }
-            }
-            // -------------------------------
+            await processDirectAssignment(item, invoiceItem);
 
             await supabase.rpc('update_inventory_with_average_cost', {
               product_id: productId,
@@ -2000,7 +2017,7 @@ export const Invoices: React.FC = () => {
                             })}
                             className="w-1/3 bg-white border border-gray-300 text-gray-900 text-xs rounded-lg p-2.5"
                          >
-                            <option value="">Seleccione Tipo...</option>
+                            <option value="none">📥 Ninguno (A Bodega / Pendiente)</option>
                             <option value="sector">🌱 Sector Específico</option>
                             <option value="field">🌳 Campo Completo</option>
                             <option value="company">🏢 Empresa General</option>
@@ -2010,14 +2027,15 @@ export const Invoices: React.FC = () => {
                          <select
                             value={currentItem.destination_id || ''}
                             onChange={e => setCurrentItem({...currentItem, destination_id: e.target.value})}
-                            disabled={destinationsLoading || !currentItem.destination_type}
+                            disabled={destinationsLoading || !currentItem.destination_type || currentItem.destination_type === 'none'}
                             className="flex-1 bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5 disabled:bg-gray-100"
                          >
                             <option value="">
                                 {currentItem.destination_type === 'machine' ? 'Seleccione Máquina...' : 
                                  (currentItem.destination_type === 'sector' ? 'Seleccione Sector...' : 
                                   (currentItem.destination_type === 'field' ? 'Seleccione Campo...' : 
-                                   (currentItem.destination_type === 'company' ? 'Confirme Empresa...' : 'Seleccione Tipo ←')))}
+                                   (currentItem.destination_type === 'company' ? 'Confirme Empresa...' : 
+                                    (currentItem.destination_type === 'none' ? 'Sin asignación directa' : 'Seleccione Tipo ←'))))}
                             </option>
 
                             {currentItem.destination_type === 'machine' && (
