@@ -196,7 +196,7 @@ export const Layout: React.FC = () => {
                     <LogOut className="mr-1 h-3 w-3" /> Salir
                   </button>
                 </div>
-                <div className="text-[10px] text-gray-400 mt-1">v1.16.16</div>
+                <div className="text-[10px] text-gray-400 mt-1">v1.16.17</div>
               </div>
             </div>
           </div>

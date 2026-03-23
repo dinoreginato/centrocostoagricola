@@ -9,11 +9,12 @@ import { PdfPreviewModal } from '../components/PdfPreviewModal';
 
 // Interfaces based on DB Schema
 interface ApplicationOrder {
-  id: string;
-  order_number: number;
-  scheduled_date: string;
-  status: 'pendiente' | 'completada' | 'cancelada';
-  field_id: string;
+    id: string;
+    order_number: number;
+    scheduled_date: string;
+    completed_date?: string; // New field for actual execution date
+    status: 'pendiente' | 'completada' | 'cancelada';
+    application_type: string;
   sector_id: string;
   application_type: string;
   water_liters_per_hectare: number;
@@ -263,6 +264,7 @@ export const ApplicationOrders: React.FC = () => {
               field_id: currentOrder.field_id,
               sector_id: currentOrder.sector_id,
               scheduled_date: currentOrder.scheduled_date,
+              completed_date: currentOrder.completed_date || null,
               status: currentOrder.status,
               application_type: currentOrder.application_type,
               water_liters_per_hectare: currentOrder.water_liters_per_hectare,
@@ -535,9 +537,9 @@ export const ApplicationOrders: React.FC = () => {
               </div>
 
               {/* Form Header Fields */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                   <div>
-                      <label className="block text-sm font-medium text-gray-700">Fecha Inicio</label>
+                      <label className="block text-sm font-medium text-gray-700">Fecha Planificada</label>
                       <input 
                           type="date" 
                           value={currentOrder.scheduled_date}
@@ -545,7 +547,44 @@ export const ApplicationOrders: React.FC = () => {
                           className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                       />
                   </div>
-                   <div>
+                  <div>
+                      <label className="block text-sm font-medium text-gray-700">Estado</label>
+                      <select 
+                          value={currentOrder.status}
+                          onChange={e => {
+                              const newStatus = e.target.value;
+                              const updates: any = { status: newStatus };
+                              if (newStatus === 'completada') {
+                                  // Asignar fecha de completado automáticamente a hoy si no la tiene
+                                  if (!currentOrder.completed_date) {
+                                      updates.completed_date = new Date().toLocaleDateString('en-CA');
+                                  }
+                              } else {
+                                  // Limpiar fecha completada si se pasa a pendiente o cancelada
+                                  updates.completed_date = null;
+                              }
+                              setCurrentOrder({...currentOrder, ...updates});
+                          }}
+                          className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                      >
+                          <option value="pendiente">Pendiente</option>
+                          <option value="completada">Completada / Realizada</option>
+                          <option value="cancelada">Cancelada</option>
+                      </select>
+                  </div>
+                  {currentOrder.status === 'completada' && (
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700">Fecha de Realización</label>
+                          <input 
+                              type="date" 
+                              value={currentOrder.completed_date || ''}
+                              onChange={e => setCurrentOrder({...currentOrder, completed_date: e.target.value})}
+                              className="mt-1 block w-full border border-gray-300 rounded-md p-2 bg-green-50 border-green-200"
+                              required
+                          />
+                      </div>
+                  )}
+                  <div>
                       <label className="block text-sm font-medium text-gray-700">Objetivo Aplicación</label>
                       <input 
                           type="text" 
@@ -826,7 +865,10 @@ export const ApplicationOrders: React.FC = () => {
                           <tr key={order.id} className="hover:bg-gray-50">
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">#{order.order_number}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                  {new Date(order.scheduled_date).toLocaleDateString()}
+                                  <div>Plan: {new Date(order.scheduled_date + 'T12:00:00').toLocaleDateString()}</div>
+                                  {order.completed_date && (
+                                      <div className="text-green-600 font-medium">Realizada: {new Date(order.completed_date + 'T12:00:00').toLocaleDateString()}</div>
+                                  )}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                   <div>{order.field?.name}</div>
