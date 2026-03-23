@@ -439,34 +439,6 @@ export const Fuel: React.FC = () => {
                 
                 if (error) throw error;
     
-            } else if (distributeBy === 'company') {
-                // Company Distribution Logic
-                const totalHa = sectors.reduce((sum, s) => sum + Number(s.hectares), 0);
-                if (totalHa === 0) {
-                    alert('No hay sectores con hectáreas definidas para distribuir.');
-                    setLoading(false);
-                    return;
-                }
-    
-                const logsToInsert = sectors.map(s => {
-                    const sectorLiters = (Number(s.hectares) / totalHa) * totalLiters;
-                    const sectorCost = sectorLiters * stats.avgPrice;
-                    return {
-                        company_id: selectedCompany.id,
-                        date,
-                        activity: `${finalActivity} (Dist. Empresa)`,
-                        liters: sectorLiters,
-                        estimated_price: sectorCost,
-                        sector_id: s.id
-                    };
-                });
-    
-                const { error } = await supabase
-                    .from('fuel_consumption')
-                    .insert(logsToInsert);
-                
-                if (error) throw error;
-                
             } else if (distributeBy === 'field') {
                 // Distribute by Field Logic
                 const fieldSectors = sectors.filter(s => s.field_id === selectedFieldId);
