@@ -642,9 +642,32 @@ export const Dashboard: React.FC = () => {
                             >
                                 <div className="flex justify-between items-start mb-2">
                                     <div className="font-bold text-gray-700 text-sm truncate pr-2 flex-1" title={inv.supplier || ''}>{inv.supplier || 'Proveedor desconocido'}</div>
-                                    <div className="text-xs text-red-600 font-bold bg-red-50 px-2 py-0.5 rounded border border-red-100 whitespace-nowrap">
-                                        {inv.due_date ? new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' }) : 'N/A'}
-                                    </div>
+                                    <button 
+                                        onClick={async (e) => {
+                                            e.stopPropagation();
+                                            const userInputDate = prompt('Marcar como Pagada.\nIngrese la fecha de pago (YYYY-MM-DD):', new Date().toLocaleDateString('en-CA'));
+                                            if (userInputDate) {
+                                                try {
+                                                    const { error } = await supabase
+                                                        .from('invoices')
+                                                        .update({ 
+                                                            status: 'Pagada',
+                                                            payment_date: userInputDate
+                                                        })
+                                                        .eq('id', inv.id);
+                                                    if (error) throw error;
+                                                    alert('Factura marcada como pagada');
+                                                    loadDashboardData(); // Reload
+                                                } catch (err) {
+                                                    alert('Error al actualizar factura');
+                                                }
+                                            }
+                                        }}
+                                        className="text-[10px] text-red-600 font-bold bg-red-50 hover:bg-green-100 hover:text-green-700 hover:border-green-300 px-2 py-1 rounded border border-red-100 whitespace-nowrap transition-colors"
+                                        title="Click para marcar como Pagada"
+                                    >
+                                        Vence: {inv.due_date ? new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' }) : 'N/A'}
+                                    </button>
                                 </div>
                                 <div className="flex justify-between items-end">
                                     <div className="text-xs text-gray-400 truncate max-w-[50%]" title={inv.invoice_number || ''}>
