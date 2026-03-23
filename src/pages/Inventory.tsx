@@ -345,24 +345,7 @@ export const Inventory: React.FC = () => {
     }
   };
 
-  const handleDeleteProduct = async (id: string) => {
-    if (!confirm('¿Está seguro de eliminar este producto? Esto no eliminará el historial de facturas, pero quitará el producto de la bodega actual.')) return;
-
-    try {
-      const { error } = await supabase
-        .from('products')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
-      setProducts(products.filter(p => p.id !== id));
-      alert('Producto eliminado correctamente');
-    } catch (error: any) {
-      console.error('Error deleting product:', error);
-      alert('Error al eliminar el producto: ' + error.message);
-    }
-  };
+  // Remove the second handleDeleteProduct declaration below handleUpdateProduct
 
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -553,7 +536,7 @@ export const Inventory: React.FC = () => {
                         <Edit className="h-4 w-4" />
                       </button>
                       <button 
-                        onClick={() => handleDeleteProduct(product.id)}
+                        onClick={() => handleDeleteProduct(product.id, product.name)}
                         className="text-red-600 hover:text-red-900"
                         title="Eliminar"
                       >
