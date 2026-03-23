@@ -1156,12 +1156,15 @@ export const Invoices: React.FC = () => {
     e.stopPropagation(); // Prevent opening edit mode
     
     const newStatus = invoice.status === 'Pagada' ? 'Pendiente' : 'Pagada';
-    
-    // Use local date string (YYYY-MM-DD) to avoid timezone issues
-    const today = new Date();
-    const localDate = today.toLocaleDateString('en-CA'); // en-CA gives YYYY-MM-DD format
-    
-    const newPaymentDate = newStatus === 'Pagada' ? localDate : null;
+    let newPaymentDate = null;
+
+    if (newStatus === 'Pagada') {
+        const userInputDate = prompt('Ingrese la fecha de pago (YYYY-MM-DD):', new Date().toLocaleDateString('en-CA'));
+        if (userInputDate === null) {
+            return; // User cancelled
+        }
+        newPaymentDate = userInputDate || new Date().toLocaleDateString('en-CA');
+    }
     
     try {
         const { error } = await supabase
