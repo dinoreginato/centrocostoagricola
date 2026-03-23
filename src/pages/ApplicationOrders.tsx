@@ -56,6 +56,7 @@ interface OrderItem {
   dose_per_100l?: number;
   total_quantity: number;
   objective?: string; // Per item objective (optional now)
+  average_cost?: number; // Needed for completion calculation
 }
 
 // Reuse Interfaces from other parts
