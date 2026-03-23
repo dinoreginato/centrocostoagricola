@@ -1246,15 +1246,36 @@ export const Invoices: React.FC = () => {
           const itemGrossAmount = itemNet + itemTaxAmount + itemExemptShare + itemSpecialShare;
 
           if (formItem.destination_type === 'machine') {
-             await supabase.from('machinery_assignments').insert([{
-                 company_id: selectedCompany.id,
-                 invoice_item_id: dbInvoiceItem.id,
-                 machine_id: formItem.destination_id,
-                 date: invoiceDate,
-                 amount: itemGrossAmount,
-                 sector_id: null, 
-                 notes: 'Asignación automática desde Factura'
-             }]);
+             if (formItem.destination_id === 'company_general') {
+                 // Distribute machinery cost across all sectors proportionally
+                 const targetSectors = sectors.filter(s => s.type === 'sector');
+                 const totalHa = targetSectors.reduce((sum, s) => sum + Number(s.hectares || 0), 0);
+                 if (totalHa > 0) {
+                     for (const s of targetSectors) {
+                         const shareAmount = (Number(s.hectares || 0) / totalHa) * itemGrossAmount;
+                         await supabase.from('machinery_assignments').insert([{
+                             company_id: selectedCompany.id,
+                             invoice_item_id: dbInvoiceItem.id,
+                             machine_id: null, // Null indicates general machinery cost
+                             date: invoiceDate,
+                             amount: shareAmount,
+                             sector_id: s.id, 
+                             notes: `Maquinaria General (Dist. Proporcional): ${formItem.product_name}`
+                         }]);
+                     }
+                 }
+             } else {
+                 // Specific Machine
+                 await supabase.from('machinery_assignments').insert([{
+                     company_id: selectedCompany.id,
+                     invoice_item_id: dbInvoiceItem.id,
+                     machine_id: formItem.destination_id,
+                     date: invoiceDate,
+                     amount: itemGrossAmount,
+                     sector_id: null, 
+                     notes: 'Asignación automática desde Factura'
+                 }]);
+             }
           } else if (['sector', 'field', 'company'].includes(formItem.destination_type)) {
               const selectedOption = sectors.find(s => s.id === formItem.destination_id);
               const isLabor = formItem.category === 'Mano de obra' || formItem.category === 'Labores agrícolas';
@@ -2042,7 +2063,7 @@ export const Invoices: React.FC = () => {
                             className="flex-1 bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5 disabled:bg-gray-100"
                          >
                             <option value="">
-                                {currentItem.destination_type === 'machine' ? 'Seleccione Máquina...' : 
+                                {currentItem.destination_type === 'machine' ? 'Seleccione Máquina o Empresa...' : 
                                  (currentItem.destination_type === 'sector' ? 'Seleccione Sector...' : 
                                   (currentItem.destination_type === 'field' ? 'Seleccione Campo...' : 
                                    (currentItem.destination_type === 'company' ? 'Confirme Empresa...' : 
@@ -2050,9 +2071,14 @@ export const Invoices: React.FC = () => {
                             </option>
 
                             {currentItem.destination_type === 'machine' && (
-                                machines.length > 0 ? (
-                                    machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)
-                                ) : <option value="" disabled>Sin máquinas</option>
+                                <>
+                                    <option value="company_general" className="font-bold text-blue-600">🏢 Empresa General (Repartir en todos los sectores)</option>
+                                    <optgroup label="Máquinas Específicas">
+                                        {machines.length > 0 ? (
+                                            machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)
+                                        ) : <option value="" disabled>Sin máquinas</option>}
+                                    </optgroup>
+                                </>
                             )}
 
                             {/* Filter Sectors/Fields/Company based on Type */}
