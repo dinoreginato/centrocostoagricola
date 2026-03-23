@@ -1716,231 +1716,242 @@ export const Invoices: React.FC = () => {
 
           <div className="p-6">
             <form onSubmit={handleSubmit}>
-              {/* Row 1 */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Número</label>
-                  <input
-                    type="text"
-                    required
-                    value={invoiceNumber}
-                    onChange={e => setInvoiceNumber(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-                    placeholder="Ej. 00123"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Fecha Emisión</label>
-                  <input
-                    type="date"
-                    required
-                    value={invoiceDate}
-                    onChange={e => setInvoiceDate(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Vencimiento</label>
-                  <input
-                    type="date"
-                    value={dueDate}
-                    onChange={e => setDueDate(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Proveedor</label>
-                  <input
-                    type="text"
-                    required
-                    list="supplier-list"
-                    value={supplier}
-                    onChange={e => {
-                        const val = e.target.value;
-                        setSupplier(val);
-                        // Auto-fill RUT if existing supplier found in list
-                        // This is a simple heuristic: if we find a RUT associated with this supplier name in our previous data
-                        // But since we don't have a separate suppliers table, we can query recent invoices or just check local cache if we had one.
-                        // For now, let's leave it manual or maybe try to find it in the future.
-                        // A better approach: query Supabase for the latest RUT used for this supplier.
-                        if (val.length > 3) {
-                            supabase.from('invoices')
-                                .select('supplier_rut')
-                                .eq('company_id', selectedCompany.id)
-                                .eq('supplier', val)
-                                .order('created_at', { ascending: false })
-                                .limit(1)
-                                .maybeSingle()
-                                .then(({ data }) => {
-                                    if (data && data.supplier_rut) {
-                                        setSupplierRut(data.supplier_rut);
-                                    }
-                                });
-                        }
-                    }}
-                    className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-                    placeholder="Nombre del prov"
-                  />
-                  <datalist id="supplier-list">
-                    {suppliers.map((s, idx) => (
-                      <option key={idx} value={s} />
-                    ))}
-                  </datalist>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase mb-1">RUT Proveedor</label>
-                  <input
-                    type="text"
-                    value={supplierRut}
-                    onChange={e => setSupplierRut(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-                    placeholder="Ej. 76.123.456-7"
-                  />
-                </div>
-                <div className="mt-4 flex justify-end">
+              <div className="flex justify-between items-center mb-6 border-b pb-4">
+                <h2 className="text-xl font-bold text-gray-800 flex items-center">
+                  {editingInvoiceId ? 'Editar Documento' : 'Nuevo Documento'}
+                </h2>
+                <div className="flex gap-2">
+                  {editingInvoiceId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingInvoiceId(null);
+                        setInvoiceNumber('');
+                        setSupplier('');
+                        setSupplierRut('');
+                        setItems([]);
+                        setNotes('');
+                        setDueDate('');
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                    >
+                      Cancelar Edición
+                    </button>
+                  )}
                   <button
                     type="submit"
                     disabled={loading || items.length === 0}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-8 rounded-lg flex items-center disabled:opacity-50 text-lg shadow-lg w-full justify-center"
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg flex items-center disabled:opacity-50 transition-colors shadow-sm"
                   >
-                    {loading ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <Save className="h-5 w-5 mr-2" />}
-                    {editingInvoiceId ? 'ACTUALIZAR' : 'GUARDAR FACTURA'}
+                    {loading ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                    {editingInvoiceId ? 'Actualizar Documento' : 'Guardar Documento'}
                   </button>
                 </div>
               </div>
 
-              {/* Row 2 */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Estado</label>
-                  <select
-                    value={status}
-                    onChange={e => setStatus(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-                  >
-                    <option value="Pendiente">Pendiente</option>
-                    <option value="Pagada">Pagada</option>
-                    <option value="Anulada">Anulada</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Notas</label>
-                  <input
-                    type="text"
-                    value={notes}
-                    onChange={e => setNotes(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-                    placeholder="Opcional"
-                  />
-                </div>
-              </div>
+              {/* General Information Section */}
+              <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6 shadow-sm">
+                <h3 className="text-sm font-bold text-gray-700 mb-4 uppercase tracking-wider border-b pb-2">Información General</h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Proveedor</label>
+                    <input
+                      type="text"
+                      required
+                      list="supplier-list"
+                      value={supplier}
+                      onChange={e => {
+                          const val = e.target.value;
+                          setSupplier(val);
+                          if (val.length > 3) {
+                              supabase.from('invoices')
+                                  .select('supplier_rut')
+                                  .eq('company_id', selectedCompany.id)
+                                  .eq('supplier', val)
+                                  .order('created_at', { ascending: false })
+                                  .limit(1)
+                                  .maybeSingle()
+                                  .then(({ data }) => {
+                                      if (data && data.supplier_rut) {
+                                          setSupplierRut(data.supplier_rut);
+                                      }
+                                  });
+                          }
+                      }}
+                      className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"
+                      placeholder="Nombre del proveedor"
+                    />
+                    <datalist id="supplier-list">
+                      {suppliers.map((s, idx) => (
+                        <option key={idx} value={s} />
+                      ))}
+                    </datalist>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">RUT Proveedor</label>
+                    <input
+                      type="text"
+                      value={supplierRut}
+                      onChange={e => setSupplierRut(e.target.value)}
+                      className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"
+                      placeholder="Ej. 76.123.456-7"
+                    />
+                  </div>
 
-              {/* Row 3 */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Empresa</label>
-                  <div className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5 font-medium">
-                    {selectedCompany.name}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Tipo de Documento</label>
+                    <select
+                      value={documentType}
+                      onChange={e => {
+                          const val = e.target.value;
+                          setDocumentType(val);
+                          if (val === 'Factura Exenta') {
+                              setTaxPercentage(0);
+                          } else if (val === 'Factura' || val === 'Nota de Crédito' || val === 'Nota de Débito') {
+                              setTaxPercentage(19);
+                          }
+                      }}
+                      className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"
+                    >
+                      <option value="Factura">Factura</option>
+                      <option value="Factura Exenta">Factura Exenta</option>
+                      <option value="Boleta">Boleta</option>
+                      <option value="Guía de Despacho">Guía de Despacho</option>
+                      <option value="Nota de Crédito">Nota de Crédito</option>
+                      <option value="Nota de Débito">Nota de Débito</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Número de Folio</label>
+                    <input
+                      type="text"
+                      required
+                      value={invoiceNumber}
+                      onChange={e => setInvoiceNumber(e.target.value)}
+                      className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 font-medium transition-colors"
+                      placeholder="N° Documento"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Fecha Emisión</label>
+                    <input
+                      type="date"
+                      required
+                      value={invoiceDate}
+                      onChange={e => setInvoiceDate(e.target.value)}
+                      className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Vencimiento</label>
+                    <input
+                      type="date"
+                      value={dueDate}
+                      onChange={e => setDueDate(e.target.value)}
+                      className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Estado de Pago</label>
+                    <select
+                      value={status}
+                      onChange={e => setStatus(e.target.value)}
+                      className={`w-full border text-sm rounded-lg focus:ring-2 block p-2.5 font-medium transition-colors ${
+                        status === 'Pagada' ? 'bg-green-50 border-green-300 text-green-800 focus:ring-green-500' :
+                        status === 'Pendiente' ? 'bg-yellow-50 border-yellow-300 text-yellow-800 focus:ring-yellow-500' :
+                        'bg-red-50 border-red-300 text-red-800 focus:ring-red-500'
+                      }`}
+                    >
+                      <option value="Pendiente">Pendiente</option>
+                      <option value="Pagada">Pagada</option>
+                      <option value="Anulada">Anulada</option>
+                    </select>
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Tipo de Documento</label>
-                  <select
-                    value={documentType}
-                    onChange={e => {
-                        const val = e.target.value;
-                        setDocumentType(val);
-                        // Auto-set tax percentage based on type
-                        if (val === 'Factura Exenta') {
-                            setTaxPercentage(0);
-                        } else if (val === 'Factura' || val === 'Nota de Crédito' || val === 'Nota de Débito') {
-                            setTaxPercentage(19);
-                        }
-                    }}
-                    className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-                  >
-                    <option value="Factura">Factura</option>
-                    <option value="Factura Exenta">Factura Exenta</option>
-                    <option value="Boleta">Boleta</option>
-                    <option value="Guía de Despacho">Guía de Despacho</option>
-                    <option value="Nota de Crédito">Nota de Crédito</option>
-                    <option value="Nota de Débito">Nota de Débito</option>
-                  </select>
-                </div>
               </div>
 
-              {/* Row 4: Financials */}
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6 bg-blue-50 p-4 rounded-xl border border-blue-100">
-                <div>
-                  <label className="block text-xs font-medium text-blue-700 uppercase mb-1">Monto Neto (Items)</label>
-                  <input
-                    type="number"
-                    value={calculateInvoiceTotal()}
-                    readOnly
-                    className="w-full bg-blue-100 border border-blue-200 text-blue-900 text-sm rounded-lg block p-2.5 font-bold"
-                    placeholder="Auto calculado"
-                  />
-                  <div className="text-[10px] text-blue-500 mt-1">Suma de items</div>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Impuesto (%)</label>
-                  <input
-                    type="number"
-                    value={taxPercentage}
-                    onChange={e => setTaxPercentage(Number(e.target.value))}
-                    className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Descuento</label>
-                  <input
-                    type="number"
-                    value={discountAmount}
-                    onChange={e => setDiscountAmount(Number(e.target.value))}
-                    className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Monto Exento</label>
-                  <input
-                    type="number"
-                    value={exemptAmount}
-                    onChange={e => setExemptAmount(Number(e.target.value))}
-                    className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-                    placeholder="Ej. 0"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Impuesto Especial</label>
-                  <input
-                    type="number"
-                    value={specialTaxAmount}
-                    onChange={e => setSpecialTaxAmount(Number(e.target.value))}
-                    className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-                    placeholder="Ej. 0"
-                  />
-                </div>
-                <div className="md:col-span-5 flex justify-end items-center mt-2 pt-2 border-t border-blue-200">
-                    <span className="text-sm text-blue-800 font-medium mr-4">TOTAL FACTURA:</span>
-                    <span className="text-2xl font-bold text-blue-900">{formatCLP(calculateFinalTotal())}</span>
+              {/* Financials Section */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-5 mb-6 border border-blue-100 shadow-inner">
+                <h3 className="text-sm font-bold text-blue-800 mb-4 uppercase tracking-wider border-b border-blue-200 pb-2">Detalle Financiero</h3>
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-5">
+                  <div>
+                    <label className="block text-xs font-medium text-blue-700 mb-1">Monto Neto (Items)</label>
+                    <input
+                      type="number"
+                      value={calculateInvoiceTotal()}
+                      readOnly
+                      className="w-full bg-white/50 border border-blue-200 text-blue-900 text-sm rounded-lg block p-2.5 font-bold shadow-sm"
+                      placeholder="Auto calculado"
+                    />
+                    <div className="text-[10px] text-blue-500 mt-1 flex items-center"><Check className="w-3 h-3 mr-1"/> Suma automática</div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Impuesto (%)</label>
+                    <input
+                      type="number"
+                      value={taxPercentage}
+                      onChange={e => setTaxPercentage(Number(e.target.value))}
+                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Descuento ($)</label>
+                    <input
+                      type="number"
+                      value={discountAmount}
+                      onChange={e => setDiscountAmount(Number(e.target.value))}
+                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Monto Exento ($)</label>
+                    <input
+                      type="number"
+                      value={exemptAmount}
+                      onChange={e => setExemptAmount(Number(e.target.value))}
+                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
+                      placeholder="Ej. 0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Imp. Especial ($)</label>
+                    <input
+                      type="number"
+                      value={specialTaxAmount}
+                      onChange={e => setSpecialTaxAmount(Number(e.target.value))}
+                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
+                      placeholder="Ej. 0"
+                    />
+                  </div>
+                  <div className="md:col-span-5 flex justify-end items-center mt-2 pt-4 border-t border-blue-200/60">
+                      <span className="text-sm text-blue-800 font-medium mr-4">TOTAL DOCUMENTO:</span>
+                      <span className="text-3xl font-black text-blue-900 tracking-tight">{formatCLP(calculateFinalTotal())}</span>
+                  </div>
                 </div>
               </div>
 
               {/* Item Entry Section */}
-              <div className="bg-gray-50 rounded-xl p-4 mb-6 border border-gray-200">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700">Items {items.length}</span>
+              <div className="bg-white rounded-xl p-5 mb-6 border border-gray-200 shadow-sm">
+                <div className="flex justify-between items-center mb-4 border-b pb-2">
+                  <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider">Detalle de Ítems</h3>
+                  <span className="bg-gray-100 text-gray-600 py-1 px-3 rounded-full text-xs font-bold">{items.length} ingresados</span>
                 </div>
                 
-                <div className="grid grid-cols-12 gap-2 items-end">
+                <div className="grid grid-cols-12 gap-3 items-end bg-gray-50 p-4 rounded-lg border border-gray-200">
                   <div className="col-span-12 md:col-span-2 relative">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Descripción</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Descripción / Producto</label>
                     <input
                       type="text"
                       value={currentItem.product_name}
                       onChange={e => handleProductChange(e.target.value)}
-                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5"
-                      placeholder="Buscar o escribir nombre..."
+                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
+                      placeholder="Ej. Abono foliar..."
                       autoComplete="off"
                       list="product-suggestions" 
                     />
@@ -1949,24 +1960,21 @@ export const Invoices: React.FC = () => {
                     </datalist>
                     
                     {showSuggestions && officialSuggestions.length > 0 && (
-                        <div className="absolute z-50 left-0 w-[200%] mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                            <div className="px-3 py-2 text-xs font-bold text-gray-500 bg-gray-50 border-b">
-                                Sugerencias SAG (Registro Oficial)
+                        <div className="absolute z-50 left-0 w-[200%] mt-1 bg-white border border-blue-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                            <div className="px-3 py-2 text-xs font-bold text-blue-800 bg-blue-50 border-b border-blue-100 flex items-center">
+                                <Database className="w-3 h-3 mr-1" /> Sugerencias SAG (Registro Oficial)
                             </div>
                             {officialSuggestions.map((sug, idx) => (
                                 <button
                                     key={idx}
                                     type="button"
                                     onClick={() => selectOfficialProduct(sug)}
-                                    className="w-full text-left px-4 py-2 text-sm hover:bg-green-50 border-b border-gray-100 last:border-0"
+                                    className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 border-b border-gray-50 last:border-0 transition-colors"
                                 >
-                                    <div className="font-medium text-gray-900">{sug.commercial_name}</div>
-                                    <div className="text-xs text-gray-500 flex justify-between">
-                                        <span>{sug.active_ingredient}</span>
-                                        <span>{sug.concentration}</span>
-                                    </div>
-                                    <div className="text-[10px] text-gray-400 mt-0.5">
-                                        Reg: {sug.registration_number} • {sug.company_name}
+                                    <div className="font-bold text-gray-900">{sug.commercial_name}</div>
+                                    <div className="text-xs text-gray-500 flex justify-between mt-1">
+                                        <span className="bg-gray-100 px-1 rounded">{sug.active_ingredient}</span>
+                                        <span className="font-medium">{sug.concentration}</span>
                                     </div>
                                 </button>
                             ))}
@@ -1975,7 +1983,7 @@ export const Invoices: React.FC = () => {
                   </div>
                   
                   <div className="col-span-12 md:col-span-2">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Categoría</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Categoría</label>
                     <select
                       value={currentItem.category}
                       onChange={e => {
@@ -1987,7 +1995,7 @@ export const Invoices: React.FC = () => {
                               destination_id: '' // Reset destination when category changes
                           });
                       }}
-                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5"
+                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
                     >
                       {CATEGORIES.map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
@@ -1996,22 +2004,22 @@ export const Invoices: React.FC = () => {
                   </div>
 
                   <div className="col-span-4 md:col-span-1">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Cant.</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Cant.</label>
                     <input
                       type="number"
                       step="0.01"
-                      value={currentItem.quantity}
+                      value={currentItem.quantity || ''}
                       onChange={e => setCurrentItem({...currentItem, quantity: Number(e.target.value)})}
-                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5"
+                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors text-center"
                     />
                   </div>
 
                   <div className="col-span-4 md:col-span-1">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Unidad</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Unidad</label>
                     <select
                       value={currentItem.unit}
                       onChange={e => setCurrentItem({...currentItem, unit: e.target.value})}
-                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5"
+                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors text-center"
                     >
                       <option value="L">L</option>
                       <option value="kg">kg</option>
@@ -2023,23 +2031,24 @@ export const Invoices: React.FC = () => {
                   </div>
 
                   <div className="col-span-4 md:col-span-2">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Precio</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Precio Unit.</label>
                     <input
                       type="number"
                       step="0.01"
-                      value={currentItem.unit_price}
+                      value={currentItem.unit_price || ''}
                       onChange={e => setCurrentItem({...currentItem, unit_price: Number(e.target.value)})}
-                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5"
+                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
+                      placeholder="$"
                     />
                   </div>
 
                   {/* Integrated Destination Selector */}
-                  <div className="col-span-12 md:col-span-4">
-                     <label className="block text-xs font-medium text-gray-500 mb-1">
-                        Destino / Asignación
+                  <div className="col-span-12 md:col-span-3">
+                     <label className="block text-xs font-bold text-blue-700 mb-1 flex items-center">
+                        <MapPin className="w-3 h-3 mr-1" /> Destino / Asignación Directa
                      </label>
                      
-                     <div className="flex space-x-1">
+                     <div className="flex flex-col space-y-1">
                          <select
                             value={currentItem.destination_type || ''}
                             onChange={e => setCurrentItem({
@@ -2047,7 +2056,7 @@ export const Invoices: React.FC = () => {
                                 destination_type: e.target.value as any,
                                 destination_id: '' // Reset ID when type changes
                             })}
-                            className="w-1/3 bg-white border border-gray-300 text-gray-900 text-xs rounded-lg p-2.5"
+                            className="w-full bg-blue-50 border border-blue-200 text-blue-900 text-xs rounded-lg p-2.5 font-medium shadow-sm transition-colors"
                          >
                             <option value="none">📥 Ninguno (A Bodega / Pendiente)</option>
                             <option value="sector">🌱 Sector Específico</option>
@@ -2060,7 +2069,7 @@ export const Invoices: React.FC = () => {
                             value={currentItem.destination_id || ''}
                             onChange={e => setCurrentItem({...currentItem, destination_id: e.target.value})}
                             disabled={destinationsLoading || !currentItem.destination_type || currentItem.destination_type === 'none'}
-                            className="flex-1 bg-white border border-gray-300 text-gray-900 text-sm rounded-lg p-2.5 disabled:bg-gray-100"
+                            className="w-full bg-white border border-blue-200 text-gray-900 text-sm rounded-lg p-2.5 disabled:bg-gray-100 disabled:border-gray-200 shadow-sm transition-colors"
                          >
                             <option value="">
                                 {currentItem.destination_type === 'machine' ? 'Seleccione Máquina o Empresa...' : 
@@ -2102,25 +2111,25 @@ export const Invoices: React.FC = () => {
                   </div>
                 </div>
                 
-                <div className="mt-3 flex justify-end space-x-2">
+                <div className="mt-4 flex justify-end space-x-3 border-t pt-4">
                   {editingItemIndex !== null && (
                       <button
                         type="button"
                         onClick={cancelEditItem}
-                        className="bg-gray-500 hover:bg-gray-600 text-white font-medium py-2 px-4 rounded-lg text-sm"
+                        className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-6 rounded-lg text-sm transition-colors shadow-sm"
                       >
-                        Cancelar
+                        Cancelar Edición
                       </button>
                   )}
                   <button
                     type="button"
                     onClick={addItem}
-                    className="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded-lg text-sm flex items-center"
+                    className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg text-sm flex items-center transition-colors shadow-md"
                   >
                     {editingItemIndex !== null ? (
-                        <>Actualizar item</>
+                        <><Check className="h-4 w-4 mr-2" /> Guardar Cambios del Ítem</>
                     ) : (
-                        <><Plus className="h-4 w-4 mr-1" /> Añadir item</>
+                        <><Plus className="h-4 w-4 mr-2" /> Añadir Ítem a la Factura</>
                     )}
                   </button>
                 </div>
@@ -2128,42 +2137,48 @@ export const Invoices: React.FC = () => {
 
               {/* Items Table Summary (Small) */}
               {items.length > 0 && (
-                <div className="mb-6 overflow-x-auto">
-                  <table className="w-full text-sm text-left text-gray-500">
-                    <thead className="text-xs text-gray-700 uppercase bg-gray-50">
+                <div className="mb-6 overflow-hidden rounded-xl border border-gray-200 shadow-sm">
+                  <table className="w-full text-sm text-left text-gray-600">
+                    <thead className="text-xs text-gray-700 uppercase bg-gray-100 border-b border-gray-200">
                       <tr>
-                        <th className="px-4 py-2">Desc</th>
-                        <th className="px-4 py-2">Cat</th>
-                        <th className="px-4 py-2">Cant</th>
-                        <th className="px-4 py-2">Total</th>
-                        <th className="px-4 py-2"></th>
+                        <th className="px-5 py-3">Descripción</th>
+                        <th className="px-5 py-3">Categoría</th>
+                        <th className="px-5 py-3">Cantidad</th>
+                        <th className="px-5 py-3">Total Bruto</th>
+                        <th className="px-5 py-3 text-right">Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
                       {items.map((item, idx) => (
-                        <tr key={idx} className={`border-b ${editingItemIndex === idx ? 'bg-blue-50' : 'bg-white'}`}>
-                          <td className="px-4 py-2">{item.product_name}</td>
-                          <td className="px-4 py-2">{item.category}</td>
-                          <td className="px-4 py-2">{item.quantity} {item.unit}</td>
-                          <td className="px-4 py-2">
-                     {formatCLP(item.total_price)}
-                     {item.destination_type && item.destination_type !== 'none' && (
-                        <div className="text-[10px] text-blue-600 font-bold bg-blue-50 px-1 rounded inline-block ml-1">
-                          ➜ {item.destination_type === 'machine' ? '🚜' : '🌱'} {item.destination_name}
-                        </div>
-                     )}
-                  </td>
-                          <td className="px-4 py-2 text-right">
+                        <tr key={idx} className={`border-b last:border-0 hover:bg-gray-50 transition-colors ${editingItemIndex === idx ? 'bg-blue-50/50' : 'bg-white'}`}>
+                          <td className="px-5 py-3 font-medium text-gray-900">{item.product_name}</td>
+                          <td className="px-5 py-3">
+                            <span className="bg-gray-100 text-gray-700 py-1 px-2 rounded-md text-xs font-medium border border-gray-200">{item.category}</span>
+                          </td>
+                          <td className="px-5 py-3 font-medium">{item.quantity} {item.unit}</td>
+                          <td className="px-5 py-3">
+                            <div className="font-bold text-gray-900">{formatCLP(item.total_price)}</div>
+                            {item.destination_type && item.destination_type !== 'none' && (
+                                <div className="text-[10px] text-blue-700 font-bold bg-blue-100 border border-blue-200 px-2 py-0.5 rounded-full inline-flex items-center mt-1">
+                                  <MapPin className="w-2.5 h-2.5 mr-1"/> {item.destination_type === 'machine' ? '🚜' : '📍'} {item.destination_name}
+                                </div>
+                            )}
+                          </td>
+                          <td className="px-5 py-3 text-right">
                             <button 
                                 type="button" 
                                 onClick={() => editItem(idx)} 
-                                className="text-blue-500 hover:text-blue-700 mr-3"
+                                className="text-blue-600 hover:text-blue-800 font-bold text-xs bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-md mr-2 transition-colors"
                                 disabled={editingItemIndex !== null && editingItemIndex !== idx}
                             >
                                 Editar
                             </button>
-                            <button type="button" onClick={() => removeItem(idx)} className="text-red-500 hover:text-red-700">
-                              <Trash2 className="h-4 w-4" />
+                            <button 
+                                type="button" 
+                                onClick={() => removeItem(idx)} 
+                                className="text-red-600 hover:text-red-800 font-bold text-xs bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-md transition-colors"
+                            >
+                              Eliminar
                             </button>
                           </td>
                         </tr>
@@ -2174,30 +2189,31 @@ export const Invoices: React.FC = () => {
               )}
 
               {/* Totals Footer */}
-              <div className="bg-gray-900 text-white p-4 rounded-lg">
-                <div className="flex justify-between items-center text-xs text-gray-400 mb-2">
-                  <span>Subtotal: {formatCLP(subtotal)}</span>
-                  <span>Descuento: {formatCLP(discountAmount)}</span>
-                  <span>Impuesto ({taxPercentage}%): {formatCLP(tax)}</span>
-                  <span>Exento: {formatCLP(exemptAmount)}</span>
-                  <span>Imp. Esp: {formatCLP(specialTaxAmount)}</span>
+              <div className="bg-gray-900 text-white p-6 rounded-xl shadow-lg border border-gray-800">
+                <div className="flex flex-wrap gap-4 text-xs text-gray-400 mb-4 pb-4 border-b border-gray-700">
+                  <div className="bg-gray-800 px-3 py-1.5 rounded-md">Subtotal: <strong className="text-white">{formatCLP(subtotal)}</strong></div>
+                  <div className="bg-gray-800 px-3 py-1.5 rounded-md">Descuento: <strong className="text-white">{formatCLP(discountAmount)}</strong></div>
+                  <div className="bg-gray-800 px-3 py-1.5 rounded-md">Exento: <strong className="text-white">{formatCLP(exemptAmount)}</strong></div>
+                  <div className="bg-gray-800 px-3 py-1.5 rounded-md">Imp. Esp: <strong className="text-white">{formatCLP(specialTaxAmount)}</strong></div>
                 </div>
-                <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-700">
-                  <div className="flex flex-col justify-center">
-                    <div className="text-sm">
-                      Impuestos: {formatCLP(tax)}
+                
+                <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                  <div>
+                    <div className="text-gray-400 text-sm mb-1">
+                      Impuestos ({taxPercentage}%): <strong className="text-gray-300">{formatCLP(tax)}</strong>
                     </div>
-                    <div className="text-xl font-bold">
-                      Total: {formatCLP(total)}
+                    <div className="text-3xl font-black tracking-tight text-white flex items-center">
+                      <span className="text-gray-500 mr-2 text-xl font-medium">TOTAL</span> {formatCLP(total)}
                     </div>
                   </div>
-                  <div className="flex justify-end items-center">
+                  
+                  <div className="w-full md:w-auto">
                     <button
                       type="submit"
                       disabled={loading || items.length === 0}
-                      className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg flex items-center disabled:opacity-50 text-lg shadow-lg w-full justify-center"
+                      className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 px-10 rounded-xl flex items-center disabled:opacity-50 disabled:hover:bg-blue-600 text-lg shadow-[0_0_20px_rgba(37,99,235,0.3)] hover:shadow-[0_0_25px_rgba(37,99,235,0.5)] transition-all w-full md:w-auto justify-center"
                     >
-                      {loading ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <Save className="h-5 w-5 mr-2" />}
+                      {loading ? <Loader2 className="animate-spin h-6 w-6 mr-2" /> : <Save className="h-6 w-6 mr-2" />}
                       GUARDAR
                     </button>
                   </div>
