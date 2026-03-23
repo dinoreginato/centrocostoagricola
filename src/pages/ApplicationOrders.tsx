@@ -14,10 +14,10 @@ interface ApplicationOrder {
     scheduled_date: string;
     completed_date?: string; // New field for actual execution date
     status: 'pendiente' | 'completada' | 'cancelada';
+    field_id: string;
+    sector_id: string;
     application_type: string;
-  sector_id: string;
-  application_type: string;
-  water_liters_per_hectare: number;
+    water_liters_per_hectare: number;
   tank_capacity: number;
   tractor_id?: string;
   sprayer_id?: string;
