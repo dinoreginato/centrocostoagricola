@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Tractor, ArrowRight, Save, Loader2, CheckCircle2, AlertCircle, Trash2, Edit2, FileText, Printer, RefreshCw } from 'lucide-react';
+import { Tractor, ArrowRight, Save, Loader2, CheckCircle2, AlertCircle, Trash2, Edit2, FileText, Printer, RefreshCw, Copy } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
@@ -330,6 +330,18 @@ export const Labors: React.FC = () => {
     }
 
     setLaborType(matchedType);
+  };
+
+  const handleCloneAssignment = (assignment: HistoryItem) => {
+      setEditingAssignmentId(null); // Force it to be a new entry
+      setSelectedLaborId(assignment.invoice_item_id);
+      setAssignedDate(assignment.assigned_date ? assignment.assigned_date.split('T')[0] : new Date().toISOString().split('T')[0]);
+      setLaborType(assignment.labor_type || 'General');
+      
+      setAllocations([{ 
+          sector_id: assignment.sector_id, 
+          amount: assignment.assigned_amount 
+      }]);
   };
 
   const handleEditAssignment = (assignment: HistoryItem) => {
@@ -1139,6 +1151,13 @@ export const Labors: React.FC = () => {
                                         <div className="flex items-center justify-end gap-3">
                                             {formatCLP(h.assigned_amount)}
                                             <div className="flex gap-1">
+                                                <button 
+                                                    onClick={() => handleCloneAssignment(h)}
+                                                    className="text-green-500 hover:text-green-700 p-1"
+                                                    title="Duplicar/Clonar"
+                                                >
+                                                    <Copy className="h-4 w-4" />
+                                                </button>
                                                 <button 
                                                     onClick={() => handleEditAssignment(h)}
                                                     className="text-blue-500 hover:text-blue-700 p-1"

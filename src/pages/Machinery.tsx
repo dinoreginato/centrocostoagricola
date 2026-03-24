@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Layers, Settings, Plus, X, Printer, FileText, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Layers, Settings, Plus, X, Printer, FileText, RefreshCw, AlertTriangle, Copy } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
@@ -370,6 +370,72 @@ export const Machinery: React.FC = () => {
     setSelectedMachineId('');
     setAllocations([{ sector_id: '', amount: item.remaining_amount }]);
     setFieldTotalAmount(item.remaining_amount);
+  };
+
+  const handleCloneAssignment = async (assignment: HistoryItem) => {
+      setLoading(true);
+      try {
+          const { data: itemData, error } = await supabase
+              .from('invoice_items')
+              .select(`
+                  id, total_price, category,
+                  products (name, category),
+                  invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
+              `)
+              .eq('id', assignment.invoice_item_id)
+              .single();
+
+          if (error) throw error;
+
+          const invoice = (Array.isArray(itemData.invoices) ? itemData.invoices[0] : itemData.invoices) as any;
+          const product = (Array.isArray(itemData.products) ? itemData.products[0] : itemData.products) as any;
+
+          const docType = (invoice.document_type || '').toLowerCase();
+          const isCreditNote = docType.includes('nota de cr') || 
+                               docType.includes('nota de cre') || 
+                               docType.includes('nota credito') ||
+                               docType.includes('credito') || 
+                               docType === 'nc';
+        
+          const taxPercent = invoice.tax_percentage !== undefined ? invoice.tax_percentage : 19;
+          const netAmount = Number(itemData.total_price);
+          const grossAmount = netAmount * (1 + (taxPercent / 100));
+
+          let total = grossAmount;
+          if (isCreditNote) {
+              total = -Math.abs(total);
+          } else {
+              total = Math.abs(total);
+          }
+
+          const fullItem: MachineryItem = {
+                id: itemData.id,
+                invoice_id: invoice.id,
+                invoice_number: invoice.invoice_number,
+                date: invoice.invoice_date,
+                description: `${product?.name || 'Sin descripción'} ${isCreditNote ? '(NC)' : ''} [${invoice.document_type}]`,
+                total_amount: total,
+                assigned_amount: 0,
+                remaining_amount: total
+          };
+
+          setEditingItem(fullItem);
+          setEditingAssignmentId(null); // Clone implies new
+          setSelectedItemId(assignment.invoice_item_id);
+          setAssignedDate(assignment.assigned_date ? assignment.assigned_date.split('T')[0] : new Date().toLocaleDateString('en-CA'));
+          setDistributeBy('sector');
+          setSelectedMachineId(assignment.machine_id || '');
+          setAllocations([{ 
+              sector_id: assignment.sector_id, 
+              amount: assignment.assigned_amount 
+          }]);
+
+      } catch (error: any) {
+          console.error('Error loading item for clone:', error);
+          alert('Error al clonar: ' + error.message);
+      } finally {
+          setLoading(false);
+      }
   };
 
   const handleEditAssignment = async (assignment: HistoryItem) => {
@@ -1307,6 +1373,13 @@ export const Machinery: React.FC = () => {
                                         <div className="flex items-center justify-end gap-3">
                                             {formatCLP(h.assigned_amount)}
                                             <div className="flex gap-1">
+                                                <button 
+                                                    onClick={() => handleCloneAssignment(h)}
+                                                    className="text-green-500 hover:text-green-700 p-1"
+                                                    title="Duplicar/Clonar"
+                                                >
+                                                    <Copy className="h-4 w-4" />
+                                                </button>
                                                 <button 
                                                     onClick={() => handleRedistribute(h)}
                                                     className="text-orange-500 hover:text-orange-700 p-1"

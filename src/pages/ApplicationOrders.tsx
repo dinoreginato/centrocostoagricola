@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Plus, Loader2, Save, Trash2, Calendar, FileText, Printer, CheckCircle, XCircle, Search, Edit } from 'lucide-react';
+import { Plus, Loader2, Save, Trash2, Calendar, FileText, Printer, CheckCircle, XCircle, Search, Edit, Copy } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
@@ -323,6 +323,22 @@ export const ApplicationOrders: React.FC = () => {
       } finally {
           setLoading(false);
       }
+  };
+
+  const handleCloneOrder = (order: ApplicationOrder) => {
+      const clonedOrder = { ...order };
+      delete clonedOrder.id; // Remove the ID so it's treated as new
+      clonedOrder.status = 'pendiente';
+      clonedOrder.scheduled_date = new Date().toLocaleDateString('en-CA'); // Set to today
+      // Generate new items without IDs
+      clonedOrder.items = order.items.map(item => {
+          const newItem = { ...item };
+          delete newItem.id;
+          delete newItem.application_order_id;
+          return newItem;
+      });
+      setCurrentOrder(clonedOrder);
+      setIsEditing(true);
   };
 
   const handleDeleteOrder = async (id: string) => {
@@ -1018,6 +1034,13 @@ export const ApplicationOrders: React.FC = () => {
                                       title="Imprimir PDF"
                                   >
                                       <Printer className="h-5 w-5" />
+                                  </button>
+                                  <button 
+                                      onClick={() => handleCloneOrder(order)}
+                                      className="text-green-600 hover:text-green-900"
+                                      title="Duplicar/Clonar"
+                                  >
+                                      <Copy className="h-5 w-5" />
                                   </button>
                                   <button 
                                       onClick={() => {

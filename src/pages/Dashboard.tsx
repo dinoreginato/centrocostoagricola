@@ -41,6 +41,7 @@ export const Dashboard: React.FC = () => {
   const [upcomingInvoices, setUpcomingInvoices] = useState<any[]>([]);
   const [criticalStock, setCriticalStock] = useState<any[]>([]); 
   const [sectorSafetyStatus, setSectorSafetyStatus] = useState<any[]>([]); 
+  const [machineAlerts, setMachineAlerts] = useState<any[]>([]); 
   
   // Rain State
   const [rainLogs, setRainLogs] = useState<any[]>([]);
@@ -293,6 +294,12 @@ export const Dashboard: React.FC = () => {
 
       setChartData(fieldCosts || []);
 
+      // Load Income Entries for Profitability
+      const { data: incomeEntries } = await supabase
+        .from('income_entries')
+        .select('*')
+        .eq('company_id', selectedCompany.id);
+
       // 4. Prepare Chart Data: Cost per Sector (Detailed)
       const sectorCosts = allSectors.map(sector => {
           // App costs
@@ -325,6 +332,13 @@ export const Dashboard: React.FC = () => {
           
           const totalSectorCost = sectorAppCost + sectorLaborCost + sectorFuelCost + sectorMachineryCost + sectorIrrigationCost;
           
+          // Income
+          const sectorIncome = incomeEntries
+            ?.filter(inc => inc.sector_id === sector.id)
+            .reduce((sum, inc) => sum + Number(inc.amount || 0), 0) || 0;
+            
+          const profitability = sectorIncome - totalSectorCost;
+
           return {
               name: sector.name,
               fieldName: fields?.find(f => f.id === sector.field_id)?.name || '',
@@ -335,7 +349,9 @@ export const Dashboard: React.FC = () => {
               appCost: sectorAppCost,
               machineryCost: sectorMachineryCost,
               irrigationCost: sectorIrrigationCost,
-              fuelCost: sectorFuelCost
+              fuelCost: sectorFuelCost,
+              income: sectorIncome,
+              profitability: profitability
           };
       }).sort((a, b) => b.costPerHa - a.costPerHa);
 
@@ -411,6 +427,36 @@ export const Dashboard: React.FC = () => {
         .order('date', { ascending: false });
         
       setRainLogs(rainData || []);
+
+      // 8. Load Machines for Maintenance Alerts
+      const { data: machines } = await supabase
+        .from('machines')
+        .select('*')
+        .eq('company_id', selectedCompany.id);
+        
+      if (machines) {
+          const alerts = machines.filter(m => {
+              if (!m.maintenance_interval_hours) return false;
+              const hoursSinceLast = (m.current_hours || 0) - (m.last_maintenance_hours || 0);
+              // Alert if within 20 hours of maintenance or overdue
+              return hoursSinceLast >= (m.maintenance_interval_hours - 20);
+          }).map(m => {
+              const hoursSinceLast = (m.current_hours || 0) - (m.last_maintenance_hours || 0);
+              const remaining = m.maintenance_interval_hours - hoursSinceLast;
+              return {
+                  id: m.id,
+                  name: m.name,
+                  brand: m.brand,
+                  model: m.model,
+                  plate: m.plate,
+                  status: remaining < 0 ? 'overdue' : 'warning',
+                  message: remaining < 0 
+                      ? `Mantenimiento atrasado por ${Math.abs(remaining)} horas` 
+                      : `Mantenimiento sugerido en ${remaining} horas`
+              };
+          });
+          setMachineAlerts(alerts);
+      }
 
     } catch (error) {
       console.error('Error loading dashboard data:', error);
@@ -694,7 +740,7 @@ export const Dashboard: React.FC = () => {
                 </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 lg:gap-6 print:grid-cols-4 print:gap-4 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-8 gap-4 lg:gap-6 print:grid-cols-4 print:gap-4 mb-8">
                 <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-sm p-4 lg:p-6 text-white transform transition hover:scale-[1.02] print:transform-none print:shadow-none print:border print:border-gray-200 print:text-black print:bg-none print:bg-white flex flex-col justify-center relative overflow-hidden col-span-1 lg:col-span-2">
                     <div className="absolute -right-4 -top-4 opacity-10">
                         <TrendingUp className="w-24 h-24" />
@@ -747,13 +793,37 @@ export const Dashboard: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="col-span-1 lg:col-span-2 transform transition hover:scale-[1.02] print:hidden h-full">
+                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 transform transition hover:scale-[1.02] print:transform-none print:shadow-none col-span-1 lg:col-span-2">
+                    <div className="flex items-center justify-between mb-4 print:mb-2">
+                        <div className="text-gray-500 text-xs lg:text-sm font-bold uppercase tracking-wider">Sectores Más Rentables</div>
+                        <div className="bg-green-50 p-1.5 rounded-lg">
+                            <TrendingUp className="h-4 w-4 text-green-500" />
+                        </div>
+                    </div>
+                    <div className="space-y-3">
+                        {Array.isArray(sectorChartData) && [...sectorChartData].sort((a, b) => (b.profitability || 0) - (a.profitability || 0)).slice(0, 3).map((sector, idx) => (
+                            <div key={idx} className="flex justify-between items-center border-b border-gray-100 pb-2 last:border-0 last:pb-0">
+                                <div>
+                                    <div className="font-bold text-gray-800 text-sm">{sector?.name || 'Sin nombre'}</div>
+                                    <div className="text-[10px] text-gray-400 font-medium uppercase">{sector?.fieldName || ''}</div>
+                                </div>
+                                <div className={`text-right px-3 py-1 rounded-lg ${sector.profitability >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
+                                    <div className={`font-black text-sm ${sector.profitability >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCLP(Number(sector?.profitability) || 0)}</div>
+                                    <div className={`text-[9px] uppercase font-bold tracking-wide ${sector.profitability >= 0 ? 'text-green-400' : 'text-red-400'}`}>utilidad neta</div>
+                                </div>
+                            </div>
+                        ))}
+                        {(!sectorChartData || sectorChartData.length === 0) && <div className="text-xs text-gray-400 italic bg-gray-50 p-3 rounded-lg text-center font-medium">Aún no hay datos de rentabilidad</div>}
+                    </div>
+                </div>
+
+                <div className="col-span-1 lg:col-span-8 transform transition hover:scale-[1.02] print:hidden h-full">
                     <WeatherWidget />
                 </div>
             </div>
 
             {/* Second Row of Widgets (Alerts & Weather Tools) */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6 print:hidden">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 print:hidden">
                 {/* Sector Safety Status Widget */}
                 <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
                     <div className="flex items-center justify-between mb-4">
@@ -813,6 +883,40 @@ export const Dashboard: React.FC = () => {
                         ) : (
                             <div className="text-sm text-green-700 bg-green-50 p-4 rounded-xl font-bold flex flex-col items-center justify-center text-center h-24 border border-green-100">
                                 <CheckCircle className="h-6 w-6 mb-2" /> Inventario con stock suficiente y sin vencimientos
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Machine Maintenance Alerts Widget */}
+                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="text-gray-500 text-xs lg:text-sm font-bold uppercase tracking-wider">Mantenimiento</div>
+                        <div className="bg-purple-50 p-1.5 rounded-lg">
+                            <svg className="h-4 w-4 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
+                        {machineAlerts.length > 0 ? (
+                            machineAlerts.map((item, idx) => (
+                                <div key={idx} className="flex justify-between items-center border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+                                    <div className="font-bold text-gray-800 text-sm truncate max-w-[140px]">{item.name}</div>
+                                    <div className="text-right">
+                                        <div className={`font-bold text-xs px-2.5 py-1 rounded-md border inline-block mb-1 ${item.status === 'overdue' ? 'text-red-600 bg-red-50 border-red-100' : 'text-orange-600 bg-orange-50 border-orange-100'}`}>
+                                            {item.status === 'overdue' ? '⚠️ Atrasado' : '⏱️ Pronto'}
+                                        </div>
+                                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide truncate max-w-[120px]" title={item.message}>
+                                            {item.message}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="text-sm text-green-700 bg-green-50 p-4 rounded-xl font-bold flex flex-col items-center justify-center text-center h-24 border border-green-100">
+                                <CheckCircle className="h-6 w-6 mb-2" /> Maquinaria al día
                             </div>
                         )}
                     </div>
