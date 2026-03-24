@@ -127,8 +127,8 @@ export const Reports: React.FC = () => {
   // Pending Invoices Filter State
   const [pendingStartDate, setPendingStartDate] = useState<string>('');
   const [pendingEndDate, setPendingEndDate] = useState<string>('');
-  const [pendingSupplierFilter, setPendingSupplierFilter] = useState<string>('all');
-  const [pendingCategoryFilter, setPendingCategoryFilter] = useState<string>('all');
+  const [pendingSupplierFilter, setPendingSupplierFilter] = useState<string[]>([]);
+  const [pendingCategoryFilter, setPendingCategoryFilter] = useState<string[]>([]);
 
   // Paid Invoices Filter State
   const [paidStartDate, setPaidStartDate] = useState<string>('');
@@ -1116,13 +1116,13 @@ export const Reports: React.FC = () => {
 
     } else if (activeTab === 'pending') {
         // PENDING INVOICES REPORT
-        if (pendingStartDate || pendingEndDate || pendingSupplierFilter !== 'all' || pendingCategoryFilter !== 'all') {
+        if (pendingStartDate || pendingEndDate || pendingSupplierFilter.length > 0 || pendingCategoryFilter.length > 0) {
             const startStr = pendingStartDate ? new Date(pendingStartDate).toLocaleDateString() : 'Inicio';
             const endStr = pendingEndDate ? new Date(pendingEndDate).toLocaleDateString() : 'Fin';
             let filterText = '';
             if (pendingStartDate || pendingEndDate) filterText += `Vencimiento: ${startStr} - ${endStr} `;
-            if (pendingSupplierFilter !== 'all') filterText += `| Prov: ${pendingSupplierFilter} `;
-            if (pendingCategoryFilter !== 'all') filterText += `| Cat: ${pendingCategoryFilter}`;
+            if (pendingSupplierFilter.length > 0) filterText += `| Prov: ${pendingSupplierFilter.join(', ')} `;
+            if (pendingCategoryFilter.length > 0) filterText += `| Cat: ${pendingCategoryFilter.join(', ')}`;
             
             doc.text(`Filtros: ${filterText}`, 14, 45);
             yPos += 5;
@@ -2237,31 +2237,65 @@ export const Reports: React.FC = () => {
                     </div>
 
                     <div className="flex flex-wrap items-end gap-3 pt-4 border-t border-gray-100">
-                        <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Proveedor</label>
-                            <select
-                                value={pendingSupplierFilter}
-                                onChange={(e) => setPendingSupplierFilter(e.target.value)}
-                                className="block w-48 rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
-                            >
-                                <option value="all">Todos los proveedores</option>
-                                {Array.from(new Set(pendingInvoices.map(inv => inv.supplier))).sort().map(sup => (
-                                    <option key={sup} value={sup}>{sup}</option>
-                                ))}
-                            </select>
+                        <div className="w-full md:w-auto">
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Proveedores (Selección Múltiple)</label>
+                            <div className="flex gap-2">
+                                <select
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (val && !pendingSupplierFilter.includes(val)) {
+                                            setPendingSupplierFilter([...pendingSupplierFilter, val]);
+                                        }
+                                        e.target.value = ''; // Reset select
+                                    }}
+                                    className="block w-48 rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
+                                >
+                                    <option value="">Añadir proveedor...</option>
+                                    {Array.from(new Set(pendingInvoices.map(inv => inv.supplier))).sort().filter(s => !pendingSupplierFilter.includes(s)).map(sup => (
+                                        <option key={sup} value={sup}>{sup}</option>
+                                    ))}
+                                </select>
+                                {pendingSupplierFilter.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 max-w-[300px]">
+                                        {pendingSupplierFilter.map(sup => (
+                                            <span key={sup} className="bg-red-50 text-red-700 border border-red-200 text-[10px] px-2 py-1 rounded flex items-center">
+                                                <span className="truncate max-w-[100px]" title={sup}>{sup}</span>
+                                                <button onClick={() => setPendingSupplierFilter(prev => prev.filter(s => s !== sup))} className="ml-1 font-bold hover:text-red-900">&times;</button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Categoría</label>
-                            <select
-                                value={pendingCategoryFilter}
-                                onChange={(e) => setPendingCategoryFilter(e.target.value)}
-                                className="block w-48 rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
-                            >
-                                <option value="all">Todas las categorías</option>
-                                {Array.from(new Set(pendingInvoices.flatMap(inv => inv.categories))).sort().map(cat => (
-                                    <option key={cat} value={cat}>{cat}</option>
-                                ))}
-                            </select>
+                        <div className="w-full md:w-auto">
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Categorías (Selección Múltiple)</label>
+                            <div className="flex gap-2">
+                                <select
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (val && !pendingCategoryFilter.includes(val)) {
+                                            setPendingCategoryFilter([...pendingCategoryFilter, val]);
+                                        }
+                                        e.target.value = ''; // Reset select
+                                    }}
+                                    className="block w-48 rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
+                                >
+                                    <option value="">Añadir categoría...</option>
+                                    {Array.from(new Set(pendingInvoices.flatMap(inv => inv.categories))).sort().filter(c => !pendingCategoryFilter.includes(c)).map(cat => (
+                                        <option key={cat} value={cat}>{cat}</option>
+                                    ))}
+                                </select>
+                                {pendingCategoryFilter.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 max-w-[200px]">
+                                        {pendingCategoryFilter.map(cat => (
+                                            <span key={cat} className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-2 py-1 rounded flex items-center">
+                                                {cat}
+                                                <button onClick={() => setPendingCategoryFilter(prev => prev.filter(c => c !== cat))} className="ml-1 font-bold hover:text-blue-900">&times;</button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                         <div>
                             <label className="block text-xs font-medium text-gray-500 mb-1">Desde (Vencimiento)</label>
@@ -2281,13 +2315,13 @@ export const Reports: React.FC = () => {
                                 className="block w-36 rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
                             />
                         </div>
-                        {(pendingStartDate || pendingEndDate || pendingSupplierFilter !== 'all' || pendingCategoryFilter !== 'all') && (
+                        {(pendingStartDate || pendingEndDate || pendingSupplierFilter.length > 0 || pendingCategoryFilter.length > 0) && (
                             <button
                                 onClick={() => { 
                                     setPendingStartDate(''); 
                                     setPendingEndDate(''); 
-                                    setPendingSupplierFilter('all');
-                                    setPendingCategoryFilter('all');
+                                    setPendingSupplierFilter([]);
+                                    setPendingCategoryFilter([]);
                                 }}
                                 className="mb-0.5 px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                             >
