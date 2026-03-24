@@ -200,25 +200,37 @@ export const Reports: React.FC = () => {
 
   // Filtered Pending Invoices
   const filteredPendingInvoices = pendingInvoices.filter(invoice => {
-    if (!pendingStartDate && !pendingEndDate) return true;
-    
-    // Check against Due Date (Vencimiento) as requested "Facturas Vencidas"
-    // Or Issue Date? User said "SELECCIONAR POR FECHAS LAS FACTURAS VENCIDAS".
-    // Usually means filtering by the Due Date range.
-    const dateToCheck = new Date(invoice.due_date);
-    const start = pendingStartDate ? new Date(pendingStartDate) : null;
-    const end = pendingEndDate ? new Date(pendingEndDate) : null;
-
-    if (start) start.setHours(0, 0, 0, 0);
-    if (end) end.setHours(23, 59, 59, 999);
-
-    if (start && end) {
-      return dateToCheck >= start && dateToCheck <= end;
-    } else if (start) {
-      return dateToCheck >= start;
-    } else if (end) {
-      return dateToCheck <= end;
+    // 1. Filter by Supplier
+    if (pendingSupplierFilter.length > 0 && !pendingSupplierFilter.includes(invoice.supplier)) {
+      return false;
     }
+
+    // 2. Filter by Category
+    if (pendingCategoryFilter.length > 0) {
+      const hasMatchingCategory = invoice.categories.some(cat => pendingCategoryFilter.includes(cat));
+      if (!hasMatchingCategory) {
+        return false;
+      }
+    }
+
+    // 3. Filter by Date Range (Due Date)
+    if (pendingStartDate || pendingEndDate) {
+      const dateToCheck = new Date(invoice.due_date);
+      const start = pendingStartDate ? new Date(pendingStartDate) : null;
+      const end = pendingEndDate ? new Date(pendingEndDate) : null;
+
+      if (start) start.setHours(0, 0, 0, 0);
+      if (end) end.setHours(23, 59, 59, 999);
+
+      if (start && end) {
+        return dateToCheck >= start && dateToCheck <= end;
+      } else if (start) {
+        return dateToCheck >= start;
+      } else if (end) {
+        return dateToCheck <= end;
+      }
+    }
+
     return true;
   });
 
