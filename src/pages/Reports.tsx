@@ -61,6 +61,7 @@ interface PendingInvoice {
   total_amount: number;
   days_overdue: number;
   notes?: string;
+  categories: string[];
 }
 
 interface ProductExpense {
@@ -126,6 +127,8 @@ export const Reports: React.FC = () => {
   // Pending Invoices Filter State
   const [pendingStartDate, setPendingStartDate] = useState<string>('');
   const [pendingEndDate, setPendingEndDate] = useState<string>('');
+  const [pendingSupplierFilter, setPendingSupplierFilter] = useState<string>('all');
+  const [pendingCategoryFilter, setPendingCategoryFilter] = useState<string>('all');
 
   // Paid Invoices Filter State
   const [paidStartDate, setPaidStartDate] = useState<string>('');
@@ -809,6 +812,12 @@ export const Reports: React.FC = () => {
           if (isNaN(dueDate.getTime())) dueDate = new Date(); 
           const diffTime = today.getTime() - dueDate.getTime();
           const daysOverdue = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          
+          // Extract categories from invoice items
+          const categories = Array.from(new Set(
+              (inv.invoice_items || []).map((item: any) => item.category).filter(Boolean)
+          )) as string[];
+
           return {
             id: inv.id,
             invoice_number: inv.invoice_number || 'S/N',
@@ -816,7 +825,8 @@ export const Reports: React.FC = () => {
             due_date: inv.due_date || inv.invoice_date || 'Sin fecha',
             total_amount: Number(inv.total_amount) || 0,
             days_overdue: daysOverdue,
-            notes: inv.notes || ''
+            notes: inv.notes || '',
+            categories
           };
         } catch (e) { return null; }
       })
@@ -1106,10 +1116,15 @@ export const Reports: React.FC = () => {
 
     } else if (activeTab === 'pending') {
         // PENDING INVOICES REPORT
-        if (pendingStartDate || pendingEndDate) {
+        if (pendingStartDate || pendingEndDate || pendingSupplierFilter !== 'all' || pendingCategoryFilter !== 'all') {
             const startStr = pendingStartDate ? new Date(pendingStartDate).toLocaleDateString() : 'Inicio';
             const endStr = pendingEndDate ? new Date(pendingEndDate).toLocaleDateString() : 'Fin';
-            doc.text(`Rango Vencimiento: ${startStr} - ${endStr}`, 14, 45);
+            let filterText = '';
+            if (pendingStartDate || pendingEndDate) filterText += `Vencimiento: ${startStr} - ${endStr} `;
+            if (pendingSupplierFilter !== 'all') filterText += `| Prov: ${pendingSupplierFilter} `;
+            if (pendingCategoryFilter !== 'all') filterText += `| Cat: ${pendingCategoryFilter}`;
+            
+            doc.text(`Filtros: ${filterText}`, 14, 45);
             yPos += 5;
         }
 
@@ -1117,9 +1132,9 @@ export const Reports: React.FC = () => {
             new Date(inv.due_date).toLocaleDateString(),
             `${inv.days_overdue} días`,
             inv.supplier,
+            inv.categories.join(', '),
             inv.invoice_number,
             formatCLP(inv.total_amount),
-            inv.notes || '-'
         ]);
 
         // Calculate Total
@@ -1127,15 +1142,14 @@ export const Reports: React.FC = () => {
 
         autoTable(doc, {
             startY: yPos,
-            head: [['Vencimiento', 'Días Vencida', 'Proveedor', 'N° Factura', 'Monto', 'Notas']],
+            head: [['Vencimiento', 'Días Vencida', 'Proveedor', 'Categorías', 'N° Factura', 'Monto']],
             body: tableBody,
             theme: 'grid',
             headStyles: { fillColor: [220, 53, 69] }, // Red
             columnStyles: {
-                4: { halign: 'right', fontStyle: 'bold' },
-                5: { fontStyle: 'italic', cellWidth: 50 } // Smaller/italic for notes
+                5: { halign: 'right', fontStyle: 'bold' }
             },
-            foot: [['', '', '', 'TOTAL:', formatCLP(totalAmount), '']],
+            foot: [['', '', '', '', 'TOTAL:', formatCLP(totalAmount)]],
             footStyles: { fillColor: [240, 240, 240], textColor: [0,0,0], fontStyle: 'bold', halign: 'right' }
         });
 
@@ -2207,14 +2221,48 @@ export const Reports: React.FC = () => {
 
           {/* 6. PENDING INVOICES REPORT */}
           {activeTab === 'pending' && (
-            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-              <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <div>
-                        <h3 className="text-lg leading-6 font-medium text-gray-900">Facturas Pendientes de Pago</h3>
-                        <p className="mt-1 text-sm text-gray-500">Facturas ingresadas sin marcar como "Pagada"</p>
+            <div className="space-y-6">
+                <div className="bg-white p-4 rounded-lg shadow border border-gray-200">
+                    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-4">
+                        <div>
+                            <h3 className="text-lg leading-6 font-medium text-gray-900">Facturas Pendientes de Pago</h3>
+                            <p className="mt-1 text-sm text-gray-500">Facturas ingresadas sin marcar como "Pagada"</p>
+                        </div>
+                        <div className="text-right bg-red-50 p-3 rounded-lg border border-red-100 w-full lg:w-auto">
+                            <span className="text-sm font-medium text-red-800">Total Deuda Mostrada:</span>
+                            <span className="ml-2 text-2xl font-black text-red-600">
+                                {formatCLP(filteredPendingInvoices.reduce((sum, inv) => sum + inv.total_amount, 0))}
+                            </span>
+                        </div>
                     </div>
-                    <div className="flex flex-wrap items-end gap-2">
+
+                    <div className="flex flex-wrap items-end gap-3 pt-4 border-t border-gray-100">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Proveedor</label>
+                            <select
+                                value={pendingSupplierFilter}
+                                onChange={(e) => setPendingSupplierFilter(e.target.value)}
+                                className="block w-48 rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
+                            >
+                                <option value="all">Todos los proveedores</option>
+                                {Array.from(new Set(pendingInvoices.map(inv => inv.supplier))).sort().map(sup => (
+                                    <option key={sup} value={sup}>{sup}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Categoría</label>
+                            <select
+                                value={pendingCategoryFilter}
+                                onChange={(e) => setPendingCategoryFilter(e.target.value)}
+                                className="block w-48 rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
+                            >
+                                <option value="all">Todas las categorías</option>
+                                {Array.from(new Set(pendingInvoices.flatMap(inv => inv.categories))).sort().map(cat => (
+                                    <option key={cat} value={cat}>{cat}</option>
+                                ))}
+                            </select>
+                        </div>
                         <div>
                             <label className="block text-xs font-medium text-gray-500 mb-1">Desde (Vencimiento)</label>
                             <input 
@@ -2233,17 +2281,23 @@ export const Reports: React.FC = () => {
                                 className="block w-36 rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
                             />
                         </div>
-                        {(pendingStartDate || pendingEndDate) && (
+                        {(pendingStartDate || pendingEndDate || pendingSupplierFilter !== 'all' || pendingCategoryFilter !== 'all') && (
                             <button
-                                onClick={() => { setPendingStartDate(''); setPendingEndDate(''); }}
+                                onClick={() => { 
+                                    setPendingStartDate(''); 
+                                    setPendingEndDate(''); 
+                                    setPendingSupplierFilter('all');
+                                    setPendingCategoryFilter('all');
+                                }}
                                 className="mb-0.5 px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                             >
-                                Limpiar
+                                Limpiar Filtros
                             </button>
                         )}
                     </div>
                 </div>
-              </div>
+
+              <div className="bg-white shadow overflow-hidden sm:rounded-lg">
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
@@ -2251,38 +2305,48 @@ export const Reports: React.FC = () => {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vencimiento</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Proveedor</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categorías</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">N° Factura</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notas</th>
                       <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Monto Total</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {filteredPendingInvoices.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-6 py-4 text-center text-gray-500">No hay facturas pendientes en el rango seleccionado.</td>
+                        <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                            No hay facturas pendientes que coincidan con los filtros seleccionados.
+                        </td>
                       </tr>
                     ) : (
                       filteredPendingInvoices.map((inv) => (
-                        <tr key={inv.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {new Date(inv.due_date).toLocaleDateString()}
+                        <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {new Date(inv.due_date).toLocaleDateString('es-CL')}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                              inv.days_overdue > 0 ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
+                            <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-md ${
+                              inv.days_overdue > 0 ? 'bg-red-100 text-red-800 border border-red-200' : 'bg-yellow-100 text-yellow-800 border border-yellow-200'
                             }`}>
                               {inv.days_overdue > 0 ? `${inv.days_overdue} días vencida` : 'Por vencer'}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{inv.supplier}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{inv.invoice_number}</td>
-                          <td className="px-6 py-4 whitespace-normal text-sm text-gray-500 italic max-w-xs">{inv.notes || '-'}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-900">{formatCLP(inv.total_amount)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-700">{inv.supplier}</td>
+                          <td className="px-6 py-4 text-sm text-gray-500">
+                              <div className="flex flex-wrap gap-1">
+                                  {inv.categories.slice(0, 2).map((cat, i) => (
+                                      <span key={i} className="bg-gray-100 px-2 py-0.5 rounded text-[10px] border border-gray-200">{cat}</span>
+                                  ))}
+                                  {inv.categories.length > 2 && <span className="text-xs text-gray-400">+{inv.categories.length - 2}</span>}
+                              </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">N° {inv.invoice_number}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-black text-red-600">{formatCLP(inv.total_amount)}</td>
                         </tr>
                       ))
                     )}
                   </tbody>
                 </table>
+              </div>
               </div>
             </div>
           )}
