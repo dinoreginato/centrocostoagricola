@@ -338,6 +338,7 @@ export const Dashboard: React.FC = () => {
             .reduce((sum, inc) => sum + Number(inc.amount || 0), 0) || 0;
             
           const profitability = sectorIncome - totalSectorCost;
+          const profitabilityPerHa = sector.hectares > 0 ? profitability / sector.hectares : 0;
 
           return {
               name: sector.name,
@@ -351,7 +352,8 @@ export const Dashboard: React.FC = () => {
               irrigationCost: sectorIrrigationCost,
               fuelCost: sectorFuelCost,
               income: sectorIncome,
-              profitability: profitability
+              profitability: profitability,
+              profitabilityPerHa: profitabilityPerHa
           };
       }).sort((a, b) => b.costPerHa - a.costPerHa);
 
@@ -801,15 +803,15 @@ export const Dashboard: React.FC = () => {
                         </div>
                     </div>
                     <div className="space-y-3">
-                        {Array.isArray(sectorChartData) && [...sectorChartData].sort((a, b) => (b.profitability || 0) - (a.profitability || 0)).slice(0, 3).map((sector, idx) => (
+                        {Array.isArray(sectorChartData) && [...sectorChartData].sort((a, b) => (b.profitabilityPerHa || 0) - (a.profitabilityPerHa || 0)).slice(0, 3).map((sector, idx) => (
                             <div key={idx} className="flex justify-between items-center border-b border-gray-100 pb-2 last:border-0 last:pb-0">
                                 <div>
                                     <div className="font-bold text-gray-800 text-sm">{sector?.name || 'Sin nombre'}</div>
                                     <div className="text-[10px] text-gray-400 font-medium uppercase">{sector?.fieldName || ''}</div>
                                 </div>
-                                <div className={`text-right px-3 py-1 rounded-lg ${sector.profitability >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
-                                    <div className={`font-black text-sm ${sector.profitability >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCLP(Number(sector?.profitability) || 0)}</div>
-                                    <div className={`text-[9px] uppercase font-bold tracking-wide ${sector.profitability >= 0 ? 'text-green-400' : 'text-red-400'}`}>utilidad neta</div>
+                                <div className={`text-right px-3 py-1 rounded-lg ${sector.profitabilityPerHa >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
+                                    <div className={`font-black text-sm ${sector.profitabilityPerHa >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCLP(Number(sector?.profitabilityPerHa) || 0)}</div>
+                                    <div className={`text-[9px] uppercase font-bold tracking-wide ${sector.profitabilityPerHa >= 0 ? 'text-green-400' : 'text-red-400'}`}>utilidad / hectárea</div>
                                 </div>
                             </div>
                         ))}
