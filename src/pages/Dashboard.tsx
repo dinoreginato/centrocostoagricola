@@ -42,6 +42,7 @@ export const Dashboard: React.FC = () => {
   const [criticalStock, setCriticalStock] = useState<any[]>([]); 
   const [sectorSafetyStatus, setSectorSafetyStatus] = useState<any[]>([]); 
   const [machineAlerts, setMachineAlerts] = useState<any[]>([]); 
+  const [protectionAlerts, setProtectionAlerts] = useState<any[]>([]); 
   
   // Rain State
   const [rainLogs, setRainLogs] = useState<any[]>([]);
@@ -391,7 +392,7 @@ export const Dashboard: React.FC = () => {
       // 6. Load Safety Status (Application Orders)
       const { data: ordersData } = await supabase
         .from('application_orders')
-        .select('sector_id, scheduled_date, safety_period_hours, grace_period_days, sector:sectors(name)')
+        .select('sector_id, scheduled_date, safety_period_hours, grace_period_days, protection_days, application_type, sector:sectors(name)')
         .eq('company_id', selectedCompany.id)
         .order('scheduled_date', { ascending: false });
 
@@ -417,6 +418,47 @@ export const Dashboard: React.FC = () => {
 
           // Only keep red and yellow for the widget to keep it clean
           setSectorSafetyStatus(safetyStatus.filter(s => s.status !== 'verde'));
+
+          // Calculate Protection Alerts
+          const protectionStatus = allSectors.map(sector => {
+              // Only consider 'fitosanitario' applications that have protection_days set
+              const sectorFitoOrders = ordersData.filter(app => 
+                  app.sector_id === sector.id && 
+                  app.application_type === 'fitosanitario' &&
+                  app.protection_days > 0
+              );
+              
+              if (sectorFitoOrders.length === 0) {
+                  return { 
+                      sectorName: sector.name, 
+                      status: 'desprotegido', 
+                      message: 'Sin protección registrada',
+                      daysRemaining: -1
+                  };
+              }
+
+              const recentOrder = sectorFitoOrders[0]; // Already sorted descending by scheduled_date
+              const orderDate = new Date(recentOrder.scheduled_date + 'T00:00:00');
+              const protectionEndDate = new Date(orderDate.getTime() + (recentOrder.protection_days || 0) * 24 * 60 * 60 * 1000);
+              
+              const diffTime = protectionEndDate.getTime() - now.getTime();
+              const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+              if (daysRemaining < 0) {
+                  return { sectorName: sector.name, status: 'vencido', message: `Protección vencida hace ${Math.abs(daysRemaining)} días`, daysRemaining };
+              } else if (daysRemaining <= 3) {
+                  return { sectorName: sector.name, status: 'critico', message: `Protección vence en ${daysRemaining} días`, daysRemaining };
+              } else {
+                  return { sectorName: sector.name, status: 'protegido', message: `Protegido por ${daysRemaining} días`, daysRemaining };
+              }
+          });
+
+          // Sort by urgency: vencido first, then critico, then desprotegido
+          const sortedProtectionAlerts = protectionStatus
+              .filter(s => s.status !== 'protegido')
+              .sort((a, b) => a.daysRemaining - b.daysRemaining);
+              
+          setProtectionAlerts(sortedProtectionAlerts);
       }
 
       // 7. Load Rain Logs
@@ -825,7 +867,7 @@ export const Dashboard: React.FC = () => {
             </div>
 
             {/* Second Row of Widgets (Alerts & Weather Tools) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 print:hidden">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-6 print:hidden">
                 {/* Sector Safety Status Widget */}
                 <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
                     <div className="flex items-center justify-between mb-4">
@@ -919,6 +961,42 @@ export const Dashboard: React.FC = () => {
                         ) : (
                             <div className="text-sm text-green-700 bg-green-50 p-4 rounded-xl font-bold flex flex-col items-center justify-center text-center h-24 border border-green-100">
                                 <CheckCircle className="h-6 w-6 mb-2" /> Maquinaria al día
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Protection Status Widget (Asistente IA) */}
+                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="text-gray-500 text-xs lg:text-sm font-bold uppercase tracking-wider">Protección Cultivo</div>
+                        <div className="bg-indigo-50 p-1.5 rounded-lg">
+                            <ShieldAlert className="h-4 w-4 text-indigo-500" />
+                        </div>
+                    </div>
+                    <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
+                        {protectionAlerts.length > 0 ? (
+                            protectionAlerts.map((status, idx) => (
+                                <div key={idx} className="flex justify-between items-center border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+                                    <div className="font-bold text-gray-800 text-sm truncate max-w-[120px]">{status.sectorName}</div>
+                                    <div className="text-right">
+                                        <div className={`font-bold text-xs px-2.5 py-1 rounded-md border inline-block mb-1 ${
+                                            status.status === 'vencido' ? 'text-red-600 bg-red-50 border-red-100' : 
+                                            status.status === 'critico' ? 'text-orange-600 bg-orange-50 border-orange-100' :
+                                            'text-gray-600 bg-gray-50 border-gray-100'
+                                        }`}>
+                                            {status.status === 'vencido' ? '⚠️ Vencido' : 
+                                             status.status === 'critico' ? '⏱️ Crítico' : 'Desprotegido'}
+                                        </div>
+                                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide truncate max-w-[120px]" title={status.message}>
+                                            {status.message}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="text-sm text-green-700 bg-green-50 p-4 rounded-xl font-bold flex flex-col items-center justify-center text-center h-24 border border-green-100">
+                                <CheckCircle className="h-6 w-6 mb-2" /> Todos los sectores protegidos
                             </div>
                         )}
                     </div>

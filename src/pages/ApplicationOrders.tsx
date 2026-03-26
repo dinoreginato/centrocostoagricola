@@ -29,6 +29,7 @@ interface ApplicationOrder {
   notes?: string;
   safety_period_hours?: number;
   grace_period_days?: number;
+  protection_days?: number; // Days the application protects the crop
   
   // New Fields
   variety?: string;
@@ -281,6 +282,7 @@ export const ApplicationOrders: React.FC = () => {
               notes: currentOrder.notes,
               safety_period_hours: currentOrder.safety_period_hours,
               grace_period_days: currentOrder.grace_period_days,
+              protection_days: currentOrder.protection_days,
               updated_at: new Date().toISOString(),
               variety: currentOrder.variety, // New field
               objective: currentOrder.objective // New field
@@ -613,7 +615,7 @@ export const ApplicationOrders: React.FC = () => {
       doc.setFont("helvetica", "bold");
       doc.text('Carencia/Reingreso:', 18, textY);
       doc.setFont("helvetica", "normal");
-      doc.text(`Reingreso: ${order.safety_period_hours || 0} hrs  |  Carencia: ${order.grace_period_days || 0} días`, 55, textY);
+      doc.text(`Reingreso: ${order.safety_period_hours || 0} hrs  |  Carencia: ${order.grace_period_days || 0} días  |  Protección: ${order.protection_days || 0} días`, 55, textY);
 
       textY += 10;
       doc.setFont("helvetica", "bold");
@@ -962,6 +964,16 @@ export const ApplicationOrders: React.FC = () => {
                               value={currentOrder.grace_period_days || 0}
                               onChange={e => setCurrentOrder({...currentOrder, grace_period_days: Number(e.target.value)})}
                               className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-sm font-medium text-gray-700">Días de Protección</label>
+                          <input 
+                              type="number" 
+                              value={currentOrder.protection_days || 0}
+                              onChange={e => setCurrentOrder({...currentOrder, protection_days: Number(e.target.value)})}
+                              className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                              title="¿Cuántos días dura la protección de esta aplicación?"
                           />
                       </div>
                   </div>
