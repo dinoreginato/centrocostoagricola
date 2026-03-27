@@ -19,6 +19,7 @@ import { Irrigation } from './pages/Irrigation';
 import { Workers } from './pages/Workers';
 import { GeneralCosts } from './pages/GeneralCosts';
 import { ChemicalCosts } from './pages/ChemicalCosts';
+import { Incomes } from './pages/Incomes';
 
 function App() {
   return (
@@ -33,6 +34,7 @@ function App() {
               {/* Other routes will be added here later */}
               <Route path="campos" element={<Fields />} />
               <Route path="facturas" element={<Invoices />} />
+              <Route path="liquidaciones" element={<Incomes />} />
               <Route path="labores" element={<Labors />} />
               <Route path="maquinaria" element={<Machinery />} />
               <Route path="riego" element={<Irrigation />} />

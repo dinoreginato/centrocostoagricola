@@ -5,7 +5,7 @@ import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { getSeasonFromDate, getSeasonRange, isDateInSeason } from '../lib/seasonUtils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { FileDown, Loader2, Calendar, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer, Settings, DollarSign, Scale, Play, ChevronLeft, ChevronRight } from 'lucide-react';
+import { FileDown, Loader2, Calendar, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer, Settings, DollarSign, Scale, Play, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
@@ -121,8 +121,8 @@ const CHEMICAL_CATEGORIES = [
 export const Reports: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'applications' | 'monthly' | 'categories' | 'pending' | 'paid_payments' | 'chemicals' | 'detailed' | 'budget'>('general');
-  const [activeGroup, setActiveGroup] = useState<'general' | 'financial' | 'inventory'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'applications' | 'monthly' | 'categories' | 'pending' | 'paid_payments' | 'chemicals' | 'detailed' | 'budget' | 'comparative'>('general');
+  const [activeGroup, setActiveGroup] = useState<'general' | 'financial' | 'inventory' | 'comparative'>('general');
   
   // Pending Invoices Filter State
   const [pendingStartDate, setPendingStartDate] = useState<string>('');
@@ -145,8 +145,10 @@ export const Reports: React.FC = () => {
   const [rawMachinery, setRawMachinery] = useState<any[]>([]); 
   const [rawIrrigation, setRawIrrigation] = useState<any[]>([]); 
   const [rawGeneralCosts, setRawGeneralCosts] = useState<any[]>([]); // New state
-  const [productionRecords, setProductionRecords] = useState<any[]>([]); 
   const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([]);
+
+  // Comparative State
+  const [comparativeData, setComparativeData] = useState<any[]>([]);
 
   // Filter State
   const [selectedSeason, setSelectedSeason] = useState<string>(getSeasonFromDate(new Date()));
@@ -155,7 +157,6 @@ export const Reports: React.FC = () => {
   // Settings State (USD, etc)
   const [usdExchangeRate, setUsdExchangeRate] = useState<number>(950);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [editingProduction, setEditingProduction] = useState<boolean>(false); 
   const [showIncomeModal, setShowIncomeModal] = useState(false);
   const [editingIncome, setEditingIncome] = useState<Partial<IncomeEntry>>({});
   const [distributeGeneralCosts, setDistributeGeneralCosts] = useState(false);
@@ -280,7 +281,7 @@ export const Reports: React.FC = () => {
     if (rawFields.length > 0) {
         processReports();
     }
-  }, [rawFields, rawApplications, rawInvoices, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawMachinery, rawIrrigation, rawGeneralCosts, productionRecords, incomeEntries, selectedSeason]);
+  }, [rawFields, rawApplications, rawInvoices, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawMachinery, rawIrrigation, rawGeneralCosts, incomeEntries, selectedSeason]);
 
   const loadRawData = async () => {
     if (!selectedCompany) return;
@@ -352,13 +353,6 @@ export const Reports: React.FC = () => {
         .select('sector_id, amount, date')
         .in('sector_id', sectorIds);
       setRawGeneralCosts(general || []);
-
-      // 2g. Fetch Production
-      const { data: prod } = await supabase
-        .from('production_records')
-        .select('*')
-        .eq('company_id', selectedCompany.id);
-      setProductionRecords(prod || []);
 
       // 2h. Fetch Income Entries
       const { data: income } = await supabase
@@ -671,13 +665,16 @@ export const Reports: React.FC = () => {
         
         const hectares = Number(sector.hectares);
 
-        // Production
-        // We assume production records are stored with 'season_year' as the start year of the season
-        // e.g., Season 2025-2026 -> season_year 2025
-        const seasonStartYear = parseInt(selectedSeason.split('-')[0]);
-        const prodRecord = productionRecords.find(p => p.sector_id === sector.id && p.season_year === seasonStartYear);
-        const kgProduced = prodRecord ? Number(prodRecord.kg_produced) : 0;
-        const pricePerKg = prodRecord ? Number(prodRecord.price_per_kg) : 0;
+        // Production from Income Entries
+        const sectorIncomes = incomeEntries.filter(i => 
+            i.sector_id === sector.id && 
+            i.category === 'Venta Fruta' &&
+            i.season === selectedSeason
+        );
+        const kgProduced = sectorIncomes.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
+        const totalIncomeUsd = sectorIncomes.reduce((sum, i) => sum + (Number(i.quantity_kg || 0) * Number(i.price_per_kg || 0)), 0);
+        const pricePerKg = kgProduced > 0 ? totalIncomeUsd / kgProduced : 0;
+        
         const budgetPerHa = Number(sector.budget) || 0;
         
         data.push({
@@ -717,6 +714,7 @@ export const Reports: React.FC = () => {
   };
 
   const processFinancialReports = () => {
+    // Current Season Invoices
     const filteredInvoices = rawInvoices.filter(inv => {
       try {
         if (!inv.invoice_date) return false;
@@ -726,43 +724,83 @@ export const Reports: React.FC = () => {
       }
     });
 
-    // 1. Monthly Expenses
-    const monthlyData = new Map<string, number>();
-    const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-    // For a season (e.g. 2025-2026), we want months from May 2025 to April 2026
+    // Previous Season Invoices
     const [startYearStr] = selectedSeason.split('-');
     const startYear = parseInt(startYearStr);
+    const prevSeason = `${startYear - 1}-${startYear}`;
+    
+    const prevInvoices = rawInvoices.filter(inv => {
+      try {
+        if (!inv.invoice_date) return false;
+        return isDateInSeason(inv.invoice_date, prevSeason);
+      } catch {
+        return false;
+      }
+    });
+
+    // 1. Monthly Expenses (Current Season)
+    const monthlyData = new Map<string, number>();
+    const compData = new Map<string, { current: number, prev: number }>();
+    const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
     
     // Generate keys for the season
     // May(4) to Dec(11) of startYear
     for (let m = 4; m <= 11; m++) {
         monthlyData.set(`${monthNames[m]} ${startYear}`, 0);
+        compData.set(monthNames[m], { current: 0, prev: 0 });
     }
     // Jan(0) to Apr(3) of startYear + 1
     for (let m = 0; m <= 3; m++) {
         monthlyData.set(`${monthNames[m]} ${startYear + 1}`, 0);
+        compData.set(monthNames[m], { current: 0, prev: 0 });
     }
 
     filteredInvoices.forEach(inv => {
       try {
         if (!inv.invoice_date) return;
-        let date = new Date(inv.invoice_date);
+        let date = new Date(inv.invoice_date + 'T12:00:00');
         if (isNaN(date.getTime())) {
           const parts = inv.invoice_date.split(/[-/]/);
-          if (parts.length === 3) date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+          if (parts.length === 3) date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
         }
 
         if (!isNaN(date.getTime())) {
           const key = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
+          const mKey = monthNames[date.getMonth()];
+          const amount = Number(inv.total_amount) || 0;
+          
           if (monthlyData.has(key)) {
-             const amount = Number(inv.total_amount) || 0;
-             monthlyData.set(key, (monthlyData.get(key) || 0) + amount);
+            monthlyData.set(key, (monthlyData.get(key) || 0) + amount);
+          }
+          if (compData.has(mKey)) {
+            compData.get(mKey)!.current += amount;
+          }
+        }
+      } catch (e) {}
+    });
+
+    prevInvoices.forEach(inv => {
+      try {
+        if (!inv.invoice_date) return;
+        let date = new Date(inv.invoice_date + 'T12:00:00');
+        if (isNaN(date.getTime())) {
+          const parts = inv.invoice_date.split(/[-/]/);
+          if (parts.length === 3) date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
+        }
+
+        if (!isNaN(date.getTime())) {
+          const mKey = monthNames[date.getMonth()];
+          const amount = Number(inv.total_amount) || 0;
+          
+          if (compData.has(mKey)) {
+            compData.get(mKey)!.prev += amount;
           }
         }
       } catch (e) {}
     });
 
     setMonthlyExpenses(Array.from(monthlyData.entries()).map(([month, total]) => ({ month, total })));
+    setComparativeData(Array.from(compData.entries()).map(([month, data]) => ({ month, current: data.current, prev: data.prev })));
 
     // 2. Category Expenses
     const catData = new Map<string, number>();
@@ -843,110 +881,6 @@ export const Reports: React.FC = () => {
       
     pending.sort((a, b) => b.days_overdue - a.days_overdue);
     setPendingInvoices(pending);
-  };
-
-  const handleSaveProduction = async (sectorId: string, kg: number, pricePerKg?: number) => {
-    try {
-        if (!selectedCompany) return;
-        // Use the start year of the season for storage
-        const seasonStartYear = parseInt(selectedSeason.split('-')[0]);
-        
-        const payload: any = {
-            sector_id: sectorId,
-            season_year: seasonStartYear,
-            kg_produced: kg,
-            company_id: selectedCompany.id,
-            updated_at: new Date().toISOString()
-        };
-
-        if (pricePerKg !== undefined) {
-            payload.price_per_kg = pricePerKg;
-        }
-
-        // Upsert production record
-        const { error } = await supabase
-            .from('production_records')
-            .upsert(payload, { onConflict: 'sector_id, season_year' });
-
-        if (error) throw error;
-
-        // Update local state
-        setProductionRecords(prev => {
-            const existing = prev.findIndex(p => p.sector_id === sectorId && p.season_year === seasonStartYear);
-            if (existing >= 0) {
-                const newArr = [...prev];
-                newArr[existing] = { ...newArr[existing], kg_produced: kg };
-                if (pricePerKg !== undefined) {
-                    newArr[existing].price_per_kg = pricePerKg;
-                }
-                return newArr;
-            } else {
-                return [...prev, { sector_id: sectorId, season_year: seasonStartYear, kg_produced: kg, price_per_kg: pricePerKg }];
-            }
-        });
-        
-        loadRawData(); // Reload to refresh all calculations
-
-    } catch (error: any) {
-        console.error('Error saving production:', error);
-        alert(`Error al guardar producción: ${error.message || JSON.stringify(error)}`);
-    }
-  };
-
-  const handleSaveIncome = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedCompany) return;
-    
-    setLoading(true);
-    try {
-        const payload = {
-            company_id: selectedCompany.id,
-            date: editingIncome.date,
-            category: editingIncome.category || 'Venta Fruta',
-            amount: Number(editingIncome.amount),
-            description: editingIncome.description,
-            season: selectedSeason, // Or derived from date
-            field_id: editingIncome.field_id || null,
-            sector_id: editingIncome.sector_id || null,
-            quantity_kg: Number(editingIncome.quantity_kg) || 0,
-            amount_usd: Number(editingIncome.amount_usd) || 0,
-            price_per_kg: Number(editingIncome.price_per_kg) || 0
-        };
-
-        if (editingIncome.id) {
-            const { error } = await supabase
-                .from('income_entries')
-                .update(payload)
-                .eq('id', editingIncome.id);
-            if(error) throw error;
-        } else {
-            const { error } = await supabase
-                .from('income_entries')
-                .insert([payload]);
-            if(error) throw error;
-        }
-        
-        setShowIncomeModal(false);
-        setEditingIncome({});
-        loadRawData(); // Reload all data
-        
-    } catch (error: any) {
-        alert('Error: ' + error.message);
-    } finally {
-        setLoading(false);
-    }
-  };
-
-  const handleDeleteIncome = async (id: string) => {
-    if(!confirm('¿Eliminar registro?')) return;
-    setLoading(true);
-    const { error } = await supabase.from('income_entries').delete().eq('id', id);
-    if (!error) {
-        loadRawData();
-    } else {
-        alert('Error al eliminar');
-        setLoading(false);
-    }
   };
 
   const handleGeneratePDF = () => {
@@ -1329,6 +1263,14 @@ export const Reports: React.FC = () => {
             } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
           >
             <Beaker className="mr-2 h-4 w-4" /> Insumos y Detalle
+          </button>
+          <button
+            onClick={() => { setActiveGroup('comparative'); setActiveTab('comparative'); }}
+            className={`${
+              activeGroup === 'comparative' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
+          >
+            <Layers className="mr-2 h-4 w-4" /> Comparativa Temporadas
           </button>
         </nav>
       </div>
@@ -1734,16 +1676,6 @@ export const Reports: React.FC = () => {
                             <h3 className="text-lg leading-6 font-medium text-gray-900">Registro de Ingresos y Presupuesto</h3>
                             <p className="mt-1 text-sm text-gray-500">Ventas de fruta, exportaciones y presupuesto asignado</p>
                         </div>
-                        <button
-                            onClick={() => {
-                                setEditingIncome({});
-                                setShowIncomeModal(true);
-                            }}
-                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700"
-                        >
-                            <DollarSign className="mr-2 h-4 w-4" />
-                            Agregar Ingreso
-                        </button>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
@@ -1756,7 +1688,6 @@ export const Reports: React.FC = () => {
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Kilos (Kg)</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">USD</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Monto (CLP)</th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
@@ -1782,23 +1713,6 @@ export const Reports: React.FC = () => {
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">{(entry.quantity_kg || 0).toLocaleString('es-CL')}</td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">${(entry.amount_usd || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-green-700">{formatCLP(entry.amount)}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                <button 
-                                                    onClick={() => {
-                                                        setEditingIncome(entry);
-                                                        setShowIncomeModal(true);
-                                                    }}
-                                                    className="text-indigo-600 hover:text-indigo-900 mr-4"
-                                                >
-                                                    Editar
-                                                </button>
-                                                <button 
-                                                    onClick={() => handleDeleteIncome(entry.id)}
-                                                    className="text-red-600 hover:text-red-900"
-                                                >
-                                                    Eliminar
-                                                </button>
-                                            </td>
                                         </tr>
                                     ))
                                 )}
@@ -1819,12 +1733,6 @@ export const Reports: React.FC = () => {
                         <Settings className="mr-2 h-5 w-5 text-gray-500" />
                         Configuración de Reporte
                     </h3>
-                    <button
-                        onClick={() => setEditingProduction(!editingProduction)}
-                        className={`text-sm font-medium px-3 py-1 rounded-md border ${editingProduction ? 'bg-green-100 text-green-700 border-green-300' : 'bg-white text-gray-700 border-gray-300'}`}
-                    >
-                        {editingProduction ? 'Finalizar Edición' : 'Editar Producción (Kg)'}
-                    </button>
                 </div>
                 <div className="flex items-center gap-6">
                     <div>
@@ -1842,7 +1750,7 @@ export const Reports: React.FC = () => {
                         </div>
                     </div>
                     <div className="text-sm text-gray-500 pt-6">
-                        * Ingrese la producción de Kg en la tabla para calcular costos unitarios.
+                        * Los Kilos y Precios provienen del módulo "Liquidaciones".
                     </div>
                 </div>
             </div>
@@ -1936,46 +1844,8 @@ export const Reports: React.FC = () => {
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">{row.hectares}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-right bg-green-50">
                                   <div className="flex flex-col items-end gap-1">
-                                      {editingProduction ? (
-                                          <div className="flex flex-col gap-1 w-full max-w-[120px]">
-                                            <input 
-                                                type="number" 
-                                                placeholder="Kg"
-                                                className="w-full text-right text-xs border-gray-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500 p-1"
-                                                defaultValue={row.kg_produced || ''}
-                                                onBlur={(e) => {
-                                                    const kg = Number(e.target.value);
-                                                    const priceInput = e.target.parentElement?.querySelector('input[placeholder="US$/Kg"]') as HTMLInputElement;
-                                                    const price = Number(priceInput?.value || row.price_per_kg || 0);
-                                                    // Solo guardar si hay cambios, se maneja de forma simplificada por ahora o delegar a un botón "Guardar" global
-                                                }}
-                                            />
-                                            <input 
-                                                type="number" 
-                                                step="0.01"
-                                                placeholder="US$/Kg"
-                                                className="w-full text-right text-xs border-gray-300 rounded-md shadow-sm focus:ring-green-500 focus:border-green-500 p-1"
-                                                defaultValue={row.price_per_kg || ''}
-                                            />
-                                            <button 
-                                                onClick={(e) => {
-                                                    const parent = e.currentTarget.parentElement;
-                                                    const kg = Number((parent?.querySelector('input[placeholder="Kg"]') as HTMLInputElement)?.value || 0);
-                                                    const price = Number((parent?.querySelector('input[placeholder="US$/Kg"]') as HTMLInputElement)?.value || 0);
-                                                    
-                                                    handleSaveProduction(row.sector_id, kg, price);
-                                                }}
-                                                className="text-[10px] bg-green-100 text-green-800 px-2 py-0.5 rounded w-full"
-                                            >
-                                                Guardar
-                                            </button>
-                                          </div>
-                                      ) : (
-                                          <>
-                                            <span className="font-medium text-gray-900">{(row.kg_produced || 0).toLocaleString('es-CL')} Kg</span>
-                                            {row.price_per_kg > 0 && <span className="text-xs text-green-600 font-medium">US$ {row.price_per_kg}/Kg</span>}
-                                          </>
-                                      )}
+                                      <span className="font-medium text-gray-900">{(row.kg_produced || 0).toLocaleString('es-CL')} Kg</span>
+                                      {row.price_per_kg > 0 && <span className="text-xs text-green-600 font-medium">US$ {row.price_per_kg.toFixed(2)}/Kg</span>}
                                   </div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-gray-600">{formatCLP(row.labor_cost)}</td>
@@ -2689,167 +2559,87 @@ export const Reports: React.FC = () => {
         </div>
       )}
 
-      {showIncomeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-            <div className="bg-white rounded-lg p-6 w-full max-w-lg">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">{editingIncome.id ? 'Editar Ingreso' : 'Registrar Ingreso / Presupuesto'}</h3>
-                <div className="text-sm text-gray-500 mb-4 text-right">
-                    Tipo de Cambio: ${usdExchangeRate} CLP/USD
+      {activeTab === 'comparative' && (
+        <div className="space-y-6">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                <div className="mb-6 flex justify-between items-center">
+                    <div>
+                        <h3 className="text-lg font-bold text-gray-900">Comparativa Histórica de Gastos</h3>
+                        <p className="text-sm text-gray-500">Temporada {selectedSeason} vs Temporada Anterior</p>
+                    </div>
                 </div>
-                <form onSubmit={handleSaveIncome} className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Fecha</label>
-                        <input
-                            type="date"
-                            required
-                            value={editingIncome.date || new Date().toISOString().split('T')[0]}
-                            onChange={e => setEditingIncome({...editingIncome, date: e.target.value})}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Categoría</label>
-                        <select
-                            value={editingIncome.category || 'Venta Fruta'}
-                            onChange={e => setEditingIncome({...editingIncome, category: e.target.value})}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
-                        >
-                            <option value="Venta Fruta">Venta Fruta / Exportación</option>
-                            <option value="Presupuesto">Presupuesto Asignado</option>
-                            <option value="Otro Ingreso">Otro Ingreso</option>
-                        </select>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Kilos (Kg)</label>
-                            <input
-                                type="number"
-                                min="0"
-                                value={editingIncome.quantity_kg || ''}
-                                onChange={e => {
-                                    const kg = Number(e.target.value);
-                                    const price = editingIncome.price_per_kg || 0;
-                                    const usdVal = kg * price;
-                                    setEditingIncome({
-                                        ...editingIncome, 
-                                        quantity_kg: kg,
-                                        amount_usd: usdVal,
-                                        amount: Math.round(usdVal * usdExchangeRate)
-                                    });
-                                }}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                <div className="h-96 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={comparativeData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                            <XAxis dataKey="month" />
+                            <YAxis 
+                                tickFormatter={(value) => `$${(value / 1000000).toFixed(0)}M`}
+                                width={80}
                             />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Precio Venta (USD/Kg)</label>
-                            <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={editingIncome.price_per_kg || ''}
-                                onChange={e => {
-                                    const price = Number(e.target.value);
-                                    const kg = editingIncome.quantity_kg || 0;
-                                    const usdVal = kg * price;
-                                    setEditingIncome({
-                                        ...editingIncome, 
-                                        price_per_kg: price,
-                                        amount_usd: usdVal,
-                                        amount: Math.round(usdVal * usdExchangeRate)
-                                    });
-                                }}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                            <Tooltip 
+                                formatter={(value: number) => formatCLP(value)}
+                                labelStyle={{ color: '#374151', fontWeight: 'bold', marginBottom: '8px' }}
                             />
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Total (USD)</label>
-                            <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={editingIncome.amount_usd || ''}
-                                onChange={e => {
-                                    const usdVal = Number(e.target.value);
-                                    setEditingIncome({
-                                        ...editingIncome, 
-                                        amount_usd: usdVal,
-                                        amount: Math.round(usdVal * usdExchangeRate)
-                                    });
-                                }}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Total (CLP)</label>
-                            <input
-                                type="number"
-                                required
-                                min="0"
-                                value={editingIncome.amount || ''}
-                                onChange={e => setEditingIncome({...editingIncome, amount: Number(e.target.value)})}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Descripción</label>
-                        <input
-                            type="text"
-                            value={editingIncome.description || ''}
-                            onChange={e => setEditingIncome({...editingIncome, description: e.target.value})}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">Campo (Opcional)</label>
-                        <select
-                            value={editingIncome.field_id || ''}
-                            onChange={e => setEditingIncome({...editingIncome, field_id: e.target.value, sector_id: undefined})}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
-                        >
-                            <option value="">General (Toda la Empresa)</option>
-                            {rawFields.map(f => (
-                                <option key={f.id} value={f.id}>{f.name}</option>
-                            ))}
-                        </select>
-                    </div>
-                    {editingIncome.field_id && (
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Sector (Opcional)</label>
-                            <select
-                                value={editingIncome.sector_id || ''}
-                                onChange={e => setEditingIncome({...editingIncome, sector_id: e.target.value})}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
-                            >
-                                <option value="">Todo el Campo</option>
-                                {rawFields.find(f => f.id === editingIncome.field_id)?.sectors.map((s: any) => (
-                                    <option key={s.id} value={s.id}>{s.name}</option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
-                    
-                    <div className="flex justify-end space-x-3 pt-4">
-                        <button
-                            type="button"
-                            onClick={() => setShowIncomeModal(false)}
-                            className="px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                        >
-                            Cancelar
-                        </button>
-                        <button
-                            type="submit"
-                            className="px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
-                        >
-                            Guardar
-                        </button>
-                    </div>
-                </form>
+                            <Legend wrapperStyle={{ paddingTop: '20px' }}/>
+                            <Bar dataKey="prev" name="Temporada Anterior" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="current" name={`Temporada ${selectedSeason}`} fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+
+            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+                <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
+                    <h3 className="text-lg leading-6 font-medium text-gray-900">Detalle Mes a Mes</h3>
+                </div>
+                <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mes</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Temporada Anterior</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Temporada {selectedSeason}</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Variación</th>
+                        </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                        {comparativeData.map((row, idx) => {
+                            const variation = row.prev > 0 ? ((row.current - row.prev) / row.prev) * 100 : (row.current > 0 ? 100 : 0);
+                            const isPositive = variation > 0;
+                            return (
+                                <tr key={idx} className="hover:bg-gray-50">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{row.month}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">{formatCLP(row.prev)}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">{formatCLP(row.current)}</td>
+                                    <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${isPositive ? 'text-red-600' : 'text-green-600'}`}>
+                                        {variation === 0 ? '-' : `${isPositive ? '+' : ''}${variation.toFixed(1)}%`}
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                        <tr className="bg-gray-50 font-bold">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">TOTAL</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                                {formatCLP(comparativeData.reduce((sum, r) => sum + r.prev, 0))}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                                {formatCLP(comparativeData.reduce((sum, r) => sum + r.current, 0))}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                                {(() => {
+                                    const totalPrev = comparativeData.reduce((sum, r) => sum + r.prev, 0);
+                                    const totalCurrent = comparativeData.reduce((sum, r) => sum + r.current, 0);
+                                    const varTotal = totalPrev > 0 ? ((totalCurrent - totalPrev) / totalPrev) * 100 : 0;
+                                    return totalPrev === 0 && totalCurrent === 0 ? '-' : `${varTotal > 0 ? '+' : ''}${varTotal.toFixed(1)}%`;
+                                })()}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
       )}
+
       {/* PRESENTATION MODE OVERLAY */}
       {presentationMode && (
         <div className="fixed inset-0 z-[99999] bg-slate-50 flex flex-col font-sans text-slate-900">

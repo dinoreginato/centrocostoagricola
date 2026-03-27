@@ -22,7 +22,8 @@ import {
   Building2,
   LayoutList,
   Beaker,
-  Lock
+  Lock,
+  DollarSign
 } from 'lucide-react';
 import { ChangePasswordModal } from './ChangePasswordModal';
 
@@ -70,6 +71,7 @@ export const Layout: React.FC = () => {
       title: 'Finanzas y Costos',
       items: [
         { name: 'Facturas', href: '/facturas', icon: FileText, roles: ['admin'] },
+        { name: 'Liquidaciones', href: '/liquidaciones', icon: DollarSign, roles: ['admin'] },
         { name: 'Distribución Costos', href: '/otros-costos', icon: LayoutList, roles: ['admin', 'editor', 'viewer'] },
       ]
     },
