@@ -55,6 +55,7 @@ interface Field {
     id: string;
     name: string;
     total_hectares: number;
+    sectors?: Sector[];
 }
 
 interface Allocation {
