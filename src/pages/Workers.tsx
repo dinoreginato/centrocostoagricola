@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Users, UserPlus, Trash2, Briefcase, Plus, Loader2 } from 'lucide-react';
+import { Users, UserPlus, Trash2, Briefcase, Plus, Loader2, Download } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface Worker {
   id: string;
@@ -303,6 +305,71 @@ export const Workers: React.FC = () => {
       else loadCosts();
   };
 
+  const generatePayrollPDF = () => {
+    if (costs.length === 0) {
+      alert('No hay registros de costos o tratos para exportar.');
+      return;
+    }
+
+    const doc = new jsPDF();
+    const companyName = selectedCompany?.name || 'Empresa';
+    
+    // Header
+    doc.setFontSize(18);
+    doc.text('Planilla de Pagos y Tratos', 14, 22);
+    doc.setFontSize(11);
+    doc.text(`Empresa: ${companyName}`, 14, 30);
+    doc.text(`Fecha Emisión: ${new Date().toLocaleDateString('es-CL')}`, 14, 36);
+
+    // Group costs by worker
+    const workerTotals = new Map<string, { total: number, name: string, details: string[] }>();
+    
+    costs.forEach(cost => {
+        const workerName = cost.worker_name || cost.workers?.name || 'Trabajador Externo';
+        if (!workerTotals.has(workerName)) {
+            workerTotals.set(workerName, { total: 0, name: workerName, details: [] });
+        }
+        
+        const w = workerTotals.get(workerName)!;
+        w.total += cost.amount;
+        
+        const dateStr = new Date(cost.date).toLocaleDateString('es-CL');
+        if (cost.is_piece_rate) {
+            w.details.push(`${dateStr} - ${cost.description} (${cost.piece_quantity} un. x ${formatCLP(cost.piece_price || 0)}) = ${formatCLP(cost.amount)}`);
+        } else {
+            w.details.push(`${dateStr} - ${cost.description} = ${formatCLP(cost.amount)}`);
+        }
+    });
+
+    const tableData: any[] = [];
+    let grandTotal = 0;
+
+    workerTotals.forEach(data => {
+        tableData.push([{ content: data.name, styles: { fontStyle: 'bold' } }, { content: formatCLP(data.total), styles: { fontStyle: 'bold', halign: 'right' } }]);
+        data.details.forEach(detail => {
+            tableData.push([{ content: `  • ${detail}`, colSpan: 2, styles: { fontSize: 9, textColor: [100, 100, 100] } }]);
+        });
+        grandTotal += data.total;
+    });
+
+    // Add Grand Total row
+    tableData.push([
+        { content: 'TOTAL GENERAL', styles: { fontStyle: 'bold', fillColor: [240, 240, 240] } }, 
+        { content: formatCLP(grandTotal), styles: { fontStyle: 'bold', halign: 'right', fillColor: [240, 240, 240] } }
+    ]);
+
+    autoTable(doc, {
+      startY: 45,
+      head: [['Trabajador / Detalle', 'Monto a Pagar']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [79, 70, 229] }, // indigo-600
+      styles: { fontSize: 10 }
+    });
+
+    doc.save(`Planilla_Pagos_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -313,13 +380,22 @@ export const Workers: React.FC = () => {
             </h1>
             <p className="text-sm text-gray-500">Gestión de personal fijo y sus costos</p>
         </div>
-        <button
-            onClick={() => setShowWorkerForm(!showWorkerForm)}
-            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
-        >
-            <UserPlus className="mr-2 h-5 w-5" />
-            Nuevo Trabajador
-        </button>
+        <div className="flex gap-2">
+            <button
+                onClick={generatePayrollPDF}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            >
+                <Download className="mr-2 h-5 w-5" />
+                Planilla Pagos PDF
+            </button>
+            <button
+                onClick={() => setShowWorkerForm(!showWorkerForm)}
+                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
+            >
+                <UserPlus className="mr-2 h-5 w-5" />
+                Nuevo Trabajador
+            </button>
+        </div>
       </div>
 
       {/* New Worker Form Modal/Inline */}

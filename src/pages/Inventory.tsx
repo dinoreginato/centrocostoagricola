@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Package, Search, AlertTriangle, Edit, Trash2, X, Save, History, ArrowDownLeft, ArrowUpRight, Upload } from 'lucide-react';
+import { Package, Search, AlertTriangle, Edit, Trash2, X, Save, History, ArrowDownLeft, ArrowUpRight, Upload, Download, ShoppingCart } from 'lucide-react';
 import { read, utils } from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface Product {
   id: string;
@@ -355,6 +357,52 @@ export const Inventory: React.FC = () => {
 
   // Remove the second handleDeleteProduct declaration below handleUpdateProduct
 
+  const generateShoppingListPDF = () => {
+    // Filter products that are at or below minimum stock
+    const criticalProducts = products.filter(p => p.current_stock <= (p.minimum_stock || 0) && p.category !== 'Archivado');
+    
+    if (criticalProducts.length === 0) {
+      alert('No hay productos bajo el stock mínimo para generar la lista.');
+      return;
+    }
+
+    const doc = new jsPDF();
+    const companyName = selectedCompany?.name || 'Empresa';
+    
+    // Header
+    doc.setFontSize(18);
+    doc.text('Lista de Compras Recomendada', 14, 22);
+    doc.setFontSize(11);
+    doc.text(`Empresa: ${companyName}`, 14, 30);
+    doc.text(`Fecha: ${new Date().toLocaleDateString('es-CL')}`, 14, 36);
+
+    // Table Data
+    const tableData = criticalProducts.map(p => {
+      const minStock = p.minimum_stock || 0;
+      // Recommend buying enough to reach double the minimum stock, or at least 1 unit if min is 0
+      const recommendedBuy = minStock > 0 ? (minStock * 2) - p.current_stock : 10; 
+      
+      return [
+        p.name,
+        p.category,
+        `${p.current_stock} ${p.unit}`,
+        `${minStock} ${p.unit}`,
+        `${Math.max(1, recommendedBuy)} ${p.unit}` // Suggest amount
+      ];
+    });
+
+    autoTable(doc, {
+      startY: 45,
+      head: [['Producto', 'Categoría', 'Stock Actual', 'Stock Mínimo', 'Cantidad Sugerida']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [22, 163, 74] }, // green-600
+      styles: { fontSize: 10 }
+    });
+
+    doc.save(`Lista_Compras_${companyName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
   const filteredProducts = products.filter(product => {
     // Exclude archived products unless we explicitly want to see them
     if (product.category === 'Archivado') return false;
@@ -376,6 +424,14 @@ export const Inventory: React.FC = () => {
           <p className="text-sm text-gray-500">Gestión de inventario y costos promedio</p>
         </div>
         <div className="bg-white px-4 py-2 rounded-lg shadow border border-gray-200 flex items-center space-x-2">
+          <button
+              onClick={generateShoppingListPDF}
+              className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              title="Generar PDF con lista de productos bajo stock mínimo"
+          >
+              <ShoppingCart className="h-4 w-4 mr-2" />
+              Lista de Compras
+          </button>
           <input
               type="file"
               accept=".xlsx,.xls,.csv"
