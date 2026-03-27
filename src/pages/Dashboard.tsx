@@ -444,17 +444,17 @@ export const Dashboard: React.FC = () => {
               }
 
               // Group by objective
-              const ordersByObjective = new Map<string, any[]>();
+              const ordersByObjective: Record<string, any[]> = {};
               sectorFitoOrders.forEach(order => {
                   const obj = (order as any).objective || 'General';
-                  if (!ordersByObjective.has(obj)) {
-                      ordersByObjective.set(obj, []);
+                  if (!ordersByObjective[obj]) {
+                      ordersByObjective[obj] = [];
                   }
-                  ordersByObjective.get(obj)!.push(order);
+                  ordersByObjective[obj].push(order);
               });
 
               // Calculate status for each objective
-              ordersByObjective.forEach((orders, obj) => {
+              Object.entries(ordersByObjective).forEach(([obj, orders]) => {
                   const recentOrder = orders[0]; // Already sorted descending by scheduled_date
                   
                   // Parse date correctly and compare only date parts to avoid time-of-day offsets
