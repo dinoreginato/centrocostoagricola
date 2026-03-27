@@ -741,7 +741,40 @@ export const ApplicationOrders: React.FC = () => {
                       <label className="block text-sm font-medium text-gray-700">Sector</label>
                       <select 
                           value={currentOrder.sector_id || ''}
-                          onChange={e => setCurrentOrder({...currentOrder, sector_id: e.target.value})}
+                          onChange={e => {
+                              const newSectorId = e.target.value;
+                              
+                              // Find old and new sector hectares
+                              const oldSector = fields.find(f => f.id === currentOrder.field_id)?.sectors?.find(s => s.id === currentOrder.sector_id);
+                              const newSector = fields.find(f => f.id === currentOrder.field_id)?.sectors?.find(s => s.id === newSectorId);
+                              
+                              let updatedItems = currentOrder.items;
+
+                              // If changing sector and we have items, recalculate total_quantity
+                              if (newSectorId && newSector && currentOrder.items && currentOrder.items.length > 0) {
+                                  updatedItems = currentOrder.items.map(item => {
+                                      let newTotalQty = item.total_quantity;
+                                      
+                                      // If dose was calculated per hectare, recalculate total
+                                      if (item.dose_per_hectare > 0) {
+                                          newTotalQty = item.dose_per_hectare * newSector.hectares;
+                                      } 
+                                      // If it was per 100L, recalculate based on new total water volume
+                                      else if (item.dose_per_100l && currentOrder.water_liters_per_hectare) {
+                                          const totalWater = currentOrder.water_liters_per_hectare * newSector.hectares;
+                                          newTotalQty = (item.dose_per_100l * totalWater) / 100;
+                                      }
+                                      
+                                      return { ...item, total_quantity: Number(newTotalQty.toFixed(2)) };
+                                  });
+                              }
+
+                              setCurrentOrder({
+                                  ...currentOrder, 
+                                  sector_id: newSectorId,
+                                  items: updatedItems
+                              });
+                          }}
                           disabled={!currentOrder.field_id}
                           className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                       >
