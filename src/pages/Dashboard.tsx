@@ -392,7 +392,7 @@ export const Dashboard: React.FC = () => {
       // 6. Load Safety Status (Application Orders)
       const { data: ordersData } = await supabase
         .from('application_orders')
-        .select('sector_id, scheduled_date, safety_period_hours, grace_period_days, protection_days, application_type, sector:sectors(name)')
+        .select('sector_id, scheduled_date, safety_period_hours, grace_period_days, protection_days, application_type, objective, sector:sectors(name)')
         .eq('company_id', selectedCompany.id)
         .order('scheduled_date', { ascending: false });
 
