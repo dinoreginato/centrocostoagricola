@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, Plus, Save, Loader2, AlertCircle, Trash2, Edit2, Download } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { utils, writeFile } from 'xlsx';
