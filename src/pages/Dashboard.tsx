@@ -446,7 +446,7 @@ export const Dashboard: React.FC = () => {
               // Group by objective
               const ordersByObjective = new Map<string, any[]>();
               sectorFitoOrders.forEach(order => {
-                  const obj = order.objective || 'General';
+                  const obj = (order as any).objective || 'General';
                   if (!ordersByObjective.has(obj)) {
                       ordersByObjective.set(obj, []);
                   }
