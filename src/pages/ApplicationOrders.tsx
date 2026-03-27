@@ -333,9 +333,10 @@ export const ApplicationOrders: React.FC = () => {
       clonedOrder.status = 'pendiente';
       clonedOrder.scheduled_date = new Date().toLocaleDateString('en-CA'); // Set to today
       // Generate new items without IDs
-      clonedOrder.items = order.items.map(item => {
+      clonedOrder.items = (order.items || []).map(item => {
           const newItem = { ...item };
           delete newItem.id;
+          // @ts-ignore - Ignore the TypeScript error for removing an internal/untyped property
           delete newItem.application_order_id;
           return newItem;
       });
