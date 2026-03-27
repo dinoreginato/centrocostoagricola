@@ -433,7 +433,9 @@ export const Dashboard: React.FC = () => {
                       sectorName: sector.name, 
                       status: 'desprotegido', 
                       message: 'Sin protección registrada',
-                      daysRemaining: -1
+                      daysRemaining: -1,
+                      lastApplicationDate: null,
+                      protectionDaysTotal: 0
                   };
               }
 
@@ -444,19 +446,35 @@ export const Dashboard: React.FC = () => {
               const diffTime = protectionEndDate.getTime() - now.getTime();
               const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
+              let status = 'protegido';
+              let message = `Protegido por ${daysRemaining} días`;
+
               if (daysRemaining < 0) {
-                  return { sectorName: sector.name, status: 'vencido', message: `Protección vencida hace ${Math.abs(daysRemaining)} días`, daysRemaining };
+                  status = 'vencido';
+                  message = `Vencida hace ${Math.abs(daysRemaining)} días`;
               } else if (daysRemaining <= 3) {
-                  return { sectorName: sector.name, status: 'critico', message: `Protección vence en ${daysRemaining} días`, daysRemaining };
-              } else {
-                  return { sectorName: sector.name, status: 'protegido', message: `Protegido por ${daysRemaining} días`, daysRemaining };
+                  status = 'critico';
+                  message = `Vence en ${daysRemaining} días`;
               }
+
+              return { 
+                  sectorName: sector.name, 
+                  status, 
+                  message, 
+                  daysRemaining,
+                  lastApplicationDate: recentOrder.scheduled_date,
+                  protectionDaysTotal: recentOrder.protection_days
+              };
           });
 
-          // Sort by urgency: vencido first, then critico, then desprotegido
+          // Sort by urgency: vencido first, then critico, then protegido, then desprotegido
           const sortedProtectionAlerts = protectionStatus
-              .filter(s => s.status !== 'protegido')
-              .sort((a, b) => a.daysRemaining - b.daysRemaining);
+              .sort((a, b) => {
+                  // Push 'desprotegido' to the bottom
+                  if (a.status === 'desprotegido' && b.status !== 'desprotegido') return 1;
+                  if (b.status === 'desprotegido' && a.status !== 'desprotegido') return -1;
+                  return a.daysRemaining - b.daysRemaining;
+              });
               
           setProtectionAlerts(sortedProtectionAlerts);
       }
@@ -983,14 +1001,21 @@ export const Dashboard: React.FC = () => {
                                         <div className={`font-bold text-xs px-2.5 py-1 rounded-md border inline-block mb-1 ${
                                             status.status === 'vencido' ? 'text-red-600 bg-red-50 border-red-100' : 
                                             status.status === 'critico' ? 'text-orange-600 bg-orange-50 border-orange-100' :
+                                            status.status === 'protegido' ? 'text-green-600 bg-green-50 border-green-100' :
                                             'text-gray-600 bg-gray-50 border-gray-100'
                                         }`}>
                                             {status.status === 'vencido' ? '⚠️ Vencido' : 
-                                             status.status === 'critico' ? '⏱️ Crítico' : 'Desprotegido'}
+                                             status.status === 'critico' ? '⏱️ Crítico' : 
+                                             status.status === 'protegido' ? '✅ Protegido' : 'Desprotegido'}
                                         </div>
-                                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide truncate max-w-[120px]" title={status.message}>
+                                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide" title={status.message}>
                                             {status.message}
                                         </div>
+                                        {status.lastApplicationDate && (
+                                            <div className="text-[9px] text-gray-400 mt-0.5">
+                                                Última: {new Date(status.lastApplicationDate).toLocaleDateString()} ({status.protectionDaysTotal}d)
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             ))
