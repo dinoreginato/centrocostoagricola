@@ -873,6 +873,14 @@ export const ApplicationOrders: React.FC = () => {
                               onChange={e => setCurrentItem({...currentItem, dose_input_value: Number(e.target.value)})}
                               className="w-full border border-gray-300 rounded p-1.5 text-sm"
                           />
+                          {/* Equivalent Calculator Helper */}
+                          {currentItem.dose_input_value > 0 && currentOrder.water_liters_per_hectare > 0 && (
+                              <div className="text-[10px] text-gray-500 mt-1 whitespace-nowrap" title="Equivalencia automática">
+                                  {currentItem.dose_input_type === 'hl' 
+                                      ? `≈ ${((currentItem.dose_input_value * currentOrder.water_liters_per_hectare) / 100).toFixed(2)} / Ha` 
+                                      : `≈ ${((currentItem.dose_input_value * 100) / currentOrder.water_liters_per_hectare).toFixed(2)} / 100L`}
+                              </div>
+                          )}
                       </div>
                       <div className="w-24">
                           <label className="block text-xs text-gray-500">Unidad</label>

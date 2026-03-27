@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Tractor, ArrowRight, Save, Loader2, CheckCircle2, AlertCircle, Trash2, Edit2, FileText, Printer, RefreshCw, Copy } from 'lucide-react';
+import { Tractor, ArrowRight, Save, Loader2, CheckCircle2, AlertCircle, Trash2, Edit2, FileText, Printer, RefreshCw, Copy, Download } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { utils, writeFile } from 'xlsx';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 
 const LABOR_TYPES = [
@@ -753,7 +754,26 @@ export const Labors: React.FC = () => {
       setPdfPreviewOpen(true);
   };
 
-  return (
+  const handleExportExcel = () => {
+        const exportData = filteredHistory.map(h => ({
+            'Fecha Factura': h.invoice_date,
+            'Fecha Asignación': h.assigned_date ? h.assigned_date.split('T')[0] : h.invoice_date,
+            'Nº Doc': h.invoice_number,
+            'Tipo Doc': h.document_type || 'Factura',
+            'Descripción': h.description,
+            'Tipo Labor': h.labor_type || '-',
+            'Campo': fields.find(f => f.sectors?.some(s => s.id === h.sector_id))?.name || '',
+            'Sector': fields.flatMap(f => f.sectors || []).find(s => s.id === h.sector_id)?.name || '',
+            'Monto Asignado': h.assigned_amount
+        }));
+
+        const ws = utils.json_to_sheet(exportData);
+        const wb = utils.book_new();
+        utils.book_append_sheet(wb, ws, "Labores");
+        writeFile(wb, `Historial_Labores_${new Date().toLocaleDateString('en-CA')}.xlsx`);
+    };
+
+    return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -1034,6 +1054,13 @@ export const Labors: React.FC = () => {
                             onChange={(e) => setHistorySearch(e.target.value)}
                             className="text-sm border-gray-300 rounded-md shadow-sm focus:border-green-500 focus:ring-green-500 flex-1 md:w-64"
                         />
+                        <button
+                            onClick={handleExportExcel}
+                            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                            title="Exportar a Excel"
+                        >
+                            <Download className="h-4 w-4 text-green-600" />
+                        </button>
                         <button
                             onClick={handlePrintReport}
                             className="text-xs text-white bg-green-600 hover:bg-green-700 px-3 py-2 rounded transition-colors whitespace-nowrap flex items-center"
