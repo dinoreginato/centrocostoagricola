@@ -72,7 +72,11 @@ interface HistoryItem {
     sectors?: { name: string; field_id?: string };
     invoice_items?: {
         products?: { name: string };
-        invoices?: { invoice_number: string };
+        invoices?: { 
+            invoice_number: string;
+            invoice_date?: string;
+            document_type?: string;
+        };
     };
 }
 
@@ -280,7 +284,7 @@ export const Labors: React.FC = () => {
             sectors (name, field_id),
             invoice_items!inner (
                 products (name),
-                invoices!inner (invoice_number, company_id)
+                invoices!inner (invoice_number, company_id, invoice_date, document_type)
             )
         `)
         .eq('invoice_items.invoices.company_id', selectedCompany.id)
@@ -755,17 +759,28 @@ export const Labors: React.FC = () => {
   };
 
   const handleExportExcel = () => {
-        const exportData = filteredHistory.map(h => ({
-            'Fecha Factura': h.invoice_date,
-            'Fecha Asignación': h.assigned_date ? h.assigned_date.split('T')[0] : h.invoice_date,
-            'Nº Doc': h.invoice_number,
-            'Tipo Doc': h.document_type || 'Factura',
-            'Descripción': h.description,
-            'Tipo Labor': h.labor_type || '-',
-            'Campo': fields.find(f => f.sectors?.some(s => s.id === h.sector_id))?.name || '',
-            'Sector': fields.flatMap(f => f.sectors || []).find(s => s.id === h.sector_id)?.name || '',
-            'Monto Asignado': h.assigned_amount
-        }));
+        const exportData = filteredHistory.map(h => {
+            const invoiceDate = h.invoice_items?.invoices?.invoice_date || '-';
+            const documentType = h.invoice_items?.invoices?.document_type || 'Factura';
+            const invoiceNumber = h.invoice_items?.invoices?.invoice_number || '-';
+            const description = h.invoice_items?.products?.name || '-';
+            
+            // Find the sector to get the field
+            const sector = sectors.find(s => s.id === h.sector_id);
+            const field = fields.find(f => f.id === sector?.field_id);
+
+            return {
+                'Fecha Factura': invoiceDate,
+                'Fecha Asignación': h.assigned_date ? h.assigned_date.split('T')[0] : invoiceDate,
+                'Nº Doc': invoiceNumber,
+                'Tipo Doc': documentType,
+                'Descripción': description,
+                'Tipo Labor': h.labor_type || '-',
+                'Campo': field?.name || '',
+                'Sector': h.sectors?.name || '',
+                'Monto Asignado': h.assigned_amount
+            };
+        });
 
         const ws = utils.json_to_sheet(exportData);
         const wb = utils.book_new();
