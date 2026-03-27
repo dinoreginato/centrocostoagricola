@@ -885,7 +885,7 @@ export const Dashboard: React.FC = () => {
             </div>
 
             {/* Second Row of Widgets (Alerts & Weather Tools) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-6 print:hidden">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 print:hidden">
                 {/* Sector Safety Status Widget */}
                 <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
                     <div className="flex items-center justify-between mb-4">
@@ -984,48 +984,7 @@ export const Dashboard: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Protection Status Widget (Asistente IA) */}
-                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="text-gray-500 text-xs lg:text-sm font-bold uppercase tracking-wider">Protección Cultivo</div>
-                        <div className="bg-indigo-50 p-1.5 rounded-lg">
-                            <ShieldAlert className="h-4 w-4 text-indigo-500" />
-                        </div>
-                    </div>
-                    <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
-                        {protectionAlerts.length > 0 ? (
-                            protectionAlerts.map((status, idx) => (
-                                <div key={idx} className="flex justify-between items-center border-b border-gray-100 pb-3 last:border-0 last:pb-0">
-                                    <div className="font-bold text-gray-800 text-sm truncate max-w-[120px]">{status.sectorName}</div>
-                                    <div className="text-right">
-                                        <div className={`font-bold text-xs px-2.5 py-1 rounded-md border inline-block mb-1 ${
-                                            status.status === 'vencido' ? 'text-red-600 bg-red-50 border-red-100' : 
-                                            status.status === 'critico' ? 'text-orange-600 bg-orange-50 border-orange-100' :
-                                            status.status === 'protegido' ? 'text-green-600 bg-green-50 border-green-100' :
-                                            'text-gray-600 bg-gray-50 border-gray-100'
-                                        }`}>
-                                            {status.status === 'vencido' ? '⚠️ Vencido' : 
-                                             status.status === 'critico' ? '⏱️ Crítico' : 
-                                             status.status === 'protegido' ? '✅ Protegido' : 'Desprotegido'}
-                                        </div>
-                                        <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide" title={status.message}>
-                                            {status.message}
-                                        </div>
-                                        {status.lastApplicationDate && (
-                                            <div className="text-[9px] text-gray-400 mt-0.5">
-                                                Última: {new Date(status.lastApplicationDate).toLocaleDateString()} ({status.protectionDaysTotal}d)
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ))
-                        ) : (
-                            <div className="text-sm text-green-700 bg-green-50 p-4 rounded-xl font-bold flex flex-col items-center justify-center text-center h-24 border border-green-100">
-                                <CheckCircle className="h-6 w-6 mb-2" /> Todos los sectores protegidos
-                            </div>
-                        )}
-                    </div>
-                </div>
+                {/* Protection Status Widget (Asistente IA) - MOVED TO ITS OWN ROW BELOW */}
 
                 {/* Rain Gauge Widget */}
                 <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 flex flex-col">
@@ -1062,6 +1021,69 @@ export const Dashboard: React.FC = () => {
                         <span className="text-blue-700 text-xl font-black">{rainLogs.reduce((sum, log) => sum + Number(log.rain_mm), 0).toFixed(1)} mm</span>
                     </div>
                 </div>
+            </div>
+
+            {/* Third Row: Protection Status Widget (Full Width) */}
+            <div className="mt-4 lg:mt-6 bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 print:hidden">
+                <div className="flex items-center justify-between mb-4 border-b border-gray-100 pb-3">
+                    <div className="flex items-center gap-2">
+                        <div className="bg-indigo-50 p-1.5 rounded-lg">
+                            <ShieldAlert className="h-5 w-5 text-indigo-500" />
+                        </div>
+                        <div className="text-gray-700 text-sm lg:text-base font-bold uppercase tracking-wider">Protección Cultivo (Estado Actual)</div>
+                    </div>
+                    <div className="text-xs text-gray-400 font-medium hidden md:block">
+                        Mostrando el estado de cobertura de la última aplicación fitosanitaria
+                    </div>
+                </div>
+                
+                {protectionAlerts.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {protectionAlerts.map((status, idx) => (
+                            <div key={idx} className={`flex flex-col p-4 rounded-xl border ${
+                                status.status === 'vencido' ? 'bg-red-50/50 border-red-100' : 
+                                status.status === 'critico' ? 'bg-orange-50/50 border-orange-100' :
+                                status.status === 'protegido' ? 'bg-green-50/50 border-green-100' :
+                                'bg-gray-50/50 border-gray-100'
+                            }`}>
+                                <div className="font-bold text-gray-800 text-base mb-1 truncate">{status.sectorName}</div>
+                                <div className={`font-bold text-sm mb-2 ${
+                                    status.status === 'vencido' ? 'text-red-600' : 
+                                    status.status === 'critico' ? 'text-orange-600' :
+                                    status.status === 'protegido' ? 'text-green-600' :
+                                    'text-gray-500'
+                                }`}>
+                                    {status.status === 'vencido' ? '⚠️ Vencido' : 
+                                     status.status === 'critico' ? '⏱️ Crítico' : 
+                                     status.status === 'protegido' ? '✅ Protegido' : 'Desprotegido'}
+                                </div>
+                                <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3" title={status.message}>
+                                    {status.message}
+                                </div>
+                                
+                                {status.lastApplicationDate ? (
+                                    <div className="mt-auto pt-3 border-t border-gray-200/50">
+                                        <div className="text-[10px] text-gray-400 uppercase font-semibold">Última Aplicación</div>
+                                        <div className="text-xs text-gray-600 font-medium">
+                                            {new Date(status.lastApplicationDate).toLocaleDateString('es-CL')} 
+                                            <span className="ml-1 text-gray-400">({status.protectionDaysTotal} días)</span>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="mt-auto pt-3 border-t border-gray-200/50">
+                                        <div className="text-[10px] text-gray-400 uppercase font-semibold">Última Aplicación</div>
+                                        <div className="text-xs text-gray-400 italic">Sin datos</div>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="text-sm text-green-700 bg-green-50 p-6 rounded-xl font-bold flex flex-col items-center justify-center text-center border border-green-100">
+                        <CheckCircle className="h-8 w-8 mb-2 text-green-500" /> 
+                        Todos los sectores están protegidos o no hay aplicaciones registradas.
+                    </div>
+                )}
             </div>
         </div>
       ) : (
