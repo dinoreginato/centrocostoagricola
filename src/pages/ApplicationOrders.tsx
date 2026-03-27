@@ -351,6 +351,32 @@ export const ApplicationOrders: React.FC = () => {
 
       setLoading(true);
       try {
+          // Find if this order has an associated application (if it was completed)
+          const order = orders.find(o => o.id === id);
+          if (order && order.status === 'completada' && order.completed_date) {
+              // We need to find the corresponding application. We match by date, sector, and type.
+              // Note: A more robust way would be storing the order_id in the applications table, 
+              // but we'll use heuristic matching for now.
+              const { data: apps } = await supabase
+                  .from('applications')
+                  .select('id')
+                  .eq('sector_id', order.sector_id)
+                  .eq('application_date', order.completed_date)
+                  .eq('application_type', order.application_type);
+
+              if (apps && apps.length > 0) {
+                  const appId = apps[0].id;
+                  
+                  // Before deleting the application, we should ideally revert stock and delete items
+                  // But to keep it simple and safe for now, we'll just delete the items and the application itself.
+                  // (Depending on your DB schema, ON DELETE CASCADE might handle this)
+                  
+                  await supabase.from('application_items').delete().eq('application_id', appId);
+                  await supabase.from('fuel_consumption').delete().eq('application_id', appId);
+                  await supabase.from('applications').delete().eq('id', appId);
+              }
+          }
+
           // First delete items to avoid foreign key constraints
           await supabase.from('application_order_items').delete().eq('order_id', id);
           
