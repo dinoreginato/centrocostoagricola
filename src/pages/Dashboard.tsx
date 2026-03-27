@@ -419,9 +419,11 @@ export const Dashboard: React.FC = () => {
           // Only keep red and yellow for the widget to keep it clean
           setSectorSafetyStatus(safetyStatus.filter(s => s.status !== 'verde'));
 
-          // Calculate Protection Alerts
-          const protectionStatus = allSectors.map(sector => {
-              // Only consider 'fitosanitario' applications that have protection_days set
+          // Calculate Protection Alerts grouped by Sector AND Objective
+          const protectionStatus: any[] = [];
+
+          allSectors.forEach(sector => {
+              // Get all 'fitosanitario' applications for this sector that have protection_days set
               const sectorFitoOrders = ordersData.filter(app => 
                   app.sector_id === sector.id && 
                   app.application_type === 'fitosanitario' &&
@@ -429,47 +431,64 @@ export const Dashboard: React.FC = () => {
               );
               
               if (sectorFitoOrders.length === 0) {
-                  return { 
+                  protectionStatus.push({ 
                       sectorName: sector.name, 
+                      objective: 'General',
                       status: 'desprotegido', 
                       message: 'Sin protección registrada',
                       daysRemaining: -1,
                       lastApplicationDate: null,
                       protectionDaysTotal: 0
-                  };
+                  });
+                  return;
               }
 
-              const recentOrder = sectorFitoOrders[0]; // Already sorted descending by scheduled_date
-              // Parse date correctly and compare only date parts to avoid time-of-day offsets
-              const orderDate = new Date(recentOrder.scheduled_date + 'T12:00:00');
-              const protectionEndDate = new Date(orderDate.getTime() + (recentOrder.protection_days || 0) * 24 * 60 * 60 * 1000);
-              
-              // Normalize today's date to noon for fair comparison
-              const todayNormalized = new Date();
-              todayNormalized.setHours(12, 0, 0, 0);
+              // Group by objective
+              const ordersByObjective = new Map<string, any[]>();
+              sectorFitoOrders.forEach(order => {
+                  const obj = order.objective || 'General';
+                  if (!ordersByObjective.has(obj)) {
+                      ordersByObjective.set(obj, []);
+                  }
+                  ordersByObjective.get(obj)!.push(order);
+              });
 
-              const diffTime = protectionEndDate.getTime() - todayNormalized.getTime();
-              const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              // Calculate status for each objective
+              ordersByObjective.forEach((orders, obj) => {
+                  const recentOrder = orders[0]; // Already sorted descending by scheduled_date
+                  
+                  // Parse date correctly and compare only date parts to avoid time-of-day offsets
+                  const orderDate = new Date(recentOrder.scheduled_date + 'T12:00:00');
+                  const protectionEndDate = new Date(orderDate.getTime() + (recentOrder.protection_days || 0) * 24 * 60 * 60 * 1000);
+                  
+                  // Normalize today's date to noon for fair comparison
+                  const todayNormalized = new Date();
+                  todayNormalized.setHours(12, 0, 0, 0);
 
-              let status = 'protegido';
-              let message = `Protegido por ${daysRemaining} días`;
+                  const diffTime = protectionEndDate.getTime() - todayNormalized.getTime();
+                  const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-              if (daysRemaining < 0) {
-                  status = 'vencido';
-                  message = `Vencida hace ${Math.abs(daysRemaining)} días`;
-              } else if (daysRemaining <= 3) {
-                  status = 'critico';
-                  message = `Vence en ${daysRemaining} días`;
-              }
+                  let status = 'protegido';
+                  let message = `Protegido por ${daysRemaining} días`;
 
-              return { 
-                  sectorName: sector.name, 
-                  status, 
-                  message, 
-                  daysRemaining,
-                  lastApplicationDate: recentOrder.scheduled_date,
-                  protectionDaysTotal: recentOrder.protection_days
-              };
+                  if (daysRemaining < 0) {
+                      status = 'vencido';
+                      message = `Vencida hace ${Math.abs(daysRemaining)} días`;
+                  } else if (daysRemaining <= 3) {
+                      status = 'critico';
+                      message = `Vence en ${daysRemaining} días`;
+                  }
+
+                  protectionStatus.push({ 
+                      sectorName: sector.name, 
+                      objective: obj,
+                      status, 
+                      message, 
+                      daysRemaining,
+                      lastApplicationDate: recentOrder.scheduled_date,
+                      protectionDaysTotal: recentOrder.protection_days
+                  });
+              });
           });
 
           // Sort by urgency: vencido first, then critico, then protegido, then desprotegido
@@ -1051,7 +1070,14 @@ export const Dashboard: React.FC = () => {
                                 status.status === 'protegido' ? 'bg-green-50/50 border-green-100' :
                                 'bg-gray-50/50 border-gray-100'
                             }`}>
-                                <div className="font-bold text-gray-800 text-base mb-1 truncate">{status.sectorName}</div>
+                                <div className="flex justify-between items-start mb-1">
+                                    <div className="font-bold text-gray-800 text-base truncate pr-2">{status.sectorName}</div>
+                                    {status.objective && status.objective !== 'General' && (
+                                        <span className="text-[10px] font-bold bg-white px-2 py-0.5 rounded border text-gray-500 uppercase tracking-wider">
+                                            {status.objective}
+                                        </span>
+                                    )}
+                                </div>
                                 <div className={`font-bold text-sm mb-2 ${
                                     status.status === 'vencido' ? 'text-red-600' : 
                                     status.status === 'critico' ? 'text-orange-600' :

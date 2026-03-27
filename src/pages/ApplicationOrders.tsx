@@ -433,7 +433,8 @@ export const ApplicationOrders: React.FC = () => {
                   application_type: order.application_type,
                   total_cost: totalCost,
                   water_liters_per_hectare: order.water_liters_per_hectare || 0,
-                  protection_days: order.protection_days || 0 // Propagate protection days to actual application
+                  protection_days: order.protection_days || 0, // Propagate protection days to actual application
+                  objective: order.objective || '' // Propagate objective to actual application
               }])
               .select()
               .single();
