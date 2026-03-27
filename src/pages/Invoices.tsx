@@ -2316,7 +2316,7 @@ export const Invoices: React.FC = () => {
                           </span>
                           {inv.status === 'Pagada' && inv.payment_date && (
                               <span className="text-[10px] text-green-400 font-medium mt-0.5">
-                                  Pagado: {new Date(inv.payment_date + 'T12:00:00').toLocaleDateString()}
+                                  Pagado: {new Date(inv.payment_date + 'T12:00:00').toLocaleDateString('es-CL')}
                               </span>
                           )}
                           <span className="text-[10px] text-gray-500">
@@ -2326,7 +2326,7 @@ export const Invoices: React.FC = () => {
                       </div>
                       <div className="text-sm text-gray-300 mb-1 truncate">{inv.supplier}</div>
                       <div className="flex justify-between text-xs text-gray-500">
-                        <span>{new Date(inv.invoice_date + 'T12:00:00').toLocaleDateString()}</span>
+                        <span>{new Date(inv.invoice_date + 'T12:00:00').toLocaleDateString('es-CL')}</span>
                         <span className="font-bold text-gray-300">{formatCLP(inv.total_amount)}</span>
                       </div>
                       

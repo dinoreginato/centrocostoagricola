@@ -944,7 +944,7 @@ export const Fuel: React.FC = () => {
                                 .map(log => (
                                 <tr key={log.id}>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        {new Date(log.date).toLocaleDateString()}
+                                        {new Date(log.date + 'T12:00:00').toLocaleDateString()}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                         {log.activity}
@@ -1014,7 +1014,7 @@ export const Fuel: React.FC = () => {
                             {invoices.map(inv => (
                                 <tr key={inv.id}>
                                     <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
-                                        {new Date(inv.invoices.invoice_date).toLocaleDateString()}
+                                        {new Date(inv.invoices.invoice_date + 'T12:00:00').toLocaleDateString()}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-900">
                                         {inv.invoices.invoice_number}

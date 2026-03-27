@@ -491,7 +491,7 @@ export const Inventory: React.FC = () => {
                               {product.lot_number && <span className="text-[10px] text-gray-500">Lote: {product.lot_number}</span>}
                               {product.expiration_date && (
                                   <span className={`text-[10px] font-medium ${new Date(product.expiration_date) < new Date(new Date().setDate(new Date().getDate() + 30)) ? 'text-red-600' : 'text-gray-500'}`}>
-                                      Vence: {new Date(product.expiration_date).toLocaleDateString()}
+                                      Vence: {new Date(product.expiration_date + 'T12:00:00').toLocaleDateString()}
                                   </span>
                               )}
                           </div>
@@ -628,7 +628,7 @@ export const Inventory: React.FC = () => {
                                                   </div>
                                               ) : movement.movement_type === 'salida' && movement.application_items?.application ? (
                                                   <div>
-                                                      <div className="font-medium text-gray-900">Aplicación {new Date(movement.application_items.application.application_date).toLocaleDateString()}</div>
+                                                      <div className="font-medium text-gray-900">Aplicación {new Date(movement.application_items.application.application_date + 'T12:00:00').toLocaleDateString()}</div>
                                                       <div className="text-xs">
                                                           {movement.application_items.application.field?.name} - {movement.application_items.application.sector?.name}
                                                       </div>

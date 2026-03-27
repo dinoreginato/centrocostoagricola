@@ -215,12 +215,9 @@ export const Reports: React.FC = () => {
 
     // 3. Filter by Date Range (Due Date)
     if (pendingStartDate || pendingEndDate) {
-      const dateToCheck = new Date(invoice.due_date);
-      const start = pendingStartDate ? new Date(pendingStartDate) : null;
-      const end = pendingEndDate ? new Date(pendingEndDate) : null;
-
-      if (start) start.setHours(0, 0, 0, 0);
-      if (end) end.setHours(23, 59, 59, 999);
+      const dateToCheck = new Date(invoice.due_date + 'T12:00:00');
+      const start = pendingStartDate ? new Date(pendingStartDate + 'T00:00:00') : null;
+      const end = pendingEndDate ? new Date(pendingEndDate + 'T23:59:59') : null;
 
       if (start && end) {
         return dateToCheck >= start && dateToCheck <= end;
@@ -1129,8 +1126,8 @@ export const Reports: React.FC = () => {
     } else if (activeTab === 'pending') {
         // PENDING INVOICES REPORT
         if (pendingStartDate || pendingEndDate || pendingSupplierFilter.length > 0 || pendingCategoryFilter.length > 0) {
-            const startStr = pendingStartDate ? new Date(pendingStartDate).toLocaleDateString() : 'Inicio';
-            const endStr = pendingEndDate ? new Date(pendingEndDate).toLocaleDateString() : 'Fin';
+            const startStr = pendingStartDate ? new Date(pendingStartDate + 'T12:00:00').toLocaleDateString() : 'Inicio';
+            const endStr = pendingEndDate ? new Date(pendingEndDate + 'T12:00:00').toLocaleDateString() : 'Fin';
             let filterText = '';
             if (pendingStartDate || pendingEndDate) filterText += `Vencimiento: ${startStr} - ${endStr} `;
             if (pendingSupplierFilter.length > 0) filterText += `| Prov: ${pendingSupplierFilter.join(', ')} `;
@@ -1141,7 +1138,7 @@ export const Reports: React.FC = () => {
         }
 
         const tableBody = filteredPendingInvoices.map(inv => [
-            new Date(inv.due_date).toLocaleDateString(),
+            new Date(inv.due_date + 'T12:00:00').toLocaleDateString(),
             `${inv.days_overdue} días`,
             inv.supplier,
             inv.categories.join(', '),
@@ -1770,7 +1767,7 @@ export const Reports: React.FC = () => {
                                 ) : (
                                     incomeEntries.map((entry) => (
                                         <tr key={entry.id}>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{new Date(entry.date).toLocaleDateString()}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{new Date(entry.date + 'T12:00:00').toLocaleDateString('es-CL')}</td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                                 <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                                                     entry.category === 'Presupuesto' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
@@ -2367,7 +2364,7 @@ export const Reports: React.FC = () => {
                       filteredPendingInvoices.map((inv) => (
                         <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {new Date(inv.due_date).toLocaleDateString('es-CL')}
+                            {new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL')}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-md ${
@@ -2441,12 +2438,9 @@ export const Reports: React.FC = () => {
                         .filter(inv => inv.status === 'Pagada')
                         .filter(inv => {
                             if (!paidStartDate && !paidEndDate) return true;
-                            const dateToCheck = new Date(inv.due_date || inv.invoice_date);
-                            const start = paidStartDate ? new Date(paidStartDate) : null;
-                            const end = paidEndDate ? new Date(paidEndDate) : null;
-                            
-                            if (start) start.setHours(0, 0, 0, 0);
-                            if (end) end.setHours(23, 59, 59, 999);
+                            const dateToCheck = new Date((inv.due_date || inv.invoice_date) + 'T12:00:00');
+                            const start = paidStartDate ? new Date(paidStartDate + 'T00:00:00') : null;
+                            const end = paidEndDate ? new Date(paidEndDate + 'T23:59:59') : null;
 
                             if (start && end) return dateToCheck >= start && dateToCheck <= end;
                             if (start) return dateToCheck >= start;
@@ -2538,10 +2532,10 @@ export const Reports: React.FC = () => {
                                                     {sortedItems.map((item, idx) => (
                                                         <tr key={idx} className="hover:bg-gray-50">
                                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                                                {new Date(item.dueDate).toLocaleDateString()}
+                                                                {new Date(item.dueDate + 'T12:00:00').toLocaleDateString('es-CL')}
                                                             </td>
                                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                                {new Date(item.date).toLocaleDateString()}
+                                                                {new Date(item.date + 'T12:00:00').toLocaleDateString('es-CL')}
                                                             </td>
                                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.supplier}</td>
                                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.invoiceNumber}</td>
@@ -2609,7 +2603,7 @@ export const Reports: React.FC = () => {
                                                 rows.push([
                                                     month.monthName,
                                                     cat.name,
-                                                    new Date(item.date).toLocaleDateString('es-CL'),
+                                                    new Date(item.date + 'T12:00:00').toLocaleDateString('es-CL'),
                                                     `"${item.supplier.replace(/"/g, '""')}"`,
                                                     item.invoiceNumber,
                                                     `"${item.description.replace(/"/g, '""')}"`,
@@ -2668,7 +2662,7 @@ export const Reports: React.FC = () => {
                                                     {cat.items.map((item, i) => (
                                                         <tr key={i}>
                                                             <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">
-                                                                {new Date(item.date).toLocaleDateString()}
+                                                                {new Date(item.date + 'T12:00:00').toLocaleDateString('es-CL')}
                                                             </td>
                                                             <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{item.supplier}</td>
                                                             <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">{item.invoiceNumber}</td>

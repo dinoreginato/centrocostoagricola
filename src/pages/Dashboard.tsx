@@ -403,14 +403,14 @@ export const Dashboard: React.FC = () => {
               const recentOrder = ordersData.find(o => o.sector_id === sector.id);
               if (!recentOrder) return { sectorName: sector.name, status: 'verde', message: 'Sin aplicaciones recientes' };
 
-              const orderDate = new Date(recentOrder.scheduled_date + 'T00:00:00');
+              const orderDate = new Date(recentOrder.scheduled_date + 'T12:00:00');
               const reentryDate = new Date(orderDate.getTime() + (recentOrder.safety_period_hours || 0) * 60 * 60 * 1000);
               const graceDate = new Date(orderDate.getTime() + (recentOrder.grace_period_days || 0) * 24 * 60 * 60 * 1000);
 
               if (now < reentryDate) {
-                  return { sectorName: sector.name, status: 'rojo', message: `Prohibido entrar hasta ${reentryDate.toLocaleDateString()}` };
+                  return { sectorName: sector.name, status: 'rojo', message: `Prohibido entrar hasta ${reentryDate.toLocaleDateString('es-CL')}` };
               } else if (now < graceDate) {
-                  return { sectorName: sector.name, status: 'amarillo', message: `No cosechar hasta ${graceDate.toLocaleDateString()}` };
+                  return { sectorName: sector.name, status: 'amarillo', message: `No cosechar hasta ${graceDate.toLocaleDateString('es-CL')}` };
               } else {
                   return { sectorName: sector.name, status: 'verde', message: 'Seguro para reingreso y cosecha' };
               }
@@ -440,10 +440,15 @@ export const Dashboard: React.FC = () => {
               }
 
               const recentOrder = sectorFitoOrders[0]; // Already sorted descending by scheduled_date
-              const orderDate = new Date(recentOrder.scheduled_date + 'T00:00:00');
+              // Parse date correctly and compare only date parts to avoid time-of-day offsets
+              const orderDate = new Date(recentOrder.scheduled_date + 'T12:00:00');
               const protectionEndDate = new Date(orderDate.getTime() + (recentOrder.protection_days || 0) * 24 * 60 * 60 * 1000);
               
-              const diffTime = protectionEndDate.getTime() - now.getTime();
+              // Normalize today's date to noon for fair comparison
+              const todayNormalized = new Date();
+              todayNormalized.setHours(12, 0, 0, 0);
+
+              const diffTime = protectionEndDate.getTime() - todayNormalized.getTime();
               const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
               let status = 'protegido';
@@ -937,7 +942,7 @@ export const Dashboard: React.FC = () => {
                                             </div>
                                         )}
                                         <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">
-                                            {item.is_expiration_warning ? `Vence: ${new Date(item.expiration_date).toLocaleDateString()}` : `Mínimo: ${item.minimum_stock}`}
+                                            {item.is_expiration_warning ? `Vence: ${new Date(item.expiration_date + 'T12:00:00').toLocaleDateString()}` : `Mínimo: ${item.minimum_stock}`}
                                         </div>
                                     </div>
                                 </div>
@@ -1065,7 +1070,7 @@ export const Dashboard: React.FC = () => {
                                     <div className="mt-auto pt-3 border-t border-gray-200/50">
                                         <div className="text-[10px] text-gray-400 uppercase font-semibold">Última Aplicación</div>
                                         <div className="text-xs text-gray-600 font-medium">
-                                            {new Date(status.lastApplicationDate).toLocaleDateString('es-CL')} 
+                                            {new Date(status.lastApplicationDate + 'T12:00:00').toLocaleDateString('es-CL')} 
                                             <span className="ml-1 text-gray-400">({status.protectionDaysTotal} días)</span>
                                         </div>
                                     </div>
