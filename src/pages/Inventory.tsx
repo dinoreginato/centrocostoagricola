@@ -357,50 +357,118 @@ export const Inventory: React.FC = () => {
 
   // Remove the second handleDeleteProduct declaration below handleUpdateProduct
 
-  const generateShoppingListPDF = () => {
-    // Filter products that are at or below minimum stock
-    const criticalProducts = products.filter(p => p.current_stock <= (p.minimum_stock || 0) && p.category !== 'Archivado');
-    
-    if (criticalProducts.length === 0) {
-      alert('No hay productos bajo el stock mínimo para generar la lista.');
-      return;
+  const generateShoppingListPDF = async () => {
+    try {
+        // Load Phytosanitary Programs to give the user a choice to project purchases
+        const { data: programsData } = await supabase
+            .from('phytosanitary_programs')
+            .select('*')
+            .eq('company_id', selectedCompany?.id);
+            
+        let projectedNeeds = new Map<string, number>();
+        
+        if (programsData && programsData.length > 0) {
+            const useProjection = confirm('¿Desea incluir proyecciones de compras basadas en un Programa Fitosanitario?');
+            if (useProjection) {
+                const programStr = programsData.map((p, i) => `${i + 1}: ${p.name} (${p.season})`).join('\n');
+                const progSelection = prompt(`Ingrese el número del programa a proyectar:\n${programStr}`);
+                const selectedProgIndex = parseInt(progSelection || '0') - 1;
+                
+                if (selectedProgIndex >= 0 && selectedProgIndex < programsData.length) {
+                    const prog = programsData[selectedProgIndex];
+                    const haStr = prompt('¿Para cuántas hectáreas en total planea aplicar este programa? (Ej: 10.5)');
+                    const totalHa = parseFloat(haStr || '0');
+                    
+                    if (totalHa > 0) {
+                        // Fetch all events and products for this program
+                        const { data: evData } = await supabase.from('program_events').select(`
+                            id,
+                            water_per_ha,
+                            program_event_products(product_id, dose, dose_unit)
+                        `).eq('program_id', prog.id);
+                        
+                        if (evData) {
+                            evData.forEach(ev => {
+                                ev.program_event_products.forEach((ep: any) => {
+                                    let doseHa = 0;
+                                    if (ep.dose_unit === 'L/ha' || ep.dose_unit === 'Kg/ha') {
+                                        doseHa = Number(ep.dose);
+                                    } else {
+                                        // per 100L
+                                        if (ev.water_per_ha > 0) {
+                                            doseHa = (Number(ep.dose) * ev.water_per_ha) / 100;
+                                        }
+                                    }
+                                    
+                                    const neededQty = doseHa * totalHa;
+                                    if (neededQty > 0) {
+                                        projectedNeeds.set(ep.product_id, (projectedNeeds.get(ep.product_id) || 0) + neededQty);
+                                    }
+                                });
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Filter products that are at or below minimum stock OR have a projected need
+        const criticalProducts = products.filter(p => {
+            if (p.category === 'Archivado') return false;
+            const projected = projectedNeeds.get(p.id) || 0;
+            return p.current_stock <= (p.minimum_stock || 0) || (p.current_stock < projected);
+        });
+        
+        if (criticalProducts.length === 0) {
+          alert('No hay productos bajo el stock mínimo o no hay necesidades proyectadas para generar la lista.');
+          return;
+        }
+
+        const doc = new jsPDF();
+        const companyName = selectedCompany?.name || 'Empresa';
+        
+        // Header
+        doc.setFontSize(18);
+        doc.text('Lista de Compras Recomendada', 14, 22);
+        doc.setFontSize(11);
+        doc.text(`Empresa: ${companyName}`, 14, 30);
+        doc.text(`Fecha: ${new Date().toLocaleDateString('es-CL')}`, 14, 36);
+
+        // Table Data
+        const tableData = criticalProducts.map(p => {
+          const minStock = p.minimum_stock || 0;
+          const projected = projectedNeeds.get(p.id) || 0;
+          
+          let recommendedBuy = 0;
+          if (projected > 0) {
+              recommendedBuy = projected - p.current_stock;
+          } else {
+              recommendedBuy = minStock > 0 ? (minStock * 2) - p.current_stock : 10;
+          }
+          
+          return [
+            p.name,
+            p.category,
+            `${p.current_stock.toFixed(1)} ${p.unit}`,
+            projected > 0 ? `Proyectado: ${projected.toFixed(1)} ${p.unit}` : `${minStock} ${p.unit}`,
+            `${Math.max(1, recommendedBuy).toFixed(1)} ${p.unit}` // Suggest amount
+          ];
+        });
+
+        autoTable(doc, {
+          startY: 45,
+          head: [['Producto', 'Categoría', 'Stock Actual', 'Referencia', 'Cantidad Sugerida']],
+          body: tableData,
+          theme: 'grid',
+          headStyles: { fillColor: [22, 163, 74] }, // green-600
+          styles: { fontSize: 10 }
+        });
+
+        doc.save(`Lista_Compras_${companyName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch(err) {
+        console.error(err);
+        alert('Error al generar la lista de compras.');
     }
-
-    const doc = new jsPDF();
-    const companyName = selectedCompany?.name || 'Empresa';
-    
-    // Header
-    doc.setFontSize(18);
-    doc.text('Lista de Compras Recomendada', 14, 22);
-    doc.setFontSize(11);
-    doc.text(`Empresa: ${companyName}`, 14, 30);
-    doc.text(`Fecha: ${new Date().toLocaleDateString('es-CL')}`, 14, 36);
-
-    // Table Data
-    const tableData = criticalProducts.map(p => {
-      const minStock = p.minimum_stock || 0;
-      // Recommend buying enough to reach double the minimum stock, or at least 1 unit if min is 0
-      const recommendedBuy = minStock > 0 ? (minStock * 2) - p.current_stock : 10; 
-      
-      return [
-        p.name,
-        p.category,
-        `${p.current_stock} ${p.unit}`,
-        `${minStock} ${p.unit}`,
-        `${Math.max(1, recommendedBuy)} ${p.unit}` // Suggest amount
-      ];
-    });
-
-    autoTable(doc, {
-      startY: 45,
-      head: [['Producto', 'Categoría', 'Stock Actual', 'Stock Mínimo', 'Cantidad Sugerida']],
-      body: tableData,
-      theme: 'grid',
-      headStyles: { fillColor: [22, 163, 74] }, // green-600
-      styles: { fontSize: 10 }
-    });
-
-    doc.save(`Lista_Compras_${companyName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   const filteredProducts = products.filter(product => {

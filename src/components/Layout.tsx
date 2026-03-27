@@ -88,6 +88,7 @@ export const Layout: React.FC = () => {
       title: 'Inventario (Bodega)',
       items: [
         { name: 'Bodega', href: '/bodega', icon: Package, roles: ['admin', 'editor', 'viewer'] },
+        { name: 'Prog. Fitosanitario', href: '/programas-fitosanitarios', icon: ClipboardList, roles: ['admin', 'editor', 'viewer'] },
         { name: 'Aplicaciones', href: '/aplicaciones', icon: ClipboardList, roles: ['admin', 'editor', 'viewer'] },
         { name: 'Ordenes de Aplic.', href: '/ordenes-aplicacion', icon: FileText, roles: ['admin', 'editor', 'viewer'] },
       ]

@@ -116,6 +116,10 @@ export const ApplicationOrders: React.FC = () => {
     unit_override: ''
   });
 
+  // Programs state
+  const [programs, setPrograms] = useState<any[]>([]);
+  const [programEvents, setProgramEvents] = useState<any[]>([]);
+
   useEffect(() => {
     if (selectedCompany) {
       loadData();
@@ -178,11 +182,110 @@ export const ApplicationOrders: React.FC = () => {
         setMachines(machinesRes.data || []);
         setWorkers(workersRes.data || []);
 
+        // Load Phytosanitary Programs
+        const { data: progData } = await supabase.from('phytosanitary_programs').select('*').eq('company_id', selectedCompany.id).order('created_at', { ascending: false });
+        if (progData) {
+            setPrograms(progData);
+            const { data: evData } = await supabase.from('program_events').select(`
+                *,
+                products:program_event_products(
+                    *,
+                    product:products(*)
+                )
+            `).in('program_id', progData.map(p => p.id));
+            if (evData) setProgramEvents(evData);
+        }
+
     } catch (error: any) {
         console.error('Error loading data:', error);
         alert('Error cargando datos: ' + error.message);
     } finally {
         setLoading(false);
+    }
+  };
+
+  const handleLoadFromProgramEvent = (eventId: string) => {
+    if (!eventId) return;
+    const ev = programEvents.find(e => e.id === eventId);
+    if (!ev) return;
+
+    setCurrentOrder(prev => ({
+        ...prev,
+        objective: ev.objective || prev.objective,
+        water_liters_per_hectare: ev.water_per_ha || prev.water_liters_per_hectare,
+        items: [] // we reset items to populate them next
+    }));
+
+    // If we have a sector selected, we can calculate the totals right away
+    const field = fields.find(f => f.id === currentOrder.field_id);
+    const sector = field?.sectors.find(s => s.id === currentOrder.sector_id);
+
+    if (sector && ev.products && ev.products.length > 0) {
+        const newItems = ev.products.map((ep: any) => {
+            let doseHa = 0;
+            let dose100L = 0;
+            let totalQty = 0;
+
+            if (ep.dose_unit === 'L/ha' || ep.dose_unit === 'Kg/ha') {
+                doseHa = Number(ep.dose);
+                if (ev.water_per_ha > 0) {
+                    dose100L = (doseHa / ev.water_per_ha) * 100;
+                }
+            } else {
+                dose100L = Number(ep.dose);
+                if (ev.water_per_ha > 0) {
+                    doseHa = (dose100L * ev.water_per_ha) / 100;
+                }
+            }
+
+            if (doseHa > 0) {
+                totalQty = doseHa * sector.hectares;
+            }
+
+            return {
+                id: crypto.randomUUID(),
+                product_id: ep.product_id,
+                product_name: ep.product?.name,
+                dose_per_hectare: doseHa,
+                dose_per_100l: dose100L,
+                total_quantity: totalQty,
+                unit: ep.dose_unit.includes('ha') ? (ep.dose_unit === 'L/ha' ? 'L' : 'Kg') : (ep.dose_unit.includes('cc') ? 'cc' : 'gr'),
+                objective: ev.objective || ''
+            };
+        });
+
+        setCurrentOrder(prev => ({ ...prev, items: newItems }));
+    } else {
+        // If no sector, we just load them with 0 total, it will recalculate when sector is chosen
+        const newItems = ev.products.map((ep: any) => {
+            let doseHa = 0;
+            let dose100L = 0;
+
+            if (ep.dose_unit === 'L/ha' || ep.dose_unit === 'Kg/ha') {
+                doseHa = Number(ep.dose);
+                if (ev.water_per_ha > 0) {
+                    dose100L = (doseHa / ev.water_per_ha) * 100;
+                }
+            } else {
+                dose100L = Number(ep.dose);
+                if (ev.water_per_ha > 0) {
+                    doseHa = (dose100L * ev.water_per_ha) / 100;
+                }
+            }
+
+            return {
+                id: crypto.randomUUID(),
+                product_id: ep.product_id,
+                product_name: ep.product?.name,
+                dose_per_hectare: doseHa,
+                dose_per_100l: dose100L,
+                total_quantity: 0,
+                unit: ep.dose_unit.includes('ha') ? (ep.dose_unit === 'L/ha' ? 'L' : 'Kg') : (ep.dose_unit.includes('cc') ? 'cc' : 'gr'),
+                objective: ev.objective || ''
+            };
+        });
+        setCurrentOrder(prev => ({ ...prev, items: newItems }));
+        alert('Se han cargado los productos del programa. Seleccione un sector para calcular los totales automáticamente.');
     }
   };
 
@@ -820,6 +923,22 @@ export const ApplicationOrders: React.FC = () => {
                           className="mt-1 block w-full border border-gray-300 rounded-md p-2"
                           placeholder="Ej: Forelle"
                       />
+                  </div>
+                  <div>
+                      <label className="block text-sm font-medium text-gray-700 text-indigo-600">
+                          <span className="flex items-center"><ClipboardList className="w-4 h-4 mr-1"/>Cargar desde Programa (Opcional)</span>
+                      </label>
+                      <select 
+                          onChange={e => handleLoadFromProgramEvent(e.target.value)}
+                          className="mt-1 block w-full border border-indigo-300 bg-indigo-50 rounded-md p-2 text-indigo-800"
+                      >
+                          <option value="">Seleccionar etapa...</option>
+                          {programEvents.map(ev => (
+                              <option key={ev.id} value={ev.id}>
+                                  {ev.phytosanitary_programs?.name} - {ev.stage_name}
+                              </option>
+                          ))}
+                      </select>
                   </div>
                   <div>
                       <label className="block text-sm font-medium text-gray-700">Tipo</label>
