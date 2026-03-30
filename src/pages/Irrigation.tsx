@@ -202,7 +202,9 @@ export const Irrigation: React.FC = () => {
         const assigned = assignmentMap.get(item.id) || 0;
         const remaining = total - assigned;
 
-        if (Math.abs(remaining) > 10) { 
+        // Use a threshold of 500 to ignore small rounding errors or 
+        // to handle negative remaining amounts properly for credit notes
+        if (Math.abs(remaining) > 500) { 
             pending.push({
                 id: item.id,
                 invoice_id: item.invoices.id,

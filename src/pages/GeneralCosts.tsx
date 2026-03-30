@@ -234,11 +234,10 @@ export const GeneralCosts: React.FC = () => {
         const assigned = assignmentMap.get(item.id) || 0;
         const remaining = total - assigned;
 
-        // Use a small epsilon for float comparison
-        // Only show if remaining is positive and > 1 CLP
-        // INCREASED TOLERANCE: If remaining is less than 1% of total or < 500 CLP, consider it done
-        // This handles cases where rounding errors or small differences persist
-        const isSignificant = Math.abs(remaining) > 500; // Increased threshold to ignore small leftovers
+        // Check if remaining is significant (ignore minor rounding differences)
+        // Also ensure we handle negative remaining amounts for credit notes properly
+        // If remaining is very close to 0 (e.g. between -500 and 500), consider it fully assigned
+        const isSignificant = Math.abs(remaining) > 500;
 
         if (isSignificant) {  
             pending.push({

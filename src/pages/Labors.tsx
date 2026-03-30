@@ -257,7 +257,8 @@ export const Labors: React.FC = () => {
         const remaining = total - assigned;
 
         // Tolerance for float errors (absolute value for negative amounts)
-        if (Math.abs(remaining) > 10) {  
+        // Increased threshold to 500 to handle small discrepancies and clean up views
+        if (Math.abs(remaining) > 500) {  
             pending.push({
                 id: item.id,
                 invoice_id: item.invoices.id,
