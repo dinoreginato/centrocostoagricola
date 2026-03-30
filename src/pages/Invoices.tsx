@@ -1948,113 +1948,119 @@ export const Invoices: React.FC = () => {
                   <span className="bg-gray-100 text-gray-600 py-1 px-3 rounded-full text-xs font-bold">{items.length} ingresados</span>
                 </div>
                 
-                <div className="grid grid-cols-12 gap-3 items-end bg-gray-50 p-4 rounded-lg border border-gray-200">
-                  <div className="col-span-12 md:col-span-3 relative">
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Descripción / Producto</label>
-                    <input
-                      type="text"
-                      value={currentItem.product_name}
-                      onChange={e => handleProductChange(e.target.value)}
-                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
-                      placeholder="Ej. Abono foliar..."
-                      autoComplete="off"
-                      list="product-suggestions" 
-                    />
-                    <datalist id="product-suggestions">
-                        {products.map(p => <option key={p.id} value={p.name} />)}
-                    </datalist>
-                    
-                    {showSuggestions && officialSuggestions.length > 0 && (
-                        <div className="absolute z-50 left-0 w-[150%] mt-1 bg-white border border-blue-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
-                            <div className="px-3 py-2 text-xs font-bold text-blue-800 bg-blue-50 border-b border-blue-100 flex items-center">
-                                <Database className="w-3 h-3 mr-1" /> Sugerencias SAG (Registro Oficial)
-                            </div>
-                            {officialSuggestions.map((sug, idx) => (
-                                <button
-                                    key={idx}
-                                    type="button"
-                                    onClick={() => selectOfficialProduct(sug)}
-                                    className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 border-b border-gray-50 last:border-0 transition-colors"
-                                >
-                                    <div className="font-bold text-gray-900">{sug.commercial_name}</div>
-                                    <div className="text-xs text-gray-500 flex justify-between mt-1">
-                                        <span className="bg-gray-100 px-1 rounded">{sug.active_ingredient}</span>
-                                        <span className="font-medium">{sug.concentration}</span>
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                  </div>
+                <div className="grid grid-cols-12 gap-4 items-start bg-gray-50 p-5 rounded-xl border border-gray-200">
                   
-                  <div className="col-span-12 md:col-span-2">
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Categoría</label>
-                    <select
-                      value={currentItem.category}
-                      onChange={e => {
-                          const newCat = e.target.value;
-                          setCurrentItem({
-                              ...currentItem, 
-                              category: newCat,
-                              destination_type: determineDestinationType(newCat) as any,
-                              destination_id: '' // Reset destination when category changes
-                          });
-                      }}
-                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors overflow-hidden text-ellipsis whitespace-nowrap"
-                    >
-                      {CATEGORIES.map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
+                  {/* First Row: Product and Category */}
+                  <div className="col-span-12 md:col-span-7 grid grid-cols-2 gap-4">
+                      <div className="relative">
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Descripción / Producto</label>
+                        <input
+                          type="text"
+                          value={currentItem.product_name}
+                          onChange={e => handleProductChange(e.target.value)}
+                          className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
+                          placeholder="Ej. Abono foliar..."
+                          autoComplete="off"
+                          list="product-suggestions" 
+                        />
+                        <datalist id="product-suggestions">
+                            {products.map(p => <option key={p.id} value={p.name} />)}
+                        </datalist>
+                        
+                        {showSuggestions && officialSuggestions.length > 0 && (
+                            <div className="absolute z-50 left-0 w-full mt-1 bg-white border border-blue-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                                <div className="px-3 py-2 text-xs font-bold text-blue-800 bg-blue-50 border-b border-blue-100 flex items-center">
+                                    <Database className="w-3 h-3 mr-1" /> Sugerencias SAG (Registro Oficial)
+                                </div>
+                                {officialSuggestions.map((sug, idx) => (
+                                    <button
+                                        key={idx}
+                                        type="button"
+                                        onClick={() => selectOfficialProduct(sug)}
+                                        className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 border-b border-gray-50 last:border-0 transition-colors"
+                                    >
+                                        <div className="font-bold text-gray-900">{sug.commercial_name}</div>
+                                        <div className="text-xs text-gray-500 flex justify-between mt-1">
+                                            <span className="bg-gray-100 px-1 rounded">{sug.active_ingredient}</span>
+                                            <span className="font-medium">{sug.concentration}</span>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                      </div>
+                      
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Categoría</label>
+                        <select
+                          value={currentItem.category}
+                          onChange={e => {
+                              const newCat = e.target.value;
+                              setCurrentItem({
+                                  ...currentItem, 
+                                  category: newCat,
+                                  destination_type: determineDestinationType(newCat) as any,
+                                  destination_id: '' // Reset destination when category changes
+                              });
+                          }}
+                          className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors overflow-hidden text-ellipsis whitespace-nowrap"
+                        >
+                          {CATEGORIES.map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+                      </div>
                   </div>
 
-                  <div className="col-span-4 md:col-span-1">
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Cantidad</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={currentItem.quantity || ''}
-                      onChange={e => setCurrentItem({...currentItem, quantity: Number(e.target.value)})}
-                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors text-right"
-                      style={{ minWidth: '80px' }}
-                    />
-                  </div>
+                  {/* Second Row: Quantities and Prices */}
+                  <div className="col-span-12 md:col-span-5 grid grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Cantidad</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={currentItem.quantity || ''}
+                          onChange={e => setCurrentItem({...currentItem, quantity: Number(e.target.value)})}
+                          className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors text-right"
+                        />
+                      </div>
 
-                  <div className="col-span-4 md:col-span-1">
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Unidad</label>
-                    <select
-                      value={currentItem.unit}
-                      onChange={e => setCurrentItem({...currentItem, unit: e.target.value})}
-                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors text-center"
-                    >
-                      <option value="L">L</option>
-                      <option value="kg">kg</option>
-                      <option value="un">un</option>
-                      <option value="m3">m3</option>
-                      <option value="g">g</option>
-                      <option value="cc">cc</option>
-                    </select>
-                  </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">Unidad</label>
+                        <select
+                          value={currentItem.unit}
+                          onChange={e => setCurrentItem({...currentItem, unit: e.target.value})}
+                          className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors text-center"
+                        >
+                          <option value="L">L</option>
+                          <option value="kg">kg</option>
+                          <option value="un">un</option>
+                          <option value="m3">m3</option>
+                          <option value="g">g</option>
+                          <option value="cc">cc</option>
+                        </select>
+                      </div>
 
-                  <div className="col-span-4 md:col-span-2">
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Precio Unitario</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={currentItem.unit_price || ''}
-                      onChange={e => setCurrentItem({...currentItem, unit_price: Number(e.target.value)})}
-                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors text-right"
-                      placeholder="$"
-                    />
+                      <div>
+                        <label className="block text-xs font-bold text-gray-700 mb-1">P. Unitario</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={currentItem.unit_price || ''}
+                          onChange={e => setCurrentItem({...currentItem, unit_price: Number(e.target.value)})}
+                          className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors text-right"
+                          placeholder="$"
+                        />
+                      </div>
                   </div>
 
                   {/* Integrated Destination Selector */}
-                  <div className="col-span-12 md:col-span-3">
-                     <label className="block text-xs font-bold text-blue-700 mb-1 flex items-center">
-                        <MapPin className="w-3 h-3 mr-1" /> Destino / Asignación Directa
+                  <div className="col-span-12 pt-3 border-t border-gray-200 mt-2">
+                     <label className="block text-xs font-bold text-blue-700 mb-2 flex items-center">
+                        <MapPin className="w-4 h-4 mr-1" /> Destino / Asignación Directa del Ítem
                      </label>
                      
-                     <div className="flex flex-col space-y-1">
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                          <select
                             value={currentItem.destination_type || ''}
                             onChange={e => setCurrentItem({
@@ -2062,7 +2068,7 @@ export const Invoices: React.FC = () => {
                                 destination_type: e.target.value as any,
                                 destination_id: '' // Reset ID when type changes
                             })}
-                            className="w-full bg-blue-50 border border-blue-200 text-blue-900 text-xs rounded-lg p-2.5 font-medium shadow-sm transition-colors"
+                            className="w-full bg-blue-50 border border-blue-200 text-blue-900 text-sm rounded-lg p-2.5 font-medium shadow-sm transition-colors"
                          >
                             <option value="none">📥 Ninguno (A Bodega / Pendiente)</option>
                             <option value="sector">🌱 Sector Específico</option>
