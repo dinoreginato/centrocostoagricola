@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
-import { Plus, Trash2, Edit, Save, Loader2, ChevronDown, ChevronRight, X } from 'lucide-react';
+import { Plus, Trash2, Edit, Save, Loader2, ChevronDown, ChevronRight, X, Upload } from 'lucide-react';
+import { read, utils } from 'xlsx';
 
 interface Program {
   id: string;
@@ -49,6 +50,8 @@ export const PhytosanitaryPrograms: React.FC = () => {
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Partial<ProgramEventProduct>>({ dose_unit: 'L/ha' });
   const [activeEventIdForProduct, setActiveEventIdForProduct] = useState<string>('');
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (selectedCompany) {
@@ -223,6 +226,93 @@ export const PhytosanitaryPrograms: React.FC = () => {
     else loadData();
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file || !selectedCompany) return;
+
+      try {
+          setLoading(true);
+          const data = await file.arrayBuffer();
+          const workbook = read(data);
+          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+          const jsonData = utils.sheet_to_json(worksheet);
+
+          if (jsonData.length === 0) {
+              alert("El archivo está vacío.");
+              return;
+          }
+
+          // 1. Create a new Program
+          const programName = prompt("Ingrese un nombre para el Programa a importar:", "Programa Importado " + new Date().toLocaleDateString());
+          if (!programName) return;
+
+          const { data: progData, error: progErr } = await supabase.from('phytosanitary_programs').insert([{
+              company_id: selectedCompany.id,
+              name: programName,
+              season: '2025-2026',
+              description: 'Importado desde Excel'
+          }]).select().single();
+
+          if (progErr) throw progErr;
+          const newProgramId = progData.id;
+
+          // 2. Process rows (assuming columns: Etapa, Objetivo, Mojamiento, Producto, Dosis, Unidad)
+          // We group by 'Etapa'
+          const eventsMap = new Map<string, { id: string, items: any[] }>();
+
+          for (const row of jsonData as any[]) {
+              const etapa = row['Etapa'] || row['ETAPA'] || row['Stage'] || 'Etapa General';
+              const objetivo = row['Objetivo'] || row['OBJETIVO'] || '';
+              const mojamiento = parseFloat(row['Mojamiento'] || row['MOJAMIENTO'] || '0');
+              
+              const prodName = row['Producto'] || row['PRODUCTO'];
+              const dosis = parseFloat(row['Dosis'] || row['DOSIS'] || '0');
+              const unidad = row['Unidad'] || row['UNIDAD'] || 'L/ha';
+
+              // Create Event if not exists
+              if (!eventsMap.has(etapa)) {
+                  const { data: evData, error: evErr } = await supabase.from('program_events').insert([{
+                      program_id: newProgramId,
+                      stage_name: etapa,
+                      objective: objetivo,
+                      water_per_ha: isNaN(mojamiento) ? 0 : mojamiento
+                  }]).select().single();
+
+                  if (evErr) throw evErr;
+                  eventsMap.set(etapa, { id: evData.id, items: [] });
+              }
+
+              const eventId = eventsMap.get(etapa)!.id;
+
+              // Find product in inventory by name (basic match)
+              if (prodName) {
+                  const foundProd = inventory.find(p => p.name.toLowerCase().includes(String(prodName).toLowerCase()));
+                  
+                  if (foundProd) {
+                      await supabase.from('program_event_products').insert([{
+                          event_id: eventId,
+                          product_id: foundProd.id,
+                          dose: isNaN(dosis) ? 0 : dosis,
+                          dose_unit: unidad
+                      }]);
+                  } else {
+                      console.warn(`Producto no encontrado en bodega: ${prodName}`);
+                  }
+              }
+          }
+
+          alert('Programa importado con éxito. Revise si algunos productos no se enlazaron porque el nombre no coincide exactamente con la bodega.');
+          loadData();
+
+      } catch (err: any) {
+          console.error(err);
+          alert('Error importando archivo: ' + err.message);
+      } finally {
+          setLoading(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -230,13 +320,30 @@ export const PhytosanitaryPrograms: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">Programas Fitosanitarios</h1>
           <p className="text-sm text-gray-500">Define tus calendarios de aplicación por temporada</p>
         </div>
-        <button
-          onClick={() => { setEditingProgram({ season: '2025-2026' }); setShowProgramModal(true); }}
-          className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700"
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Nuevo Programa
-        </button>
+        <div className="flex gap-2">
+          <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              className="hidden"
+          />
+          <button
+              onClick={() => fileInputRef.current?.click()}
+              className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none"
+              title="Importar Excel. Columnas: Etapa, Objetivo, Mojamiento, Producto, Dosis, Unidad"
+          >
+              <Upload className="mr-2 h-4 w-4 text-gray-500" />
+              Importar Excel
+          </button>
+          <button
+            onClick={() => { setEditingProgram({ season: '2025-2026' }); setShowProgramModal(true); }}
+            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Nuevo Programa
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-6">
