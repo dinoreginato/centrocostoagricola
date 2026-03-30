@@ -2055,7 +2055,7 @@ export const Invoices: React.FC = () => {
                   </div>
 
                   {/* Integrated Destination Selector */}
-                  <div className="col-span-12 pt-3 border-t border-gray-200 mt-2">
+                  <div className="col-span-12 md:col-span-7 pt-3 border-t border-gray-200 mt-2">
                      <label className="block text-xs font-bold text-blue-700 mb-2 flex items-center">
                         <MapPin className="w-4 h-4 mr-1" /> Destino / Asignación Directa del Ítem
                      </label>
@@ -2120,6 +2120,20 @@ export const Invoices: React.FC = () => {
                             )}
                          </select>
                      </div>
+                  </div>
+
+                  {/* Additional Notes Area */}
+                  <div className="col-span-12 md:col-span-5 pt-3 border-t border-gray-200 mt-2">
+                     <label className="block text-xs font-bold text-gray-700 mb-2 flex items-center">
+                        <FileText className="w-4 h-4 mr-1" /> Notas Adicionales / Detalles
+                     </label>
+                     <input
+                          type="text"
+                          value={currentItem.notes || ''}
+                          onChange={e => setCurrentItem({...currentItem, notes: e.target.value})}
+                          className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
+                          placeholder="Ej: Factura correspondiente a repuestos..."
+                      />
                   </div>
                 </div>
                 
