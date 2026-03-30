@@ -227,11 +227,13 @@ export const GeneralCosts: React.FC = () => {
         let total = isCreditNote ? -Math.abs(grossAmount) : Math.abs(grossAmount);
         
         // Ensure total is positive for logic, we handle negative signs if needed but usually costs are positive to distribute
-        // If it's a credit note, it reduces cost, but for distribution logic we usually distribute the "value"
-        // Let's stick to absolute total for now to see what remains
-        // total = Math.abs(total); // REMOVED: Allow negative totals for Credit Notes
-
+        // If it's a credit note, we need to treat its total as negative so the assigned amount (also negative) cancels it out.
         const assigned = assignmentMap.get(item.id) || 0;
+        
+        // For credit notes, total is negative, assigned is negative.
+        // Remaining should be total - assigned.
+        // Example: total = -100, assigned = -100. Remaining = 0.
+        // Example 2: total = -100, assigned = 0. Remaining = -100.
         const remaining = total - assigned;
 
         // Check if remaining is significant (ignore minor rounding differences)

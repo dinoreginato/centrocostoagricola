@@ -1290,11 +1290,14 @@ export const Invoices: React.FC = () => {
               };
 
               const insertAssignment = async (sectorId: string, amount: number, notesStr: string) => {
+                  // For Credit Notes, amount should be negative
+                  const finalAmount = documentType === 'Nota de Crédito' ? -Math.abs(amount) : Math.abs(amount);
+                  
                   if (isLabor) {
                       await supabase.from('labor_assignments').insert([{
                           ...baseAssignment,
                           sector_id: sectorId,
-                          assigned_amount: amount,
+                          assigned_amount: finalAmount,
                           labor_type: formItem.labor_type || 'General',
                           worker_id: null,
                           notes: notesStr
@@ -1303,14 +1306,14 @@ export const Invoices: React.FC = () => {
                       await supabase.from('irrigation_assignments').insert([{
                           ...baseAssignment,
                           sector_id: sectorId,
-                          amount: amount,
+                          amount: finalAmount,
                           notes: notesStr
                       }]);
                   } else {
                       await supabase.from('general_costs').insert([{
                           ...baseAssignment,
                           sector_id: sectorId,
-                          amount: amount,
+                          amount: finalAmount,
                           category: formItem.category,
                           description: notesStr
                       }]);
