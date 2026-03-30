@@ -1279,7 +1279,9 @@ export const Invoices: React.FC = () => {
           } else if (['sector', 'field', 'company'].includes(formItem.destination_type)) {
               const selectedOption = sectors.find(s => s.id === formItem.destination_id);
               const isLabor = formItem.category === 'Mano de obra' || formItem.category === 'Labores agrícolas';
-              const isIrrigation = formItem.category === 'Riego';
+              const isIrrigation = formItem.category?.toLowerCase().includes('riego') || 
+                                   formItem.category?.toLowerCase().includes('agua') || 
+                                   formItem.category?.toLowerCase().includes('electricidad');
               
               const baseAssignment = {
                   company_id: selectedCompany.id,
