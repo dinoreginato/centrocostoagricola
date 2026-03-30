@@ -1949,7 +1949,7 @@ export const Invoices: React.FC = () => {
                 </div>
                 
                 <div className="grid grid-cols-12 gap-3 items-end bg-gray-50 p-4 rounded-lg border border-gray-200">
-                  <div className="col-span-12 md:col-span-2 relative">
+                  <div className="col-span-12 md:col-span-3 relative">
                     <label className="block text-xs font-bold text-gray-700 mb-1">Descripción / Producto</label>
                     <input
                       type="text"
@@ -1965,7 +1965,7 @@ export const Invoices: React.FC = () => {
                     </datalist>
                     
                     {showSuggestions && officialSuggestions.length > 0 && (
-                        <div className="absolute z-50 left-0 w-[200%] mt-1 bg-white border border-blue-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                        <div className="absolute z-50 left-0 w-[150%] mt-1 bg-white border border-blue-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
                             <div className="px-3 py-2 text-xs font-bold text-blue-800 bg-blue-50 border-b border-blue-100 flex items-center">
                                 <Database className="w-3 h-3 mr-1" /> Sugerencias SAG (Registro Oficial)
                             </div>
@@ -2000,7 +2000,7 @@ export const Invoices: React.FC = () => {
                               destination_id: '' // Reset destination when category changes
                           });
                       }}
-                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
+                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors overflow-hidden text-ellipsis whitespace-nowrap"
                     >
                       {CATEGORIES.map(cat => (
                         <option key={cat} value={cat}>{cat}</option>
@@ -2009,13 +2009,14 @@ export const Invoices: React.FC = () => {
                   </div>
 
                   <div className="col-span-4 md:col-span-1">
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Cant.</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Cantidad</label>
                     <input
                       type="number"
                       step="0.01"
                       value={currentItem.quantity || ''}
                       onChange={e => setCurrentItem({...currentItem, quantity: Number(e.target.value)})}
-                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors text-center"
+                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors text-right"
+                      style={{ minWidth: '80px' }}
                     />
                   </div>
 
@@ -2036,13 +2037,13 @@ export const Invoices: React.FC = () => {
                   </div>
 
                   <div className="col-span-4 md:col-span-2">
-                    <label className="block text-xs font-bold text-gray-700 mb-1">Precio Unit.</label>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">Precio Unitario</label>
                     <input
                       type="number"
                       step="0.01"
                       value={currentItem.unit_price || ''}
                       onChange={e => setCurrentItem({...currentItem, unit_price: Number(e.target.value)})}
-                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
+                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors text-right"
                       placeholder="$"
                     />
                   </div>
