@@ -5,13 +5,14 @@ import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { getSeasonFromDate, getSeasonRange, isDateInSeason } from '../lib/seasonUtils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { FileDown, Loader2, Calendar, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer, Settings, DollarSign, Scale, Play, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
+import { FileDown, Loader2, Calendar, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer, Settings, DollarSign, Scale, Play, ChevronLeft, ChevronRight, Layers, TrendingUp } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 
 interface ReportData {
   field_name: string;
+  fruit_type: string;
   sector_name: string;
   sector_id: string; 
   hectares: number;
@@ -121,8 +122,8 @@ const CHEMICAL_CATEGORIES = [
 export const Reports: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'applications' | 'monthly' | 'categories' | 'pending' | 'paid_payments' | 'chemicals' | 'detailed' | 'budget' | 'comparative'>('general');
-  const [activeGroup, setActiveGroup] = useState<'general' | 'financial' | 'inventory' | 'comparative'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'applications' | 'monthly' | 'categories' | 'pending' | 'paid_payments' | 'chemicals' | 'detailed' | 'budget' | 'comparative' | 'profitability'>('general');
+  const [activeGroup, setActiveGroup] = useState<'general' | 'financial' | 'inventory' | 'comparative' | 'profitability'>('general');
   
   // Pending Invoices Filter State
   const [pendingStartDate, setPendingStartDate] = useState<string>('');
@@ -290,7 +291,7 @@ export const Reports: React.FC = () => {
       // 1. Fetch Fields
       const { data: fields } = await supabase
         .from('fields')
-        .select('id, name, sectors(id, name, hectares)')
+        .select('id, name, fruit_type, sectors(id, name, hectares)')
         .eq('company_id', selectedCompany.id);
       
       setRawFields(fields || []);
@@ -679,6 +680,7 @@ export const Reports: React.FC = () => {
         
         data.push({
           field_name: field.name,
+          fruit_type: field.fruit_type || 'Sin Especificar',
           sector_name: sector.name,
           sector_id: sector.id,
           hectares: hectares,
@@ -1271,6 +1273,14 @@ export const Reports: React.FC = () => {
             } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
           >
             <Layers className="mr-2 h-4 w-4" /> Comparativa Temporadas
+          </button>
+          <button
+            onClick={() => { setActiveGroup('profitability'); setActiveTab('profitability'); }}
+            className={`${
+              activeGroup === 'profitability' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:border-gray-600'
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
+          >
+            <TrendingUp className="mr-2 h-4 w-4" /> Rentabilidad por Cultivo
           </button>
         </nav>
       </div>
@@ -2639,6 +2649,156 @@ export const Reports: React.FC = () => {
             </div>
         </div>
       )}
+
+      {activeTab === 'profitability' && (() => {
+          // Aggregate data by fruit_type
+          const profMap: Record<string, any> = {};
+          
+          reportData.forEach(row => {
+              const fruit = row.fruit_type || 'Sin Especificar';
+              if (!profMap[fruit]) {
+                  profMap[fruit] = {
+                      fruit_type: fruit,
+                      hectares: 0,
+                      kg_produced: 0,
+                      total_cost: 0,
+                      total_income: 0,
+                      sectors_count: 0
+                  };
+              }
+              profMap[fruit].hectares += row.hectares;
+              profMap[fruit].kg_produced += (row.kg_produced || 0);
+              profMap[fruit].total_cost += row.total_cost;
+              
+              // Sum incomes specifically for this sector
+              const sectorIncomeClp = incomeEntries
+                  .filter(i => i.sector_id === row.sector_id && i.category === 'Venta Fruta' && i.season === selectedSeason)
+                  .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+                  
+              profMap[fruit].total_income += sectorIncomeClp;
+              profMap[fruit].sectors_count += 1;
+          });
+
+          const profData = Object.values(profMap).sort((a, b) => b.total_income - a.total_income);
+          const totalProfit = profData.reduce((sum, d) => sum + (d.total_income - d.total_cost), 0);
+
+          return (
+              <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-green-500">
+                          <div className="flex items-center">
+                              <div className="p-3 rounded-full bg-green-100 text-green-600">
+                                  <DollarSign className="h-6 w-6" />
+                              </div>
+                              <div className="ml-4">
+                                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Ingresos Totales (Venta Fruta)</p>
+                                  <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                                      {formatCLP(profData.reduce((sum, d) => sum + d.total_income, 0))}
+                                  </p>
+                              </div>
+                          </div>
+                      </div>
+                      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-red-500">
+                          <div className="flex items-center">
+                              <div className="p-3 rounded-full bg-red-100 text-red-600">
+                                  <Scale className="h-6 w-6" />
+                              </div>
+                              <div className="ml-4">
+                                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Costos Operativos</p>
+                                  <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                                      {formatCLP(profData.reduce((sum, d) => sum + d.total_cost, 0))}
+                                  </p>
+                              </div>
+                          </div>
+                      </div>
+                      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-blue-500">
+                          <div className="flex items-center">
+                              <div className="p-3 rounded-full bg-blue-100 text-blue-600">
+                                  <TrendingUp className="h-6 w-6" />
+                              </div>
+                              <div className="ml-4">
+                                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Rentabilidad Global</p>
+                                  <p className={`text-2xl font-semibold ${totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                      {formatCLP(totalProfit)}
+                                  </p>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+
+                  <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg">
+                      <div className="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                          <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100">Rentabilidad por Especie / Cultivo</h3>
+                          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Análisis de margen y costos por hectárea según el tipo de cultivo.</p>
+                      </div>
+                      <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                              <thead className="bg-gray-50 dark:bg-gray-900">
+                                  <tr>
+                                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Especie / Cultivo</th>
+                                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Has Totales</th>
+                                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Prod. Total (Kg)</th>
+                                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Ingresos (CLP)</th>
+                                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Costos (CLP)</th>
+                                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Margen Neto (CLP)</th>
+                                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Costo / Ha</th>
+                                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Margen / Ha</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                  {profData.map((row, idx) => {
+                                      const margin = row.total_income - row.total_cost;
+                                      const costPerHa = row.hectares > 0 ? row.total_cost / row.hectares : 0;
+                                      const marginPerHa = row.hectares > 0 ? margin / row.hectares : 0;
+                                      
+                                      return (
+                                          <tr key={idx} className={idx % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-900'}>
+                                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">{row.fruit_type}</td>
+                                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500 dark:text-gray-400">{row.hectares.toFixed(2)}</td>
+                                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500 dark:text-gray-400">{row.kg_produced.toLocaleString('es-CL')}</td>
+                                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">{formatCLP(row.total_income)}</td>
+                                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">{formatCLP(row.total_cost)}</td>
+                                              <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${margin >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                  {formatCLP(margin)}
+                                              </td>
+                                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500 dark:text-gray-400">{formatCLP(costPerHa)}</td>
+                                              <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${marginPerHa >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                  {formatCLP(marginPerHa)}
+                                              </td>
+                                          </tr>
+                                      );
+                                  })}
+                              </tbody>
+                          </table>
+                      </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                      <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+                          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-4">Margen Neto por Especie</h3>
+                          <div className="h-80 w-full">
+                              <ResponsiveContainer width="100%" height="100%">
+                                  <BarChart data={profData.map(d => ({ name: d.fruit_type, Margen: d.total_income - d.total_cost }))} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                      <XAxis dataKey="name" />
+                                      <YAxis tickFormatter={(value) => `$${(value / 1000000).toFixed(0)}M`} width={80} />
+                                      <Tooltip formatter={(value: number) => formatCLP(value)} />
+                                      <Bar dataKey="Margen" fill="#10b981" radius={[4, 4, 0, 0]}>
+                                          {
+                                              profData.map((entry, index) => {
+                                                  const margin = entry.total_income - entry.total_cost;
+                                                  return <Cell key={`cell-${index}`} fill={margin >= 0 ? '#10b981' : '#ef4444'} />;
+                                              })
+                                          }
+                                      </Bar>
+                                  </BarChart>
+                              </ResponsiveContainer>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          );
+      })()}
 
       {/* PRESENTATION MODE OVERLAY */}
       {presentationMode && (
