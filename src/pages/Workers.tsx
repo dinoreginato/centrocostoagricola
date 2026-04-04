@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
@@ -148,7 +149,7 @@ export const Workers: React.FC = () => {
           setShowWorkerForm(false);
           loadWorkers();
       } catch (error: any) {
-          alert('Error: ' + error.message);
+          toast.error('Error: ' + error.message);
       } finally {
           setLoading(false);
       }
@@ -157,7 +158,7 @@ export const Workers: React.FC = () => {
   const handleDeleteWorker = async (id: string) => {
       if (!confirm('¿Eliminar trabajador? Se borrarán sus registros de costos.')) return;
       const { error } = await supabase.from('workers').delete().eq('id', id);
-      if (error) alert('Error al eliminar');
+      if (error) toast.error('Error al eliminar');
       else loadWorkers();
   };
 
@@ -168,24 +169,24 @@ export const Workers: React.FC = () => {
 
     if (isPieceRate) {
         if (!pieceQuantity || !piecePrice || !workerName || !laborType) {
-            alert('Complete todos los campos del trato');
+            toast('Complete todos los campos del trato');
             return;
         }
         if (distributeBy === 'sector' && !selectedSectorId) {
-            alert('Seleccione un sector');
+            toast('Seleccione un sector');
             return;
         }
     } else {
         if (!amount || !selectedWorkerId || !description) {
-            alert('Complete todos los campos obligatorios');
+            toast('Complete todos los campos obligatorios');
             return;
         }
         if (distributeBy === 'sector' && !selectedSectorId) {
-            alert('Seleccione un sector');
+            toast('Seleccione un sector');
             return;
         }
         if (distributeBy === 'field' && !selectedFieldId) {
-            alert('Seleccione un campo');
+            toast('Seleccione un campo');
             return;
         }
     }
@@ -200,7 +201,7 @@ export const Workers: React.FC = () => {
             const totalHa = allSectors.reduce((sum, s) => sum + Number(s.hectares), 0);
             
             if (totalHa === 0) {
-                alert('La empresa no tiene hectáreas definidas en ningún sector.');
+                toast('La empresa no tiene hectáreas definidas en ningún sector.');
                 setLoading(false);
                 return;
             }
@@ -227,14 +228,14 @@ export const Workers: React.FC = () => {
             // Distribute by Field Logic
             const fieldSectors = sectors.filter(s => s.field_id === selectedFieldId);
             if (fieldSectors.length === 0) {
-                alert('El campo seleccionado no tiene sectores asociados.');
+                toast('El campo seleccionado no tiene sectores asociados.');
                 setLoading(false);
                 return;
             }
 
             const totalHa = fieldSectors.reduce((sum, s) => sum + Number(s.hectares), 0);
             if (totalHa === 0) {
-                alert('Los sectores del campo no tienen hectáreas definidas.');
+                toast('Los sectores del campo no tienen hectáreas definidas.');
                 setLoading(false);
                 return;
             }
@@ -288,11 +289,11 @@ export const Workers: React.FC = () => {
         
         // Reload
         await loadCosts();
-        alert('Costo registrado exitosamente');
+        toast('Costo registrado exitosamente');
 
     } catch (error: any) {
         console.error('Error saving cost:', error);
-        alert('Error: ' + error.message);
+        toast.error('Error: ' + error.message);
     } finally {
         setLoading(false);
     }
@@ -301,13 +302,13 @@ export const Workers: React.FC = () => {
   const handleDeleteCost = async (id: string) => {
       if (!confirm('¿Eliminar este registro de costo?')) return;
       const { error } = await supabase.from('worker_costs').delete().eq('id', id);
-      if (error) alert('Error al eliminar');
+      if (error) toast.error('Error al eliminar');
       else loadCosts();
   };
 
   const generatePayrollPDF = () => {
     if (costs.length === 0) {
-      alert('No hay registros de costos o tratos para exportar.');
+      toast('No hay registros de costos o tratos para exportar.');
       return;
     }
 

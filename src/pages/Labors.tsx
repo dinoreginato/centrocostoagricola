@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
@@ -382,7 +383,7 @@ export const Labors: React.FC = () => {
           loadData(); // Reload to update lists
       } catch (error: any) {
           console.error('Error deleting:', error);
-          alert('Error: ' + error.message);
+          toast.error('Error: ' + error.message);
       } finally {
           setLoading(false);
       }
@@ -405,7 +406,7 @@ export const Labors: React.FC = () => {
              throw rpcError; 
         }
 
-        alert('Todas las asignaciones han sido eliminadas.');
+        toast('Todas las asignaciones han sido eliminadas.');
         loadData();
     } catch (error: any) {
          // Fallback implementation
@@ -418,7 +419,7 @@ export const Labors: React.FC = () => {
             if (fetchError) throw fetchError;
 
             if (!assignments || assignments.length === 0) {
-                alert('No hay asignaciones para eliminar.');
+                toast('No hay asignaciones para eliminar.');
                 return;
             }
 
@@ -434,12 +435,12 @@ export const Labors: React.FC = () => {
                 
                 if (deleteError) throw deleteError;
             }
-             alert('Todas las asignaciones han sido eliminadas (Método Manual).');
+             toast('Todas las asignaciones han sido eliminadas (Método Manual).');
              loadData();
 
          } catch (manualError: any) {
             console.error('Error deleting all:', manualError);
-            alert('Error al eliminar: ' + manualError.message);
+            toast.error('Error al eliminar: ' + manualError.message);
          }
     } finally {
         setLoading(false);
@@ -478,31 +479,31 @@ export const Labors: React.FC = () => {
              // totalAllocated should be negative and not less than remaining (more negative)
              // e.g. remaining -1000. allocated -1200 -> Error. allocated -500 -> OK.
              if (totalAllocated < selectedLabor.remaining_amount - 1) {
-                 alert(`El monto asignado (${formatCLP(totalAllocated)}) excede el pendiente (${formatCLP(selectedLabor.remaining_amount)})`);
+                 toast(`El monto asignado (${formatCLP(totalAllocated)}) excede el pendiente (${formatCLP(selectedLabor.remaining_amount)})`);
                  return;
              }
         } else {
              // Normal positive balance
              if (totalAllocated > selectedLabor.remaining_amount + 1) { 
-                alert(`El monto asignado (${formatCLP(totalAllocated)}) excede el pendiente (${formatCLP(selectedLabor.remaining_amount)})`);
+                toast(`El monto asignado (${formatCLP(totalAllocated)}) excede el pendiente (${formatCLP(selectedLabor.remaining_amount)})`);
                 return;
              }
         }
     }
     
     if (allocations.some(a => !a.sector_id || a.amount === 0) && distributeBy === 'sector') { // Allow negative amounts, just not 0
-        alert('Complete todos los campos de sector y monto distinto de 0');
+        toast('Complete todos los campos de sector y monto distinto de 0');
         return;
     }
 
     if (distributeBy === 'field' && !selectedFieldId) {
-        alert('Seleccione un campo');
+        toast('Seleccione un campo');
         return;
     }
     
     if (distributeBy === 'field' || distributeBy === 'company') {
         if (fieldTotalAmount === 0) {
-             alert('El monto a distribuir no puede ser 0');
+             toast('El monto a distribuir no puede ser 0');
              return;
         }
     }
@@ -524,7 +525,7 @@ export const Labors: React.FC = () => {
                 .eq('id', editingAssignmentId);
 
             if (error) throw error;
-            alert('Asignación actualizada exitosamente');
+            toast('Asignación actualizada exitosamente');
         } else {
             // Create new assignments
             let payload: any[] = [];
@@ -571,7 +572,7 @@ export const Labors: React.FC = () => {
                 .insert(payload);
 
             if (error) throw error;
-            alert('Asignación guardada exitosamente');
+            toast('Asignación guardada exitosamente');
         }
 
         setSelectedLaborId(null);
@@ -581,7 +582,7 @@ export const Labors: React.FC = () => {
 
     } catch (error: any) {
         console.error('Error saving:', error);
-        alert('Error: ' + error.message);
+        toast.error('Error: ' + error.message);
     } finally {
         setLoading(false);
     }
@@ -609,7 +610,7 @@ export const Labors: React.FC = () => {
           if (fetchError) throw fetchError;
 
           if (!assignments || assignments.length === 0) {
-              alert('No se encontraron asignaciones pendientes de clasificación.');
+              toast('No se encontraron asignaciones pendientes de clasificación.');
               return;
           }
 
@@ -646,12 +647,12 @@ export const Labors: React.FC = () => {
 
           await Promise.all(updates);
 
-          alert(`Proceso completado. Se actualizaron ${updatedCount} asignaciones.`);
+          toast(`Proceso completado. Se actualizaron ${updatedCount} asignaciones.`);
           loadData();
 
       } catch (error: any) {
           console.error('Error auto-classifying:', error);
-          alert('Error al clasificar: ' + error.message);
+          toast.error('Error al clasificar: ' + error.message);
       } finally {
           setLoading(false);
       }
@@ -680,7 +681,7 @@ export const Labors: React.FC = () => {
       }
 
       if (reportData.length === 0) {
-          alert('No hay datos para el reporte con los filtros seleccionados.');
+          toast('No hay datos para el reporte con los filtros seleccionados.');
           return;
       }
 

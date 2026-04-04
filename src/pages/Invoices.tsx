@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
@@ -20,6 +21,7 @@ interface InvoiceItem {
   destination_id?: string; 
   destination_name?: string; // Helper for UI
   labor_type?: string; // New: Specific labor type if destination is sector
+  notes?: string;
 }
 
 interface Product {
@@ -684,7 +686,7 @@ export const Invoices: React.FC = () => {
                 if (!enc) enc = xmlDoc.getElementsByTagName("ns0:Encabezado")[0];
 
                 if (!enc) {
-                    alert("El archivo XML no parece ser un DTE válido del SII.");
+                    toast("El archivo XML no parece ser un DTE válido del SII.");
                     return;
                 }
 
@@ -768,18 +770,18 @@ export const Invoices: React.FC = () => {
 
                 setItems(parsedItems);
                 // The form is always visible in this layout, so no need for setIsFormOpen
-                alert("Factura cargada exitosamente desde el XML. Revise los ítems y las asignaciones.");
+                toast("Factura cargada exitosamente desde el XML. Revise los ítems y las asignaciones.");
 
             } catch (error) {
                 console.error("Error parsing XML:", error);
-                alert("Hubo un error al procesar el archivo XML.");
+                toast("Hubo un error al procesar el archivo XML.");
             } finally {
                 if (xmlInputRef.current) xmlInputRef.current.value = '';
             }
         };
         reader.readAsText(file);
     } else {
-        alert("Por favor seleccione un archivo XML.");
+        toast("Por favor seleccione un archivo XML.");
     }
   };
 
@@ -831,7 +833,7 @@ export const Invoices: React.FC = () => {
           json = parseFlexibleJSON(jsonContent);
         } catch (e: any) {
           console.error('JSON Parse Error:', e);
-          alert(`Error crítico al leer el archivo: ${e.message}\n\nPor favor verifica que sea un archivo de texto con formato JSON válido.`);
+          toast.error(`Error crítico al leer el archivo: ${e.message}\n\nPor favor verifica que sea un archivo de texto con formato JSON válido.`);
           return;
         }
 
@@ -995,14 +997,14 @@ export const Invoices: React.FC = () => {
           }
         }
 
-        alert(`Importación completada.\nExitosos: ${successCount}\nFallidos: ${errorCount}`);
+        toast(`Importación completada.\nExitosos: ${successCount}\nFallidos: ${errorCount}`);
         loadStats();
         loadProducts();
         loadSuppliers();
 
       } catch (error) {
         console.error('Error parsing JSON:', error);
-        alert('Error al leer el archivo JSON. Asegúrate de que el formato sea correcto.');
+        toast.error('Error al leer el archivo JSON. Asegúrate de que el formato sea correcto.');
       } finally {
         setLoading(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
@@ -1077,7 +1079,7 @@ export const Invoices: React.FC = () => {
 
       if (error) throw error;
       
-      alert('Factura eliminada (Forzado)');
+      toast('Factura eliminada (Forzado)');
       
       // Update local state
       const updatedInvoices = allInvoices.filter(inv => inv.id !== id);
@@ -1087,7 +1089,7 @@ export const Invoices: React.FC = () => {
       if (editingInvoiceId === id) handleCancelEdit();
     } catch (error: any) {
       console.error('Error deleting:', error);
-      alert('Error al eliminar: ' + error.message);
+      toast.error('Error al eliminar: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -1125,7 +1127,7 @@ export const Invoices: React.FC = () => {
       }
 
       if (duplicatesToDelete.length === 0) {
-        alert('No se encontraron duplicados.');
+        toast('No se encontraron duplicados.');
       } else {
         if (!window.confirm(`Se encontraron ${duplicatesToDelete.length} duplicados. ¿Eliminar?`)) {
             setLoading(false);
@@ -1148,13 +1150,13 @@ export const Invoices: React.FC = () => {
 
         if (deleteError) throw deleteError;
 
-        alert(`Se eliminaron ${duplicatesToDelete.length} facturas duplicadas.`);
+        toast(`Se eliminaron ${duplicatesToDelete.length} facturas duplicadas.`);
         loadStats();
       }
 
     } catch (err: any) {
       console.error('Error cleaning duplicates:', err);
-      alert('Error: ' + err.message);
+      toast.error('Error: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -1198,7 +1200,7 @@ export const Invoices: React.FC = () => {
 
     } catch (error: any) {
         console.error('Error toggling status:', error);
-        alert('Error al cambiar estado: ' + error.message);
+        toast.error('Error al cambiar estado: ' + error.message);
     }
   };
 
@@ -1551,7 +1553,7 @@ export const Invoices: React.FC = () => {
           .maybeSingle();
 
         if (existingInvoice) {
-          alert(`¡Atención! Ya existe una factura con el número "${invoiceNumber}" para el proveedor "${supplier}".\n\nNo se puede crear un duplicado.`);
+          toast(`¡Atención! Ya existe una factura con el número "${invoiceNumber}" para el proveedor "${supplier}".\n\nNo se puede crear un duplicado.`);
           setLoading(false);
           return;
         }
@@ -1639,14 +1641,14 @@ export const Invoices: React.FC = () => {
       setNotes('');
       setDueDate('');
       setSpecialTaxAmount(0);
-      alert(editingInvoiceId ? 'Factura actualizada exitosamente' : 'Factura ingresada exitosamente');
+      toast(editingInvoiceId ? 'Factura actualizada exitosamente' : 'Factura ingresada exitosamente');
       loadProducts();
       loadStats();
       loadSuppliers();
 
     } catch (error: any) {
       console.error('Error saving invoice:', error);
-      alert('Error al guardar la factura: ' + error.message);
+      toast.error('Error al guardar la factura: ' + error.message);
     } finally {
       setLoading(false);
     }

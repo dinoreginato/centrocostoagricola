@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
@@ -329,7 +330,7 @@ export const GeneralCosts: React.FC = () => {
       setLoading(true);
       const { error } = await supabase.from('general_costs').delete().eq('id', id);
       if (!error) loadData();
-      else alert('Error al eliminar');
+      else toast.error('Error al eliminar');
       setLoading(false);
   };
 
@@ -346,11 +347,11 @@ export const GeneralCosts: React.FC = () => {
         
         if (error) throw error;
         
-        alert('Historial eliminado correctamente. Todos los costos volverán a estar pendientes.');
+        toast('Historial eliminado correctamente. Todos los costos volverán a estar pendientes.');
         loadData();
     } catch (error: any) {
         console.error('Error deleting all history:', error);
-        alert('Error al eliminar historial: ' + error.message);
+        toast.error('Error al eliminar historial: ' + error.message);
     } finally {
         setLoading(false);
     }
@@ -365,12 +366,12 @@ export const GeneralCosts: React.FC = () => {
     // Validation logic similar to Labors...
     if (selectedCost && !editingAssignmentId) {
         if (Math.abs(totalAllocated) > Math.abs(selectedCost.remaining_amount) + 1) {
-             alert('El monto excede el pendiente');
+             toast('El monto excede el pendiente');
              return;
         }
     }
 
-    if (distributeBy === 'field' && !selectedFieldId) { alert('Seleccione Campo'); return; }
+    if (distributeBy === 'field' && !selectedFieldId) { toast('Seleccione Campo'); return; }
 
     setLoading(true);
     try {
@@ -420,14 +421,14 @@ export const GeneralCosts: React.FC = () => {
             if(error) throw error;
         }
 
-        alert('Guardado correctamente');
+        toast('Guardado correctamente');
         setSelectedCostId(null);
         setEditingAssignmentId(null);
         setAllocations([]);
         loadData();
 
     } catch (error: any) {
-        alert('Error: ' + error.message);
+        toast.error('Error: ' + error.message);
     } finally {
         setLoading(false);
     }

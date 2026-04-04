@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
@@ -93,10 +94,10 @@ export const Fuel: React.FC = () => {
         if (error) throw error;
         
         await refreshCompanies(); // Refresh context to propagate changes
-        alert('Tasa de consumo global actualizada correctamente.');
+        toast('Tasa de consumo global actualizada correctamente.');
     } catch (error: any) {
         console.error('Error updating rate:', error);
-        alert('Error al actualizar: ' + error.message);
+        toast.error('Error al actualizar: ' + error.message);
     } finally {
         setConfigLoading(false);
     }
@@ -363,16 +364,16 @@ export const Fuel: React.FC = () => {
   const handleSaveLog = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCompany || !liters || !activity) {
-        alert('Complete todos los campos');
+        toast('Complete todos los campos');
         return;
     }
 
     if (distributeBy === 'sector' && !selectedSectorId) {
-        alert('Seleccione un sector');
+        toast('Seleccione un sector');
         return;
     }
     if (distributeBy === 'field' && !selectedFieldId) {
-        alert('Seleccione un campo');
+        toast('Seleccione un campo');
         return;
     }
 
@@ -398,7 +399,7 @@ export const Fuel: React.FC = () => {
             
             if (error) throw error;
             
-            alert('Registro actualizado exitosamente');
+            toast('Registro actualizado exitosamente');
             handleCancelEdit();
             
         } else {
@@ -415,7 +416,7 @@ export const Fuel: React.FC = () => {
                 const totalHa = allSectors.reduce((sum, s) => sum + Number(s.hectares), 0);
                 
                 if (totalHa === 0) {
-                    alert('La empresa no tiene hectáreas definidas en ningún sector.');
+                    toast('La empresa no tiene hectáreas definidas en ningún sector.');
                     setLoading(false);
                     return;
                 }
@@ -443,14 +444,14 @@ export const Fuel: React.FC = () => {
                 // Distribute by Field Logic
                 const fieldSectors = sectors.filter(s => s.field_id === selectedFieldId);
                 if (fieldSectors.length === 0) {
-                    alert('El campo seleccionado no tiene sectores asociados.');
+                    toast('El campo seleccionado no tiene sectores asociados.');
                     setLoading(false);
                     return;
                 }
     
                 const totalHa = fieldSectors.reduce((sum, s) => sum + Number(s.hectares), 0);
                 if (totalHa === 0) {
-                    alert('Los sectores del campo no tienen hectáreas definidas.');
+                    toast('Los sectores del campo no tienen hectáreas definidas.');
                     setLoading(false);
                     return;
                 }
@@ -491,7 +492,7 @@ export const Fuel: React.FC = () => {
                 if (error) throw error;
             }
             
-            alert('Consumo registrado exitosamente');
+            toast('Consumo registrado exitosamente');
             // Reset form
             setActivity('');
             setLiters('');
@@ -502,7 +503,7 @@ export const Fuel: React.FC = () => {
 
     } catch (error: any) {
         console.error('Error saving log:', error);
-        alert('Error: ' + error.message);
+        toast.error('Error: ' + error.message);
     } finally {
         setLoading(false);
     }
@@ -517,7 +518,7 @@ export const Fuel: React.FC = () => {
           .eq('id', id);
 
       if (error) {
-          alert('Error al eliminar');
+          toast.error('Error al eliminar');
       } else {
           loadStockAndLogs();
       }
@@ -551,11 +552,11 @@ export const Fuel: React.FC = () => {
 
           if (error) throw error;
           
-          alert('Registros eliminados exitosamente.');
+          toast('Registros eliminados exitosamente.');
           await loadStockAndLogs();
       } catch (error: any) {
           console.error('Error deleting all logs:', error);
-          alert('Error al eliminar registros: ' + error.message);
+          toast.error('Error al eliminar registros: ' + error.message);
       } finally {
           setLoading(false);
       }

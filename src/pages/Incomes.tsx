@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import React, { useState, useEffect } from 'react';
 import { DollarSign, Plus, Save, Loader2, AlertCircle, Trash2, Edit2, Download } from 'lucide-react';
 import { supabase } from '../supabase/client';
@@ -125,7 +126,7 @@ export function Incomes() {
         setEditingIncome({});
         loadData();
     } catch (error: any) {
-        alert('Error: ' + error.message);
+        toast.error('Error: ' + error.message);
     } finally {
         setLoading(false);
     }
@@ -138,7 +139,7 @@ export function Incomes() {
           if (error) throw error;
           loadData();
       } catch (err: any) {
-          alert('Error al eliminar: ' + err.message);
+          toast.error('Error al eliminar: ' + err.message);
       }
   };
 

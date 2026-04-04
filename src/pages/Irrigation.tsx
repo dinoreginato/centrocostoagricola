@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
@@ -286,7 +287,7 @@ export const Irrigation: React.FC = () => {
           loadData();
       } catch (error: any) {
           console.error('Error deleting:', error);
-          alert('Error: ' + error.message);
+          toast.error('Error: ' + error.message);
       } finally {
           setLoading(false);
       }
@@ -309,7 +310,7 @@ export const Irrigation: React.FC = () => {
              throw rpcError; 
         }
 
-        alert('Todas las asignaciones han sido eliminadas.');
+        toast('Todas las asignaciones han sido eliminadas.');
         loadData();
     } catch (error: any) {
          // Fallback implementation
@@ -322,7 +323,7 @@ export const Irrigation: React.FC = () => {
             if (fetchError) throw fetchError;
 
             if (!assignments || assignments.length === 0) {
-                alert('No hay asignaciones para eliminar.');
+                toast('No hay asignaciones para eliminar.');
                 return;
             }
 
@@ -338,12 +339,12 @@ export const Irrigation: React.FC = () => {
                 
                 if (deleteError) throw deleteError;
             }
-             alert('Todas las asignaciones han sido eliminadas (Método Manual).');
+             toast('Todas las asignaciones han sido eliminadas (Método Manual).');
              loadData();
 
          } catch (manualError: any) {
             console.error('Error deleting all:', manualError);
-            alert('Error al eliminar: ' + manualError.message);
+            toast.error('Error al eliminar: ' + manualError.message);
          }
     } finally {
         setLoading(false);
@@ -377,18 +378,18 @@ export const Irrigation: React.FC = () => {
     if (distributeBy === 'company') {
         // Distribute by Company (All Fields)
         if (fieldTotalAmount === 0) {
-            alert('Ingrese un monto válido');
+            toast('Ingrese un monto válido');
             return;
         }
         if (!editingAssignmentId) {
              if (selectedItem.remaining_amount < 0) {
                   if (fieldTotalAmount < selectedItem.remaining_amount - 1) {
-                       alert(`El monto excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
+                       toast(`El monto excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
                        return;
                   }
              } else {
                   if (fieldTotalAmount > selectedItem.remaining_amount + 1) {
-                       alert(`El monto excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
+                       toast(`El monto excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
                        return;
                   }
              }
@@ -398,7 +399,7 @@ export const Irrigation: React.FC = () => {
         const totalHa = allSectors.reduce((sum, s) => sum + Number(s.hectares), 0);
         
         if (totalHa === 0) {
-            alert('La empresa no tiene hectáreas definidas en ningún sector.');
+            toast('La empresa no tiene hectáreas definidas en ningún sector.');
             return;
         }
 
@@ -411,18 +412,18 @@ export const Irrigation: React.FC = () => {
 
     } else if (distributeBy === 'field') {
         if (!selectedFieldId || fieldTotalAmount === 0) {
-            alert('Seleccione un campo y un monto válido');
+            toast('Seleccione un campo y un monto válido');
             return;
         }
         if (!editingAssignmentId) {
              if (selectedItem.remaining_amount < 0) {
                   if (fieldTotalAmount < selectedItem.remaining_amount - 1) {
-                       alert(`El monto excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
+                       toast(`El monto excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
                        return;
                   }
              } else {
                   if (fieldTotalAmount > selectedItem.remaining_amount + 1) {
-                       alert(`El monto excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
+                       toast(`El monto excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
                        return;
                   }
              }
@@ -432,14 +433,14 @@ export const Irrigation: React.FC = () => {
         const fieldSectors = sectors.filter(s => s.field_id === selectedFieldId);
         
         if (fieldSectors.length === 0) {
-            alert('El campo seleccionado no tiene sectores asociados.');
+            toast('El campo seleccionado no tiene sectores asociados.');
             return;
         }
 
         const totalHa = fieldSectors.reduce((sum, s) => sum + Number(s.hectares), 0);
         
         if (totalHa === 0) {
-            alert('El campo seleccionado no tiene hectáreas registradas');
+            toast('El campo seleccionado no tiene hectáreas registradas');
             return;
         }
 
@@ -457,18 +458,18 @@ export const Irrigation: React.FC = () => {
         if (!editingAssignmentId) {
              if (selectedItem.remaining_amount < 0) {
                   if (totalAllocated < selectedItem.remaining_amount - 1) {
-                       alert(`El monto asignado (${formatCLP(totalAllocated)}) excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
+                       toast(`El monto asignado (${formatCLP(totalAllocated)}) excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
                        return;
                   }
              } else {
                   if (totalAllocated > selectedItem.remaining_amount + 1) {
-                       alert(`El monto asignado (${formatCLP(totalAllocated)}) excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
+                       toast(`El monto asignado (${formatCLP(totalAllocated)}) excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
                        return;
                   }
              }
         }
         if (allocations.some(a => !a.sector_id || a.amount === 0)) {
-            alert('Complete todos los campos de sector y monto distinto de 0');
+            toast('Complete todos los campos de sector y monto distinto de 0');
             return;
         }
 
@@ -495,7 +496,7 @@ export const Irrigation: React.FC = () => {
                 .eq('id', editingAssignmentId);
 
             if (error) throw error;
-            alert('Asignación actualizada exitosamente');
+            toast('Asignación actualizada exitosamente');
         } else {
             // Insert multiple
             const { error } = await supabase
@@ -503,7 +504,7 @@ export const Irrigation: React.FC = () => {
                 .insert(payload);
 
             if (error) throw error;
-            alert('Asignaciones guardadas exitosamente');
+            toast('Asignaciones guardadas exitosamente');
         }
 
         setSelectedItemId(null);
@@ -514,7 +515,7 @@ export const Irrigation: React.FC = () => {
 
     } catch (error: any) {
         console.error('Error saving:', error);
-        alert('Error: ' + error.message);
+        toast.error('Error: ' + error.message);
     } finally {
         setLoading(false);
     }

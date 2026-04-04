@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
@@ -440,7 +441,7 @@ export const Machinery: React.FC = () => {
 
       } catch (error: any) {
           console.error('Error loading item for clone:', error);
-          alert('Error al clonar: ' + error.message);
+          toast.error('Error al clonar: ' + error.message);
       } finally {
           setLoading(false);
       }
@@ -513,7 +514,7 @@ export const Machinery: React.FC = () => {
 
       } catch (error: any) {
           console.error('Error loading item for edit:', error);
-          alert('Error al cargar el item para editar: ' + error.message);
+          toast.error('Error al cargar el item para editar: ' + error.message);
       } finally {
           setLoading(false);
       }
@@ -534,7 +535,7 @@ export const Machinery: React.FC = () => {
           loadData();
       } catch (error: any) {
           console.error('Error deleting:', error);
-          alert('Error: ' + error.message);
+          toast.error('Error: ' + error.message);
       } finally {
           setLoading(false);
       }
@@ -553,7 +554,7 @@ export const Machinery: React.FC = () => {
 
           if (deleteError) throw deleteError;
 
-          alert('Item reseteado. Ahora aparecerá en la lista de pendientes para asignar nuevamente.');
+          toast('Item reseteado. Ahora aparecerá en la lista de pendientes para asignar nuevamente.');
           await loadData();
           
           // Optionally, we could try to select it automatically, but let's just refresh for now as it's safer.
@@ -563,7 +564,7 @@ export const Machinery: React.FC = () => {
 
       } catch (error: any) {
           console.error('Error redistributing:', error);
-          alert('Error al redistribuir: ' + error.message);
+          toast.error('Error al redistribuir: ' + error.message);
       } finally {
           setLoading(false);
       }
@@ -594,7 +595,7 @@ export const Machinery: React.FC = () => {
              throw rpcError; 
         }
 
-        alert('Todas las asignaciones han sido eliminadas.');
+        toast('Todas las asignaciones han sido eliminadas.');
         loadData();
     } catch (error: any) {
          // Fallback implementation if RPC is missing
@@ -607,7 +608,7 @@ export const Machinery: React.FC = () => {
             if (fetchError) throw fetchError;
 
             if (!assignments || assignments.length === 0) {
-                alert('No hay asignaciones para eliminar.');
+                toast('No hay asignaciones para eliminar.');
                 return;
             }
 
@@ -623,12 +624,12 @@ export const Machinery: React.FC = () => {
                 
                 if (deleteError) throw deleteError;
             }
-             alert('Todas las asignaciones han sido eliminadas (Método Manual).');
+             toast('Todas las asignaciones han sido eliminadas (Método Manual).');
              loadData();
              
          } catch (manualError: any) {
             console.error('Error deleting all:', manualError);
-            alert('Error al eliminar: ' + manualError.message);
+            toast.error('Error al eliminar: ' + manualError.message);
          }
     } finally {
         setLoading(false);
@@ -674,7 +675,7 @@ export const Machinery: React.FC = () => {
         loadMachines();
     } catch (error: any) {
         console.error('Error saving machine:', error);
-        alert('Error: ' + error.message);
+        toast.error('Error: ' + error.message);
     } finally {
         setLoading(false);
     }
@@ -694,7 +695,7 @@ export const Machinery: React.FC = () => {
           loadMachines();
       } catch (error: any) {
           console.error('Error deleting machine:', error);
-          alert('Error: ' + error.message);
+          toast.error('Error: ' + error.message);
       } finally {
           setLoading(false);
       }
@@ -723,7 +724,7 @@ export const Machinery: React.FC = () => {
     const selectedItem = editingItem || pendingItems.find(p => p.id === selectedItemId);
     
     if (!selectedItem) {
-        alert('Error: No se encontró la información del item seleccionado.');
+        toast.error('Error: No se encontró la información del item seleccionado.');
         return;
     }
 
@@ -732,18 +733,18 @@ export const Machinery: React.FC = () => {
     if (distributeBy === 'company') {
         // Distribute by Company (All Fields)
         if (fieldTotalAmount === 0) {
-            alert('Ingrese un monto válido');
+            toast('Ingrese un monto válido');
             return;
         }
         if (!editingAssignmentId) {
             if (selectedItem.remaining_amount < 0) {
                 if (fieldTotalAmount < selectedItem.remaining_amount - 1) {
-                    alert(`El monto excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
+                    toast(`El monto excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
                     return;
                 }
             } else {
                 if (fieldTotalAmount > selectedItem.remaining_amount + 1) {
-                    alert(`El monto excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
+                    toast(`El monto excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
                     return;
                 }
             }
@@ -753,7 +754,7 @@ export const Machinery: React.FC = () => {
         const totalHa = allSectors.reduce((sum, s) => sum + Number(s.hectares), 0);
         
         if (totalHa === 0) {
-            alert('La empresa no tiene hectáreas definidas en ningún sector.');
+            toast('La empresa no tiene hectáreas definidas en ningún sector.');
             return;
         }
 
@@ -767,18 +768,18 @@ export const Machinery: React.FC = () => {
 
     } else if (distributeBy === 'field') {
         if (!selectedFieldId || fieldTotalAmount === 0) {
-            alert('Seleccione un campo y un monto válido');
+            toast('Seleccione un campo y un monto válido');
             return;
         }
         if (!editingAssignmentId) {
             if (selectedItem.remaining_amount < 0) {
                 if (fieldTotalAmount < selectedItem.remaining_amount - 1) {
-                    alert(`El monto excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
+                    toast(`El monto excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
                     return;
                 }
             } else {
                 if (fieldTotalAmount > selectedItem.remaining_amount + 1) {
-                    alert(`El monto excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
+                    toast(`El monto excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
                     return;
                 }
             }
@@ -789,7 +790,7 @@ export const Machinery: React.FC = () => {
         const totalHa = fieldSectors.reduce((sum, s) => sum + Number(s.hectares), 0);
         
         if (totalHa === 0) {
-            alert('El campo seleccionado no tiene hectáreas registradas');
+            toast('El campo seleccionado no tiene hectáreas registradas');
             return;
         }
 
@@ -808,18 +809,18 @@ export const Machinery: React.FC = () => {
         if (!editingAssignmentId) {
             if (selectedItem.remaining_amount < 0) {
                 if (totalAllocated < selectedItem.remaining_amount - 1) {
-                    alert(`El monto asignado (${formatCLP(totalAllocated)}) excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
+                    toast(`El monto asignado (${formatCLP(totalAllocated)}) excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
                     return;
                 }
             } else {
                 if (totalAllocated > selectedItem.remaining_amount + 1) {
-                    alert(`El monto asignado (${formatCLP(totalAllocated)}) excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
+                    toast(`El monto asignado (${formatCLP(totalAllocated)}) excede el pendiente (${formatCLP(selectedItem.remaining_amount)})`);
                     return;
                 }
             }
         }
         if (allocations.some(a => !a.sector_id || a.amount === 0) && distributeBy === 'sector') {
-        alert('Complete todos los campos de sector y monto distinto de 0');
+        toast('Complete todos los campos de sector y monto distinto de 0');
         return;
     }
 
@@ -866,7 +867,7 @@ export const Machinery: React.FC = () => {
 
              if (syncError) throw syncError;
 
-            alert('Asignación actualizada (Fecha y Máquina sincronizadas en todo el item)');
+            toast('Asignación actualizada (Fecha y Máquina sincronizadas en todo el item)');
         } else {
             // Insert multiple
             const { error } = await supabase
@@ -874,7 +875,7 @@ export const Machinery: React.FC = () => {
                 .insert(payload);
 
             if (error) throw error;
-            alert('Asignaciones guardadas exitosamente');
+            toast('Asignaciones guardadas exitosamente');
         }
 
         setSelectedItemId(null);
@@ -885,7 +886,7 @@ export const Machinery: React.FC = () => {
 
     } catch (error: any) {
         console.error('Error saving:', error);
-        alert('Error: ' + error.message);
+        toast.error('Error: ' + error.message);
     } finally {
         setLoading(false);
     }
@@ -1002,7 +1003,7 @@ export const Machinery: React.FC = () => {
             .order('assigned_date', { ascending: false });
 
         if (!data || data.length === 0) {
-            alert('No hay gastos de maquinaria registrados para generar el reporte.');
+            toast('No hay gastos de maquinaria registrados para generar el reporte.');
             return;
         }
 
@@ -1082,7 +1083,7 @@ export const Machinery: React.FC = () => {
 
     } catch (error) {
         console.error('Error generating general report:', error);
-        alert('Error al generar el reporte general.');
+        toast.error('Error al generar el reporte general.');
     } finally {
         setLoading(false);
     }

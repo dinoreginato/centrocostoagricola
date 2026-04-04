@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
@@ -110,7 +111,7 @@ export const Dashboard: React.FC = () => {
         loadDashboardData();
     } catch (err) {
         console.error('Error saving rain:', err);
-        alert('Error al registrar lluvia');
+        toast.error('Error al registrar lluvia');
     }
   };
 
@@ -556,7 +557,7 @@ export const Dashboard: React.FC = () => {
     const isSystemAdmin = user.email === 'dino.reginato@gmail.com';
     
     if (!isOwner && !isSystemAdmin) {
-        alert('Solo el dueño de la empresa puede eliminarla.');
+        toast('Solo el dueño de la empresa puede eliminarla.');
         return;
     }
 
@@ -564,7 +565,7 @@ export const Dashboard: React.FC = () => {
     
     const confirmName = prompt(`Para confirmar, escribe el nombre de la empresa: "${selectedCompany.name}"`);
     if (confirmName !== selectedCompany.name) {
-        alert('El nombre no coincide. Eliminación cancelada.');
+        toast('El nombre no coincide. Eliminación cancelada.');
         return;
     }
 
@@ -577,12 +578,12 @@ export const Dashboard: React.FC = () => {
         
         if (error) throw error;
         
-        alert('Empresa eliminada exitosamente.');
+        toast('Empresa eliminada exitosamente.');
         await refreshCompanies();
         
     } catch (err: any) {
         console.error('Error deleting company:', err);
-        alert('Error al eliminar: ' + err.message);
+        toast.error('Error al eliminar: ' + err.message);
     } finally {
         setIsDeleting(false);
     }
@@ -616,7 +617,7 @@ export const Dashboard: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Error creating company:', error);
-      alert('Error al crear la empresa: ' + (error.message || 'Error desconocido'));
+      toast.error('Error al crear la empresa: ' + (error.message || 'Error desconocido'));
     } finally {
       setIsCreating(false);
     }
@@ -726,7 +727,7 @@ export const Dashboard: React.FC = () => {
                  type="button"
                  onClick={() => {
                     if (user?.email !== 'dino.reginato@gmail.com') {
-                        alert('Solo el administrador del sistema puede crear nuevas empresas.');
+                        toast('Solo el administrador del sistema puede crear nuevas empresas.');
                         return;
                     }
                     setShowNewCompanyModal(true);
@@ -794,10 +795,10 @@ export const Dashboard: React.FC = () => {
                                                         })
                                                         .eq('id', inv.id);
                                                     if (error) throw error;
-                                                    alert('Factura marcada como pagada');
+                                                    toast('Factura marcada como pagada');
                                                     loadDashboardData(); // Reload
                                                 } catch (err) {
-                                                    alert('Error al actualizar factura');
+                                                    toast.error('Error al actualizar factura');
                                                 }
                                             }
                                         }}

@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
@@ -111,7 +112,7 @@ export const Inventory: React.FC = () => {
         }).filter(p => p.commercial_name && p.registration_number);
 
         if (mappedData.length === 0) {
-            alert(`No se encontraron columnas compatibles.\nColumnas detectadas: ${firstRowKeys.join(', ')}\n\nEsperadas: "Nombre Comercial", "Sustancias Activas", "Concentración", "Autorización (opcional)"`);
+            toast(`No se encontraron columnas compatibles.\nColumnas detectadas: ${firstRowKeys.join(', ')}\n\nEsperadas: "Nombre Comercial", "Sustancias Activas", "Concentración", "Autorización (opcional)"`);
             return;
         }
 
@@ -138,14 +139,14 @@ export const Inventory: React.FC = () => {
         }
 
         if (insertedCount === 0 && lastError) {
-            alert(`Error al importar: ${lastError}`);
+            toast.error(`Error al importar: ${lastError}`);
         } else {
-            alert(`Importación finalizada. ${insertedCount} productos actualizados/insertados.`);
+            toast(`Importación finalizada. ${insertedCount} productos actualizados/insertados.`);
         }
 
     } catch (error: any) {
         console.error('Error importing SAG file:', error);
-        alert('Error al importar: ' + error.message);
+        toast.error('Error al importar: ' + error.message);
     } finally {
         setLoading(false);
         if (sagFileInputRef.current) sagFileInputRef.current.value = '';
@@ -224,7 +225,7 @@ export const Inventory: React.FC = () => {
         setHistoryData(data || []);
     } catch (error) {
         console.error('Error loading history:', error);
-        alert('Error al cargar historial');
+        toast.error('Error al cargar historial');
     } finally {
         setLoadingHistory(false);
     }
@@ -247,7 +248,7 @@ export const Inventory: React.FC = () => {
       // setup will block DELETE. Instead of failing, we will catch the error and hide it.
       if (deleteError) {
           if (deleteError.code === '23503') { // Foreign key violation
-             alert(`Este producto tiene historial contable y no puede ser borrado físicamente de la base de datos para no romper la contabilidad.\n\nEn su lugar, ajustaremos su stock a 0 y lo quitaremos de tu vista principal.`);
+             toast(`Este producto tiene historial contable y no puede ser borrado físicamente de la base de datos para no romper la contabilidad.\n\nEn su lugar, ajustaremos su stock a 0 y lo quitaremos de tu vista principal.`);
              // Soft delete workaround: update stock to 0 and maybe change category to 'Archivado'
              await supabase.from('products').update({ 
                  current_stock: 0, 
@@ -263,11 +264,11 @@ export const Inventory: React.FC = () => {
       }
       
       setProducts(products.filter(p => p.id !== id));
-      alert('Producto eliminado correctamente');
+      toast('Producto eliminado correctamente');
 
     } catch (error: any) {
       console.error('Error checking/deleting product:', error);
-      alert('Error: ' + error.message);
+      toast.error('Error: ' + error.message);
     }
   };
 
@@ -348,10 +349,10 @@ export const Inventory: React.FC = () => {
       ));
       
       cancelEdit();
-      alert('Producto actualizado');
+      toast('Producto actualizado');
     } catch (error: any) {
       console.error('Error updating product:', error);
-      alert('Error al actualizar: ' + error.message);
+      toast.error('Error al actualizar: ' + error.message);
     }
   };
 
@@ -420,7 +421,7 @@ export const Inventory: React.FC = () => {
         });
         
         if (criticalProducts.length === 0) {
-          alert('No hay productos bajo el stock mínimo o no hay necesidades proyectadas para generar la lista.');
+          toast('No hay productos bajo el stock mínimo o no hay necesidades proyectadas para generar la lista.');
           return;
         }
 
@@ -467,7 +468,7 @@ export const Inventory: React.FC = () => {
         doc.save(`Lista_Compras_${companyName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
     } catch(err) {
         console.error(err);
-        alert('Error al generar la lista de compras.');
+        toast.error('Error al generar la lista de compras.');
     }
   };
 

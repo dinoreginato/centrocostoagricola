@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
@@ -103,7 +104,7 @@ export const PhytosanitaryPrograms: React.FC = () => {
 
     } catch (err: any) {
       console.error(err);
-      alert('Error cargando programas: ' + err.message);
+      toast.error('Error cargando programas: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -142,7 +143,7 @@ export const PhytosanitaryPrograms: React.FC = () => {
       setShowProgramModal(false);
       loadData();
     } catch (err: any) {
-      alert(err.message);
+      toast(err.message);
     } finally {
       setLoading(false);
     }
@@ -151,7 +152,7 @@ export const PhytosanitaryPrograms: React.FC = () => {
   const handleDeleteProgram = async (id: string) => {
     if (!confirm('¿Eliminar programa y todos sus eventos?')) return;
     const { error } = await supabase.from('phytosanitary_programs').delete().eq('id', id);
-    if (error) alert('Error: ' + error.message);
+    if (error) toast.error('Error: ' + error.message);
     else loadData();
   };
 
@@ -178,7 +179,7 @@ export const PhytosanitaryPrograms: React.FC = () => {
       setShowEventModal(false);
       loadData();
     } catch (err: any) {
-      alert(err.message);
+      toast(err.message);
     } finally {
       setLoading(false);
     }
@@ -187,7 +188,7 @@ export const PhytosanitaryPrograms: React.FC = () => {
   const handleDeleteEvent = async (id: string) => {
     if (!confirm('¿Eliminar esta etapa?')) return;
     const { error } = await supabase.from('program_events').delete().eq('id', id);
-    if (error) alert('Error: ' + error.message);
+    if (error) toast.error('Error: ' + error.message);
     else loadData();
   };
 
@@ -213,7 +214,7 @@ export const PhytosanitaryPrograms: React.FC = () => {
       setShowProductModal(false);
       loadData();
     } catch (err: any) {
-      alert(err.message);
+      toast(err.message);
     } finally {
       setLoading(false);
     }
@@ -222,7 +223,7 @@ export const PhytosanitaryPrograms: React.FC = () => {
   const handleDeleteProduct = async (id: string) => {
     if (!confirm('¿Eliminar producto de esta etapa?')) return;
     const { error } = await supabase.from('program_event_products').delete().eq('id', id);
-    if (error) alert('Error: ' + error.message);
+    if (error) toast.error('Error: ' + error.message);
     else loadData();
   };
 
@@ -238,7 +239,7 @@ export const PhytosanitaryPrograms: React.FC = () => {
           const jsonData = utils.sheet_to_json(worksheet);
 
           if (jsonData.length === 0) {
-              alert("El archivo está vacío.");
+              toast("El archivo está vacío.");
               return;
           }
 
@@ -301,12 +302,12 @@ export const PhytosanitaryPrograms: React.FC = () => {
               }
           }
 
-          alert('Programa importado con éxito. Revise si algunos productos no se enlazaron porque el nombre no coincide exactamente con la bodega.');
+          toast('Programa importado con éxito. Revise si algunos productos no se enlazaron porque el nombre no coincide exactamente con la bodega.');
           loadData();
 
       } catch (err: any) {
           console.error(err);
-          alert('Error importando archivo: ' + err.message);
+          toast.error('Error importando archivo: ' + err.message);
       } finally {
           setLoading(false);
           if (fileInputRef.current) fileInputRef.current.value = '';

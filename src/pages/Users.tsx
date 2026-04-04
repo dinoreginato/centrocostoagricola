@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 
 import React, { useState, useEffect } from 'react';
 import { useCompany, UserRole } from '../contexts/CompanyContext';
@@ -54,10 +55,10 @@ export const Users: React.FC = () => {
       try {
           const { error } = await supabase.rpc('delete_company_admin', { target_company_id: id });
           if (error) throw error;
-          alert('Empresa eliminada correctamente.');
+          toast('Empresa eliminada correctamente.');
           loadAllCompaniesAdmin();
       } catch (err: any) {
-          alert('Error: ' + err.message);
+          toast.error('Error: ' + err.message);
       }
   };
 
@@ -142,7 +143,7 @@ export const Users: React.FC = () => {
       setMembers(members.filter(m => m.member_id !== memberId));
     } catch (error) {
       console.error('Error removing member:', error);
-      alert('Error al eliminar usuario.');
+      toast.error('Error al eliminar usuario.');
     }
   };
 

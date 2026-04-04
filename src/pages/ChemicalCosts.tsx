@@ -131,7 +131,6 @@ export const ChemicalCosts: React.FC = () => {
             processedItems.push({
               id: item.id,
               date: inv.invoice_date,
-              product_number: inv.invoice_number,
               product_name: item.products?.name || 'Producto Desconocido',
               category: item.category || 'Sin Categoría',
               quantity,

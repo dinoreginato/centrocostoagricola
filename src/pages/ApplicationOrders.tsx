@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
@@ -198,7 +199,7 @@ export const ApplicationOrders: React.FC = () => {
 
     } catch (error: any) {
         console.error('Error loading data:', error);
-        alert('Error cargando datos: ' + error.message);
+        toast.error('Error cargando datos: ' + error.message);
     } finally {
         setLoading(false);
     }
@@ -285,7 +286,7 @@ export const ApplicationOrders: React.FC = () => {
             };
         });
         setCurrentOrder(prev => ({ ...prev, items: newItems }));
-        alert('Se han cargado los productos del programa. Seleccione un sector para calcular los totales automáticamente.');
+        toast('Se han cargado los productos del programa. Seleccione un sector para calcular los totales automáticamente.');
     }
   };
 
@@ -297,7 +298,7 @@ export const ApplicationOrders: React.FC = () => {
       const sector = field?.sectors.find(s => s.id === currentOrder.sector_id);
       
       if (!sector) {
-          alert('Seleccione un sector primero para calcular totales.');
+          toast('Seleccione un sector primero para calcular totales.');
           return;
       }
 
@@ -318,7 +319,7 @@ export const ApplicationOrders: React.FC = () => {
           if (currentOrder.water_liters_per_hectare && currentOrder.water_liters_per_hectare > 0) {
               doseHa = (dose100L * currentOrder.water_liters_per_hectare) / 100;
           } else {
-              alert('Debe ingresar el Mojamiento (L/ha) para calcular la dosis por hectárea.');
+              toast('Debe ingresar el Mojamiento (L/ha) para calcular la dosis por hectárea.');
               return;
           }
       }
@@ -326,7 +327,7 @@ export const ApplicationOrders: React.FC = () => {
       totalQty = doseHa * sector.hectares;
 
       if (totalQty > product.current_stock) {
-          alert(`¡Advertencia de Stock!\n\nEstás ordenando aplicar ${totalQty.toFixed(2)} ${currentItem.unit_override || product.unit} de ${product.name}, pero solo tienes ${product.current_stock} en bodega.`);
+          toast(`¡Advertencia de Stock!\n\nEstás ordenando aplicar ${totalQty.toFixed(2)} ${currentItem.unit_override || product.unit} de ${product.name}, pero solo tienes ${product.current_stock} en bodega.`);
       }
 
       const newItem: OrderItem = {
@@ -358,7 +359,7 @@ export const ApplicationOrders: React.FC = () => {
 
   const handleSaveOrder = async () => {
       if (!currentOrder.field_id || !currentOrder.sector_id || !currentOrder.items?.length) {
-          alert('Complete los campos obligatorios (Campo, Sector, Items)');
+          toast('Complete los campos obligatorios (Campo, Sector, Items)');
           return;
       }
 
@@ -418,13 +419,13 @@ export const ApplicationOrders: React.FC = () => {
           const { error: itemsError } = await supabase.from('application_order_items').insert(itemsData);
           if (itemsError) throw itemsError;
 
-          alert('Orden guardada correctamente');
+          toast('Orden guardada correctamente');
           setIsEditing(false);
           loadData();
 
       } catch (error: any) {
           console.error('Error saving order:', error);
-          alert('Error al guardar: ' + error.message);
+          toast.error('Error al guardar: ' + error.message);
       } finally {
           setLoading(false);
       }
@@ -490,7 +491,7 @@ export const ApplicationOrders: React.FC = () => {
           loadData();
       } catch (error: any) {
           console.error('Error deleting order:', error);
-          alert('Error al eliminar: ' + error.message);
+          toast.error('Error al eliminar: ' + error.message);
       } finally {
           setLoading(false);
       }
@@ -605,11 +606,11 @@ export const ApplicationOrders: React.FC = () => {
               }
           }
 
-          alert('Orden completada exitosamente. Se ha registrado la aplicación y descontado el inventario.');
+          toast('Orden completada exitosamente. Se ha registrado la aplicación y descontado el inventario.');
           loadData();
       } catch (error: any) {
           console.error('Error completing order:', error);
-          alert('Error al completar la orden: ' + error.message);
+          toast.error('Error al completar la orden: ' + error.message);
       } finally {
           setLoading(false);
       }
@@ -835,7 +836,7 @@ export const ApplicationOrders: React.FC = () => {
                           onChange={e => {
                               const newStatus = e.target.value;
                               if (newStatus === 'completada') {
-                                  alert('Para marcar como completada y registrar el consumo en inventario, use el botón de "PENDIENTE" en la tabla principal.');
+                                  toast('Para marcar como completada y registrar el consumo en inventario, use el botón de "PENDIENTE" en la tabla principal.');
                                   return;
                               }
                               setCurrentOrder({...currentOrder, status: newStatus as any});

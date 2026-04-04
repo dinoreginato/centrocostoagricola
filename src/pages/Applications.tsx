@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
@@ -253,7 +254,7 @@ export const Applications: React.FC = () => {
     
     if (appsError) {
         console.error('Error loading applications:', appsError);
-        alert('Error cargando historial: ' + appsError.message);
+        toast.error('Error cargando historial: ' + appsError.message);
     } else {
         setApplications(appsData || []);
     }
@@ -305,12 +306,12 @@ export const Applications: React.FC = () => {
     if (!product || currentItem.quantity <= 0) return;
 
     if (currentItem.dose_input_type === 'hl' && waterVolumePerHectare <= 0) {
-        alert('Debe ingresar el Mojamiento (Volumen de agua) para calcular la dosis por concentración.');
+        toast('Debe ingresar el Mojamiento (Volumen de agua) para calcular la dosis por concentración.');
         return;
     }
 
     if (currentItem.quantity > product.current_stock) {
-      alert(`Stock insuficiente. Disponible: ${product.current_stock} ${product.unit}`);
+      toast(`Stock insuficiente. Disponible: ${product.current_stock} ${product.unit}`);
       return;
     }
 
@@ -365,11 +366,11 @@ export const Applications: React.FC = () => {
     try {
         const { error } = await supabase.rpc('delete_application_and_restore_stock', { target_application_id: id });
         if (error) throw error;
-        alert('Aplicación eliminada y stock restaurado exitosamente.');
+        toast('Aplicación eliminada y stock restaurado exitosamente.');
         loadData();
     } catch (error: any) {
         console.error('Error deleting application:', error);
-        alert('Error al eliminar: ' + error.message);
+        toast.error('Error al eliminar: ' + error.message);
     }
   };
 
@@ -664,11 +665,11 @@ export const Applications: React.FC = () => {
     try {
         const { error } = await supabase.rpc('delete_all_applications_restore_stock', { target_company_id: selectedCompany.id });
         if (error) throw error;
-        alert('Todas las aplicaciones han sido eliminadas y el stock restaurado.');
+        toast('Todas las aplicaciones han sido eliminadas y el stock restaurado.');
         loadData();
     } catch (error: any) {
         console.error('Error deleting all applications:', error);
-        alert('Error al eliminar todo: ' + error.message);
+        toast.error('Error al eliminar todo: ' + error.message);
     } finally {
         setLoading(false);
     }
@@ -803,7 +804,7 @@ export const Applications: React.FC = () => {
             }
         }
 
-        alert('Aplicación actualizada exitosamente');
+        toast('Aplicación actualizada exitosamente');
         handleCancelEdit(); // Reset form
 
       } else {
@@ -898,13 +899,13 @@ export const Applications: React.FC = () => {
             
             if (fuelError) {
                 console.error('Error creating fuel record:', fuelError);
-                alert('La aplicación se guardó, pero hubo un error registrando el petróleo: ' + fuelError.message);
+                toast('La aplicación se guardó, pero hubo un error registrando el petróleo: ' + fuelError.message);
             }
         } else {
             console.warn('Skipping fuel record: Sector not found or 0 hectares', sector);
         }
 
-        alert('Aplicación registrada exitosamente');
+        toast('Aplicación registrada exitosamente');
         handleCancelEdit(); // Reset form
       }
 
@@ -912,7 +913,7 @@ export const Applications: React.FC = () => {
 
     } catch (error: any) {
       console.error('Error saving application:', error);
-      alert('Error al guardar: ' + error.message);
+      toast.error('Error al guardar: ' + error.message);
     } finally {
       setLoading(false);
     }

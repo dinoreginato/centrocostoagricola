@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
@@ -185,7 +186,7 @@ export const Fields: React.FC = () => {
       setFields(fields.filter(f => f.id !== fieldId));
     } catch (error) {
       console.error('Error deleting field:', error);
-      alert('Error al eliminar el campo. Asegúrate de no tener registros asociados importantes.');
+      toast.error('Error al eliminar el campo. Asegúrate de no tener registros asociados importantes.');
     }
   };
 
