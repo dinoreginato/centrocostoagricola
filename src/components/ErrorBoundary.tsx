@@ -27,17 +27,17 @@ export class ErrorBoundary extends Component<Props, State> {
   public render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
-          <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full text-center">
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center p-4">
+          <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-lg max-w-md w-full text-center">
             <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 mb-6">
               <AlertOctagon className="h-8 w-8 text-red-600" />
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">¡Ups! Algo salió mal</h2>
-            <p className="text-sm text-gray-500 mb-6">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">¡Ups! Algo salió mal</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
               Ha ocurrido un error inesperado en la aplicación. Nuestro equipo técnico ha sido notificado.
             </p>
             {this.state.error && (
-              <div className="bg-gray-100 rounded p-3 mb-6 overflow-auto text-left">
+              <div className="bg-gray-100 dark:bg-gray-900 rounded p-3 mb-6 overflow-auto text-left">
                 <p className="text-xs text-red-800 font-mono break-all">
                   {this.state.error.toString()}
                 </p>

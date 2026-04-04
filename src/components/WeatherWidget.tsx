@@ -88,13 +88,13 @@ export const WeatherWidget: React.FC = () => {
   };
 
   return (
-    <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl shadow-lg p-6 text-white h-full relative overflow-hidden print:border print:border-gray-200 print:text-black print:bg-none print:bg-white print:shadow-none">
+    <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl shadow-lg p-6 text-white h-full relative overflow-hidden print:border print:border-gray-200 dark:border-gray-700 print:text-black print:bg-none print:bg-white dark:bg-gray-800 print:shadow-none">
       {/* Decorative background circle */}
-      <div className="absolute -top-10 -right-10 w-32 h-32 bg-white opacity-10 rounded-full blur-2xl print:hidden"></div>
+      <div className="absolute -top-10 -right-10 w-32 h-32 bg-white dark:bg-gray-800 opacity-10 rounded-full blur-2xl print:hidden"></div>
       
       <div className="flex justify-between items-start mb-4">
         <div>
-          <h3 className="text-blue-100 text-sm font-medium print:text-gray-500">Clima Actual</h3>
+          <h3 className="text-blue-100 text-sm font-medium print:text-gray-500 dark:text-gray-400">Clima Actual</h3>
           <p className="text-sm font-medium opacity-90">{weather.location}</p>
         </div>
         <WeatherIcon />
@@ -102,10 +102,10 @@ export const WeatherWidget: React.FC = () => {
 
       <div className="flex items-end space-x-2 mb-4">
         <span className="text-5xl font-bold">{weather.temp}°</span>
-        <span className="text-lg text-blue-100 mb-1 print:text-gray-600">{weather.description}</span>
+        <span className="text-lg text-blue-100 mb-1 print:text-gray-600 dark:text-gray-400">{weather.description}</span>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 text-sm text-blue-100 print:text-gray-500 mt-auto">
+      <div className="grid grid-cols-2 gap-4 text-sm text-blue-100 print:text-gray-500 dark:text-gray-400 mt-auto">
         <div className="flex items-center">
           <Droplets className="w-4 h-4 mr-1 opacity-70" />
           <span>{weather.humidity}% Hum.</span>

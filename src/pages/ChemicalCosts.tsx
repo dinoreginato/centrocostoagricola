@@ -210,40 +210,40 @@ export const ChemicalCosts: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Precios de Productos Químicos</h1>
-          <p className="text-sm text-gray-500">Histórico de costos valorizados en Dólares (Banco Central)</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Precios de Productos Químicos</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Histórico de costos valorizados en Dólares (Banco Central)</p>
         </div>
         
         <div className="mt-4 sm:mt-0 flex items-center space-x-3">
-            <div className="bg-white rounded-md shadow-sm border border-gray-300 flex">
+            <div className="bg-white dark:bg-gray-800 rounded-md shadow-sm border border-gray-300 dark:border-gray-600 flex">
                 <button
                     onClick={() => setViewMode('summary')}
                     className={`px-3 py-2 text-sm font-medium rounded-l-md ${
                         viewMode === 'summary' 
                         ? 'bg-green-50 text-green-700' 
-                        : 'text-gray-700 hover:bg-gray-50'
+                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900'
                     }`}
                 >
                     Resumen Mensual
                 </button>
                 <button
                     onClick={() => setViewMode('list')}
-                    className={`px-3 py-2 text-sm font-medium rounded-r-md border-l border-gray-300 ${
+                    className={`px-3 py-2 text-sm font-medium rounded-r-md border-l border-gray-300 dark:border-gray-600 ${
                         viewMode === 'list' 
                         ? 'bg-green-50 text-green-700' 
-                        : 'text-gray-700 hover:bg-gray-50'
+                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900'
                     }`}
                 >
                     Lista de Facturas
                 </button>
             </div>
 
-            <div className="flex items-center bg-white rounded-md shadow-sm border border-gray-300 px-3 py-2">
+            <div className="flex items-center bg-white dark:bg-gray-800 rounded-md shadow-sm border border-gray-300 dark:border-gray-600 px-3 py-2">
                 <Calendar className="h-4 w-4 text-gray-400 mr-2" />
                 <select 
                     value={selectedYear} 
                     onChange={(e) => setSelectedYear(Number(e.target.value))}
-                    className="border-none focus:ring-0 text-sm p-0 text-gray-700"
+                    className="border-none focus:ring-0 text-sm p-0 text-gray-700 dark:text-gray-300"
                 >
                     {[...Array(5)].map((_, i) => {
                         const year = new Date().getFullYear() - i;
@@ -255,7 +255,7 @@ export const ChemicalCosts: React.FC = () => {
       </div>
 
       {/* Search and Summary */}
-      <div className="bg-white p-4 rounded-lg shadow border border-gray-200 flex flex-col sm:flex-row justify-between items-center gap-4">
+      <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row justify-between items-center gap-4">
         <div className="relative w-full sm:w-96">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <Search className="h-4 w-4 text-gray-400" />
@@ -265,10 +265,10 @@ export const ChemicalCosts: React.FC = () => {
                 placeholder="Buscar producto, proveedor o categoría..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="block w-full pl-10 sm:text-sm border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500"
+                className="block w-full pl-10 sm:text-sm border-gray-300 dark:border-gray-600 rounded-md focus:ring-green-500 focus:border-green-500"
             />
         </div>
-        <div className="text-sm text-gray-500">
+        <div className="text-sm text-gray-500 dark:text-gray-400">
             {viewMode === 'list' 
                 ? `Mostrando ${filteredItems.length} registros`
                 : `Mostrando ${summaryData.length} productos`
@@ -281,43 +281,43 @@ export const ChemicalCosts: React.FC = () => {
             <Loader2 className="animate-spin h-8 w-8 text-green-600" />
         </div>
       ) : (
-        <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+        <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg">
             <div className="overflow-x-auto">
                 {viewMode === 'list' ? (
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead className="bg-gray-50 dark:bg-gray-900">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Proveedor / Factura</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Cantidad</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Dólar (Día)</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo Unit. (CLP)</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo Unit. (USD)</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total (USD)</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Fecha</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Producto</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Proveedor / Factura</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Cantidad</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Dólar (Día)</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Costo Unit. (CLP)</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Costo Unit. (USD)</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total (USD)</th>
                             </tr>
                         </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
+                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                             {filteredItems.map((item) => (
-                                <tr key={item.id} className="hover:bg-gray-50">
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                                         {new Date(item.date).toLocaleDateString()}
                                     </td>
                                     <td className="px-6 py-4">
-                                        <div className="text-sm font-medium text-gray-900">{item.product_name}</div>
-                                        <div className="text-xs text-gray-500">{item.category}</div>
+                                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{item.product_name}</div>
+                                        <div className="text-xs text-gray-500 dark:text-gray-400">{item.category}</div>
                                     </td>
                                     <td className="px-6 py-4">
-                                        <div className="text-sm text-gray-900">{item.supplier}</div>
-                                        <div className="text-xs text-gray-500">Fact: {item.invoice_number}</div>
+                                        <div className="text-sm text-gray-900 dark:text-gray-100">{item.supplier}</div>
+                                        <div className="text-xs text-gray-500 dark:text-gray-400">Fact: {item.invoice_number}</div>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                                        {item.quantity.toLocaleString('es-CL')} <span className="text-gray-500 text-xs">{item.unit}</span>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">
+                                        {item.quantity.toLocaleString('es-CL')} <span className="text-gray-500 dark:text-gray-400 text-xs">{item.unit}</span>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500 dark:text-gray-400">
                                         {item.exchange_rate > 0 ? formatCLP(item.exchange_rate) : '-'}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">
                                         {formatCLP(item.unit_price_clp)}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-green-700">
@@ -330,7 +330,7 @@ export const ChemicalCosts: React.FC = () => {
                             ))}
                             {filteredItems.length === 0 && (
                                 <tr>
-                                    <td colSpan={8} className="px-6 py-12 text-center text-gray-500">
+                                    <td colSpan={8} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
                                         No se encontraron registros de productos químicos en este periodo.
                                     </td>
                                 </tr>
@@ -338,36 +338,36 @@ export const ChemicalCosts: React.FC = () => {
                         </tbody>
                     </table>
                 ) : (
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead className="bg-gray-50 dark:bg-gray-900">
                             <tr>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10">Producto</th>
-                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
-                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total (Kg/Lt)</th>
-                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Promedio (USD)</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider sticky left-0 bg-gray-50 dark:bg-gray-900 z-10">Producto</th>
+                                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Categoría</th>
+                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total (Kg/Lt)</th>
+                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Promedio (USD)</th>
                                 {monthNames.map(m => (
-                                    <th key={m} className="px-2 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-20">{m}</th>
+                                    <th key={m} className="px-2 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-20">{m}</th>
                                 ))}
-                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider font-bold">Total Año</th>
+                                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider font-bold">Total Año</th>
                             </tr>
                         </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
+                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                             {summaryData.map((row, idx) => (
-                                <tr key={idx} className="hover:bg-gray-50">
-                                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0 bg-white z-10 border-r border-gray-100">
+                                <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900">
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100 sticky left-0 bg-white dark:bg-gray-800 z-10 border-r border-gray-100">
                                         {row.name}
                                     </td>
-                                    <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-500">
+                                    <td className="px-4 py-3 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
                                         {row.category}
                                     </td>
-                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900">
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">
                                         {row.total_qty.toLocaleString('es-CL', { maximumFractionDigits: 1 })} {row.unit}
                                     </td>
                                     <td className="px-4 py-3 whitespace-nowrap text-sm text-right font-bold text-green-700">
                                         {row.total_qty > 0 ? `$${(row.total_usd / row.total_qty).toFixed(2)}` : '-'}
                                     </td>
                                     {row.monthly.map((val, mIdx) => (
-                                        <td key={mIdx} className="px-2 py-3 whitespace-nowrap text-xs text-right text-gray-600">
+                                        <td key={mIdx} className="px-2 py-3 whitespace-nowrap text-xs text-right text-gray-600 dark:text-gray-400">
                                             {val > 0 ? `$${Math.round(val).toLocaleString('en-US')}` : '-'}
                                         </td>
                                     ))}
@@ -378,15 +378,15 @@ export const ChemicalCosts: React.FC = () => {
                             ))}
                             {summaryData.length === 0 && (
                                 <tr>
-                                    <td colSpan={17} className="px-6 py-12 text-center text-gray-500">
+                                    <td colSpan={17} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
                                         No se encontraron registros.
                                     </td>
                                 </tr>
                             )}
                         </tbody>
-                        <tfoot className="bg-gray-50 font-bold">
+                        <tfoot className="bg-gray-50 dark:bg-gray-900 font-bold">
                             <tr>
-                                <td colSpan={4} className="px-4 py-3 text-right text-sm text-gray-900">Totales Mensuales (USD):</td>
+                                <td colSpan={4} className="px-4 py-3 text-right text-sm text-gray-900 dark:text-gray-100">Totales Mensuales (USD):</td>
                                 {monthNames.map((_, mIdx) => {
                                     const monthTotal = summaryData.reduce((sum, row) => sum + row.monthly[mIdx], 0);
                                     return (

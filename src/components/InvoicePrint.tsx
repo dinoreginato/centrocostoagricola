@@ -19,14 +19,14 @@ export const InvoicePrint: React.FC<InvoicePrintProps> = ({ invoice, company, it
   const total = net + tax + exempt + specialTax;
 
   return (
-    <div className="bg-white p-8 max-w-4xl mx-auto text-black print:p-0 print:max-w-none print:mx-0 font-sans text-sm">
+    <div className="bg-white dark:bg-gray-800 p-8 max-w-4xl mx-auto text-black print:p-0 print:max-w-none print:mx-0 font-sans text-sm">
       {/* Header */}
       <div className="flex justify-between items-start mb-8">
         {/* Left: Supplier Info (Issuer) */}
         <div className="w-1/2 pr-8">
           <div className="flex items-center mb-4">
              {/* Placeholder for Logo */}
-             <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mr-4 print:border print:border-gray-300">
+             <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center mr-4 print:border print:border-gray-300 dark:border-gray-600">
                 <Building2 className="w-8 h-8 text-gray-400" />
              </div>
              <div>
@@ -79,7 +79,7 @@ export const InvoicePrint: React.FC<InvoicePrintProps> = ({ invoice, company, it
       <div className="mb-6">
         <table className="w-full border-collapse border border-gray-800 text-xs">
           <thead>
-            <tr className="bg-gray-100">
+            <tr className="bg-gray-100 dark:bg-gray-900">
               <th className="border border-gray-800 p-1 text-center w-16">CANTIDAD</th>
               <th className="border border-gray-800 p-1 text-center w-16">UNIDAD</th>
               <th className="border border-gray-800 p-1 text-left">DESCRIPCIÓN</th>
@@ -122,7 +122,7 @@ export const InvoicePrint: React.FC<InvoicePrintProps> = ({ invoice, company, it
           <div className="w-2/3 p-2 border-r border-gray-800 flex flex-col justify-between">
               <div>
                   <div className="font-bold mb-1">OBSERVACIONES:</div>
-                  <div className="italic text-gray-600 mb-2">{invoice.notes || 'Sin observaciones'}</div>
+                  <div className="italic text-gray-600 dark:text-gray-400 mb-2">{invoice.notes || 'Sin observaciones'}</div>
               </div>
               
               {/* Fake Timbre SII */}
@@ -160,14 +160,14 @@ export const InvoicePrint: React.FC<InvoicePrintProps> = ({ invoice, company, it
                       <span>{formatCLP(specialTax)}</span>
                   </div>
               )}
-              <div className="flex justify-between p-2 font-bold text-sm bg-gray-100">
+              <div className="flex justify-between p-2 font-bold text-sm bg-gray-100 dark:bg-gray-900">
                   <span>TOTAL:</span>
                   <span>{formatCLP(total)}</span>
               </div>
           </div>
       </div>
       
-      <div className="mt-4 text-[10px] text-right text-gray-500">
+      <div className="mt-4 text-[10px] text-right text-gray-500 dark:text-gray-400">
           "El acuse de recibo que se declara en este acto, de acuerdo a lo dispuesto en la letra b) del Art. 4, y la letra c) del Art. 5 de la Ley 19.983, acredita que la entrega de mercaderías o servicio(s) prestado(s) ha(n) sido recibido(s)."
       </div>
       

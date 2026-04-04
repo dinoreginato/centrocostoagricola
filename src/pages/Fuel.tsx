@@ -566,23 +566,23 @@ export const Fuel: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
                 <FuelIcon className="mr-2 h-8 w-8 text-indigo-600" />
                 Control de Petróleo y Combustible
             </h1>
-            <p className="text-sm text-gray-500">Stock y Bitácora de Consumo</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Stock y Bitácora de Consumo</p>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-200">
+      <div className="border-b border-gray-200 dark:border-gray-700">
         <nav className="-mb-px flex space-x-8" aria-label="Tabs">
             <button
                 onClick={() => setActiveTab('diesel')}
                 className={`${
                     activeTab === 'diesel'
                         ? 'border-indigo-500 text-indigo-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:border-gray-600'
                 } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
             >
                 Petróleo (Diesel)
@@ -592,7 +592,7 @@ export const Fuel: React.FC = () => {
                 className={`${
                     activeTab === 'gasoline'
                         ? 'border-indigo-500 text-indigo-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:border-gray-600'
                 } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
             >
                 Bencina (Gasolina)
@@ -602,7 +602,7 @@ export const Fuel: React.FC = () => {
                 className={`${
                     activeTab === 'config'
                         ? 'border-indigo-500 text-indigo-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:border-gray-600'
                 } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
             >
                 Configuración
@@ -611,8 +611,8 @@ export const Fuel: React.FC = () => {
       </div>
 
       {activeTab === 'config' ? (
-          <div className="bg-white rounded-lg shadow p-6 max-w-2xl">
-              <h2 className="text-lg font-medium text-gray-900 mb-4">Configuración General</h2>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 max-w-2xl">
+              <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Configuración General</h2>
               
               <div className="bg-purple-50 p-6 rounded-lg border border-purple-100">
                   <h3 className="text-md font-medium text-purple-900 mb-2">Consumo Automático por Aplicación</h3>
@@ -647,20 +647,20 @@ export const Fuel: React.FC = () => {
       <>
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
-              <div className="text-sm text-gray-500">Total Comprado</div>
-              <div className="text-2xl font-bold text-gray-900">{stats.totalPurchasedLiters.toLocaleString('es-CL')} L</div>
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border-l-4 border-blue-500">
+              <div className="text-sm text-gray-500 dark:text-gray-400">Total Comprado</div>
+              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.totalPurchasedLiters.toLocaleString('es-CL')} L</div>
           </div>
-          <div className="bg-white p-4 rounded-lg shadow border-l-4 border-green-500">
-              <div className="text-sm text-gray-500">Precio Promedio</div>
-              <div className="text-2xl font-bold text-gray-900">{formatCLP(stats.avgPrice)} / L</div>
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border-l-4 border-green-500">
+              <div className="text-sm text-gray-500 dark:text-gray-400">Precio Promedio</div>
+              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{formatCLP(stats.avgPrice)} / L</div>
           </div>
-          <div className="bg-white p-4 rounded-lg shadow border-l-4 border-orange-500">
-              <div className="text-sm text-gray-500">Total Consumido</div>
-              <div className="text-2xl font-bold text-gray-900">{stats.totalConsumedLiters.toLocaleString('es-CL')} L</div>
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border-l-4 border-orange-500">
+              <div className="text-sm text-gray-500 dark:text-gray-400">Total Consumido</div>
+              <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.totalConsumedLiters.toLocaleString('es-CL')} L</div>
           </div>
-          <div className={`bg-white p-4 rounded-lg shadow border-l-4 ${stats.currentStock < 1000 ? 'border-red-500' : 'border-indigo-500'}`}>
-              <div className="text-sm text-gray-500">Stock Actual</div>
+          <div className={`bg-white dark:bg-gray-800 p-4 rounded-lg shadow border-l-4 ${stats.currentStock < 1000 ? 'border-red-500' : 'border-indigo-500'}`}>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Stock Actual</div>
               <div className={`text-2xl font-bold ${stats.currentStock < 1000 ? 'text-red-600' : 'text-indigo-600'}`}>
                   {stats.currentStock.toLocaleString('es-CL')} L
               </div>
@@ -668,22 +668,22 @@ export const Fuel: React.FC = () => {
       </div>
 
       {/* Monthly Summary Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900">Resumen Mensual de Ingresos (Litros)</h3>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Resumen Mensual de Ingresos (Litros)</h3>
           </div>
           <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-900">
                       <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mes</th>
-                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Petróleo (Diesel)</th>
-                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Bencina 93</th>
-                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Bencina 95</th>
-                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Bencina</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Mes</th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Petróleo (Diesel)</th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Bencina 93</th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Bencina 95</th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Total Bencina</th>
                       </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                       {Object.keys(monthlySummary).sort().reverse().map(month => {
                           const data = monthlySummary[month];
                           const [year, monthNum] = month.split('-');
@@ -693,7 +693,7 @@ export const Fuel: React.FC = () => {
                           
                           return (
                               <tr key={month}>
-                                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 capitalize">
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100 capitalize">
                                       {monthName}
                                   </td>
                                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-blue-600 font-bold">
@@ -705,7 +705,7 @@ export const Fuel: React.FC = () => {
                                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-800 font-bold">
                                       {data.gas95.toLocaleString('es-CL')} L
                                   </td>
-                                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-bold">
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100 font-bold">
                                       {(data.gas93 + data.gas95).toLocaleString('es-CL')} L
                                   </td>
                               </tr>
@@ -713,7 +713,7 @@ export const Fuel: React.FC = () => {
                       })}
                       {Object.keys(monthlySummary).length === 0 && (
                           <tr>
-                              <td colSpan={5} className="px-6 py-4 text-center text-gray-500">No hay datos disponibles.</td>
+                              <td colSpan={5} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">No hay datos disponibles.</td>
                           </tr>
                       )}
                   </tbody>
@@ -723,8 +723,8 @@ export const Fuel: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Consumption Form */}
-        <div className="lg:col-span-1 bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center justify-between">
+        <div className="lg:col-span-1 bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4 flex items-center justify-between">
                 <span className="flex items-center">
                     <Droplet className="h-5 w-5 mr-2 text-indigo-500" />
                     {editingLogId ? 'Editar Consumo' : 'Registrar Consumo'}
@@ -741,21 +741,21 @@ export const Fuel: React.FC = () => {
             </h3>
             <form onSubmit={handleSaveLog} className="space-y-4">
                 <div>
-                    <label className="block text-sm font-medium text-gray-700">Fecha</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha</label>
                     <input 
                         type="date" 
                         value={date}
                         onChange={e => setDate(e.target.value)}
-                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                     />
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-gray-700">Actividad</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Actividad</label>
                     <div className="mt-1 flex gap-2">
                         <select
                             value={activity}
                             onChange={e => setActivity(e.target.value)}
-                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                         >
                             <option value="">Seleccione...</option>
                             <option value="Cosecha">Cosecha</option>
@@ -769,7 +769,7 @@ export const Fuel: React.FC = () => {
                     </div>
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-gray-700">Asignar A</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Asignar A</label>
                     <div className="mt-1 flex rounded-md shadow-sm">
                         <button
                             type="button"
@@ -777,7 +777,7 @@ export const Fuel: React.FC = () => {
                             className={`relative inline-flex items-center px-4 py-2 rounded-l-md border text-sm font-medium focus:z-10 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 ${
                                 distributeBy === 'sector'
                                     ? 'bg-indigo-600 border-indigo-600 text-white'
-                                    : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                                    : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900'
                             }`}
                         >
                             Un Sector
@@ -789,7 +789,7 @@ export const Fuel: React.FC = () => {
                             className={`-ml-px relative inline-flex items-center px-4 py-2 border text-sm font-medium focus:z-10 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 ${
                                 distributeBy === 'field'
                                     ? 'bg-indigo-600 border-indigo-600 text-white'
-                                    : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                                    : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900'
                             } ${editingLogId ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                             Todo un Campo
@@ -801,22 +801,22 @@ export const Fuel: React.FC = () => {
                             className={`-ml-px relative inline-flex items-center px-4 py-2 rounded-r-md border text-sm font-medium focus:z-10 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 ${
                                 distributeBy === 'company'
                                     ? 'bg-indigo-600 border-indigo-600 text-white'
-                                    : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
+                                    : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900'
                             } ${editingLogId ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                             Empresa General
                         </button>
                     </div>
-                    {editingLogId && <p className="text-xs text-gray-500 mt-1">Modo edición: Solo se puede editar el registro individual.</p>}
+                    {editingLogId && <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Modo edición: Solo se puede editar el registro individual.</p>}
                 </div>
 
                 {distributeBy === 'sector' ? (
                     <div>
-                        <label className="block text-sm font-medium text-gray-700">Sector Destino</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Sector Destino</label>
                         <select
                             value={selectedSectorId}
                             onChange={e => setSelectedSectorId(e.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                         >
                             <option value="">Seleccione Sector...</option>
                             {sectors.map(s => (
@@ -826,18 +826,18 @@ export const Fuel: React.FC = () => {
                     </div>
                 ) : distributeBy === 'field' ? (
                     <div>
-                        <label className="block text-sm font-medium text-gray-700">Campo Destino</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Campo Destino</label>
                         <select
                             value={selectedFieldId}
                             onChange={e => setSelectedFieldId(e.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                         >
                             <option value="">Seleccione Campo...</option>
                             {fields.map(f => (
                                 <option key={f.id} value={f.id}>{f.name}</option>
                             ))}
                         </select>
-                        <p className="mt-1 text-xs text-gray-500">El consumo se distribuirá proporcionalmente por hectárea entre todos los sectores de este campo.</p>
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">El consumo se distribuirá proporcionalmente por hectárea entre todos los sectores de este campo.</p>
                     </div>
                 ) : (
                     <div>
@@ -870,18 +870,18 @@ export const Fuel: React.FC = () => {
                 )}
 
                 <div>
-                    <label className="block text-sm font-medium text-gray-700">Litros Consumidos</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Litros Consumidos</label>
                     <div className="mt-1 relative rounded-md shadow-sm">
                         <input
                             type="number"
                             step="0.1"
                             value={liters}
                             onChange={e => setLiters(Number(e.target.value))}
-                            className="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-3 pr-12 sm:text-sm border-gray-300 rounded-md"
+                            className="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-3 pr-12 sm:text-sm border-gray-300 dark:border-gray-600 rounded-md"
                             placeholder="0.00"
                         />
                         <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                            <span className="text-gray-500 sm:text-sm">L</span>
+                            <span className="text-gray-500 dark:text-gray-400 sm:text-sm">L</span>
                         </div>
                     </div>
                 </div>
@@ -900,15 +900,15 @@ export const Fuel: React.FC = () => {
 
         {/* Right: History Log */}
         <div className="lg:col-span-2 space-y-6">
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <h3 className="text-lg font-medium text-gray-900">Bitácora de Consumo</h3>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Bitácora de Consumo</h3>
                     
                     <div className="flex items-center gap-2 w-full sm:w-auto">
                         <select
                             value={filterSectorId}
                             onChange={(e) => setFilterSectorId(e.target.value)}
-                            className="block w-full sm:w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            className="block w-full sm:w-48 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                         >
                             <option value="all">Todos los Sectores</option>
                             {sectors.sort((a, b) => a.name.localeCompare(b.name)).map(s => (
@@ -928,35 +928,35 @@ export const Fuel: React.FC = () => {
                     </div>
                 </div>
                 <div className="overflow-x-auto max-h-[500px]">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50 sticky top-0">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actividad</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sector</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Litros</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Costo Est.</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acción</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fecha</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actividad</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Sector</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Litros</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Costo Est.</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Acción</th>
                             </tr>
                         </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
+                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                             {logs
                                 .filter(log => filterSectorId === 'all' || log.sector_id === filterSectorId)
                                 .map(log => (
                                 <tr key={log.id}>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                         {new Date(log.date + 'T12:00:00').toLocaleDateString()}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
                                         {log.activity}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                         {log.sectors?.name || '-'}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-bold">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100 font-bold">
                                         {Number(log.liters).toLocaleString('es-CL')} L
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500 dark:text-gray-400">
                                         {formatCLP(log.estimated_price)}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -975,17 +975,17 @@ export const Fuel: React.FC = () => {
                             ))}
                             {logs.filter(log => filterSectorId === 'all' || log.sector_id === filterSectorId).length === 0 && (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-4 text-center text-gray-500">No hay registros de consumo para el criterio seleccionado.</td>
+                                    <td colSpan={6} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">No hay registros de consumo para el criterio seleccionado.</td>
                                 </tr>
                             )}
                         </tbody>
                     </table>
                 </div>
                 {/* Total Summary for Filtered View */}
-                <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end">
+                <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-end">
                     <div className="text-right">
-                        <span className="text-sm font-medium text-gray-500 mr-2">Total Filtrado:</span>
-                        <span className="text-lg font-bold text-gray-900">
+                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400 mr-2">Total Filtrado:</span>
+                        <span className="text-lg font-bold text-gray-900 dark:text-gray-100">
                             {logs
                                 .filter(log => filterSectorId === 'all' || log.sector_id === filterSectorId)
                                 .reduce((sum, log) => sum + Number(log.liters), 0)
@@ -997,30 +997,30 @@ export const Fuel: React.FC = () => {
             </div>
 
             {/* Inflow List (Optional) */}
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-                    <h3 className="text-sm font-medium text-gray-700">Ingresos de Combustible (Facturas)</h3>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Ingresos de Combustible (Facturas)</h3>
                 </div>
                 <div className="overflow-x-auto max-h-[300px]">
-                     <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
+                     <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead className="bg-gray-50 dark:bg-gray-900">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Factura</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Producto</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Cantidad</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fecha</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Factura</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Producto</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Cantidad</th>
                             </tr>
                         </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
+                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                             {invoices.map(inv => (
                                 <tr key={inv.id}>
-                                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
+                                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
                                         {new Date(inv.invoices.invoice_date + 'T12:00:00').toLocaleDateString()}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-900">
+                                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-900 dark:text-gray-100">
                                         {inv.invoices.invoice_number}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
+                                    <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
                                         {inv.products?.name}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-green-600 font-bold">

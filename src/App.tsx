@@ -2,6 +2,7 @@ import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { CompanyProvider } from './contexts/CompanyContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import { Layout } from './components/Layout';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { NotFound } from './pages/NotFound';
@@ -29,7 +30,7 @@ const Incomes = React.lazy(() => import('./pages/Incomes').then(module => ({ def
 const PhytosanitaryPrograms = React.lazy(() => import('./pages/PhytosanitaryPrograms').then(module => ({ default: module.PhytosanitaryPrograms })));
 
 const FallbackLoader = () => (
-  <div className="min-h-screen flex items-center justify-center bg-gray-50">
+  <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
     <Loader2 className="w-10 h-10 animate-spin text-green-600" />
   </div>
 );
@@ -37,12 +38,13 @@ const FallbackLoader = () => (
 function App() {
   return (
     <ErrorBoundary>
-      <BrowserRouter>
-        <AuthProvider>
-          <CompanyProvider>
-            <Toaster position="top-right" richColors />
-            <Suspense fallback={<FallbackLoader />}>
-              <Routes>
+      <ThemeProvider>
+        <BrowserRouter>
+          <AuthProvider>
+            <CompanyProvider>
+              <Toaster position="top-right" richColors />
+              <Suspense fallback={<FallbackLoader />}>
+                <Routes>
                 <Route path="/login" element={<Login />} />
                 
                 <Route path="/" element={<Layout />}>
@@ -68,10 +70,11 @@ function App() {
                   <Route path="*" element={<NotFound />} />
                 </Route>
               </Routes>
-            </Suspense>
-          </CompanyProvider>
-        </AuthProvider>
-      </BrowserRouter>
+              </Suspense>
+            </CompanyProvider>
+          </AuthProvider>
+        </BrowserRouter>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

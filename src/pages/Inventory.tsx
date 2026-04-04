@@ -489,10 +489,10 @@ export const Inventory: React.FC = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Bodega de Productos</h1>
-          <p className="text-sm text-gray-500">Gestión de inventario y costos promedio</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Bodega de Productos</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Gestión de inventario y costos promedio</p>
         </div>
-        <div className="bg-white px-4 py-2 rounded-lg shadow border border-gray-200 flex items-center space-x-2">
+        <div className="bg-white dark:bg-gray-800 px-4 py-2 rounded-lg shadow border border-gray-200 dark:border-gray-700 flex items-center space-x-2">
           <button
               onClick={generateShoppingListPDF}
               className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -517,20 +517,20 @@ export const Inventory: React.FC = () => {
               Importar SAG
           </button>
           <div className="h-4 w-px bg-gray-300 mx-2"></div>
-          <span className="text-sm text-gray-500">Valor Total Bodega:</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400">Valor Total Bodega:</span>
           <span className="ml-2 text-lg font-bold text-green-700">{formatCLP(totalValue)}</span>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="bg-white p-4 rounded-lg shadow-sm flex flex-col sm:flex-row gap-4">
+      <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm flex flex-col sm:flex-row gap-4">
         <div className="flex-1 relative">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <Search className="h-5 w-5 text-gray-400" />
           </div>
           <input
             type="text"
-            className="block w-full pl-10 border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500 sm:text-sm"
+            className="block w-full pl-10 border-gray-300 dark:border-gray-600 rounded-md focus:ring-green-500 focus:border-green-500 sm:text-sm"
             placeholder="Buscar producto..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -538,7 +538,7 @@ export const Inventory: React.FC = () => {
         </div>
         <div className="sm:w-48">
           <select
-            className="block w-full border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500 sm:text-sm"
+            className="block w-full border-gray-300 dark:border-gray-600 rounded-md focus:ring-green-500 focus:border-green-500 sm:text-sm"
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
           >
@@ -551,42 +551,42 @@ export const Inventory: React.FC = () => {
       </div>
 
       {/* Inventory Table */}
-      <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+      <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-900">
               <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Producto
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Categoría
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Stock Actual
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Costo Promedio
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Valor Total
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Estado
                 </th>
-                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Acciones
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
               {loading ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-4 text-center">Cargando inventario...</td>
                 </tr>
               ) : filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={7} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
                     No se encontraron productos.
                   </td>
                 </tr>
@@ -599,23 +599,23 @@ export const Inventory: React.FC = () => {
                           <Package className="h-5 w-5 text-green-600" />
                         </div>
                         <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">{product.name}</div>
+                          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{product.name}</div>
                           {product.active_ingredient && (
                               <div className="text-xs text-blue-600 font-medium">{product.active_ingredient}</div>
                           )}
-                          <div className="text-xs text-gray-500">Actualizado: {new Date(product.updated_at).toLocaleDateString()}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">Actualizado: {new Date(product.updated_at).toLocaleDateString()}</div>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800 capitalize">
+                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 capitalize">
                         {product.category}
                       </span>
                       {(product.lot_number || product.expiration_date) && (
                           <div className="mt-1 flex flex-col gap-0.5">
-                              {product.lot_number && <span className="text-[10px] text-gray-500">Lote: {product.lot_number}</span>}
+                              {product.lot_number && <span className="text-[10px] text-gray-500 dark:text-gray-400">Lote: {product.lot_number}</span>}
                               {product.expiration_date && (
-                                  <span className={`text-[10px] font-medium ${new Date(product.expiration_date) < new Date(new Date().setDate(new Date().getDate() + 30)) ? 'text-red-600' : 'text-gray-500'}`}>
+                                  <span className={`text-[10px] font-medium ${new Date(product.expiration_date) < new Date(new Date().setDate(new Date().getDate() + 30)) ? 'text-red-600' : 'text-gray-500 dark:text-gray-400'}`}>
                                       Vence: {new Date(product.expiration_date + 'T12:00:00').toLocaleDateString()}
                                   </span>
                               )}
@@ -623,17 +623,17 @@ export const Inventory: React.FC = () => {
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900 font-medium">{product.current_stock}</div>
-                      <div className="text-xs text-gray-500">{product.unit}</div>
+                      <div className="text-sm text-gray-900 dark:text-gray-100 font-medium">{product.current_stock}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{product.unit}</div>
                       {product.minimum_stock > 0 && (
                           <div className="text-[10px] text-orange-500">Mín: {product.minimum_stock}</div>
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{formatCLP(product.average_cost)}</div>
+                      <div className="text-sm text-gray-900 dark:text-gray-100">{formatCLP(product.average_cost)}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900 font-bold">
+                      <div className="text-sm text-gray-900 dark:text-gray-100 font-bold">
                         {formatCLP(product.current_stock * product.average_cost)}
                       </div>
                     </td>
@@ -659,7 +659,7 @@ export const Inventory: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button 
                         onClick={() => loadHistory(product)}
-                        className="text-gray-600 hover:text-gray-900 mr-4"
+                        className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:text-gray-100 mr-4"
                         title="Ver Movimientos"
                       >
                         <History className="h-4 w-4" />
@@ -690,13 +690,13 @@ export const Inventory: React.FC = () => {
       {/* History Modal */}
       {viewingHistory && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-              <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
                   <div className="flex justify-between items-center mb-6">
                       <div>
-                          <h3 className="text-xl font-bold text-gray-900">Historial de Movimientos</h3>
-                          <p className="text-sm text-gray-500">{viewingHistory.name}</p>
+                          <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">Historial de Movimientos</h3>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">{viewingHistory.name}</p>
                       </div>
-                      <button onClick={closeHistory} className="text-gray-500 hover:text-gray-700">
+                      <button onClick={closeHistory} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300">
                           <X className="h-6 w-6" />
                       </button>
                   </div>
@@ -704,23 +704,23 @@ export const Inventory: React.FC = () => {
                   {loadingHistory ? (
                       <div className="text-center py-8">Cargando movimientos...</div>
                   ) : historyData.length === 0 ? (
-                      <div className="text-center py-8 text-gray-500">No hay movimientos registrados.</div>
+                      <div className="text-center py-8 text-gray-500 dark:text-gray-400">No hay movimientos registrados.</div>
                   ) : (
                       <div className="overflow-x-auto">
-                          <table className="min-w-full divide-y divide-gray-200">
-                              <thead className="bg-gray-50">
+                          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                              <thead className="bg-gray-50 dark:bg-gray-900">
                                   <tr>
-                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
-                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Cantidad</th>
-                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Origen/Destino</th>
-                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Costo Unit.</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fecha</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Tipo</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Cantidad</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Origen/Destino</th>
+                                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Costo Unit.</th>
                                   </tr>
                               </thead>
-                              <tbody className="divide-y divide-gray-200">
+                              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                                   {historyData.map(movement => (
                                       <tr key={movement.id}>
-                                          <td className="px-4 py-2 text-sm text-gray-900">
+                                          <td className="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">
                                               {new Date(movement.created_at).toLocaleDateString()}
                                           </td>
                                           <td className="px-4 py-2 text-sm">
@@ -732,7 +732,7 @@ export const Inventory: React.FC = () => {
                                                   {movement.movement_type === 'entrada' ? 'Entrada' : 'Salida'}
                                               </span>
                                           </td>
-                                          <td className="px-4 py-2 text-sm font-medium text-gray-900">
+                                          <td className="px-4 py-2 text-sm font-medium text-gray-900 dark:text-gray-100">
                                               {movement.movement_type === 'entrada' ? (
                                                   <span className="flex items-center text-blue-600">
                                                       <ArrowDownLeft className="h-4 w-4 mr-1" />
@@ -745,15 +745,15 @@ export const Inventory: React.FC = () => {
                                                   </span>
                                               )}
                                           </td>
-                                          <td className="px-4 py-2 text-sm text-gray-500">
+                                          <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
                                               {movement.movement_type === 'entrada' && movement.invoice_items?.invoice ? (
                                                   <div>
-                                                      <div className="font-medium text-gray-900">Factura {movement.invoice_items.invoice.number}</div>
+                                                      <div className="font-medium text-gray-900 dark:text-gray-100">Factura {movement.invoice_items.invoice.number}</div>
                                                       <div className="text-xs">{movement.invoice_items.invoice.supplier}</div>
                                                   </div>
                                               ) : movement.movement_type === 'salida' && movement.application_items?.application ? (
                                                   <div>
-                                                      <div className="font-medium text-gray-900">Aplicación {new Date(movement.application_items.application.application_date + 'T12:00:00').toLocaleDateString()}</div>
+                                                      <div className="font-medium text-gray-900 dark:text-gray-100">Aplicación {new Date(movement.application_items.application.application_date + 'T12:00:00').toLocaleDateString()}</div>
                                                       <div className="text-xs">
                                                           {movement.application_items.application.field?.name} - {movement.application_items.application.sector?.name}
                                                       </div>
@@ -762,7 +762,7 @@ export const Inventory: React.FC = () => {
                                                   <span className="italic text-gray-400">Ajuste Manual / Desconocido</span>
                                               )}
                                           </td>
-                                          <td className="px-4 py-2 text-sm text-gray-500">
+                                          <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
                                               {formatCLP(movement.unit_cost)}
                                           </td>
                                       </tr>
@@ -778,17 +778,17 @@ export const Inventory: React.FC = () => {
       {/* Edit Modal */}
       {editingProduct && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold">Editar Producto</h3>
-              <button onClick={cancelEdit} className="text-gray-500 hover:text-gray-700">
+              <button onClick={cancelEdit} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300">
                 <X className="h-6 w-6" />
               </button>
             </div>
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nombre</label>
                 <div className="relative">
                   <input
                     type="text"
@@ -797,7 +797,7 @@ export const Inventory: React.FC = () => {
                         setEditForm({...editForm, name: e.target.value});
                         searchOfficialForEdit(e.target.value);
                     }}
-                    className="w-full border border-gray-300 rounded-md p-2 pr-8"
+                    className="w-full border border-gray-300 dark:border-gray-600 rounded-md p-2 pr-8"
                     autoComplete="off"
                     placeholder="Buscar en listado SAG..."
                   />
@@ -806,8 +806,8 @@ export const Inventory: React.FC = () => {
                   </div>
                 </div>
                 {editSuggestions.length > 0 && (
-                    <div className="absolute z-50 left-0 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-40 overflow-y-auto">
-                        <div className="px-3 py-2 text-xs font-bold text-gray-500 bg-gray-50 border-b">
+                    <div className="absolute z-50 left-0 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-40 overflow-y-auto">
+                        <div className="px-3 py-2 text-xs font-bold text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900 border-b">
                             Sugerencias SAG (Click para autocompletar)
                         </div>
                         {editSuggestions.map((sug, idx) => (
@@ -816,8 +816,8 @@ export const Inventory: React.FC = () => {
                                 onClick={() => selectOfficialForEdit(sug)}
                                 className="w-full text-left px-3 py-2 text-sm hover:bg-green-50 border-b border-gray-100 last:border-0"
                             >
-                                <div className="font-medium text-gray-900">{sug.commercial_name}</div>
-                                <div className="text-xs text-gray-500 flex justify-between">
+                                <div className="font-medium text-gray-900 dark:text-gray-100">{sug.commercial_name}</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400 flex justify-between">
                                     <span>{sug.active_ingredient}</span>
                                     <span>{sug.concentration}</span>
                                 </div>
@@ -828,7 +828,7 @@ export const Inventory: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Ingrediente Activo
                 </label>
                 <div className="relative">
@@ -840,47 +840,47 @@ export const Inventory: React.FC = () => {
                             // Optional: search official products by active ingredient if needed, 
                             // but usually we search by name to find the ingredient.
                         }}
-                        className="w-full border border-gray-300 rounded-md p-2 pr-8"
+                        className="w-full border border-gray-300 dark:border-gray-600 rounded-md p-2 pr-8"
                         placeholder="Ej. Glifosato 48%"
                     />
                     <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                         <Search className="h-4 w-4 text-gray-400" />
                     </div>
                 </div>
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                     * Al escribir el nombre del producto arriba, se sugerirá automáticamente el ingrediente activo si está en el registro oficial importado.
                 </p>
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Categoría</label>
                 <input
                   type="text"
                   value={editForm.category || ''}
                   onChange={e => setEditForm({...editForm, category: e.target.value})}
-                  className="w-full border border-gray-300 rounded-md p-2"
+                  className="w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Stock Actual</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Stock Actual</label>
                   <input
                     type="number"
                     step="0.01"
                     value={editForm.current_stock || 0}
                     onChange={e => setEditForm({...editForm, current_stock: Number(e.target.value)})}
-                    className="w-full border border-gray-300 rounded-md p-2"
+                    className="w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Stock Mínimo (Alerta)</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Stock Mínimo (Alerta)</label>
                   <input
                     type="number"
                     step="0.01"
                     value={editForm.minimum_stock || 0}
                     onChange={e => setEditForm({...editForm, minimum_stock: Number(e.target.value)})}
-                    className="w-full border border-gray-300 rounded-md p-2 bg-orange-50 focus:ring-orange-500 focus:border-orange-500"
+                    className="w-full border border-gray-300 dark:border-gray-600 rounded-md p-2 bg-orange-50 focus:ring-orange-500 focus:border-orange-500"
                     placeholder="Ej. 10"
                   />
                 </div>
@@ -888,11 +888,11 @@ export const Inventory: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Unidad</label>
                   <select
                     value={editForm.unit || 'un'}
                     onChange={e => setEditForm({...editForm, unit: e.target.value})}
-                    className="w-full border border-gray-300 rounded-md p-2"
+                    className="w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                   >
                     <option value="L">L</option>
                     <option value="kg">kg</option>
@@ -903,35 +903,35 @@ export const Inventory: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Costo Promedio</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Costo Promedio</label>
                   <input
                     type="number"
                     step="0.01"
                     value={editForm.average_cost || 0}
                     onChange={e => setEditForm({...editForm, average_cost: Number(e.target.value)})}
-                    className="w-full border border-gray-300 rounded-md p-2"
+                    className="w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">N° de Lote</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">N° de Lote</label>
                   <input
                     type="text"
                     value={editForm.lot_number || ''}
                     onChange={e => setEditForm({...editForm, lot_number: e.target.value})}
-                    className="w-full border border-gray-300 rounded-md p-2"
+                    className="w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                     placeholder="Ej. L-202305"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Vencimiento</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Fecha Vencimiento</label>
                   <input
                     type="date"
                     value={editForm.expiration_date || ''}
                     onChange={e => setEditForm({...editForm, expiration_date: e.target.value})}
-                    className="w-full border border-gray-300 rounded-md p-2"
+                    className="w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                   />
                 </div>
               </div>
@@ -939,7 +939,7 @@ export const Inventory: React.FC = () => {
               <div className="flex justify-end pt-4 gap-2">
                 <button
                   onClick={cancelEdit}
-                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
                 >
                   Cancelar
                 </button>

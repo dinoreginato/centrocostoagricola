@@ -1093,16 +1093,16 @@ export const Machinery: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
                 <Tractor className="mr-2 h-8 w-8 text-orange-600" />
                 Maquinaria y Equipos
             </h1>
-            <p className="text-sm text-gray-500">Asigna costos de maquinaria y repuestos a sectores</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Asigna costos de maquinaria y repuestos a sectores</p>
         </div>
         <div className="flex space-x-2">
             <button
                 onClick={handlePrintGeneralReport}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
             >
                 <Printer className="h-4 w-4 mr-2" />
                 Reporte General
@@ -1122,16 +1122,16 @@ export const Machinery: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Pending List */}
-        <div className="lg:col-span-1 bg-white rounded-lg shadow overflow-hidden">
-            <div className="p-4 bg-gray-50 border-b border-gray-200">
-                <h3 className="font-medium text-gray-900 flex items-center">
+        <div className="lg:col-span-1 bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+            <div className="p-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="font-medium text-gray-900 dark:text-gray-100 flex items-center">
                     <AlertCircle className="h-4 w-4 mr-2 text-yellow-500" />
                     Items Pendientes
                 </h3>
             </div>
-            <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-auto">
+            <div className="divide-y divide-gray-200 dark:divide-gray-700 max-h-[600px] overflow-y-auto">
                 {pendingItems.length === 0 ? (
-                    <div className="p-8 text-center text-gray-500 text-sm">No hay items de maquinaria pendientes.</div>
+                    <div className="p-8 text-center text-gray-500 dark:text-gray-400 text-sm">No hay items de maquinaria pendientes.</div>
                 ) : (
                     pendingItems.map(item => (
                         <div 
@@ -1140,12 +1140,12 @@ export const Machinery: React.FC = () => {
                             className={`p-4 cursor-pointer hover:bg-orange-50 transition-colors ${selectedItemId === item.id ? 'bg-orange-50 ring-2 ring-inset ring-orange-500' : ''}`}
                         >
                             <div className="flex justify-between items-start mb-1">
-                                <span className="text-xs font-bold text-gray-500">#{item.invoice_number}</span>
+                                <span className="text-xs font-bold text-gray-500 dark:text-gray-400">#{item.invoice_number}</span>
                                 <span className="text-xs text-gray-400">{new Date(item.date).toLocaleDateString()}</span>
                             </div>
-                            <h4 className="text-sm font-medium text-gray-900 mb-1">{item.description}</h4>
+                            <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">{item.description}</h4>
                             <div className="flex justify-between items-center mt-2">
-                                <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                                <span className="text-xs bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded-full">
                                     Total: {formatCLP(item.total_amount)}
                                 </span>
                                 <span className="text-sm font-bold text-orange-600">
@@ -1161,14 +1161,14 @@ export const Machinery: React.FC = () => {
         {/* Middle: Assignment Form */}
         <div className="lg:col-span-2 space-y-6">
             {selectedItemId ? (
-                <div className="bg-white rounded-lg shadow p-6 border-t-4 border-orange-500">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border-t-4 border-orange-500">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
                         {editingAssignmentId ? 'Editar Asignación' : 'Asignar Costo'}
                     </h3>
                     
-                    <div className="bg-gray-50 p-4 rounded-md mb-6">
-                        <div className="text-sm text-gray-500">Item Seleccionado:</div>
-                        <div className="font-medium text-gray-900">
+                    <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md mb-6">
+                        <div className="text-sm text-gray-500 dark:text-gray-400">Item Seleccionado:</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">
                             {editingItem ? editingItem.description : pendingItems.find(p => p.id === selectedItemId)?.description}
                         </div>
                         {!editingAssignmentId && (
@@ -1177,20 +1177,20 @@ export const Machinery: React.FC = () => {
                             </div>
                         )}
                         <div className="mt-4">
-                            <label className="block text-sm font-medium text-gray-700">Fecha de Asignación</label>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha de Asignación</label>
                             <input
                                 type="date"
                                 value={assignedDate}
                                 onChange={(e) => setAssignedDate(e.target.value)}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm"
+                                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm"
                             />
                         </div>
                         <div className="mt-4">
-                            <label className="block text-sm font-medium text-gray-700">Máquina (Opcional)</label>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Máquina (Opcional)</label>
                             <select
                                 value={selectedMachineId}
                                 onChange={(e) => setSelectedMachineId(e.target.value)}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm"
+                                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm"
                             >
                                 <option value="">Ninguna / General</option>
                                 {machines.map(m => (
@@ -1204,20 +1204,20 @@ export const Machinery: React.FC = () => {
                         <div className="flex space-x-4 mb-6">
                             <button
                                 onClick={() => setDistributeBy('sector')}
-                                className={`flex-1 py-2 px-4 rounded-l-md text-sm font-medium border ${distributeBy === 'sector' ? 'bg-orange-50 border-orange-500 text-orange-700' : 'bg-white border-gray-300 text-gray-700'}`}
+                                className={`flex-1 py-2 px-4 rounded-l-md text-sm font-medium border ${distributeBy === 'sector' ? 'bg-orange-50 border-orange-500 text-orange-700' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'}`}
                             >
                                 Por Sector Específico
                             </button>
                             <button
                                 onClick={() => setDistributeBy('field')}
-                                className={`flex-1 py-2 px-4 border text-sm font-medium border ${distributeBy === 'field' ? 'bg-orange-50 border-orange-500 text-orange-700' : 'bg-white border-gray-300 text-gray-700'}`}
+                                className={`flex-1 py-2 px-4 border text-sm font-medium border ${distributeBy === 'field' ? 'bg-orange-50 border-orange-500 text-orange-700' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'}`}
                             >
                                 <Layers className="inline h-4 w-4 mr-2" />
                                 Distribuir en Todo el Campo
                             </button>
                             <button
                                 onClick={() => setDistributeBy('company')}
-                                className={`flex-1 py-2 px-4 rounded-r-md text-sm font-medium border ${distributeBy === 'company' ? 'bg-orange-50 border-orange-500 text-orange-700' : 'bg-white border-gray-300 text-gray-700'}`}
+                                className={`flex-1 py-2 px-4 rounded-r-md text-sm font-medium border ${distributeBy === 'company' ? 'bg-orange-50 border-orange-500 text-orange-700' : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'}`}
                             >
                                 Empresa General
                             </button>
@@ -1230,12 +1230,12 @@ export const Machinery: React.FC = () => {
                                 El costo se distribuirá proporcionalmente entre <strong>TODOS</strong> los campos y sectores de la empresa.
                             </p>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Monto a Distribuir</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Monto a Distribuir</label>
                                 <input
                                     type="number"
                                     value={fieldTotalAmount}
                                     onChange={(e) => setFieldTotalAmount(Number(e.target.value))}
-                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm"
+                                    className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm"
                                 />
                             </div>
                         </div>
@@ -1245,11 +1245,11 @@ export const Machinery: React.FC = () => {
                                 El costo se distribuirá proporcionalmente a las hectáreas de cada sector del campo seleccionado.
                             </p>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Seleccionar Campo Completo</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Seleccionar Campo Completo</label>
                                 <select
                                     value={selectedFieldId}
                                     onChange={(e) => setSelectedFieldId(e.target.value)}
-                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm"
+                                    className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm"
                                 >
                                     <option value="">Seleccionar Campo...</option>
                                     {fields.map(f => (
@@ -1258,12 +1258,12 @@ export const Machinery: React.FC = () => {
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Monto a Distribuir</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Monto a Distribuir</label>
                                 <input
                                     type="number"
                                     value={fieldTotalAmount}
                                     onChange={(e) => setFieldTotalAmount(Number(e.target.value))}
-                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm"
+                                    className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm"
                                 />
                             </div>
                         </div>
@@ -1272,11 +1272,11 @@ export const Machinery: React.FC = () => {
                             {allocations.map((alloc, idx) => (
                                 <div key={idx} className="flex gap-4 items-end">
                                     <div className="flex-1">
-                                        <label className="block text-xs font-medium text-gray-500 mb-1">Sector</label>
+                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Sector</label>
                                         <select
                                             value={alloc.sector_id}
                                             onChange={(e) => updateAllocation(idx, 'sector_id', e.target.value)}
-                                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm"
+                                            className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm"
                                         >
                                             <option value="">Seleccionar Sector...</option>
                                             {sectors.map(s => (
@@ -1285,12 +1285,12 @@ export const Machinery: React.FC = () => {
                                         </select>
                                     </div>
                                     <div className="w-40">
-                                        <label className="block text-xs font-medium text-gray-500 mb-1">Monto</label>
+                                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Monto</label>
                                         <input
                                             type="number"
                                             value={alloc.amount}
                                             onChange={(e) => updateAllocation(idx, 'amount', Number(e.target.value))}
-                                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm"
+                                            className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm"
                                         />
                                     </div>
                                     {!editingAssignmentId && (
@@ -1316,10 +1316,10 @@ export const Machinery: React.FC = () => {
                                 + Agregar otro sector
                             </button>
                             <div className="text-right">
-                                <span className="text-sm text-gray-500 mr-2">Total Asignado:</span>
+                                <span className="text-sm text-gray-500 dark:text-gray-400 mr-2">Total Asignado:</span>
                                 <span className={`font-bold ${
                                     allocations.reduce((sum, a) => sum + a.amount, 0) > (pendingItems.find(p => p.id === selectedItemId)?.remaining_amount || 0) 
-                                    ? 'text-red-600' : 'text-gray-900'
+                                    ? 'text-red-600' : 'text-gray-900 dark:text-gray-100'
                                 }`}>
                                     {formatCLP(allocations.reduce((sum, a) => sum + a.amount, 0))}
                                 </span>
@@ -1333,7 +1333,7 @@ export const Machinery: React.FC = () => {
                                 setSelectedItemId(null);
                                 setEditingAssignmentId(null);
                             }}
-                            className="px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                            className="px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
                         >
                             Cancelar
                         </button>
@@ -1348,17 +1348,17 @@ export const Machinery: React.FC = () => {
                     </div>
                 </div>
             ) : (
-                <div className="bg-white rounded-lg shadow p-12 text-center border-2 border-dashed border-gray-300">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center border-2 border-dashed border-gray-300 dark:border-gray-600">
                     <ArrowRight className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900">Selecciona un item pendiente</h3>
-                    <p className="text-gray-500">Haz clic en un item de la izquierda para asignarlo a un sector.</p>
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Selecciona un item pendiente</h3>
+                    <p className="text-gray-500 dark:text-gray-400">Haz clic en un item de la izquierda para asignarlo a un sector.</p>
                 </div>
             )}
 
             {/* Recent History */}
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
-                    <h3 className="text-lg font-medium text-gray-900">Historial de Asignaciones</h3>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-col md:flex-row justify-between items-center gap-4">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Historial de Asignaciones</h3>
                     
                     <div className="flex items-center gap-2 w-full md:w-auto">
                         <input
@@ -1366,11 +1366,11 @@ export const Machinery: React.FC = () => {
                             placeholder="Buscar por item, factura o sector..."
                             value={historySearch}
                             onChange={(e) => setHistorySearch(e.target.value)}
-                            className="text-sm border-gray-300 rounded-md shadow-sm focus:border-orange-500 focus:ring-orange-500 flex-1 md:w-64"
+                            className="text-sm border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-orange-500 focus:ring-orange-500 flex-1 md:w-64"
                         />
                         <button
                             onClick={handleExportExcel}
-                            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
+                            className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500"
                             title="Exportar a Excel"
                         >
                             <Download className="h-4 w-4 text-orange-600" />
@@ -1385,33 +1385,33 @@ export const Machinery: React.FC = () => {
                     </div>
                 </div>
                 <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50 sticky top-0">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item / Factura</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sector Asignado</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Máquina</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Monto</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fecha</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Item / Factura</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Sector Asignado</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Máquina</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Monto</th>
                             </tr>
                         </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
+                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                             {filteredHistory.map((h) => (
                                 <tr key={h.id}>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                         {new Date(h.assigned_date).toLocaleDateString()}
                                     </td>
-                                    <td className="px-6 py-4 text-sm text-gray-900">
+                                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
                                         <div className="font-medium">{h.invoice_items?.products?.name || 'Sin nombre'}</div>
-                                        <div className="text-xs text-gray-500">#{h.invoice_items?.invoices?.invoice_number}</div>
+                                        <div className="text-xs text-gray-500 dark:text-gray-400">#{h.invoice_items?.invoices?.invoice_number}</div>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                         {h.sectors?.name}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                         {h.machines?.name || '-'}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 text-right">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 dark:text-gray-100 text-right">
                                         <div className="flex items-center justify-end gap-3">
                                             {formatCLP(h.assigned_amount)}
                                             <div className="flex gap-1">
@@ -1450,7 +1450,7 @@ export const Machinery: React.FC = () => {
                             ))}
                             {history.length === 0 && (
                                 <tr>
-                                    <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500">
+                                    <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
                                         No hay historial reciente.
                                     </td>
                                 </tr>
@@ -1464,32 +1464,32 @@ export const Machinery: React.FC = () => {
 
       {showMachineModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-            <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-medium text-gray-900">Gestionar Máquinas y Vehículos</h3>
-                    <button onClick={() => setShowMachineModal(false)} className="text-gray-400 hover:text-gray-600">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Gestionar Máquinas y Vehículos</h3>
+                    <button onClick={() => setShowMachineModal(false)} className="text-gray-400 hover:text-gray-600 dark:text-gray-400">
                         <X className="h-6 w-6" />
                     </button>
                 </div>
                 
-                <div className="mb-6 bg-gray-50 p-4 rounded-md border border-gray-200">
-                    <h4 className="text-sm font-medium text-gray-900 mb-2">{editingMachine?.id ? 'Editar Máquina' : 'Nueva Máquina'}</h4>
+                <div className="mb-6 bg-gray-50 dark:bg-gray-900 p-4 rounded-md border border-gray-200 dark:border-gray-700">
+                    <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">{editingMachine?.id ? 'Editar Máquina' : 'Nueva Máquina'}</h4>
                     <form onSubmit={handleSaveMachine} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-xs font-medium text-gray-500">Nombre</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Nombre</label>
                             <input
                                 type="text"
                                 required
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
                                 value={editingMachine?.name || ''}
                                 onChange={e => setEditingMachine({...editingMachine, name: e.target.value})}
                                 placeholder="Ej: Tractor John Deere"
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500">Tipo</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Tipo</label>
                             <select
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
                                 value={editingMachine?.type || 'Tractor'}
                                 onChange={e => setEditingMachine({...editingMachine, type: e.target.value})}
                             >
@@ -1502,55 +1502,55 @@ export const Machinery: React.FC = () => {
                             </select>
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500">Marca</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Marca</label>
                             <input
                                 type="text"
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
                                 value={editingMachine?.brand || ''}
                                 onChange={e => setEditingMachine({...editingMachine, brand: e.target.value})}
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500">Modelo</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Modelo</label>
                             <input
                                 type="text"
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
                                 value={editingMachine?.model || ''}
                                 onChange={e => setEditingMachine({...editingMachine, model: e.target.value})}
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500">Patente (Opcional)</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Patente (Opcional)</label>
                             <input
                                 type="text"
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
                                 value={editingMachine?.plate || ''}
                                 onChange={e => setEditingMachine({...editingMachine, plate: e.target.value})}
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500">Horómetro Actual</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Horómetro Actual</label>
                             <input
                                 type="number"
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
                                 value={editingMachine?.current_hours || 0}
                                 onChange={e => setEditingMachine({...editingMachine, current_hours: Number(e.target.value)})}
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500">Mantención cada (Hrs)</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Mantención cada (Hrs)</label>
                             <input
                                 type="number"
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
                                 value={editingMachine?.maintenance_interval_hours || 250}
                                 onChange={e => setEditingMachine({...editingMachine, maintenance_interval_hours: Number(e.target.value)})}
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500">Última Mantención (Hr)</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Última Mantención (Hr)</label>
                             <input
                                 type="number"
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
                                 value={editingMachine?.last_maintenance_hours || 0}
                                 onChange={e => setEditingMachine({...editingMachine, last_maintenance_hours: Number(e.target.value)})}
                             />
@@ -1559,7 +1559,7 @@ export const Machinery: React.FC = () => {
                              <button
                                 type="button"
                                 onClick={() => setEditingMachine(null)}
-                                className="px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                                className="px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
                             >
                                 Limpiar
                             </button>
@@ -1576,17 +1576,17 @@ export const Machinery: React.FC = () => {
                 </div>
 
                 <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead className="bg-gray-50 dark:bg-gray-900">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nombre</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Marca/Modelo</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Mantención (Hrs)</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Nombre</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Tipo</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Marca/Modelo</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Mantención (Hrs)</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Acciones</th>
                             </tr>
                         </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
+                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                             {machines.map((m) => {
                                 const nextMaintenance = (m.last_maintenance_hours || 0) + (m.maintenance_interval_hours || 250);
                                 const isDue = (m.current_hours || 0) >= nextMaintenance;
@@ -1594,9 +1594,9 @@ export const Machinery: React.FC = () => {
 
                                 return (
                                 <tr key={m.id}>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{m.name}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{m.type}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{m.brand} {m.model}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">{m.name}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{m.type}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{m.brand} {m.model}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                                         <div className="flex items-center">
                                             <span className="font-medium mr-2">{m.current_hours || 0} / {nextMaintenance}</span>
@@ -1634,7 +1634,7 @@ export const Machinery: React.FC = () => {
                             )})}
                             {machines.length === 0 && (
                                 <tr>
-                                    <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500">No hay máquinas registradas.</td>
+                                    <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400">No hay máquinas registradas.</td>
                                 </tr>
                             )}
                         </tbody>
@@ -1646,22 +1646,22 @@ export const Machinery: React.FC = () => {
 
       {showDetailModal && selectedMachineForDetail && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-              <div className="bg-white rounded-lg p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
                   <div className="flex justify-between items-center mb-6">
                       <div>
-                          <h3 className="text-lg font-bold text-gray-900 flex items-center">
+                          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
                               <Tractor className="mr-2 h-5 w-5 text-orange-600" />
                               Detalle de Gastos: {selectedMachineForDetail.name}
                           </h3>
-                          <p className="text-sm text-gray-500">{selectedMachineForDetail.type} - {selectedMachineForDetail.brand} {selectedMachineForDetail.model}</p>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">{selectedMachineForDetail.type} - {selectedMachineForDetail.brand} {selectedMachineForDetail.model}</p>
                       </div>
-                      <button onClick={() => setShowDetailModal(false)} className="text-gray-400 hover:text-gray-600">
+                      <button onClick={() => setShowDetailModal(false)} className="text-gray-400 hover:text-gray-600 dark:text-gray-400">
                           <X className="h-6 w-6" />
                       </button>
                   </div>
 
                   <div className="mb-4 flex justify-between items-end">
-                      <div className="text-2xl font-bold text-gray-900">
+                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                           Total: {formatCLP(machineExpenses.reduce((sum, item) => sum + item.amount, 0))}
                       </div>
                       <button 
@@ -1674,35 +1674,35 @@ export const Machinery: React.FC = () => {
                   </div>
 
                   <div className="overflow-x-auto border rounded-lg">
-                      <table className="min-w-full divide-y divide-gray-200">
-                          <thead className="bg-gray-50">
+                      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                          <thead className="bg-gray-50 dark:bg-gray-900">
                               <tr>
-                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descripción / Item</th>
-                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Factura</th>
-                                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Monto Total</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fecha</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Descripción / Item</th>
+                                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Factura</th>
+                                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Monto Total</th>
                               </tr>
                           </thead>
-                          <tbody className="bg-white divide-y divide-gray-200">
+                          <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                               {consolidatedExpenses.length === 0 ? (
                                   <tr>
-                                      <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
+                                      <td colSpan={4} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                                           No hay gastos registrados para esta máquina.
                                       </td>
                                   </tr>
                               ) : (
                                   consolidatedExpenses.map((expense) => (
-                                      <tr key={expense.id} className="hover:bg-gray-50">
-                                          <td className="px-4 py-3 text-sm text-gray-900">
+                                      <tr key={expense.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900">
+                                          <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
                                               {new Date(expense.date).toLocaleDateString()}
                                           </td>
-                                          <td className="px-4 py-3 text-sm text-gray-900">
+                                          <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
                                               {expense.item_name}
                                           </td>
-                                          <td className="px-4 py-3 text-sm text-gray-500">
+                                          <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
                                               {expense.invoice_number}
                                           </td>
-                                          <td className="px-4 py-3 text-sm font-bold text-gray-900 text-right">
+                                          <td className="px-4 py-3 text-sm font-bold text-gray-900 dark:text-gray-100 text-right">
                                               {formatCLP(expense.amount)}
                                           </td>
                                       </tr>

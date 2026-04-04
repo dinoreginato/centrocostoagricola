@@ -4,10 +4,10 @@ import { AlertTriangle, Home } from 'lucide-react';
 
 export const NotFound: React.FC = () => {
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center p-4">
       <AlertTriangle className="w-16 h-16 text-orange-500 mb-4" />
-      <h1 className="text-4xl font-bold text-gray-900 mb-2">404</h1>
-      <p className="text-lg text-gray-600 mb-8 text-center max-w-md">
+      <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-2">404</h1>
+      <p className="text-lg text-gray-600 dark:text-gray-400 mb-8 text-center max-w-md">
         Lo sentimos, la página que estás buscando no existe o ha sido movida.
       </p>
       <Link

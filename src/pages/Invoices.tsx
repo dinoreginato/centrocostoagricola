@@ -1660,7 +1660,7 @@ export const Invoices: React.FC = () => {
     <div className="flex flex-col lg:flex-row gap-6 min-h-[calc(100vh-100px)]">
       {/* Left Panel: Invoice Form (Approx 66%) */}
       <div className="lg:w-2/3 space-y-4">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
           {/* Header */}
           <div className="bg-gray-900 text-white p-4 flex justify-between items-center">
             <div className="flex items-center space-x-2">
@@ -1724,7 +1724,7 @@ export const Invoices: React.FC = () => {
           <div className="p-6">
             <form onSubmit={handleSubmit}>
               <div className="flex justify-between items-center mb-6 border-b pb-4">
-                <h2 className="text-xl font-bold text-gray-800 flex items-center">
+                <h2 className="text-xl font-bold text-gray-800 dark:text-gray-200 flex items-center">
                   {editingInvoiceId ? 'Editar Documento' : 'Nuevo Documento'}
                 </h2>
                 <div className="flex gap-2">
@@ -1740,7 +1740,7 @@ export const Invoices: React.FC = () => {
                         setNotes('');
                         setDueDate('');
                       }}
-                      className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                      className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 rounded-lg transition-colors"
                     >
                       Cancelar Edición
                     </button>
@@ -1757,12 +1757,12 @@ export const Invoices: React.FC = () => {
               </div>
 
               {/* General Information Section */}
-              <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6 shadow-sm">
-                <h3 className="text-sm font-bold text-gray-700 mb-4 uppercase tracking-wider border-b pb-2">Información General</h3>
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 mb-6 shadow-sm">
+                <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-4 uppercase tracking-wider border-b pb-2">Información General</h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
                   <div className="md:col-span-2">
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Proveedor</label>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Proveedor</label>
                     <input
                       type="text"
                       required
@@ -1786,7 +1786,7 @@ export const Invoices: React.FC = () => {
                                   });
                           }
                       }}
-                      className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"
+                      className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"
                       placeholder="Nombre del proveedor"
                     />
                     <datalist id="supplier-list">
@@ -1797,18 +1797,18 @@ export const Invoices: React.FC = () => {
                   </div>
                   
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">RUT Proveedor</label>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">RUT Proveedor</label>
                     <input
                       type="text"
                       value={supplierRut}
                       onChange={e => setSupplierRut(e.target.value)}
-                      className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"
+                      className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"
                       placeholder="Ej. 76.123.456-7"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Tipo de Documento</label>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Tipo de Documento</label>
                     <select
                       value={documentType}
                       onChange={e => {
@@ -1820,7 +1820,7 @@ export const Invoices: React.FC = () => {
                               setTaxPercentage(19);
                           }
                       }}
-                      className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"
+                      className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"
                     >
                       <option value="Factura">Factura</option>
                       <option value="Factura Exenta">Factura Exenta</option>
@@ -1832,40 +1832,40 @@ export const Invoices: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Número de Folio</label>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Número de Folio</label>
                     <input
                       type="text"
                       required
                       value={invoiceNumber}
                       onChange={e => setInvoiceNumber(e.target.value)}
-                      className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 font-medium transition-colors"
+                      className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 font-medium transition-colors"
                       placeholder="N° Documento"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Fecha Emisión</label>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Fecha Emisión</label>
                     <input
                       type="date"
                       required
                       value={invoiceDate}
                       onChange={e => setInvoiceDate(e.target.value)}
-                      className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"
+                      className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Vencimiento</label>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Vencimiento</label>
                     <input
                       type="date"
                       value={dueDate}
                       onChange={e => setDueDate(e.target.value)}
-                      className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"
+                      className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Estado de Pago</label>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Estado de Pago</label>
                     <select
                       value={status}
                       onChange={e => setStatus(e.target.value)}
@@ -1893,46 +1893,46 @@ export const Invoices: React.FC = () => {
                       type="number"
                       value={calculateInvoiceTotal()}
                       readOnly
-                      className="w-full bg-white/50 border border-blue-200 text-blue-900 text-sm rounded-lg block p-2.5 font-bold shadow-sm"
+                      className="w-full bg-white dark:bg-gray-800/50 border border-blue-200 text-blue-900 text-sm rounded-lg block p-2.5 font-bold shadow-sm"
                       placeholder="Auto calculado"
                     />
                     <div className="text-[10px] text-blue-500 mt-1 flex items-center"><Check className="w-3 h-3 mr-1"/> Suma automática</div>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Impuesto (%)</label>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Impuesto (%)</label>
                     <input
                       type="number"
                       value={taxPercentage}
                       onChange={e => setTaxPercentage(Number(e.target.value))}
-                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
+                      className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Descuento ($)</label>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Descuento ($)</label>
                     <input
                       type="number"
                       value={discountAmount}
                       onChange={e => setDiscountAmount(Number(e.target.value))}
-                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
+                      className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Monto Exento ($)</label>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Monto Exento ($)</label>
                     <input
                       type="number"
                       value={exemptAmount}
                       onChange={e => setExemptAmount(Number(e.target.value))}
-                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
+                      className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
                       placeholder="Ej. 0"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Imp. Especial ($)</label>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Imp. Especial ($)</label>
                     <input
                       type="number"
                       value={specialTaxAmount}
                       onChange={e => setSpecialTaxAmount(Number(e.target.value))}
-                      className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
+                      className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
                       placeholder="Ej. 0"
                     />
                   </div>
@@ -1944,23 +1944,23 @@ export const Invoices: React.FC = () => {
               </div>
 
               {/* Item Entry Section */}
-              <div className="bg-white rounded-xl p-5 mb-6 border border-gray-200 shadow-sm">
+              <div className="bg-white dark:bg-gray-800 rounded-xl p-5 mb-6 border border-gray-200 dark:border-gray-700 shadow-sm">
                 <div className="flex justify-between items-center mb-4 border-b pb-2">
-                  <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider">Detalle de Ítems</h3>
-                  <span className="bg-gray-100 text-gray-600 py-1 px-3 rounded-full text-xs font-bold">{items.length} ingresados</span>
+                  <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Detalle de Ítems</h3>
+                  <span className="bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 py-1 px-3 rounded-full text-xs font-bold">{items.length} ingresados</span>
                 </div>
                 
-                <div className="grid grid-cols-12 gap-4 items-start bg-gray-50 p-5 rounded-xl border border-gray-200">
+                <div className="grid grid-cols-12 gap-4 items-start bg-gray-50 dark:bg-gray-900 p-5 rounded-xl border border-gray-200 dark:border-gray-700">
                   
                   {/* First Row: Product and Category */}
                   <div className="col-span-12 md:col-span-7 grid grid-cols-2 gap-4">
                       <div className="relative">
-                        <label className="block text-xs font-bold text-gray-700 mb-1">Descripción / Producto</label>
+                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">Descripción / Producto</label>
                         <input
                           type="text"
                           value={currentItem.product_name}
                           onChange={e => handleProductChange(e.target.value)}
-                          className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
+                          className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
                           placeholder="Ej. Abono foliar..."
                           autoComplete="off"
                           list="product-suggestions" 
@@ -1970,7 +1970,7 @@ export const Invoices: React.FC = () => {
                         </datalist>
                         
                         {showSuggestions && officialSuggestions.length > 0 && (
-                            <div className="absolute z-50 left-0 w-full mt-1 bg-white border border-blue-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+                            <div className="absolute z-50 left-0 w-full mt-1 bg-white dark:bg-gray-800 border border-blue-200 rounded-lg shadow-xl max-h-60 overflow-y-auto">
                                 <div className="px-3 py-2 text-xs font-bold text-blue-800 bg-blue-50 border-b border-blue-100 flex items-center">
                                     <Database className="w-3 h-3 mr-1" /> Sugerencias SAG (Registro Oficial)
                                 </div>
@@ -1981,9 +1981,9 @@ export const Invoices: React.FC = () => {
                                         onClick={() => selectOfficialProduct(sug)}
                                         className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 border-b border-gray-50 last:border-0 transition-colors"
                                     >
-                                        <div className="font-bold text-gray-900">{sug.commercial_name}</div>
-                                        <div className="text-xs text-gray-500 flex justify-between mt-1">
-                                            <span className="bg-gray-100 px-1 rounded">{sug.active_ingredient}</span>
+                                        <div className="font-bold text-gray-900 dark:text-gray-100">{sug.commercial_name}</div>
+                                        <div className="text-xs text-gray-500 dark:text-gray-400 flex justify-between mt-1">
+                                            <span className="bg-gray-100 dark:bg-gray-900 px-1 rounded">{sug.active_ingredient}</span>
                                             <span className="font-medium">{sug.concentration}</span>
                                         </div>
                                     </button>
@@ -1993,7 +1993,7 @@ export const Invoices: React.FC = () => {
                       </div>
                       
                       <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1">Categoría</label>
+                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">Categoría</label>
                         <select
                           value={currentItem.category}
                           onChange={e => {
@@ -2005,7 +2005,7 @@ export const Invoices: React.FC = () => {
                                   destination_id: '' // Reset destination when category changes
                               });
                           }}
-                          className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors overflow-hidden text-ellipsis whitespace-nowrap"
+                          className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors overflow-hidden text-ellipsis whitespace-nowrap"
                         >
                           {CATEGORIES.map(cat => (
                             <option key={cat} value={cat}>{cat}</option>
@@ -2017,22 +2017,22 @@ export const Invoices: React.FC = () => {
                   {/* Second Row: Quantities and Prices */}
                   <div className="col-span-12 md:col-span-5 grid grid-cols-3 gap-4">
                       <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1">Cantidad</label>
+                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">Cantidad</label>
                         <input
                           type="number"
                           step="0.01"
                           value={currentItem.quantity || ''}
                           onChange={e => setCurrentItem({...currentItem, quantity: Number(e.target.value)})}
-                          className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors text-right"
+                          className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors text-right"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1">Unidad</label>
+                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">Unidad</label>
                         <select
                           value={currentItem.unit}
                           onChange={e => setCurrentItem({...currentItem, unit: e.target.value})}
-                          className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors text-center"
+                          className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors text-center"
                         >
                           <option value="L">L</option>
                           <option value="kg">kg</option>
@@ -2044,20 +2044,20 @@ export const Invoices: React.FC = () => {
                       </div>
 
                       <div>
-                        <label className="block text-xs font-bold text-gray-700 mb-1">P. Unitario</label>
+                        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">P. Unitario</label>
                         <input
                           type="number"
                           step="0.01"
                           value={currentItem.unit_price || ''}
                           onChange={e => setCurrentItem({...currentItem, unit_price: Number(e.target.value)})}
-                          className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors text-right"
+                          className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors text-right"
                           placeholder="$"
                         />
                       </div>
                   </div>
 
                   {/* Integrated Destination Selector */}
-                  <div className="col-span-12 md:col-span-7 pt-3 border-t border-gray-200 mt-2">
+                  <div className="col-span-12 md:col-span-7 pt-3 border-t border-gray-200 dark:border-gray-700 mt-2">
                      <label className="block text-xs font-bold text-blue-700 mb-2 flex items-center">
                         <MapPin className="w-4 h-4 mr-1" /> Destino / Asignación Directa del Ítem
                      </label>
@@ -2083,7 +2083,7 @@ export const Invoices: React.FC = () => {
                             value={currentItem.destination_id || ''}
                             onChange={e => setCurrentItem({...currentItem, destination_id: e.target.value})}
                             disabled={destinationsLoading || !currentItem.destination_type || currentItem.destination_type === 'none'}
-                            className="w-full bg-white border border-blue-200 text-gray-900 text-sm rounded-lg p-2.5 disabled:bg-gray-100 disabled:border-gray-200 shadow-sm transition-colors"
+                            className="w-full bg-white dark:bg-gray-800 border border-blue-200 text-gray-900 dark:text-gray-100 text-sm rounded-lg p-2.5 disabled:bg-gray-100 dark:bg-gray-900 disabled:border-gray-200 dark:border-gray-700 shadow-sm transition-colors"
                          >
                             <option value="">
                                 {currentItem.destination_type === 'machine' ? 'Seleccione Máquina o Empresa...' : 
@@ -2125,15 +2125,15 @@ export const Invoices: React.FC = () => {
                   </div>
 
                   {/* Additional Notes Area */}
-                  <div className="col-span-12 md:col-span-5 pt-3 border-t border-gray-200 mt-2">
-                     <label className="block text-xs font-bold text-gray-700 mb-2 flex items-center">
+                  <div className="col-span-12 md:col-span-5 pt-3 border-t border-gray-200 dark:border-gray-700 mt-2">
+                     <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-2 flex items-center">
                         <FileText className="w-4 h-4 mr-1" /> Notas Adicionales / Detalles
                      </label>
                      <input
                           type="text"
                           value={currentItem.notes || ''}
                           onChange={e => setCurrentItem({...currentItem, notes: e.target.value})}
-                          className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
+                          className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors"
                           placeholder="Ej: Factura correspondiente a repuestos..."
                       />
                   </div>
@@ -2144,7 +2144,7 @@ export const Invoices: React.FC = () => {
                       <button
                         type="button"
                         onClick={cancelEditItem}
-                        className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-6 rounded-lg text-sm transition-colors shadow-sm"
+                        className="bg-gray-200 hover:bg-gray-300 text-gray-800 dark:text-gray-200 font-bold py-2 px-6 rounded-lg text-sm transition-colors shadow-sm"
                       >
                         Cancelar Edición
                       </button>
@@ -2165,9 +2165,9 @@ export const Invoices: React.FC = () => {
 
               {/* Items Table Summary (Small) */}
               {items.length > 0 && (
-                <div className="mb-6 overflow-hidden rounded-xl border border-gray-200 shadow-sm">
-                  <table className="w-full text-sm text-left text-gray-600">
-                    <thead className="text-xs text-gray-700 uppercase bg-gray-100 border-b border-gray-200">
+                <div className="mb-6 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                  <table className="w-full text-sm text-left text-gray-600 dark:text-gray-400">
+                    <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
                       <tr>
                         <th className="px-5 py-3">Descripción</th>
                         <th className="px-5 py-3">Categoría</th>
@@ -2178,14 +2178,14 @@ export const Invoices: React.FC = () => {
                     </thead>
                     <tbody>
                       {items.map((item, idx) => (
-                        <tr key={idx} className={`border-b last:border-0 hover:bg-gray-50 transition-colors ${editingItemIndex === idx ? 'bg-blue-50/50' : 'bg-white'}`}>
-                          <td className="px-5 py-3 font-medium text-gray-900">{item.product_name}</td>
+                        <tr key={idx} className={`border-b last:border-0 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 transition-colors ${editingItemIndex === idx ? 'bg-blue-50/50' : 'bg-white dark:bg-gray-800'}`}>
+                          <td className="px-5 py-3 font-medium text-gray-900 dark:text-gray-100">{item.product_name}</td>
                           <td className="px-5 py-3">
-                            <span className="bg-gray-100 text-gray-700 py-1 px-2 rounded-md text-xs font-medium border border-gray-200">{item.category}</span>
+                            <span className="bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-300 py-1 px-2 rounded-md text-xs font-medium border border-gray-200 dark:border-gray-700">{item.category}</span>
                           </td>
                           <td className="px-5 py-3 font-medium">{item.quantity} {item.unit}</td>
                           <td className="px-5 py-3">
-                            <div className="font-bold text-gray-900">{formatCLP(item.total_price)}</div>
+                            <div className="font-bold text-gray-900 dark:text-gray-100">{formatCLP(item.total_price)}</div>
                             {item.destination_type && item.destination_type !== 'none' && (
                                 <div className="text-[10px] text-blue-700 font-bold bg-blue-100 border border-blue-200 px-2 py-0.5 rounded-full inline-flex items-center mt-1">
                                   <MapPin className="w-2.5 h-2.5 mr-1"/> {item.destination_type === 'machine' ? '🚜' : '📍'} {item.destination_name}
@@ -2231,7 +2231,7 @@ export const Invoices: React.FC = () => {
                       Impuestos ({taxPercentage}%): <strong className="text-gray-300">{formatCLP(tax)}</strong>
                     </div>
                     <div className="text-3xl font-black tracking-tight text-white flex items-center">
-                      <span className="text-gray-500 mr-2 text-xl font-medium">TOTAL</span> {formatCLP(total)}
+                      <span className="text-gray-500 dark:text-gray-400 mr-2 text-xl font-medium">TOTAL</span> {formatCLP(total)}
                     </div>
                   </div>
                   
@@ -2320,7 +2320,7 @@ export const Invoices: React.FC = () => {
             <div className="space-y-4">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xs font-bold text-gray-400 uppercase">RESULTADOS</h3>
-                <span className="text-xs text-gray-500">{getFilteredInvoices().length} encontrados</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">{getFilteredInvoices().length} encontrados</span>
               </div>
               
               <div className="space-y-2 pr-2">
@@ -2347,13 +2347,13 @@ export const Invoices: React.FC = () => {
                                   Pagado: {new Date(inv.payment_date + 'T12:00:00').toLocaleDateString('es-CL')}
                               </span>
                           )}
-                          <span className="text-[10px] text-gray-500">
+                          <span className="text-[10px] text-gray-500 dark:text-gray-400">
                             {inv.invoice_items?.length || 0} items
                           </span>
                         </div>
                       </div>
                       <div className="text-sm text-gray-300 mb-1 truncate">{inv.supplier}</div>
-                      <div className="flex justify-between text-xs text-gray-500">
+                      <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
                         <span>{new Date(inv.invoice_date + 'T12:00:00').toLocaleDateString('es-CL')}</span>
                         <span className="font-bold text-gray-300">{formatCLP(inv.total_amount)}</span>
                       </div>
@@ -2377,7 +2377,7 @@ export const Invoices: React.FC = () => {
                     </div>
                   ))
                 ) : (
-                  <div className="text-center text-gray-500 py-8">
+                  <div className="text-center text-gray-500 dark:text-gray-400 py-8">
                     No se encontraron facturas
                   </div>
                 )}
@@ -2393,7 +2393,7 @@ export const Invoices: React.FC = () => {
                   >
                     <ChevronLeft className="w-5 h-5" />
                   </button>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
                     Página {currentPage} de {totalPages}
                   </span>
                   <button
@@ -2417,10 +2417,10 @@ export const Invoices: React.FC = () => {
                   style={{ colorScheme: 'dark' }} // Force dark dropdown to ensure visibility
                 >
                   {availableYears.map(year => (
-                    <option key={year} value={year} className="text-black bg-white">{year}</option>
+                    <option key={year} value={year} className="text-black bg-white dark:bg-gray-800">{year}</option>
                   ))}
                   {/* Fallback if empty */}
-                  {availableYears.length === 0 && <option value="2026" className="text-black bg-white">2026</option>}
+                  {availableYears.length === 0 && <option value="2026" className="text-black bg-white dark:bg-gray-800">2026</option>}
                 </select>
               </div>
 
@@ -2460,7 +2460,7 @@ export const Invoices: React.FC = () => {
                           <span className="font-bold">{formatCLP(cat.value)}</span>
                         </div>
                       ))}
-                      {stats.topCategories.length === 0 && <span className="text-gray-500 text-xs">Sin datos</span>}
+                      {stats.topCategories.length === 0 && <span className="text-gray-500 dark:text-gray-400 text-xs">Sin datos</span>}
                     </div>
                   </div>
                 </div>
@@ -2468,7 +2468,7 @@ export const Invoices: React.FC = () => {
             </>
           )}
           
-          <div className="mt-6 pt-4 border-t border-gray-800 flex justify-center items-center text-xs text-gray-500">
+          <div className="mt-6 pt-4 border-t border-gray-800 flex justify-center items-center text-xs text-gray-500 dark:text-gray-400">
             <div className="flex items-center space-x-2">
               <span className="w-2 h-2 bg-green-500 rounded-full"></span>
               <span>Usando Archivo Compartido</span>
@@ -2478,12 +2478,12 @@ export const Invoices: React.FC = () => {
       </div>
 
       {invoiceToPrint && (
-        <div id="print-modal" className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-75 print:bg-white print:p-0 print:block">
-            <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto print:shadow-none print:w-full print:max-w-none print:max-h-none print:overflow-visible print:rounded-none print:h-auto print:static print:inset-0 print:block">
-                <div className="p-4 border-b bg-gray-50 flex justify-between items-center print:hidden sticky top-0 z-10">
+        <div id="print-modal" className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-75 print:bg-white dark:bg-gray-800 print:p-0 print:block">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto print:shadow-none print:w-full print:max-w-none print:max-h-none print:overflow-visible print:rounded-none print:h-auto print:static print:inset-0 print:block">
+                <div className="p-4 border-b bg-gray-50 dark:bg-gray-900 flex justify-between items-center print:hidden sticky top-0 z-10">
                     <div>
-                        <h2 className="text-lg font-bold text-gray-800">Vista Previa de Impresión</h2>
-                        <p className="text-xs text-gray-500">Formato Factura Electrónica SII</p>
+                        <h2 className="text-lg font-bold text-gray-800 dark:text-gray-200">Vista Previa de Impresión</h2>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Formato Factura Electrónica SII</p>
                     </div>
                     <div className="flex space-x-3">
                         <button 
@@ -2494,7 +2494,7 @@ export const Invoices: React.FC = () => {
                         </button>
                         <button 
                             onClick={() => setInvoiceToPrint(null)} 
-                            className="bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 px-4 py-2 rounded-lg transition-colors"
+                            className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 dark:bg-gray-900 px-4 py-2 rounded-lg transition-colors"
                         >
                             Cerrar
                         </button>

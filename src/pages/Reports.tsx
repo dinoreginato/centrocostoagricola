@@ -1195,23 +1195,23 @@ export const Reports: React.FC = () => {
 
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center print:hidden">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Reportes de Gestión</h1>
-          <p className="text-sm text-gray-500">Vista integral de costos y gastos</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Reportes de Gestión</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Vista integral de costos y gastos</p>
         </div>
         <div className="mt-4 sm:mt-0 flex flex-wrap items-center gap-3">
           <button
             onClick={handleGeneratePDF}
-            className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+            className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
             title="Generar y Previsualizar Informe PDF"
           >
-            <Printer className="mr-2 h-4 w-4 text-gray-500" /> Imprimir PDF
+            <Printer className="mr-2 h-4 w-4 text-gray-500 dark:text-gray-400" /> Imprimir PDF
           </button>
           
           <div className="relative">
             <select
               value={selectedSeason}
               onChange={(e) => setSelectedSeason(e.target.value)}
-              className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm rounded-md"
+              className="block w-full pl-3 pr-10 py-2 text-base border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm rounded-md"
             >
               {availableSeasons.map(season => (
                 <option key={season} value={season}>{season}</option>
@@ -1233,17 +1233,17 @@ export const Reports: React.FC = () => {
       </div>
 
       <div className="hidden print:block mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">{selectedCompany.name}</h1>
-        <h2 className="text-xl text-gray-600 mt-2">{getReportTitle()} - {selectedSeason}</h2>
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">{selectedCompany.name}</h1>
+        <h2 className="text-xl text-gray-600 dark:text-gray-400 mt-2">{getReportTitle()} - {selectedSeason}</h2>
         <p className="text-sm text-gray-400 mt-1">Generado el {new Date().toLocaleDateString()}</p>
       </div>
 
-      <div className="border-b border-gray-200 print:hidden mb-4">
+      <div className="border-b border-gray-200 dark:border-gray-700 print:hidden mb-4">
         <nav className="-mb-px flex space-x-8">
           <button
             onClick={() => { setActiveGroup('general'); setActiveTab('general'); }}
             className={`${
-              activeGroup === 'general' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              activeGroup === 'general' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:border-gray-600'
             } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
           >
             <Scale className="mr-2 h-4 w-4" /> Costos y Producción
@@ -1251,7 +1251,7 @@ export const Reports: React.FC = () => {
           <button
             onClick={() => { setActiveGroup('financial'); setActiveTab('monthly'); }}
             className={`${
-              activeGroup === 'financial' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              activeGroup === 'financial' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:border-gray-600'
             } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
           >
             <DollarSign className="mr-2 h-4 w-4" /> Resumen Financiero
@@ -1259,7 +1259,7 @@ export const Reports: React.FC = () => {
           <button
             onClick={() => { setActiveGroup('inventory'); setActiveTab('chemicals'); }}
             className={`${
-              activeGroup === 'inventory' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              activeGroup === 'inventory' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:border-gray-600'
             } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
           >
             <Beaker className="mr-2 h-4 w-4" /> Insumos y Detalle
@@ -1267,7 +1267,7 @@ export const Reports: React.FC = () => {
           <button
             onClick={() => { setActiveGroup('comparative'); setActiveTab('comparative'); }}
             className={`${
-              activeGroup === 'comparative' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              activeGroup === 'comparative' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:border-gray-600'
             } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
           >
             <Layers className="mr-2 h-4 w-4" /> Comparativa Temporadas
@@ -1281,7 +1281,7 @@ export const Reports: React.FC = () => {
               <button
                 onClick={() => setActiveTab('general')}
                 className={`${
-                  activeTab === 'general' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                  activeTab === 'general' ? 'bg-white dark:bg-gray-800 shadow-sm text-purple-700' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 dark:bg-gray-900'
                 } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
               >
                 Costos Generales (USD/Kg)
@@ -1289,7 +1289,7 @@ export const Reports: React.FC = () => {
               <button
                 onClick={() => setActiveTab('budget')}
                 className={`${
-                  activeTab === 'budget' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                  activeTab === 'budget' ? 'bg-white dark:bg-gray-800 shadow-sm text-purple-700' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 dark:bg-gray-900'
                 } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
               >
                 Presupuesto y Ventas
@@ -1302,7 +1302,7 @@ export const Reports: React.FC = () => {
               <button
                 onClick={() => setActiveTab('monthly')}
                 className={`${
-                  activeTab === 'monthly' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                  activeTab === 'monthly' ? 'bg-white dark:bg-gray-800 shadow-sm text-purple-700' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 dark:bg-gray-900'
                 } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
               >
                 Gastos Mensuales
@@ -1310,7 +1310,7 @@ export const Reports: React.FC = () => {
               <button
                 onClick={() => setActiveTab('categories')}
                 className={`${
-                  activeTab === 'categories' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                  activeTab === 'categories' ? 'bg-white dark:bg-gray-800 shadow-sm text-purple-700' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 dark:bg-gray-900'
                 } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
               >
                 Por Clasificación
@@ -1318,7 +1318,7 @@ export const Reports: React.FC = () => {
               <button
                 onClick={() => setActiveTab('pending')}
                 className={`${
-                  activeTab === 'pending' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                  activeTab === 'pending' ? 'bg-white dark:bg-gray-800 shadow-sm text-purple-700' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 dark:bg-gray-900'
                 } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
               >
                 Facturas Pendientes
@@ -1326,7 +1326,7 @@ export const Reports: React.FC = () => {
               <button
                 onClick={() => setActiveTab('paid_payments')}
                 className={`${
-                  activeTab === 'paid_payments' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                  activeTab === 'paid_payments' ? 'bg-white dark:bg-gray-800 shadow-sm text-purple-700' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 dark:bg-gray-900'
                 } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
               >
                 Pagos Realizados
@@ -1339,7 +1339,7 @@ export const Reports: React.FC = () => {
               <button
                 onClick={() => setActiveTab('chemicals')}
                 className={`${
-                  activeTab === 'chemicals' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                  activeTab === 'chemicals' ? 'bg-white dark:bg-gray-800 shadow-sm text-purple-700' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 dark:bg-gray-900'
                 } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
               >
                 Insumos Químicos
@@ -1347,7 +1347,7 @@ export const Reports: React.FC = () => {
               <button
                 onClick={() => setActiveTab('applications')}
                 className={`${
-                  activeTab === 'applications' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                  activeTab === 'applications' ? 'bg-white dark:bg-gray-800 shadow-sm text-purple-700' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 dark:bg-gray-900'
                 } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
               >
                 Costos de Aplicación
@@ -1355,7 +1355,7 @@ export const Reports: React.FC = () => {
               <button
                 onClick={() => setActiveTab('detailed')}
                 className={`${
-                  activeTab === 'detailed' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                  activeTab === 'detailed' ? 'bg-white dark:bg-gray-800 shadow-sm text-purple-700' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 dark:bg-gray-900'
                 } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
               >
                 Informe Detallado (Excel)
@@ -1374,57 +1374,57 @@ export const Reports: React.FC = () => {
           {activeTab === 'budget' && (
             <div className="space-y-6">
                 {/* Settings for Budget - Exchange Rate */}
-                 <div className="bg-white p-4 rounded-lg shadow border border-gray-200 flex items-center justify-between">
+                 <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border border-gray-200 dark:border-gray-700 flex items-center justify-between">
                     <div>
-                        <h3 className="text-lg font-medium text-gray-900">Configuración de Cálculo</h3>
-                        <p className="text-sm text-gray-500">Defina el tipo de cambio para los cálculos automáticos de ventas</p>
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Configuración de Cálculo</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Defina el tipo de cambio para los cálculos automáticos de ventas</p>
                     </div>
                     <div className="flex items-center gap-4">
-                         <label className="text-sm font-medium text-gray-700">Dólar (CLP/USD):</label>
+                         <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Dólar (CLP/USD):</label>
                          <input
                              type="number"
                              value={usdExchangeRate}
                              onChange={(e) => setUsdExchangeRate(Number(e.target.value))}
-                             className="w-28 rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm text-right"
+                             className="w-28 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm text-right"
                          />
                     </div>
                  </div>
 
                 {/* Summary Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="bg-white p-6 rounded-lg shadow border-l-4 border-green-500">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-green-500">
                         <div className="flex items-center">
                             <div className="p-3 rounded-full bg-green-100 text-green-600">
                                 <DollarSign className="h-6 w-6" />
                             </div>
                             <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-500">Ingresos / Presupuesto</p>
-                                <p className="text-2xl font-semibold text-gray-900">
+                                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Ingresos / Presupuesto</p>
+                                <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
                                     {formatCLP(incomeEntries.reduce((sum, i) => sum + i.amount, 0))}
                                 </p>
                             </div>
                         </div>
                     </div>
-                    <div className="bg-white p-6 rounded-lg shadow border-l-4 border-red-500">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-red-500">
                         <div className="flex items-center">
                             <div className="p-3 rounded-full bg-red-100 text-red-600">
                                 <Scale className="h-6 w-6" />
                             </div>
                             <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-500">Gastos Totales</p>
-                                <p className="text-2xl font-semibold text-gray-900">
+                                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Gastos Totales</p>
+                                <p className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
                                     {formatCLP(monthlyExpenses.reduce((sum, m) => sum + m.total, 0))}
                                 </p>
                             </div>
                         </div>
                     </div>
-                    <div className="bg-white p-6 rounded-lg shadow border-l-4 border-blue-500">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-blue-500">
                         <div className="flex items-center">
                             <div className="p-3 rounded-full bg-blue-100 text-blue-600">
                                 <PieChartIcon className="h-6 w-6" />
                             </div>
                             <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-500">Balance / Saldo</p>
+                                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Balance / Saldo</p>
                                 <p className={`text-2xl font-semibold ${
                                     (incomeEntries.reduce((sum, i) => sum + i.amount, 0) - monthlyExpenses.reduce((sum, m) => sum + m.total, 0)) >= 0 
                                     ? 'text-green-600' : 'text-red-600'
@@ -1437,11 +1437,11 @@ export const Reports: React.FC = () => {
                 </div>
 
                 {/* Summary by Sector Table */}
-                <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-                    <div className="px-4 py-5 sm:px-6 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg">
+                    <div className="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row justify-between items-start sm:items-center">
                         <div>
-                            <h3 className="text-lg leading-6 font-medium text-gray-900">Resumen por Sector</h3>
-                            <p className="mt-1 text-sm text-gray-500">Kilos enviados y valores totales</p>
+                            <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100">Resumen por Sector</h3>
+                            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Kilos enviados y valores totales</p>
                         </div>
                         <div className="mt-2 sm:mt-0 flex items-center">
                             <label className="flex items-center space-x-2 cursor-pointer">
@@ -1451,31 +1451,31 @@ export const Reports: React.FC = () => {
                                     onChange={(e) => setDistributeGeneralCosts(e.target.checked)}
                                     className="form-checkbox h-4 w-4 text-green-600 transition duration-150 ease-in-out"
                                 />
-                                <span className="text-sm font-medium text-gray-700">Distribuir Gastos No Asignados (Proporcional a Has)</span>
+                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Distribuir Gastos No Asignados (Proporcional a Has)</span>
                             </label>
                         </div>
                     </div>
                     <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
+                        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                            <thead className="bg-gray-50 dark:bg-gray-900">
                                 <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sector / Campo</th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Has</th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Kilos (Kg)</th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ingresos (USD)</th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ingresos (CLP)</th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Directos (CLP)</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Sector / Campo</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Has</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total Kilos (Kg)</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Ingresos (USD)</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Ingresos (CLP)</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Gastos Directos (CLP)</th>
                                     {distributeGeneralCosts && (
-                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Gral. (CLP)</th>
+                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Gastos Gral. (CLP)</th>
                                     )}
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Total (USD)</th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Total (CLP)</th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Balance (USD)</th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Balance (CLP)</th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Promedio USD/Kg</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Gastos Total (USD)</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Gastos Total (CLP)</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Balance (USD)</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Balance (CLP)</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Promedio USD/Kg</th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
+                            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                                 {(() => {
                                     // 0. Calculate General Distribution Factor
                                     const totalInvoices = monthlyExpenses.reduce((sum, m) => sum + m.total, 0);
@@ -1581,12 +1581,12 @@ export const Reports: React.FC = () => {
                                         <>
                                             {rows.map((row, idx) => (
                                                 <tr key={idx}>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{row.name}</td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">{row.hectares > 0 ? row.hectares : '-'}</td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{row.kg.toLocaleString('es-CL')}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">{row.name}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500 dark:text-gray-400">{row.hectares > 0 ? row.hectares : '-'}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">{row.kg.toLocaleString('es-CL')}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-700 font-medium">${row.usd.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(row.income)}</td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.expenseDirect)}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">{formatCLP(row.income)}</td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-400">{formatCLP(row.expenseDirect)}</td>
                                                     {distributeGeneralCosts && (
                                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-orange-600">{formatCLP(row.expenseDistributed)}</td>
                                                     )}
@@ -1598,18 +1598,18 @@ export const Reports: React.FC = () => {
                                                     <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${row.balance >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
                                                         {formatCLP(row.balance)}
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500 font-medium">
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500 dark:text-gray-400 font-medium">
                                                         {row.kg > 0 ? `$${(row.usd / row.kg).toFixed(2)}` : '-'}
                                                     </td>
                                                 </tr>
                                             ))}
-                                            <tr className="bg-gray-50 font-bold border-t-2 border-gray-300">
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">TOTAL</td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">-</td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{totalKg.toLocaleString('es-CL')}</td>
+                                            <tr className="bg-gray-50 dark:bg-gray-900 font-bold border-t-2 border-gray-300 dark:border-gray-600">
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">TOTAL</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">-</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">{totalKg.toLocaleString('es-CL')}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-700">${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalIncome)}</td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(totalExpenseDirect)}</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">{formatCLP(totalIncome)}</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-400">{formatCLP(totalExpenseDirect)}</td>
                                                 {distributeGeneralCosts && (
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-orange-600">{formatCLP(totalExpenseDistributed)}</td>
                                                 )}
@@ -1621,7 +1621,7 @@ export const Reports: React.FC = () => {
                                                 <td className={`px-6 py-4 whitespace-nowrap text-sm text-right ${totalIncome - totalExpense >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
                                                     {formatCLP(totalIncome - totalExpense)}
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-400">
                                                     {totalKg > 0 ? `$${(totalUsd / totalKg).toFixed(2)}` : '-'}
                                                 </td>
                                             </tr>
@@ -1634,8 +1634,8 @@ export const Reports: React.FC = () => {
                 </div>
 
                 {/* Chart: Income vs Expenses */}
-                <div className="bg-white p-6 rounded-lg shadow">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">Flujo de Caja Mensual ({selectedSeason})</h3>
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Flujo de Caja Mensual ({selectedSeason})</h3>
                     <div className="h-96 w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart
@@ -1670,48 +1670,48 @@ export const Reports: React.FC = () => {
                 </div>
 
                 {/* Income Table */}
-                <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-                    <div className="px-4 py-5 sm:px-6 border-b border-gray-200 flex justify-between items-center">
+                <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg">
+                    <div className="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
                         <div>
-                            <h3 className="text-lg leading-6 font-medium text-gray-900">Registro de Ingresos y Presupuesto</h3>
-                            <p className="mt-1 text-sm text-gray-500">Ventas de fruta, exportaciones y presupuesto asignado</p>
+                            <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100">Registro de Ingresos y Presupuesto</h3>
+                            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Ventas de fruta, exportaciones y presupuesto asignado</p>
                         </div>
                     </div>
                     <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
+                        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                            <thead className="bg-gray-50 dark:bg-gray-900">
                                 <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descripción</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Campo / Sector</th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Kilos (Kg)</th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">USD</th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Monto (CLP)</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Fecha</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Categoría</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Descripción</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Campo / Sector</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Kilos (Kg)</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">USD</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Monto (CLP)</th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
+                            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                                 {incomeEntries.length === 0 ? (
                                     <tr>
-                                        <td colSpan={6} className="px-6 py-4 text-center text-gray-500">No hay ingresos registrados.</td>
+                                        <td colSpan={6} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">No hay ingresos registrados.</td>
                                     </tr>
                                 ) : (
                                     incomeEntries.map((entry) => (
                                         <tr key={entry.id}>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{new Date(entry.date + 'T12:00:00').toLocaleDateString('es-CL')}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">{new Date(entry.date + 'T12:00:00').toLocaleDateString('es-CL')}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                                 <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                                                     entry.category === 'Presupuesto' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
                                                 }`}>
                                                     {entry.category}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 text-sm text-gray-500">{entry.description}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                            <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{entry.description}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                                 {entry.fields?.name || '-'} {entry.sectors?.name ? `/ ${entry.sectors.name}` : ''}
                                             </td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">{(entry.quantity_kg || 0).toLocaleString('es-CL')}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">${(entry.amount_usd || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900 dark:text-gray-100">{(entry.quantity_kg || 0).toLocaleString('es-CL')}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900 dark:text-gray-100">${(entry.amount_usd || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-green-700">{formatCLP(entry.amount)}</td>
                                         </tr>
                                     ))
@@ -1727,16 +1727,16 @@ export const Reports: React.FC = () => {
       {activeTab === 'general' && (
         <div className="space-y-6">
             {/* Settings Card */}
-            <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border border-gray-200 dark:border-gray-700">
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-medium text-gray-900 flex items-center">
-                        <Settings className="mr-2 h-5 w-5 text-gray-500" />
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 flex items-center">
+                        <Settings className="mr-2 h-5 w-5 text-gray-500 dark:text-gray-400" />
                         Configuración de Reporte
                     </h3>
                 </div>
                 <div className="flex items-center gap-6">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Cambio (CLP/USD)</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tipo de Cambio (CLP/USD)</label>
                         <div className="relative rounded-md shadow-sm w-40">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <DollarSign className="h-4 w-4 text-gray-400" />
@@ -1745,22 +1745,22 @@ export const Reports: React.FC = () => {
                                 type="number"
                                 value={usdExchangeRate}
                                 onChange={(e) => setUsdExchangeRate(Number(e.target.value))}
-                                className="focus:ring-green-500 focus:border-green-500 block w-full pl-9 sm:text-sm border-gray-300 rounded-md"
+                                className="focus:ring-green-500 focus:border-green-500 block w-full pl-9 sm:text-sm border-gray-300 dark:border-gray-600 rounded-md"
                             />
                         </div>
                     </div>
-                    <div className="text-sm text-gray-500 pt-6">
+                    <div className="text-sm text-gray-500 dark:text-gray-400 pt-6">
                         * Los Kilos y Precios provienen del módulo "Liquidaciones".
                     </div>
                 </div>
             </div>
 
             {/* Main Table */}
-            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-                <div className="flex justify-between items-center px-4 py-5 sm:px-6 border-b border-gray-200">
+            <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg">
+                <div className="flex justify-between items-center px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
                   <div>
-                    <h3 className="text-lg leading-6 font-medium text-gray-900">Costos Generales y Producción ({selectedSeason})</h3>
-                    <p className="mt-1 text-sm text-gray-500">Resumen por Sector incluyendo Labores y Aplicaciones</p>
+                    <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100">Costos Generales y Producción ({selectedSeason})</h3>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Resumen por Sector incluyendo Labores y Aplicaciones</p>
                   </div>
                   <button
                       onClick={() => {
@@ -1806,29 +1806,29 @@ export const Reports: React.FC = () => {
                   </button>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-900">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Campo / Sector</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Has</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-green-50">Prod. (Kg)</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Mano Obra</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Personal</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Aplicaciones</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Maquinaria</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Riego</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Petróleo</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Combustible (Bencina)</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Otros</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total (CLP)</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total (USD)</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo/Ha (CLP)</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo/Ha (USD)</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo/Kg (CLP)</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo/Kg (USD)</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Campo / Sector</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Has</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-green-50">Prod. (Kg)</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Mano Obra</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Personal</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Aplicaciones</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Maquinaria</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Riego</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Petróleo</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Combustible (Bencina)</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Otros</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total (CLP)</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total (USD)</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Costo/Ha (CLP)</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Costo/Ha (USD)</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Costo/Kg (CLP)</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Costo/Kg (USD)</th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                       {reportData.map((row, index) => {
                           const costUsd = row.total_cost / (usdExchangeRate || 1);
                           const costPerHaUsd = row.cost_per_ha / (usdExchangeRate || 1);
@@ -1836,30 +1836,30 @@ export const Reports: React.FC = () => {
                           const costPerKgUsd = (row.kg_produced || 0) > 0 ? costUsd / row.kg_produced! : 0;
 
                           return (
-                            <tr key={index} className="hover:bg-gray-50">
+                            <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900">
                               <td className="px-6 py-4 whitespace-nowrap">
-                                  <div className="text-sm font-medium text-gray-900">{row.sector_name}</div>
-                                  <div className="text-xs text-gray-500">{row.field_name}</div>
+                                  <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{row.sector_name}</div>
+                                  <div className="text-xs text-gray-500 dark:text-gray-400">{row.field_name}</div>
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">{row.hectares}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500 dark:text-gray-400">{row.hectares}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-right bg-green-50">
                                   <div className="flex flex-col items-end gap-1">
-                                      <span className="font-medium text-gray-900">{(row.kg_produced || 0).toLocaleString('es-CL')} Kg</span>
+                                      <span className="font-medium text-gray-900 dark:text-gray-100">{(row.kg_produced || 0).toLocaleString('es-CL')} Kg</span>
                                       {row.price_per_kg > 0 && <span className="text-xs text-green-600 font-medium">US$ {row.price_per_kg.toFixed(2)}/Kg</span>}
                                   </div>
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-gray-600">{formatCLP(row.labor_cost)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-gray-600 dark:text-gray-400">{formatCLP(row.labor_cost)}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-indigo-600">{formatCLP(row.worker_cost)}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-blue-600">{formatCLP(row.app_cost_only)}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-orange-600">{formatCLP(row.machinery_cost)}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-cyan-600">{formatCLP(row.irrigation_cost)}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-purple-600">{formatCLP(row.fuel_cost_diesel)}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-purple-800">{formatCLP(row.fuel_cost_gasoline)}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-gray-600">{formatCLP(row.general_cost)}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-900">{formatCLP(row.total_cost)}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">${costUsd.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">{formatCLP(row.cost_per_ha)}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-600">${costPerHaUsd.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-gray-600 dark:text-gray-400">{formatCLP(row.general_cost)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-900 dark:text-gray-100">{formatCLP(row.total_cost)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-400">${costUsd.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900 dark:text-gray-100">{formatCLP(row.cost_per_ha)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-600 dark:text-gray-400">${costPerHaUsd.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-600">
                                   {costPerKgClp > 0 ? formatCLP(costPerKgClp) : '-'}
                               </td>
@@ -1879,13 +1879,13 @@ export const Reports: React.FC = () => {
       {/* 1. APPLICATIONS REPORT */}
       {activeTab === 'applications' && (
             <div className="space-y-6">
-              <div className="bg-white p-6 rounded-lg shadow">
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-medium text-gray-900">Costo por Hectárea ({selectedSeason})</h3>
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Costo por Hectárea ({selectedSeason})</h3>
                 </div>
                 <div className="h-96 w-full">
                   {reportData.length === 0 ? (
-                    <div className="flex h-full items-center justify-center text-gray-500">No hay datos para {selectedSeason}</div>
+                    <div className="flex h-full items-center justify-center text-gray-500 dark:text-gray-400">No hay datos para {selectedSeason}</div>
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={reportData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
@@ -1901,32 +1901,32 @@ export const Reports: React.FC = () => {
                 </div>
               </div>
               
-              <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-                <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
-                  <h3 className="text-lg leading-6 font-medium text-gray-900">Detalle por Sector ({selectedSeason})</h3>
+              <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg">
+                <div className="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                  <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100">Detalle por Sector ({selectedSeason})</h3>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-900">
                       <tr>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Campo</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sector</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hectáreas</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prod (Kg)</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Costo / Kg</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Costo Total</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Costo / Ha</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Campo</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Sector</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Hectáreas</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Prod (Kg)</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Costo / Kg</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Costo Total</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Costo / Ha</th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                       {reportData.map((row, index) => (
                         <tr key={index}>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{row.field_name}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.sector_name}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.hectares}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{(row.kg_produced || 0).toLocaleString('es-CL')}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">{row.field_name}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{row.sector_name}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{row.hectares}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{(row.kg_produced || 0).toLocaleString('es-CL')}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-blue-600">{row.cost_per_kg > 0 ? formatCLP(row.cost_per_kg) : '-'}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatCLP(row.app_cost_only)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">{formatCLP(row.app_cost_only)}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-green-700">{formatCLP(row.app_cost_per_ha)}</td>
                         </tr>
                       ))}
@@ -1939,11 +1939,11 @@ export const Reports: React.FC = () => {
 
           {/* 2. MONTHLY EXPENSES REPORT */}
           {activeTab === 'monthly' && (
-            <div className="bg-white p-6 rounded-lg shadow">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Evolución de Gastos Mensuales ({selectedSeason})</h3>
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Evolución de Gastos Mensuales ({selectedSeason})</h3>
               <div className="h-96 w-full">
                 {monthlyExpenses.every(m => m.total === 0) ? (
-                  <div className="flex h-full items-center justify-center text-gray-500">No hay gastos en {selectedSeason}</div>
+                  <div className="flex h-full items-center justify-center text-gray-500 dark:text-gray-400">No hay gastos en {selectedSeason}</div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={monthlyExpenses} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
@@ -1963,11 +1963,11 @@ export const Reports: React.FC = () => {
           {/* 3. CATEGORY EXPENSES REPORT */}
           {activeTab === 'categories' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-white p-6 rounded-lg shadow">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Gastos por Clasificación ({selectedSeason})</h3>
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
+                <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Gastos por Clasificación ({selectedSeason})</h3>
                 <div className="h-80 w-full">
                   {categoryExpenses.length === 0 ? (
-                    <div className="flex h-full items-center justify-center text-gray-500">No hay gastos en {selectedSeason}</div>
+                    <div className="flex h-full items-center justify-center text-gray-500 dark:text-gray-400">No hay gastos en {selectedSeason}</div>
                   ) : (
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
@@ -1994,21 +1994,21 @@ export const Reports: React.FC = () => {
                 </div>
               </div>
               
-              <div className="bg-white p-6 rounded-lg shadow overflow-hidden">
-                <h3 className="text-lg font-medium text-gray-900 mb-4">Detalle de Categorías ({selectedSeason})</h3>
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow overflow-hidden">
+                <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Detalle de Categorías ({selectedSeason})</h3>
                 <div className="overflow-y-auto max-h-80">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-900">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Categoría</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Monto Total</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Categoría</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Monto Total</th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                       {categoryExpenses.map((cat, index) => (
                         <tr key={index}>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{cat.category}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-900">{formatCLP(cat.total)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">{cat.category}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-900 dark:text-gray-100">{formatCLP(cat.total)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -2020,15 +2020,15 @@ export const Reports: React.FC = () => {
 
           {/* 5. CHEMICALS REPORT (NEW) */}
           {activeTab === 'chemicals' && (
-            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-              <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
+            <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg">
+              <div className="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
                     <div>
-                      <h3 className="text-lg leading-6 font-medium text-gray-900">Insumos Químicos y Fertilizantes ({selectedSeason})</h3>
-                      <p className="mt-1 text-sm text-gray-500">Detalle de productos adquiridos según facturas</p>
+                      <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100">Insumos Químicos y Fertilizantes ({selectedSeason})</h3>
+                      <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Detalle de productos adquiridos según facturas</p>
                     </div>
                     <div className="text-right mt-2 sm:mt-0">
-                      <span className="text-sm font-medium text-gray-500">Total Insumos:</span>
+                      <span className="text-sm font-medium text-gray-500 dark:text-gray-400">Total Insumos:</span>
                       <span className="ml-2 text-xl font-bold text-green-700">
                         {formatCLP(
                             chemicalProducts
@@ -2041,11 +2041,11 @@ export const Reports: React.FC = () => {
                 
                 {/* Filter */}
                 <div className="w-full sm:w-64">
-                    <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Filtrar por Tipo</label>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">Filtrar por Tipo</label>
                     <select
                         value={filterChemicalCategory}
                         onChange={(e) => setFilterChemicalCategory(e.target.value)}
-                        className="block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                        className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
                     >
                         <option value="all">Todos los Tipos</option>
                         {Array.from(new Set(chemicalProducts.map(p => p.category))).sort().map(cat => (
@@ -2055,41 +2055,41 @@ export const Reports: React.FC = () => {
                 </div>
               </div>
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-900">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Cantidad Total</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Precio Promedio</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo Total</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Producto</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Categoría</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Cantidad Total</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Precio Promedio</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Costo Total</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                     {chemicalProducts.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-6 py-4 text-center text-gray-500">No hay compras de insumos registradas en {selectedSeason}</td>
+                        <td colSpan={5} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">No hay compras de insumos registradas en {selectedSeason}</td>
                       </tr>
                     ) : (
                       chemicalProducts
                         .filter(p => filterChemicalCategory === 'all' || p.category === filterChemicalCategory)
                         .map((prod, index) => (
                         <tr key={index}>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{prod.name}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">{prod.name}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                             <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
                               {prod.category}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{prod.total_quantity.toLocaleString('es-CL')}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">{formatCLP(prod.avg_price)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">{prod.total_quantity.toLocaleString('es-CL')}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500 dark:text-gray-400">{formatCLP(prod.avg_price)}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-green-700">{formatCLP(prod.total_cost)}</td>
                         </tr>
                       ))
                     )}
                     {chemicalProducts.filter(p => filterChemicalCategory === 'all' || p.category === filterChemicalCategory).length === 0 && chemicalProducts.length > 0 && (
                          <tr>
-                            <td colSpan={5} className="px-6 py-4 text-center text-gray-500">No hay productos en esta categoría.</td>
+                            <td colSpan={5} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">No hay productos en esta categoría.</td>
                          </tr>
                     )}
                   </tbody>
@@ -2101,11 +2101,11 @@ export const Reports: React.FC = () => {
           {/* 6. PENDING INVOICES REPORT */}
           {activeTab === 'pending' && (
             <div className="space-y-6">
-                <div className="bg-white p-4 rounded-lg shadow border border-gray-200">
+                <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border border-gray-200 dark:border-gray-700">
                     <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-4">
                         <div>
-                            <h3 className="text-lg leading-6 font-medium text-gray-900">Facturas Pendientes de Pago</h3>
-                            <p className="mt-1 text-sm text-gray-500">Facturas ingresadas sin marcar como "Pagada"</p>
+                            <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100">Facturas Pendientes de Pago</h3>
+                            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Facturas ingresadas sin marcar como "Pagada"</p>
                         </div>
                         <div className="text-right bg-red-50 p-3 rounded-lg border border-red-100 w-full lg:w-auto">
                             <span className="text-sm font-medium text-red-800">Total Deuda Mostrada:</span>
@@ -2117,7 +2117,7 @@ export const Reports: React.FC = () => {
 
                     <div className="flex flex-wrap items-end gap-3 pt-4 border-t border-gray-100">
                         <div className="w-full md:w-auto">
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Proveedores (Selección Múltiple)</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Proveedores (Selección Múltiple)</label>
                             <div className="flex gap-2">
                                 <select
                                     onChange={(e) => {
@@ -2127,7 +2127,7 @@ export const Reports: React.FC = () => {
                                         }
                                         e.target.value = ''; // Reset select
                                     }}
-                                    className="block w-48 rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
+                                    className="block w-48 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
                                 >
                                     <option value="">Añadir proveedor...</option>
                                     {Array.from(new Set(pendingInvoices.map(inv => inv.supplier))).sort().filter(s => !pendingSupplierFilter.includes(s)).map(sup => (
@@ -2147,7 +2147,7 @@ export const Reports: React.FC = () => {
                             </div>
                         </div>
                         <div className="w-full md:w-auto">
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Categorías (Selección Múltiple)</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Categorías (Selección Múltiple)</label>
                             <div className="flex gap-2">
                                 <select
                                     onChange={(e) => {
@@ -2157,7 +2157,7 @@ export const Reports: React.FC = () => {
                                         }
                                         e.target.value = ''; // Reset select
                                     }}
-                                    className="block w-48 rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
+                                    className="block w-48 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
                                 >
                                     <option value="">Añadir categoría...</option>
                                     {Array.from(new Set(pendingInvoices.flatMap(inv => inv.categories))).sort().filter(c => !pendingCategoryFilter.includes(c)).map(cat => (
@@ -2177,21 +2177,21 @@ export const Reports: React.FC = () => {
                             </div>
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Desde (Vencimiento)</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Desde (Vencimiento)</label>
                             <input 
                                 type="date" 
                                 value={pendingStartDate}
                                 onChange={(e) => setPendingStartDate(e.target.value)}
-                                className="block w-36 rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
+                                className="block w-36 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Hasta (Vencimiento)</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Hasta (Vencimiento)</label>
                             <input 
                                 type="date" 
                                 value={pendingEndDate}
                                 onChange={(e) => setPendingEndDate(e.target.value)}
-                                className="block w-36 rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
+                                className="block w-36 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
                             />
                         </div>
                         {(pendingStartDate || pendingEndDate || pendingSupplierFilter.length > 0 || pendingCategoryFilter.length > 0) && (
@@ -2202,7 +2202,7 @@ export const Reports: React.FC = () => {
                                     setPendingSupplierFilter([]);
                                     setPendingCategoryFilter([]);
                                 }}
-                                className="mb-0.5 px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                                className="mb-0.5 px-3 py-1.5 border border-gray-300 dark:border-gray-600 shadow-sm text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
                             >
                                 Limpiar Filtros
                             </button>
@@ -2210,30 +2210,30 @@ export const Reports: React.FC = () => {
                     </div>
                 </div>
 
-              <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+              <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg">
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-900">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vencimiento</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Proveedor</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categorías</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">N° Factura</th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Monto Total</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Vencimiento</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Estado</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Proveedor</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Categorías</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">N° Factura</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Monto Total</th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                     {filteredPendingInvoices.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                        <td colSpan={6} className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
                             No hay facturas pendientes que coincidan con los filtros seleccionados.
                         </td>
                       </tr>
                     ) : (
                       filteredPendingInvoices.map((inv) => (
-                        <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        <tr key={inv.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
                             {new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL')}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -2243,16 +2243,16 @@ export const Reports: React.FC = () => {
                               {inv.days_overdue > 0 ? `${inv.days_overdue} días vencida` : 'Por vencer'}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-700">{inv.supplier}</td>
-                          <td className="px-6 py-4 text-sm text-gray-500">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-700 dark:text-gray-300">{inv.supplier}</td>
+                          <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
                               <div className="flex flex-wrap gap-1">
                                   {inv.categories.slice(0, 2).map((cat, i) => (
-                                      <span key={i} className="bg-gray-100 px-2 py-0.5 rounded text-[10px] border border-gray-200">{cat}</span>
+                                      <span key={i} className="bg-gray-100 dark:bg-gray-900 px-2 py-0.5 rounded text-[10px] border border-gray-200 dark:border-gray-700">{cat}</span>
                                   ))}
                                   {inv.categories.length > 2 && <span className="text-xs text-gray-400">+{inv.categories.length - 2}</span>}
                               </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">N° {inv.invoice_number}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">N° {inv.invoice_number}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-black text-red-600">{formatCLP(inv.total_amount)}</td>
                         </tr>
                       ))
@@ -2267,34 +2267,34 @@ export const Reports: React.FC = () => {
           {/* 7. PAID PAYMENTS REPORT */}
           {activeTab === 'paid_payments' && (
             <div className="space-y-6">
-                <div className="bg-white p-4 rounded-lg shadow border border-gray-200 flex flex-wrap gap-4 items-center justify-between">
+                <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border border-gray-200 dark:border-gray-700 flex flex-wrap gap-4 items-center justify-between">
                     <div>
-                        <h3 className="text-lg font-medium text-gray-900">Pagos Realizados</h3>
-                        <p className="text-sm text-gray-500">Segmentado por categoría y fecha de vencimiento</p>
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Pagos Realizados</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Segmentado por categoría y fecha de vencimiento</p>
                     </div>
                     <div className="flex flex-wrap items-end gap-2">
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Desde (Vencimiento)</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Desde (Vencimiento)</label>
                             <input 
                                 type="date" 
                                 value={paidStartDate}
                                 onChange={(e) => setPaidStartDate(e.target.value)}
-                                className="block w-36 rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-xs"
+                                className="block w-36 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-xs"
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-medium text-gray-500 mb-1">Hasta (Vencimiento)</label>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Hasta (Vencimiento)</label>
                             <input 
                                 type="date" 
                                 value={paidEndDate}
                                 onChange={(e) => setPaidEndDate(e.target.value)}
-                                className="block w-36 rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-xs"
+                                className="block w-36 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-xs"
                             />
                         </div>
                         {(paidStartDate || paidEndDate) && (
                             <button
                                 onClick={() => { setPaidStartDate(''); setPaidEndDate(''); }}
-                                className="mb-0.5 px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                                className="mb-0.5 px-3 py-1.5 border border-gray-300 dark:border-gray-600 shadow-sm text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
                             >
                                 Limpiar
                             </button>
@@ -2368,7 +2368,7 @@ export const Reports: React.FC = () => {
 
                     if (sortedGroups.length === 0) {
                         return (
-                            <div className="text-center py-10 text-gray-500 bg-white rounded-lg shadow">
+                            <div className="text-center py-10 text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-lg shadow">
                                 No hay pagos registrados en el periodo seleccionado.
                             </div>
                         );
@@ -2381,36 +2381,36 @@ export const Reports: React.FC = () => {
                                 const sortedItems = data.items.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
                                 return (
-                                    <div key={category} className="bg-white shadow overflow-hidden sm:rounded-lg">
-                                        <div className="px-4 py-5 sm:px-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-                                            <h3 className="text-lg leading-6 font-medium text-gray-900">{category}</h3>
+                                    <div key={category} className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg">
+                                        <div className="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-between items-center">
+                                            <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100">{category}</h3>
                                             <span className="text-lg font-bold text-green-700">{formatCLP(data.total)}</span>
                                         </div>
                                         <div className="overflow-x-auto">
-                                            <table className="min-w-full divide-y divide-gray-200">
-                                                <thead className="bg-white">
+                                            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                                <thead className="bg-white dark:bg-gray-800">
                                                     <tr>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vencimiento</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha Emisión</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Proveedor</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">N° Factura</th>
-                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Detalle</th>
-                                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Monto</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Vencimiento</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Fecha Emisión</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Proveedor</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">N° Factura</th>
+                                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Detalle</th>
+                                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Monto</th>
                                                     </tr>
                                                 </thead>
-                                                <tbody className="bg-white divide-y divide-gray-200">
+                                                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                                                     {sortedItems.map((item, idx) => (
-                                                        <tr key={idx} className="hover:bg-gray-50">
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                                        <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900">
+                                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
                                                                 {new Date(item.dueDate + 'T12:00:00').toLocaleDateString('es-CL')}
                                                             </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                                                 {new Date(item.date + 'T12:00:00').toLocaleDateString('es-CL')}
                                                             </td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.supplier}</td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.invoiceNumber}</td>
-                                                            <td className="px-6 py-4 text-sm text-gray-500">{item.description}</td>
-                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">{formatCLP(item.amount)}</td>
+                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{item.supplier}</td>
+                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{item.invoiceNumber}</td>
+                                                            <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{item.description}</td>
+                                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900 dark:text-gray-100">{formatCLP(item.amount)}</td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
@@ -2428,13 +2428,13 @@ export const Reports: React.FC = () => {
           {/* 7. DETAILED REPORT */}
           {activeTab === 'detailed' && (
             <div className="space-y-6">
-                <div className="bg-white p-4 rounded-lg shadow border border-gray-200 flex flex-wrap gap-4 items-center">
+                <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border border-gray-200 dark:border-gray-700 flex flex-wrap gap-4 items-center">
                     <div>
-                        <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Filtrar por Mes</label>
+                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">Filtrar por Mes</label>
                         <select 
                             value={filterMonth}
                             onChange={(e) => setFilterMonth(e.target.value)}
-                            className="block w-40 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            className="block w-40 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                         >
                             <option value="all">Todos los Meses</option>
                             {['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'].map((m, i) => (
@@ -2443,11 +2443,11 @@ export const Reports: React.FC = () => {
                         </select>
                     </div>
                     <div>
-                        <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Filtrar por Categoría</label>
+                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">Filtrar por Categoría</label>
                         <select 
                             value={filterCategory}
                             onChange={(e) => setFilterCategory(e.target.value)}
-                            className="block w-48 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                            className="block w-48 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                         >
                             <option value="all">Todas las Categorías</option>
                             {Array.from(new Set(rawInvoices.flatMap(i => i.invoice_items?.map((item: any) => item.category || 'Sin Categoría') || []))).sort().map((cat: any) => (
@@ -2506,38 +2506,38 @@ export const Reports: React.FC = () => {
                         const monthTotal = filteredCategories.reduce((sum, c) => sum + c.total, 0);
 
                         return (
-                            <div key={month.monthIndex} className="bg-white shadow overflow-hidden sm:rounded-lg">
-                                <div className="px-4 py-5 sm:px-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-                                    <h3 className="text-lg leading-6 font-medium text-gray-900">{month.monthName}</h3>
+                            <div key={month.monthIndex} className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg">
+                                <div className="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-between items-center">
+                                    <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100">{month.monthName}</h3>
                                     <span className="text-lg font-bold text-indigo-600">{formatCLP(monthTotal)}</span>
                                 </div>
                                 <div className="p-4 space-y-6">
                                     {filteredCategories.map((cat, idx) => (
                                         <div key={idx} className="border rounded-md overflow-hidden">
-                                            <div className="bg-gray-100 px-4 py-2 border-b flex justify-between">
-                                                <span className="font-semibold text-gray-700">{cat.name}</span>
-                                                <span className="font-bold text-gray-900">{formatCLP(cat.total)}</span>
+                                            <div className="bg-gray-100 dark:bg-gray-900 px-4 py-2 border-b flex justify-between">
+                                                <span className="font-semibold text-gray-700 dark:text-gray-300">{cat.name}</span>
+                                                <span className="font-bold text-gray-900 dark:text-gray-100">{formatCLP(cat.total)}</span>
                                             </div>
-                                            <table className="min-w-full divide-y divide-gray-200">
-                                                <thead className="bg-gray-50">
+                                            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                                <thead className="bg-gray-50 dark:bg-gray-900">
                                                     <tr>
-                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Proveedor</th>
-                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Factura</th>
-                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Detalle</th>
-                                                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Monto</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fecha</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Proveedor</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Factura</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Detalle</th>
+                                                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Monto</th>
                                                     </tr>
                                                 </thead>
-                                                <tbody className="bg-white divide-y divide-gray-200">
+                                                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                                                     {cat.items.map((item, i) => (
                                                         <tr key={i}>
-                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">
+                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
                                                                 {new Date(item.date + 'T12:00:00').toLocaleDateString('es-CL')}
                                                             </td>
-                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{item.supplier}</td>
-                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">{item.invoiceNumber}</td>
-                                                            <td className="px-4 py-2 text-xs text-gray-500 truncate max-w-xs">{item.description}</td>
-                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">{formatCLP(item.total)}</td>
+                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900 dark:text-gray-100">{item.supplier}</td>
+                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">{item.invoiceNumber}</td>
+                                                            <td className="px-4 py-2 text-xs text-gray-500 dark:text-gray-400 truncate max-w-xs">{item.description}</td>
+                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900 dark:text-gray-100">{formatCLP(item.total)}</td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
@@ -2550,7 +2550,7 @@ export const Reports: React.FC = () => {
                     })}
                 
                 {detailedReport.filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth).length === 0 && (
-                    <div className="text-center py-10 text-gray-500 bg-white rounded-lg shadow">
+                    <div className="text-center py-10 text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 rounded-lg shadow">
                         No hay registros para los filtros seleccionados.
                     </div>
                 )}
@@ -2561,11 +2561,11 @@ export const Reports: React.FC = () => {
 
       {activeTab === 'comparative' && (
         <div className="space-y-6">
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100">
                 <div className="mb-6 flex justify-between items-center">
                     <div>
-                        <h3 className="text-lg font-bold text-gray-900">Comparativa Histórica de Gastos</h3>
-                        <p className="text-sm text-gray-500">Temporada {selectedSeason} vs Temporada Anterior</p>
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Comparativa Histórica de Gastos</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Temporada {selectedSeason} vs Temporada Anterior</p>
                     </div>
                 </div>
                 <div className="h-96 w-full">
@@ -2589,43 +2589,43 @@ export const Reports: React.FC = () => {
                 </div>
             </div>
 
-            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-                <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
-                    <h3 className="text-lg leading-6 font-medium text-gray-900">Detalle Mes a Mes</h3>
+            <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg">
+                <div className="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100">Detalle Mes a Mes</h3>
                 </div>
-                <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-900">
                         <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mes</th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Temporada Anterior</th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Temporada {selectedSeason}</th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Variación</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Mes</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Temporada Anterior</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Temporada {selectedSeason}</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Variación</th>
                         </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                         {comparativeData.map((row, idx) => {
                             const variation = row.prev > 0 ? ((row.current - row.prev) / row.prev) * 100 : (row.current > 0 ? 100 : 0);
                             const isPositive = variation > 0;
                             return (
-                                <tr key={idx} className="hover:bg-gray-50">
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{row.month}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">{formatCLP(row.prev)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">{formatCLP(row.current)}</td>
+                                <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">{row.month}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500 dark:text-gray-400">{formatCLP(row.prev)}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900 dark:text-gray-100">{formatCLP(row.current)}</td>
                                     <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${isPositive ? 'text-red-600' : 'text-green-600'}`}>
                                         {variation === 0 ? '-' : `${isPositive ? '+' : ''}${variation.toFixed(1)}%`}
                                     </td>
                                 </tr>
                             );
                         })}
-                        <tr className="bg-gray-50 font-bold">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">TOTAL</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                        <tr className="bg-gray-50 dark:bg-gray-900 font-bold">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">TOTAL</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">
                                 {formatCLP(comparativeData.reduce((sum, r) => sum + r.prev, 0))}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">
                                 {formatCLP(comparativeData.reduce((sum, r) => sum + r.current, 0))}
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">
                                 {(() => {
                                     const totalPrev = comparativeData.reduce((sum, r) => sum + r.prev, 0);
                                     const totalCurrent = comparativeData.reduce((sum, r) => sum + r.current, 0);
@@ -2646,7 +2646,7 @@ export const Reports: React.FC = () => {
           {/* Top Bar (Auto-hides slightly, visible on hover) */}
           <div className="flex justify-between items-center p-6 opacity-30 hover:opacity-100 transition-opacity absolute top-0 left-0 right-0 z-10">
             <div className="text-xl font-bold text-slate-400">{selectedCompany?.name} - {getReportTitle()}</div>
-            <button onClick={exitPresentation} className="text-slate-400 hover:text-red-500 bg-white/80 rounded-full p-2">
+            <button onClick={exitPresentation} className="text-slate-400 hover:text-red-500 bg-white dark:bg-gray-800/80 rounded-full p-2">
               <X className="w-8 h-8" />
             </button>
           </div>
@@ -2671,7 +2671,7 @@ export const Reports: React.FC = () => {
               <div className="w-full h-full flex flex-col animate-fade-in-up pt-4">
                 <h2 className="text-3xl lg:text-4xl font-bold text-slate-800 mb-6 text-center">{getReportTitle()}</h2>
                 
-                <div className="flex-1 bg-white rounded-3xl shadow-xl p-6 overflow-y-auto pb-24" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+                <div className="flex-1 bg-white dark:bg-gray-800 rounded-3xl shadow-xl p-6 overflow-y-auto pb-24" style={{ maxHeight: 'calc(100vh - 120px)' }}>
                   
                   {/* General Report - Overview */}
                   {activeTab === 'general' && currentSlide === 1 && (
@@ -2850,7 +2850,7 @@ export const Reports: React.FC = () => {
                   {activeTab === 'pending' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                       {filteredPendingInvoices.map((inv, idx) => (
-                        <div key={idx} className="bg-white p-8 rounded-2xl shadow border-l-8 border-red-500 flex flex-col">
+                        <div key={idx} className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow border-l-8 border-red-500 flex flex-col">
                           <div className="text-2xl font-bold text-slate-800 mb-2 truncate" title={inv.supplier}>{inv.supplier}</div>
                           <div className="text-xl text-slate-500 mb-6">N° {inv.invoice_number}</div>
                           <div className="flex justify-between items-end mt-auto pt-4 border-t border-slate-100">
@@ -2888,7 +2888,7 @@ export const Reports: React.FC = () => {
           </div>
 
           {/* Bottom Bar / Controls */}
-          <div className="flex justify-between items-center p-6 bg-white/80 backdrop-blur-sm absolute bottom-0 left-0 right-0 z-10 border-t border-slate-200">
+          <div className="flex justify-between items-center p-6 bg-white dark:bg-gray-800/80 backdrop-blur-sm absolute bottom-0 left-0 right-0 z-10 border-t border-slate-200">
             <div className="text-slate-400 text-sm lg:text-base flex items-center">
               <span className="hidden sm:inline">Use las flechas del teclado </span>
               <span className="font-mono bg-slate-100 px-2 py-1 rounded ml-2">←</span>

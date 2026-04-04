@@ -298,15 +298,15 @@ export const Fields: React.FC = () => {
   };
 
   if (!selectedCompany) {
-    return <div className="p-8 text-center text-gray-500">Selecciona una empresa para gestionar sus campos.</div>;
+    return <div className="p-8 text-center text-gray-500 dark:text-gray-400">Selecciona una empresa para gestionar sus campos.</div>;
   }
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Gestión de Campos</h1>
-          <p className="text-sm text-gray-500">Administra tus campos, sectores y cultivos</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Gestión de Campos</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Administra tus campos, sectores y cultivos</p>
         </div>
         {userRole !== 'viewer' && (
           <button
@@ -320,38 +320,38 @@ export const Fields: React.FC = () => {
 
       {/* Create Field Form */}
       {showFieldForm && (
-        <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Agregar Nuevo Campo</h3>
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Agregar Nuevo Campo</h3>
           <form onSubmit={handleCreateField} className="grid grid-cols-1 gap-6 sm:grid-cols-4">
             <div className="sm:col-span-1">
-              <label className="block text-sm font-medium text-gray-700">Nombre del Campo</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Nombre del Campo</label>
               <input
                 type="text"
                 required
                 value={newFieldName}
                 onChange={e => setNewFieldName(e.target.value)}
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
               />
             </div>
             <div className="sm:col-span-1">
-              <label className="block text-sm font-medium text-gray-700">Hectáreas Totales</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Hectáreas Totales</label>
               <input
                 type="number"
                 step="0.01"
                 required
                 value={newFieldHectares}
                 onChange={e => setNewFieldHectares(e.target.value)}
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
               />
             </div>
             <div className="sm:col-span-1">
-              <label className="block text-sm font-medium text-gray-700">Tipo de Frutal</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tipo de Frutal</label>
               <input
                 type="text"
                 required
                 value={newFieldFruit}
                 onChange={e => setNewFieldFruit(e.target.value)}
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
               />
             </div>
             <div className="sm:col-span-1 flex items-end space-x-2">
@@ -364,7 +364,7 @@ export const Fields: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowFieldForm(false)}
-                className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300"
+                className="flex-1 bg-gray-200 text-gray-700 dark:text-gray-300 px-4 py-2 rounded-md hover:bg-gray-300"
               >
                 Cancelar
               </button>
@@ -379,17 +379,17 @@ export const Fields: React.FC = () => {
           <Loader2 className="animate-spin h-8 w-8 text-green-600" />
         </div>
       ) : fields.length === 0 ? (
-        <div className="text-center py-12 bg-white rounded-lg border-2 border-dashed border-gray-300">
+        <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
           <Map className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No hay campos registrados</h3>
-          <p className="mt-1 text-sm text-gray-500">Comienza agregando tu primer campo.</p>
+          <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">No hay campos registrados</h3>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Comienza agregando tu primer campo.</p>
         </div>
       ) : (
-        <div className="bg-white shadow overflow-hidden sm:rounded-md">
-          <ul className="divide-y divide-gray-200">
+        <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-md">
+          <ul className="divide-y divide-gray-200 dark:divide-gray-700">
             {fields.map((field) => (
               <li key={field.id}>
-                <div className="px-4 py-4 sm:px-6 hover:bg-gray-50 transition duration-150 ease-in-out">
+                <div className="px-4 py-4 sm:px-6 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 transition duration-150 ease-in-out">
                   {editingFieldId === field.id ? (
                     <form onSubmit={(e) => handleUpdateField(e, field.id)} className="flex flex-col sm:flex-row gap-4 items-start sm:items-center w-full">
                       <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-4 w-full">
@@ -397,7 +397,7 @@ export const Fields: React.FC = () => {
                           type="text"
                           value={editFieldName}
                           onChange={(e) => setEditFieldName(e.target.value)}
-                          className="block w-full border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm focus:ring-green-500 focus:border-green-500"
+                          className="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-1 px-2 text-sm focus:ring-green-500 focus:border-green-500"
                           placeholder="Nombre del Campo"
                           required
                         />
@@ -405,7 +405,7 @@ export const Fields: React.FC = () => {
                           type="text"
                           value={editFieldFruit}
                           onChange={(e) => setEditFieldFruit(e.target.value)}
-                          className="block w-full border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm focus:ring-green-500 focus:border-green-500"
+                          className="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-1 px-2 text-sm focus:ring-green-500 focus:border-green-500"
                           placeholder="Tipo de Frutal"
                           required
                         />
@@ -414,7 +414,7 @@ export const Fields: React.FC = () => {
                           step="0.01"
                           value={editFieldHectares}
                           onChange={(e) => setEditFieldHectares(e.target.value)}
-                          className="block w-full border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm focus:ring-green-500 focus:border-green-500"
+                          className="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-1 px-2 text-sm focus:ring-green-500 focus:border-green-500"
                           placeholder="Hectáreas"
                           required
                         />
@@ -447,7 +447,7 @@ export const Fields: React.FC = () => {
                         )}
                         <div>
                           <div className="text-sm font-medium text-green-600 truncate">{field.name}</div>
-                          <div className="flex items-center text-sm text-gray-500">
+                          <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
                             <span className="truncate">{field.fruit_type}</span>
                             <span className="mx-2">•</span>
                             <span>{field.total_hectares} ha</span>
@@ -455,7 +455,7 @@ export const Fields: React.FC = () => {
                         </div>
                       </div>
                       <div className="flex items-center space-x-4">
-                        <div className="text-sm text-gray-500 hidden sm:block">
+                        <div className="text-sm text-gray-500 dark:text-gray-400 hidden sm:block">
                           {field.sectors?.length || 0} sectores
                         </div>
                         <div className="flex items-center space-x-2">
@@ -480,19 +480,19 @@ export const Fields: React.FC = () => {
 
                   {/* Sectors Expansion */}
                   {expandedFieldId === field.id && !editingFieldId && (
-                    <div className="mt-4 ml-8 border-l-2 border-gray-200 pl-4">
-                      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Sectores</h4>
+                    <div className="mt-4 ml-8 border-l-2 border-gray-200 dark:border-gray-700 pl-4">
+                      <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Sectores</h4>
                       
                       <ul className="space-y-3 mb-4">
                         {field.sectors?.map((sector) => (
-                          <li key={sector.id} className="flex items-center justify-between text-sm text-gray-600 group">
+                          <li key={sector.id} className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400 group">
                             {editingSectorId === sector.id ? (
                               <form onSubmit={(e) => handleUpdateSector(e, sector.id, field.id)} className="flex items-center space-x-3 w-full">
                                 <input
                                   type="text"
                                   value={editSectorName}
                                   onChange={(e) => setEditSectorName(e.target.value)}
-                                  className="block w-40 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                                  className="block w-40 border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-1 px-2 text-sm"
                                   placeholder="Nombre"
                                   required
                                 />
@@ -501,7 +501,7 @@ export const Fields: React.FC = () => {
                                   step="0.01"
                                   value={editSectorHectares}
                                   onChange={(e) => setEditSectorHectares(e.target.value)}
-                                  className="block w-24 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                                  className="block w-24 border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-1 px-2 text-sm"
                                   placeholder="Has"
                                   required
                                 />
@@ -509,7 +509,7 @@ export const Fields: React.FC = () => {
                                   type="number"
                                   value={editSectorBudget}
                                   onChange={(e) => setEditSectorBudget(e.target.value)}
-                                  className="block w-32 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                                  className="block w-32 border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-1 px-2 text-sm"
                                   placeholder="Ppto/Ha ($)"
                                 />
                                 <button
@@ -522,7 +522,7 @@ export const Fields: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={cancelEditingSector}
-                                  className="text-gray-500 hover:text-gray-700"
+                                  className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300"
                                   title="Cancelar"
                                 >
                                   <X className="h-4 w-4" />
@@ -552,7 +552,7 @@ export const Fields: React.FC = () => {
                                         </div>
                                         <div className="flex flex-col">
                                             <span className="text-[10px] uppercase text-gray-400 font-bold">Costo / Ha</span>
-                                            <span className="font-medium text-gray-700">{formatCLP((sector.total_labor_cost || 0) / (sector.hectares || 1))}</span>
+                                            <span className="font-medium text-gray-700 dark:text-gray-300">{formatCLP((sector.total_labor_cost || 0) / (sector.hectares || 1))}</span>
                                         </div>
                                     </div>
                                   )}
@@ -590,7 +590,7 @@ export const Fields: React.FC = () => {
                               required
                               value={newSectorName}
                               onChange={e => setNewSectorName(e.target.value)}
-                              className="block w-40 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                              className="block w-40 border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-1 px-2 text-sm"
                             />
                             <input
                               type="number"
@@ -599,14 +599,14 @@ export const Fields: React.FC = () => {
                               required
                               value={newSectorHectares}
                               onChange={e => setNewSectorHectares(e.target.value)}
-                              className="block w-24 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                              className="block w-24 border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-1 px-2 text-sm"
                             />
                             <input
                               type="number"
                               placeholder="Ppto/Ha ($)"
                               value={newSectorBudget}
                               onChange={e => setNewSectorBudget(e.target.value)}
-                              className="block w-32 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                              className="block w-32 border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-1 px-2 text-sm"
                             />
                             <button
                               type="submit"
@@ -617,7 +617,7 @@ export const Fields: React.FC = () => {
                             <button
                               type="button"
                               onClick={() => setShowSectorForm(null)}
-                              className="text-gray-500 hover:text-gray-700 text-sm"
+                              className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300 text-sm"
                             >
                               Cancelar
                             </button>

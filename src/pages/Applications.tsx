@@ -965,18 +965,18 @@ export const Applications: React.FC = () => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Libro de Aplicaciones</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Libro de Aplicaciones</h1>
         <div className="flex space-x-2">
             <button
                 onClick={loadData}
-                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
                 title="Recargar datos"
             >
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
             <button
                 onClick={handleDeleteAllApplications}
-                className="inline-flex items-center px-4 py-2 border border-red-300 shadow-sm text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50"
+                className="inline-flex items-center px-4 py-2 border border-red-300 shadow-sm text-sm font-medium rounded-md text-red-700 bg-white dark:bg-gray-800 hover:bg-red-50"
             >
                 <Trash2 className="h-4 w-4 mr-2" />
                 Reiniciar / Borrar Todo
@@ -984,15 +984,15 @@ export const Applications: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
         <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-medium text-gray-900">
+            <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100">
                 {editingId ? 'Editar Aplicación' : 'Nueva Aplicación'}
             </h2>
             {editingId && (
                 <button
                     onClick={handleCancelEdit}
-                    className="text-sm text-gray-500 hover:text-gray-700 underline"
+                    className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300 underline"
                 >
                     Cancelar Edición
                 </button>
@@ -1002,7 +1002,7 @@ export const Applications: React.FC = () => {
           {/* Application Header */}
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Campo</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Campo</label>
               <select
                 required
                 value={selectedFieldId}
@@ -1015,7 +1015,7 @@ export const Applications: React.FC = () => {
                     // Usually onChange is only user interaction.
                     setSelectedSectorId('');
                 }}
-                className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                className="mt-1 block w-full py-2 px-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
               >
                 <option value="">Seleccionar Campo...</option>
                 {fields.map(f => (
@@ -1025,13 +1025,13 @@ export const Applications: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Sector</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Sector</label>
               <select
                 required
                 value={selectedSectorId}
                 disabled={!selectedFieldId}
                 onChange={e => setSelectedSectorId(e.target.value)}
-                className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                className="mt-1 block w-full py-2 px-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
               >
                 <option value="">Seleccionar Sector...</option>
                 {selectedField?.sectors?.map(s => (
@@ -1041,22 +1041,22 @@ export const Applications: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Fecha</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha</label>
               <input
                 type="date"
                 required
                 value={applicationDate}
                 onChange={e => setApplicationDate(e.target.value)}
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Tipo</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tipo</label>
               <select
                 value={applicationType}
                 onChange={e => setApplicationType(e.target.value)}
-                className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                className="mt-1 block w-full py-2 px-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
               >
                 <option value="fertilizacion">Fertilización</option>
                 <option value="fitosanitario">Fitosanitario</option>
@@ -1066,36 +1066,36 @@ export const Applications: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Mojamiento (L/ha)</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Mojamiento (L/ha)</label>
               <input
                 type="number"
                 min="0"
                 step="0.01"
                 value={waterVolumePerHectare}
                 onChange={e => setWaterVolumePerHectare(Number(e.target.value))}
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
                 placeholder="0"
               />
               {selectedSector && waterVolumePerHectare > 0 && (
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-gray-500 dark:text-gray-400">
                    Total agua: {(waterVolumePerHectare * selectedSector.hectares).toFixed(0)} L
                 </span>
               )}
             </div>
           </div>
 
-          <div className="border-t border-gray-200 pt-6">
-            <h3 className="text-sm font-medium text-gray-900 mb-4">Productos a Aplicar</h3>
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+            <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-4">Productos a Aplicar</h3>
             
             {/* Add Item Row */}
-            <div className="flex flex-col gap-4 bg-gray-50 p-4 rounded-md">
+            <div className="flex flex-col gap-4 bg-gray-50 dark:bg-gray-900 p-4 rounded-md">
               <div className="flex flex-col sm:flex-row gap-4 items-end">
                   <div className="flex-1 min-w-[200px]">
-                    <label className="block text-xs font-medium text-gray-500">Producto (Stock Disponible)</label>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Producto (Stock Disponible)</label>
                     <select
                       value={currentItem.product_id}
                       onChange={e => setCurrentItem({...currentItem, product_id: e.target.value})}
-                      className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                      className="mt-1 block w-full py-2 px-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
                     >
                       <option value="">Seleccionar...</option>
                       {products.map(p => (
@@ -1108,19 +1108,19 @@ export const Applications: React.FC = () => {
 
                   {/* Mode Toggle */}
                   <div className="w-40">
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Tipo de Dosis</label>
-                      <div className="flex bg-white rounded-md border border-gray-300 p-0.5">
+                      <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Tipo de Dosis</label>
+                      <div className="flex bg-white dark:bg-gray-800 rounded-md border border-gray-300 dark:border-gray-600 p-0.5">
                           <button
                               type="button"
                               onClick={() => setCurrentItem({...currentItem, dose_input_type: 'ha'})}
-                              className={`flex-1 text-xs py-1.5 px-2 rounded ${currentItem.dose_input_type === 'ha' ? 'bg-green-100 text-green-700 font-medium' : 'text-gray-500 hover:bg-gray-50'}`}
+                              className={`flex-1 text-xs py-1.5 px-2 rounded ${currentItem.dose_input_type === 'ha' ? 'bg-green-100 text-green-700 font-medium' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900'}`}
                           >
                               Por Ha
                           </button>
                           <button
                               type="button"
                               onClick={() => setCurrentItem({...currentItem, dose_input_type: 'hl'})}
-                              className={`flex-1 text-xs py-1.5 px-2 rounded ${currentItem.dose_input_type === 'hl' ? 'bg-green-100 text-green-700 font-medium' : 'text-gray-500 hover:bg-gray-50'}`}
+                              className={`flex-1 text-xs py-1.5 px-2 rounded ${currentItem.dose_input_type === 'hl' ? 'bg-green-100 text-green-700 font-medium' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900'}`}
                           >
                               Por 100L
                           </button>
@@ -1128,7 +1128,7 @@ export const Applications: React.FC = () => {
                   </div>
 
                   <div className="w-32">
-                    <label className="block text-xs font-medium text-gray-500">
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">
                         {currentItem.dose_input_type === 'ha' ? 'Dosis / Ha' : 'Dosis / 100L'}
                     </label>
                     <input
@@ -1137,17 +1137,17 @@ export const Applications: React.FC = () => {
                       min="0"
                       value={currentItem.dose_input_value}
                       onChange={e => setCurrentItem({...currentItem, dose_input_value: Number(e.target.value)})}
-                      className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                      className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
                       placeholder="0"
                     />
                   </div>
 
                   <div className="w-24">
-                    <label className="block text-xs font-medium text-gray-500">Unidad</label>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Unidad</label>
                     <select
                       value={currentItem.dose_unit}
                       onChange={e => setCurrentItem({...currentItem, dose_unit: e.target.value})}
-                      className="mt-1 block w-full py-2 px-2 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                      className="mt-1 block w-full py-2 px-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
                       disabled={!currentItem.product_id}
                     >
                       {!currentItem.product_id && <option value="">-</option>}
@@ -1162,13 +1162,13 @@ export const Applications: React.FC = () => {
 
                 {/* Objective Input */}
                 <div className="mt-2">
-                    <label className="block text-xs font-medium text-gray-500">Objetivo (Plaga / Enfermedad / Nutrición)</label>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400">Objetivo (Plaga / Enfermedad / Nutrición)</label>
                     <input
                         type="text"
                         list="objectives-list"
                         value={currentItem.objective}
                         onChange={e => setCurrentItem({...currentItem, objective: e.target.value})}
-                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                        className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
                         placeholder="Ej: Arañita, Oidio, Corrector de Carencias..."
                     />
                     <datalist id="objectives-list">
@@ -1178,9 +1178,9 @@ export const Applications: React.FC = () => {
                     </datalist>
                 </div>
                 
-                <div className="flex flex-col sm:flex-row gap-4 items-end justify-between border-t border-gray-200 pt-3 mt-1">
+                <div className="flex flex-col sm:flex-row gap-4 items-end justify-between border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
                    {/* Info Display */}
-                   <div className="flex-1 flex gap-6 text-sm text-gray-600">
+                   <div className="flex-1 flex gap-6 text-sm text-gray-600 dark:text-gray-400">
                        {currentItem.product_id && currentItem.dose_input_value > 0 && (
                            <>
                                <div className="flex flex-col">
@@ -1212,32 +1212,32 @@ export const Applications: React.FC = () => {
             {/* Items List */}
             <div className="mt-4">
               {items.length > 0 && (
-                <div className="shadow overflow-hidden border-b border-gray-200 sm:rounded-lg">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                <div className="shadow overflow-hidden border-b border-gray-200 dark:border-gray-700 sm:rounded-lg">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-900">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Producto</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Categoría</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Objetivo</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Dosis/Ha (Real)</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Entrada</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Usado</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total $</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Producto</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Categoría</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Objetivo</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Dosis/Ha (Real)</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Entrada</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Total Usado</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Total $</th>
                         <th className="relative px-6 py-3"><span className="sr-only">Eliminar</span></th>
                       </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                       {items.map((item, index) => (
                         <tr key={index}>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.product_name}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{item.product_category}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500">{item.objective || '-'}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.dose_per_hectare} {item.unit}/ha</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">{item.product_name}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">{item.product_category}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">{item.objective || '-'}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{item.dose_per_hectare} {item.unit}/ha</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
                               {item.dose_input_value} {item.dose_unit} ({item.dose_input_type === 'ha' ? '/ha' : '/100L'})
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{item.quantity_used} {item.unit}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatCLP(item.total_cost)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{item.quantity_used} {item.unit}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{formatCLP(item.total_cost)}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                             <button type="button" onClick={() => editItem(index)} className="text-blue-600 hover:text-blue-900 mr-2" title="Editar item">
                                 <Edit className="h-4 w-4" />
@@ -1250,9 +1250,9 @@ export const Applications: React.FC = () => {
                       ))}
                     </tbody>
                     <tfoot>
-                        <tr className="bg-gray-50">
-                          <td colSpan={6} className="px-6 py-4 text-right text-sm font-bold text-gray-900">Costo Total Aplicación:</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
+                        <tr className="bg-gray-50 dark:bg-gray-900">
+                          <td colSpan={6} className="px-6 py-4 text-right text-sm font-bold text-gray-900 dark:text-gray-100">Costo Total Aplicación:</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 dark:text-gray-100">
                             {formatCLP(items.reduce((sum, item) => sum + item.total_cost, 0))}
                           </td>
                           <td></td>
@@ -1269,7 +1269,7 @@ export const Applications: React.FC = () => {
                 <button
                     type="button"
                     onClick={handleCancelEdit}
-                    className="mr-3 inline-flex justify-center py-2 px-4 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none"
+                    className="mr-3 inline-flex justify-center py-2 px-4 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 focus:outline-none"
                 >
                     Cancelar
                 </button>
@@ -1299,11 +1299,11 @@ export const Applications: React.FC = () => {
       {Object.keys(objectiveStats).length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {Object.entries(objectiveStats).map(([obj, count]) => (
-                  <div key={obj} className="bg-white overflow-hidden shadow rounded-lg px-4 py-3 border-l-4 border-green-500">
-                      <dt className="text-sm font-medium text-gray-500 truncate">
+                  <div key={obj} className="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg px-4 py-3 border-l-4 border-green-500">
+                      <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
                           {obj}
                       </dt>
-                      <dd className="mt-1 text-2xl font-semibold text-gray-900">
+                      <dd className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
                           {count}
                       </dd>
                   </div>
@@ -1312,23 +1312,23 @@ export const Applications: React.FC = () => {
       )}
 
       {/* Applications List */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-            <h2 className="text-lg font-medium text-gray-900">Historial de Aplicaciones</h2>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+            <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100">Historial de Aplicaciones</h2>
             
             {/* Sector Filter & Download */}
             <div className="flex items-center space-x-4">
                 <div className="flex shadow-sm rounded-md">
                     <button
                         onClick={() => handleDownloadFieldPDF('preview')}
-                        className="inline-flex items-center px-2 py-1.5 border border-green-300 text-sm font-medium rounded-l-md text-green-700 bg-white hover:bg-green-50 focus:z-10 focus:ring-1 focus:ring-green-500 focus:border-green-500"
+                        className="inline-flex items-center px-2 py-1.5 border border-green-300 text-sm font-medium rounded-l-md text-green-700 bg-white dark:bg-gray-800 hover:bg-green-50 focus:z-10 focus:ring-1 focus:ring-green-500 focus:border-green-500"
                         title="Vista Previa PDF Campo"
                     >
                         <Eye className="h-4 w-4" />
                     </button>
                     <button
                         onClick={() => handleDownloadFieldPDF('save')}
-                        className="inline-flex items-center px-3 py-1.5 border border-l-0 border-green-300 text-sm font-medium rounded-r-md text-green-700 bg-white hover:bg-green-50 focus:z-10 focus:ring-1 focus:ring-green-500 focus:border-green-500"
+                        className="inline-flex items-center px-3 py-1.5 border border-l-0 border-green-300 text-sm font-medium rounded-r-md text-green-700 bg-white dark:bg-gray-800 hover:bg-green-50 focus:z-10 focus:ring-1 focus:ring-green-500 focus:border-green-500"
                         title="Descargar PDF de Campo"
                     >
                         <Download className="h-4 w-4 mr-2" />
@@ -1339,14 +1339,14 @@ export const Applications: React.FC = () => {
                 <div className="flex shadow-sm rounded-md">
                     <button
                         onClick={() => handleDownloadPDF('preview')}
-                        className="inline-flex items-center px-2 py-1.5 border border-gray-300 text-sm font-medium rounded-l-md text-gray-700 bg-white hover:bg-gray-50 focus:z-10 focus:ring-1 focus:ring-green-500 focus:border-green-500"
+                        className="inline-flex items-center px-2 py-1.5 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-l-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 focus:z-10 focus:ring-1 focus:ring-green-500 focus:border-green-500"
                         title="Vista Previa PDF Oficina"
                     >
                         <Eye className="h-4 w-4" />
                     </button>
                     <button
                         onClick={() => handleDownloadPDF('save')}
-                        className="inline-flex items-center px-3 py-1.5 border border-l-0 border-gray-300 text-sm font-medium rounded-r-md text-gray-700 bg-white hover:bg-gray-50 focus:z-10 focus:ring-1 focus:ring-green-500 focus:border-green-500"
+                        className="inline-flex items-center px-3 py-1.5 border border-l-0 border-gray-300 dark:border-gray-600 text-sm font-medium rounded-r-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 focus:z-10 focus:ring-1 focus:ring-green-500 focus:border-green-500"
                         title="Descargar PDF Oficina"
                     >
                         <Download className="h-4 w-4 mr-2" />
@@ -1357,14 +1357,14 @@ export const Applications: React.FC = () => {
                 <div className="flex shadow-sm rounded-md">
                     <button
                         onClick={() => handleDownloadDetailedReport('preview')}
-                        className="inline-flex items-center px-2 py-1.5 border border-purple-300 text-sm font-medium rounded-l-md text-purple-700 bg-white hover:bg-purple-50 focus:z-10 focus:ring-1 focus:ring-purple-500 focus:border-purple-500"
+                        className="inline-flex items-center px-2 py-1.5 border border-purple-300 text-sm font-medium rounded-l-md text-purple-700 bg-white dark:bg-gray-800 hover:bg-purple-50 focus:z-10 focus:ring-1 focus:ring-purple-500 focus:border-purple-500"
                         title="Vista Previa Reporte Detallado"
                     >
                         <Eye className="h-4 w-4" />
                     </button>
                     <button
                         onClick={() => handleDownloadDetailedReport('save')}
-                        className="inline-flex items-center px-3 py-1.5 border border-l-0 border-purple-300 text-sm font-medium rounded-r-md text-purple-700 bg-white hover:bg-purple-50 focus:z-10 focus:ring-1 focus:ring-purple-500 focus:border-purple-500"
+                        className="inline-flex items-center px-3 py-1.5 border border-l-0 border-purple-300 text-sm font-medium rounded-r-md text-purple-700 bg-white dark:bg-gray-800 hover:bg-purple-50 focus:z-10 focus:ring-1 focus:ring-purple-500 focus:border-purple-500"
                         title="Descargar Reporte Detallado (Tabla)"
                     >
                         <FileText className="h-4 w-4 mr-2" />
@@ -1377,7 +1377,7 @@ export const Applications: React.FC = () => {
                     <select
                         value={filterSectorId}
                         onChange={(e) => setFilterSectorId(e.target.value)}
-                        className="block w-48 py-1.5 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                        className="block w-48 py-1.5 px-3 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-md shadow-sm focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
                     >
                         <option value="all">Todos los Sectores</option>
                         {/* Unique sectors from history */}
@@ -1392,26 +1392,26 @@ export const Applications: React.FC = () => {
             </div>
         </div>
         {applications.length === 0 ? (
-            <div className="p-6 text-center text-gray-500">No hay aplicaciones registradas.</div>
+            <div className="p-6 text-center text-gray-500 dark:text-gray-400">No hay aplicaciones registradas.</div>
         ) : (
             <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-900">
                         <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lugar</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Detalles</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Costo Total</th>
-                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fecha</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Lugar</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Tipo</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Detalles</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Costo Total</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Acciones</th>
                         </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                         {applications
                             .filter(app => filterSectorId === 'all' || app.sector_id === filterSectorId)
                             .map((app) => (
                             <tr key={app.id} className={editingId === app.id ? 'bg-blue-50' : ''}>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                                     <div className="flex items-center">
                                         <Calendar className="h-4 w-4 mr-2 text-gray-400" />
                                         {/* Parse date manually to avoid timezone shift */}
@@ -1421,16 +1421,16 @@ export const Applications: React.FC = () => {
                                         })()}
                                     </div>
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                                     <div className="flex flex-col">
                                         <span className="font-medium">{app.field_name}</span>
-                                        <span className="text-gray-500 text-xs flex items-center mt-0.5">
+                                        <span className="text-gray-500 dark:text-gray-400 text-xs flex items-center mt-0.5">
                                             <MapPin className="h-3 w-3 mr-1" />
                                             {app.sector_name} ({app.sector_hectares} ha)
                                         </span>
                                     </div>
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 capitalize">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 capitalize">
                                     {app.application_type}
                                     {app.water_liters_per_hectare > 0 && (
                                         <div className="text-xs text-blue-500 flex items-center mt-1">
@@ -1439,11 +1439,11 @@ export const Applications: React.FC = () => {
                                         </div>
                                     )}
                                 </td>
-                                <td className="px-6 py-4 text-sm text-gray-500">
+                                <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
                                     <ul className="list-disc pl-4 space-y-1">
                                         {app.items?.map((item, idx) => (
                                             <li key={idx} className="text-xs">
-                                                <span className="font-medium text-gray-700">{item.product_name}</span> 
+                                                <span className="font-medium text-gray-700 dark:text-gray-300">{item.product_name}</span> 
                                                 {item.objective && <span className="text-green-600 font-medium"> ({item.objective})</span>}:
                                                 {' '}{item.dose_per_hectare} {item.unit}/ha
                                                 {' '}<span className="text-gray-400">({item.quantity_used} {item.unit} total)</span>
@@ -1451,7 +1451,7 @@ export const Applications: React.FC = () => {
                                         ))}
                                     </ul>
                                 </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
                                     {formatCLP(app.total_cost)}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">

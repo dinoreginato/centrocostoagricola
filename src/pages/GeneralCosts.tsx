@@ -447,26 +447,26 @@ export const GeneralCosts: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
                 <LayoutList className="mr-2 h-8 w-8 text-purple-600" />
                 Distribución de Costos
             </h1>
-            <p className="text-sm text-gray-500">Asignación de Servicios, Transporte y Otros Gastos Generales</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Asignación de Servicios, Transporte y Otros Gastos Generales</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Pending List */}
-        <div className="lg:col-span-1 bg-white rounded-lg shadow overflow-hidden">
-            <div className="p-4 bg-gray-50 border-b border-gray-200">
-                <h3 className="font-medium text-gray-900 flex items-center">
+        <div className="lg:col-span-1 bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+            <div className="p-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+                <h3 className="font-medium text-gray-900 dark:text-gray-100 flex items-center">
                     <AlertCircle className="h-4 w-4 mr-2 text-yellow-500" />
                     Items Pendientes
                 </h3>
             </div>
-            <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-auto">
+            <div className="divide-y divide-gray-200 dark:divide-gray-700 max-h-[600px] overflow-y-auto">
                 {pendingCosts.length === 0 ? (
-                    <div className="p-8 text-center text-gray-500 text-sm">No hay items pendientes.</div>
+                    <div className="p-8 text-center text-gray-500 dark:text-gray-400 text-sm">No hay items pendientes.</div>
                 ) : (
                     pendingCosts.map(item => (
                         <div 
@@ -475,10 +475,10 @@ export const GeneralCosts: React.FC = () => {
                             className={`p-4 cursor-pointer hover:bg-purple-50 transition-colors ${selectedCostId === item.id ? 'bg-purple-50 ring-2 ring-inset ring-purple-500' : ''}`}
                         >
                             <div className="flex justify-between items-start mb-1">
-                                <span className="text-xs font-bold text-gray-500">#{item.invoice_number}</span>
+                                <span className="text-xs font-bold text-gray-500 dark:text-gray-400">#{item.invoice_number}</span>
                                 <span className="text-xs text-gray-400">{new Date(item.date).toLocaleDateString()}</span>
                             </div>
-                            <h4 className="text-sm font-medium text-gray-900 mb-1">{item.description}</h4>
+                            <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">{item.description}</h4>
                             <div className="flex justify-between items-center mt-2">
                                 <span className="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">
                                     {item.category}
@@ -496,13 +496,13 @@ export const GeneralCosts: React.FC = () => {
         {/* Form */}
         <div className="lg:col-span-2 space-y-6">
             {selectedCostId ? (
-                <div className="bg-white rounded-lg shadow p-6 border-t-4 border-purple-500">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border-t-4 border-purple-500">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
                         {editingAssignmentId ? 'Editar Asignación' : 'Distribuir Costo'}
                     </h3>
                     
-                    <div className="bg-gray-50 p-4 rounded-md mb-6">
-                        <div className="font-medium text-gray-900">
+                    <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md mb-6">
+                        <div className="font-medium text-gray-900 dark:text-gray-100">
                             {pendingCosts.find(p => p.id === selectedCostId)?.description}
                         </div>
                          <div className="text-right mt-2 text-lg font-bold text-purple-600">
@@ -527,12 +527,12 @@ export const GeneralCosts: React.FC = () => {
                         </div>
                         
                          <div className="mt-4">
-                            <label className="block text-sm font-medium text-gray-700">Fecha</label>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha</label>
                             <input
                                 type="date"
                                 value={assignedDate}
                                 onChange={(e) => setAssignedDate(e.target.value)}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm"
+                                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm"
                             />
                         </div>
                     </div>
@@ -542,23 +542,23 @@ export const GeneralCosts: React.FC = () => {
                         {distributeBy === 'sector' && allocations.map((alloc, idx) => (
                             <div key={idx} className="flex gap-4 items-end">
                                 <div className="flex-1">
-                                    <label className="block text-xs font-medium text-gray-500 mb-1">Sector</label>
+                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Sector</label>
                                     <select
                                         value={alloc.sector_id}
                                         onChange={(e) => updateAlloc(idx, 'sector_id', e.target.value)}
-                                        className="block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm"
+                                        className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm"
                                     >
                                         <option value="">Seleccionar...</option>
                                         {sectors.map(s => <option key={s.id} value={s.id}>{s.name} ({s.hectares} ha)</option>)}
                                     </select>
                                 </div>
                                 <div className="w-40">
-                                    <label className="block text-xs font-medium text-gray-500 mb-1">Monto</label>
+                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Monto</label>
                                     <input
                                         type="number"
                                         value={alloc.amount}
                                         onChange={(e) => updateAlloc(idx, 'amount', Number(e.target.value))}
-                                        className="block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm"
+                                        className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm"
                                     />
                                 </div>
                                 <button onClick={() => handleRemoveRow(idx)} className="mb-1 p-2 text-red-500">&times;</button>
@@ -567,33 +567,33 @@ export const GeneralCosts: React.FC = () => {
 
                         {distributeBy === 'field' && (
                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Campo</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Campo</label>
                                 <select
                                     value={selectedFieldId}
                                     onChange={(e) => setSelectedFieldId(e.target.value)}
-                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm mb-4"
+                                    className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm mb-4"
                                 >
                                     <option value="">Seleccione Campo...</option>
                                     {fields.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                                 </select>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Monto Total</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Monto Total</label>
                                 <input
                                     type="number"
                                     value={fieldTotalAmount}
                                     onChange={(e) => setFieldTotalAmount(Number(e.target.value))}
-                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm"
+                                    className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm"
                                 />
                             </div>
                         )}
                         
                         {distributeBy === 'company' && (
                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Monto Total a Distribuir</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Monto Total a Distribuir</label>
                                 <input
                                     type="number"
                                     value={fieldTotalAmount}
                                     onChange={(e) => setFieldTotalAmount(Number(e.target.value))}
-                                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm"
+                                    className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm"
                                 />
                             </div>
                         )}
@@ -604,7 +604,7 @@ export const GeneralCosts: React.FC = () => {
                     )}
 
                     <div className="mt-8 flex justify-end space-x-3">
-                        <button onClick={() => setSelectedCostId(null)} className="px-4 py-2 border border-gray-300 rounded-md text-gray-700">Cancelar</button>
+                        <button onClick={() => setSelectedCostId(null)} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300">Cancelar</button>
                         <button onClick={handleSaveAssignment} className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">
                             {loading ? <Loader2 className="animate-spin h-5 w-5" /> : <Save className="h-5 w-5 mr-2 inline" />}
                             Guardar
@@ -612,23 +612,23 @@ export const GeneralCosts: React.FC = () => {
                     </div>
                 </div>
             ) : (
-                <div className="bg-white rounded-lg shadow p-12 text-center border-2 border-dashed border-gray-300">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center border-2 border-dashed border-gray-300 dark:border-gray-600">
                     <ArrowRight className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900">Selecciona un item pendiente</h3>
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Selecciona un item pendiente</h3>
                 </div>
             )}
 
             {/* History Table */}
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
                     <div>
-                        <h3 className="text-lg font-medium text-gray-900">Historial</h3>
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Historial</h3>
                         <input
                             type="text"
                             placeholder="Buscar..."
                             value={historySearch}
                             onChange={e => setHistorySearch(e.target.value)}
-                            className="mt-2 text-sm border-gray-300 rounded-md shadow-sm w-full"
+                            className="mt-2 text-sm border-gray-300 dark:border-gray-600 rounded-md shadow-sm w-full"
                         />
                     </div>
                     {history.length > 0 && (
@@ -642,26 +642,26 @@ export const GeneralCosts: React.FC = () => {
                     )}
                 </div>
                 <div className="overflow-x-auto max-h-[400px]">
-                    <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead className="bg-gray-50 dark:bg-gray-900">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sector</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Monto</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fecha</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Item</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Sector</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Monto</th>
                                 <th className="px-6 py-3"></th>
                             </tr>
                         </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
+                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                             {filteredHistory.map(h => (
                                 <tr key={h.id}>
-                                    <td className="px-6 py-4 text-sm text-gray-500">{new Date(h.assigned_date).toLocaleDateString()}</td>
-                                    <td className="px-6 py-4 text-sm text-gray-900">
+                                    <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{new Date(h.assigned_date).toLocaleDateString()}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
                                         <div className="font-medium">{h.description}</div>
-                                        <div className="text-xs text-gray-500">#{h.invoice_items?.invoices?.invoice_number}</div>
+                                        <div className="text-xs text-gray-500 dark:text-gray-400">#{h.invoice_items?.invoices?.invoice_number}</div>
                                     </td>
-                                    <td className="px-6 py-4 text-sm text-gray-500">{h.sectors?.name}</td>
-                                    <td className="px-6 py-4 text-sm text-right font-bold text-gray-900">{formatCLP(h.assigned_amount)}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{h.sectors?.name}</td>
+                                    <td className="px-6 py-4 text-sm text-right font-bold text-gray-900 dark:text-gray-100">{formatCLP(h.assigned_amount)}</td>
                                     <td className="px-6 py-4 text-right">
                                         <button onClick={() => handleDeleteAssignment(h.id)} className="text-red-500 hover:text-red-700">
                                             <Trash2 className="h-4 w-4" />

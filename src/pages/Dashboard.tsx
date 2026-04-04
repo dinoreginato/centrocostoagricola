@@ -629,27 +629,27 @@ export const Dashboard: React.FC = () => {
 
   if (companies.length === 0) {
     return (
-      <div className="max-w-2xl mx-auto mt-10 p-6 bg-white rounded-lg shadow-md">
-        <h2 className="text-2xl font-bold mb-4 text-center text-gray-800">¡Bienvenido!</h2>
-        <p className="text-gray-600 mb-6 text-center">Para comenzar, crea tu primera empresa agrícola.</p>
+      <div className="max-w-2xl mx-auto mt-10 p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md">
+        <h2 className="text-2xl font-bold mb-4 text-center text-gray-800 dark:text-gray-200">¡Bienvenido!</h2>
+        <p className="text-gray-600 dark:text-gray-400 mb-6 text-center">Para comenzar, crea tu primera empresa agrícola.</p>
         
         <form onSubmit={handleCreateCompany} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Nombre de la Empresa</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Nombre de la Empresa</label>
             <input
               type="text"
               required
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+              className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
               value={newCompanyName}
               onChange={(e) => setNewCompanyName(e.target.value)}
               placeholder="Ej: Agrícola Los Lagos"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700">RUT (Opcional)</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">RUT (Opcional)</label>
             <input
               type="text"
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+              className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
               value={newCompanyRut}
               onChange={(e) => setNewCompanyRut(e.target.value)}
               placeholder="Ej: 76.123.456-7"
@@ -669,10 +669,10 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded-lg shadow-sm print:hidden">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm print:hidden">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard General</h1>
-          <p className="text-sm text-gray-500">Resumen de costos y producción</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Dashboard General</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Resumen de costos y producción</p>
         </div>
         
         {/* Right Action Section */}
@@ -693,7 +693,7 @@ export const Dashboard: React.FC = () => {
                 className={`inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-sm ${
                     simpleMode 
                     ? 'text-blue-700 bg-blue-100 hover:bg-blue-200' 
-                    : 'text-gray-700 bg-gray-100 hover:bg-gray-200'
+                    : 'text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-900 hover:bg-gray-200'
                 }`}
                 title="Alternar Modo Simplificado"
               >
@@ -713,7 +713,7 @@ export const Dashboard: React.FC = () => {
                   <select
                     value={selectedCompany?.id || ''}
                     onChange={(e) => selectCompany(e.target.value)}
-                    className="block w-full pl-9 pr-10 py-2 text-sm border-gray-300 focus:outline-none focus:ring-green-500 focus:border-green-500 rounded-md font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 cursor-pointer shadow-sm"
+                    className="block w-full pl-9 pr-10 py-2 text-sm border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-green-500 focus:border-green-500 rounded-md font-medium text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-700 dark:bg-gray-900 cursor-pointer shadow-sm"
                   >
                     {companies.map((company) => (
                       <option key={company.id} value={company.id}>
@@ -735,7 +735,7 @@ export const Dashboard: React.FC = () => {
                  className={`inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 shadow-sm ${
                     user?.email === 'dino.reginato@gmail.com' 
                     ? 'text-white bg-green-600 hover:bg-green-700' 
-                    : 'text-gray-400 bg-gray-100 cursor-not-allowed'
+                    : 'text-gray-400 bg-gray-100 dark:bg-gray-900 cursor-not-allowed'
                  }`}
                  title={user?.email === 'dino.reginato@gmail.com' ? 'Crear nueva empresa' : 'Solo el administrador puede crear empresas'}
               >
@@ -776,11 +776,11 @@ export const Dashboard: React.FC = () => {
                             <div 
                               key={idx} 
                               onClick={() => setSelectedInvoice(inv)}
-                              className="bg-white p-4 rounded-xl shadow-sm border border-red-100 flex flex-col justify-between h-full hover:shadow-md transition-all duration-200 cursor-pointer hover:-translate-y-1 relative overflow-hidden group"
+                              className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-red-100 flex flex-col justify-between h-full hover:shadow-md transition-all duration-200 cursor-pointer hover:-translate-y-1 relative overflow-hidden group"
                             >
                                 <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
                                 <div className="flex justify-between items-start mb-3 pl-2">
-                                    <div className="font-bold text-gray-800 text-sm truncate pr-2 flex-1" title={inv.supplier || ''}>{inv.supplier || 'Proveedor desconocido'}</div>
+                                    <div className="font-bold text-gray-800 dark:text-gray-200 text-sm truncate pr-2 flex-1" title={inv.supplier || ''}>{inv.supplier || 'Proveedor desconocido'}</div>
                                     <button 
                                         onClick={async (e) => {
                                             e.stopPropagation();
@@ -809,7 +809,7 @@ export const Dashboard: React.FC = () => {
                                     </button>
                                 </div>
                                 <div className="flex justify-between items-end pl-2">
-                                    <div className="text-xs font-medium text-gray-500 truncate max-w-[50%]" title={inv.invoice_number || ''}>
+                                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400 truncate max-w-[50%]" title={inv.invoice_number || ''}>
                                         Doc N° {inv.invoice_number || '-'}
                                     </div>
                                     <div className="text-lg font-black text-red-600">
@@ -817,7 +817,7 @@ export const Dashboard: React.FC = () => {
                                     </div>
                                 </div>
                                 {inv.notes && (
-                                    <div className="mt-3 text-xs text-gray-500 italic border-t border-gray-100 pt-2 pl-2 truncate" title={inv.notes}>
+                                    <div className="mt-3 text-xs text-gray-500 dark:text-gray-400 italic border-t border-gray-100 pt-2 pl-2 truncate" title={inv.notes}>
                                         {inv.notes}
                                     </div>
                                 )}
@@ -828,25 +828,25 @@ export const Dashboard: React.FC = () => {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-8 gap-4 lg:gap-6 print:grid-cols-4 print:gap-4 mb-8">
-                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-sm p-4 lg:p-6 text-white transform transition hover:scale-[1.02] print:transform-none print:shadow-none print:border print:border-gray-200 print:text-black print:bg-none print:bg-white flex flex-col justify-center relative overflow-hidden col-span-1 lg:col-span-2">
+                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-sm p-4 lg:p-6 text-white transform transition hover:scale-[1.02] print:transform-none print:shadow-none print:border print:border-gray-200 dark:border-gray-700 print:text-black print:bg-none print:bg-white dark:bg-gray-800 flex flex-col justify-center relative overflow-hidden col-span-1 lg:col-span-2">
                     <div className="absolute -right-4 -top-4 opacity-10">
                         <TrendingUp className="w-24 h-24" />
                     </div>
-                    <div className="text-green-50 text-xs font-bold uppercase tracking-wider mb-2 print:text-gray-600 relative z-10">Costo Total Acumulado</div>
+                    <div className="text-green-50 text-xs font-bold uppercase tracking-wider mb-2 print:text-gray-600 dark:text-gray-400 relative z-10">Costo Total Acumulado</div>
                     <div className="text-xl lg:text-3xl font-black truncate print:text-xl relative z-10" title={formatCLP(Number(dashboardStats.totalCost) || 0)}>
                         {formatCLP(Number(dashboardStats.totalCost) || 0)}
                     </div>
-                    <div className="mt-3 bg-white/20 text-white py-1.5 px-3 rounded-md inline-flex items-center text-[10px] font-medium print:text-gray-500 print:bg-gray-50 print:mt-2 self-start relative z-10">
+                    <div className="mt-3 bg-white dark:bg-gray-800/20 text-white py-1.5 px-3 rounded-md inline-flex items-center text-[10px] font-medium print:text-gray-500 dark:text-gray-400 print:bg-gray-50 dark:bg-gray-900 print:mt-2 self-start relative z-10">
                         <DollarSign className="h-3 w-3 mr-1 print:text-gray-400 flex-shrink-0" />
                         <span>Inversión Total en la Empresa</span>
                     </div>
                 </div>
 
-                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 transform transition hover:scale-[1.02] print:transform-none print:shadow-none flex flex-col justify-center relative overflow-hidden col-span-1 lg:col-span-2">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 transform transition hover:scale-[1.02] print:transform-none print:shadow-none flex flex-col justify-center relative overflow-hidden col-span-1 lg:col-span-2">
                     <div className="absolute -right-4 -top-4 opacity-5">
                         <Map className="w-24 h-24" />
                     </div>
-                    <div className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-2">Costo Promedio / Hectárea</div>
+                    <div className="text-gray-500 dark:text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Costo Promedio / Hectárea</div>
                     <div className="text-xl lg:text-3xl font-black text-blue-900 truncate print:text-xl" title={formatCLP(Number(dashboardStats.costPerHectare) || 0)}>
                         {formatCLP(Number(dashboardStats.costPerHectare) || 0)}
                     </div>
@@ -856,9 +856,9 @@ export const Dashboard: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 transform transition hover:scale-[1.02] print:transform-none print:shadow-none col-span-1 lg:col-span-2">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 transform transition hover:scale-[1.02] print:transform-none print:shadow-none col-span-1 lg:col-span-2">
                     <div className="flex items-center justify-between mb-4 print:mb-2">
-                        <div className="text-gray-500 text-xs lg:text-sm font-bold uppercase tracking-wider">Sectores Más Costosos</div>
+                        <div className="text-gray-500 dark:text-gray-400 text-xs lg:text-sm font-bold uppercase tracking-wider">Sectores Más Costosos</div>
                         <div className="bg-orange-50 p-1.5 rounded-lg">
                             <TrendingUp className="h-4 w-4 text-orange-500" />
                         </div>
@@ -867,7 +867,7 @@ export const Dashboard: React.FC = () => {
                         {Array.isArray(sectorChartData) && sectorChartData.slice(0, 3).map((sector, idx) => (
                             <div key={idx} className="flex justify-between items-center border-b border-gray-100 pb-2 last:border-0 last:pb-0">
                                 <div>
-                                    <div className="font-bold text-gray-800 text-sm">{sector?.name || 'Sin nombre'}</div>
+                                    <div className="font-bold text-gray-800 dark:text-gray-200 text-sm">{sector?.name || 'Sin nombre'}</div>
                                     <div className="text-[10px] text-gray-400 font-medium uppercase">{sector?.fieldName || ''}</div>
                                 </div>
                                 <div className="text-right bg-orange-50 px-3 py-1 rounded-lg">
@@ -876,13 +876,13 @@ export const Dashboard: React.FC = () => {
                                 </div>
                             </div>
                         ))}
-                        {(!sectorChartData || sectorChartData.length === 0) && <div className="text-xs text-gray-400 italic bg-gray-50 p-3 rounded-lg text-center font-medium">Aún no hay costos registrados</div>}
+                        {(!sectorChartData || sectorChartData.length === 0) && <div className="text-xs text-gray-400 italic bg-gray-50 dark:bg-gray-900 p-3 rounded-lg text-center font-medium">Aún no hay costos registrados</div>}
                     </div>
                 </div>
 
-                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 transform transition hover:scale-[1.02] print:transform-none print:shadow-none col-span-1 lg:col-span-2">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 transform transition hover:scale-[1.02] print:transform-none print:shadow-none col-span-1 lg:col-span-2">
                     <div className="flex items-center justify-between mb-4 print:mb-2">
-                        <div className="text-gray-500 text-xs lg:text-sm font-bold uppercase tracking-wider">Sectores Más Rentables</div>
+                        <div className="text-gray-500 dark:text-gray-400 text-xs lg:text-sm font-bold uppercase tracking-wider">Sectores Más Rentables</div>
                         <div className="bg-green-50 p-1.5 rounded-lg">
                             <TrendingUp className="h-4 w-4 text-green-500" />
                         </div>
@@ -891,7 +891,7 @@ export const Dashboard: React.FC = () => {
                         {Array.isArray(sectorChartData) && [...sectorChartData].sort((a, b) => (b.profitabilityPerHa || 0) - (a.profitabilityPerHa || 0)).slice(0, 3).map((sector, idx) => (
                             <div key={idx} className="flex justify-between items-center border-b border-gray-100 pb-2 last:border-0 last:pb-0">
                                 <div>
-                                    <div className="font-bold text-gray-800 text-sm">{sector?.name || 'Sin nombre'}</div>
+                                    <div className="font-bold text-gray-800 dark:text-gray-200 text-sm">{sector?.name || 'Sin nombre'}</div>
                                     <div className="text-[10px] text-gray-400 font-medium uppercase">{sector?.fieldName || ''}</div>
                                 </div>
                                 <div className={`text-right px-3 py-1 rounded-lg ${sector.profitabilityPerHa >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
@@ -900,7 +900,7 @@ export const Dashboard: React.FC = () => {
                                 </div>
                             </div>
                         ))}
-                        {(!sectorChartData || sectorChartData.length === 0) && <div className="text-xs text-gray-400 italic bg-gray-50 p-3 rounded-lg text-center font-medium">Aún no hay datos de rentabilidad</div>}
+                        {(!sectorChartData || sectorChartData.length === 0) && <div className="text-xs text-gray-400 italic bg-gray-50 dark:bg-gray-900 p-3 rounded-lg text-center font-medium">Aún no hay datos de rentabilidad</div>}
                     </div>
                 </div>
 
@@ -912,9 +912,9 @@ export const Dashboard: React.FC = () => {
             {/* Second Row of Widgets (Alerts & Weather Tools) */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 print:hidden">
                 {/* Sector Safety Status Widget */}
-                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
                     <div className="flex items-center justify-between mb-4">
-                        <div className="text-gray-500 text-xs lg:text-sm font-bold uppercase tracking-wider">Carencia / Reingreso</div>
+                        <div className="text-gray-500 dark:text-gray-400 text-xs lg:text-sm font-bold uppercase tracking-wider">Carencia / Reingreso</div>
                         <div className="bg-red-50 p-1.5 rounded-lg">
                             <ShieldAlert className="h-4 w-4 text-red-500" />
                         </div>
@@ -923,10 +923,10 @@ export const Dashboard: React.FC = () => {
                         {sectorSafetyStatus.length > 0 ? (
                             sectorSafetyStatus.map((status, idx) => (
                                 <div key={idx} className="flex justify-between items-center border-b border-gray-100 pb-3 last:border-0 last:pb-0">
-                                    <div className="font-bold text-gray-800 text-sm">{status.sectorName}</div>
-                                    <div className="text-right flex items-center bg-gray-50 px-2 py-1.5 rounded-lg border border-gray-100">
+                                    <div className="font-bold text-gray-800 dark:text-gray-200 text-sm">{status.sectorName}</div>
+                                    <div className="text-right flex items-center bg-gray-50 dark:bg-gray-900 px-2 py-1.5 rounded-lg border border-gray-100">
                                         <div className={`w-2.5 h-2.5 rounded-full mr-2 shadow-sm ${status.status === 'rojo' ? 'bg-red-500 animate-pulse' : 'bg-yellow-400'}`}></div>
-                                        <div className="text-xs font-bold text-gray-600 max-w-[120px] truncate" title={status.message}>{status.message}</div>
+                                        <div className="text-xs font-bold text-gray-600 dark:text-gray-400 max-w-[120px] truncate" title={status.message}>{status.message}</div>
                                     </div>
                                 </div>
                             ))
@@ -939,9 +939,9 @@ export const Dashboard: React.FC = () => {
                 </div>
 
                 {/* Critical Stock & Expiration Widget */}
-                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
                     <div className="flex items-center justify-between mb-4">
-                        <div className="text-gray-500 text-xs lg:text-sm font-bold uppercase tracking-wider">Alertas de Bodega</div>
+                        <div className="text-gray-500 dark:text-gray-400 text-xs lg:text-sm font-bold uppercase tracking-wider">Alertas de Bodega</div>
                         <div className="bg-orange-50 p-1.5 rounded-lg">
                             <AlertTriangle className="h-4 w-4 text-orange-500" />
                         </div>
@@ -950,7 +950,7 @@ export const Dashboard: React.FC = () => {
                         {criticalStock.length > 0 ? (
                             criticalStock.map((item, idx) => (
                                 <div key={idx} className="flex justify-between items-center border-b border-gray-100 pb-3 last:border-0 last:pb-0">
-                                    <div className="font-bold text-gray-800 text-sm truncate max-w-[140px]">{item.name}</div>
+                                    <div className="font-bold text-gray-800 dark:text-gray-200 text-sm truncate max-w-[140px]">{item.name}</div>
                                     <div className="text-right">
                                         {item.is_expiration_warning ? (
                                             <div className="font-bold text-red-600 text-xs bg-red-50 px-2.5 py-1 rounded-md border border-red-100 inline-block mb-1">
@@ -976,9 +976,9 @@ export const Dashboard: React.FC = () => {
                 </div>
 
                 {/* Machine Maintenance Alerts Widget */}
-                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100">
                     <div className="flex items-center justify-between mb-4">
-                        <div className="text-gray-500 text-xs lg:text-sm font-bold uppercase tracking-wider">Mantenimiento</div>
+                        <div className="text-gray-500 dark:text-gray-400 text-xs lg:text-sm font-bold uppercase tracking-wider">Mantenimiento</div>
                         <div className="bg-purple-50 p-1.5 rounded-lg">
                             <svg className="h-4 w-4 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -990,7 +990,7 @@ export const Dashboard: React.FC = () => {
                         {machineAlerts.length > 0 ? (
                             machineAlerts.map((item, idx) => (
                                 <div key={idx} className="flex justify-between items-center border-b border-gray-100 pb-3 last:border-0 last:pb-0">
-                                    <div className="font-bold text-gray-800 text-sm truncate max-w-[140px]">{item.name}</div>
+                                    <div className="font-bold text-gray-800 dark:text-gray-200 text-sm truncate max-w-[140px]">{item.name}</div>
                                     <div className="text-right">
                                         <div className={`font-bold text-xs px-2.5 py-1 rounded-md border inline-block mb-1 ${item.status === 'overdue' ? 'text-red-600 bg-red-50 border-red-100' : 'text-orange-600 bg-orange-50 border-orange-100'}`}>
                                             {item.status === 'overdue' ? '⚠️ Atrasado' : '⏱️ Pronto'}
@@ -1012,9 +1012,9 @@ export const Dashboard: React.FC = () => {
                 {/* Protection Status Widget (Asistente IA) - MOVED TO ITS OWN ROW BELOW */}
 
                 {/* Rain Gauge Widget */}
-                <div className="bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 flex flex-col">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 flex flex-col">
                     <div className="flex items-center justify-between mb-4">
-                        <div className="text-gray-500 text-xs lg:text-sm font-bold uppercase tracking-wider">Pluviómetro</div>
+                        <div className="text-gray-500 dark:text-gray-400 text-xs lg:text-sm font-bold uppercase tracking-wider">Pluviómetro</div>
                         <div className="bg-blue-50 p-1.5 rounded-lg">
                             <svg className="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
@@ -1028,7 +1028,7 @@ export const Dashboard: React.FC = () => {
                             value={newRainMm || ''}
                             onChange={e => setNewRainMm(Number(e.target.value))}
                             placeholder="Ej. 15.5 mm"
-                            className="flex-1 text-sm border border-gray-200 bg-gray-50 rounded-lg p-2.5 focus:ring-blue-500 focus:border-blue-500 font-medium"
+                            className="flex-1 text-sm border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 rounded-lg p-2.5 focus:ring-blue-500 focus:border-blue-500 font-medium"
                             required
                         />
                         <button type="submit" className="bg-blue-600 text-white text-sm px-5 py-2.5 rounded-lg hover:bg-blue-700 font-bold shadow-sm transition-colors">Guardar</button>
@@ -1036,26 +1036,26 @@ export const Dashboard: React.FC = () => {
                     <div className="space-y-2 max-h-24 overflow-y-auto pr-1 flex-1">
                         {rainLogs.slice(0, 4).map((log, idx) => (
                             <div key={idx} className="flex justify-between items-center text-sm border-b border-gray-50 pb-2 last:border-0 last:pb-0">
-                                <span className="text-gray-500 font-bold text-xs uppercase tracking-wide">{new Date(log.date).toLocaleDateString('es-CL', {day: '2-digit', month: 'short'})}</span>
+                                <span className="text-gray-500 dark:text-gray-400 font-bold text-xs uppercase tracking-wide">{new Date(log.date).toLocaleDateString('es-CL', {day: '2-digit', month: 'short'})}</span>
                                 <span className="font-bold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-md">{log.rain_mm} mm</span>
                             </div>
                         ))}
                     </div>
-                    <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center bg-gray-50 p-3 rounded-lg">
-                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">Acumulado del Año</span>
+                    <div className="mt-4 pt-4 border-t border-gray-100 flex justify-between items-center bg-gray-50 dark:bg-gray-900 p-3 rounded-lg">
+                        <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Acumulado del Año</span>
                         <span className="text-blue-700 text-xl font-black">{rainLogs.reduce((sum, log) => sum + Number(log.rain_mm), 0).toFixed(1)} mm</span>
                     </div>
                 </div>
             </div>
 
             {/* Third Row: Protection Status Widget (Full Width) */}
-            <div className="mt-4 lg:mt-6 bg-white rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 print:hidden">
+            <div className="mt-4 lg:mt-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 lg:p-6 border border-gray-100 print:hidden">
                 <div className="flex items-center justify-between mb-4 border-b border-gray-100 pb-3">
                     <div className="flex items-center gap-2">
                         <div className="bg-indigo-50 p-1.5 rounded-lg">
                             <ShieldAlert className="h-5 w-5 text-indigo-500" />
                         </div>
-                        <div className="text-gray-700 text-sm lg:text-base font-bold uppercase tracking-wider">Protección Cultivo (Estado Actual)</div>
+                        <div className="text-gray-700 dark:text-gray-300 text-sm lg:text-base font-bold uppercase tracking-wider">Protección Cultivo (Estado Actual)</div>
                     </div>
                     <div className="text-xs text-gray-400 font-medium hidden md:block">
                         Mostrando el estado de cobertura de la última aplicación fitosanitaria
@@ -1069,12 +1069,12 @@ export const Dashboard: React.FC = () => {
                                 status.status === 'vencido' ? 'bg-red-50/50 border-red-100' : 
                                 status.status === 'critico' ? 'bg-orange-50/50 border-orange-100' :
                                 status.status === 'protegido' ? 'bg-green-50/50 border-green-100' :
-                                'bg-gray-50/50 border-gray-100'
+                                'bg-gray-50 dark:bg-gray-900/50 border-gray-100'
                             }`}>
                                 <div className="flex justify-between items-start mb-1">
-                                    <div className="font-bold text-gray-800 text-base truncate pr-2">{status.sectorName}</div>
+                                    <div className="font-bold text-gray-800 dark:text-gray-200 text-base truncate pr-2">{status.sectorName}</div>
                                     {status.objective && status.objective !== 'General' && (
-                                        <span className="text-[10px] font-bold bg-white px-2 py-0.5 rounded border text-gray-500 uppercase tracking-wider">
+                                        <span className="text-[10px] font-bold bg-white dark:bg-gray-800 px-2 py-0.5 rounded border text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                                             {status.objective}
                                         </span>
                                     )}
@@ -1083,26 +1083,26 @@ export const Dashboard: React.FC = () => {
                                     status.status === 'vencido' ? 'text-red-600' : 
                                     status.status === 'critico' ? 'text-orange-600' :
                                     status.status === 'protegido' ? 'text-green-600' :
-                                    'text-gray-500'
+                                    'text-gray-500 dark:text-gray-400'
                                 }`}>
                                     {status.status === 'vencido' ? '⚠️ Vencido' : 
                                      status.status === 'critico' ? '⏱️ Crítico' : 
                                      status.status === 'protegido' ? '✅ Protegido' : 'Desprotegido'}
                                 </div>
-                                <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3" title={status.message}>
+                                <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3" title={status.message}>
                                     {status.message}
                                 </div>
                                 
                                 {status.lastApplicationDate ? (
-                                    <div className="mt-auto pt-3 border-t border-gray-200/50">
+                                    <div className="mt-auto pt-3 border-t border-gray-200 dark:border-gray-700/50">
                                         <div className="text-[10px] text-gray-400 uppercase font-semibold">Última Aplicación</div>
-                                        <div className="text-xs text-gray-600 font-medium">
+                                        <div className="text-xs text-gray-600 dark:text-gray-400 font-medium">
                                             {new Date(status.lastApplicationDate + 'T12:00:00').toLocaleDateString('es-CL')} 
                                             <span className="ml-1 text-gray-400">({status.protectionDaysTotal} días)</span>
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="mt-auto pt-3 border-t border-gray-200/50">
+                                    <div className="mt-auto pt-3 border-t border-gray-200 dark:border-gray-700/50">
                                         <div className="text-[10px] text-gray-400 uppercase font-semibold">Última Aplicación</div>
                                         <div className="text-xs text-gray-400 italic">Sin datos</div>
                                     </div>
@@ -1122,7 +1122,7 @@ export const Dashboard: React.FC = () => {
         // DETAILED MODE UI (Original)
         <>
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 print:grid-cols-4 print:gap-4 print:mt-4">
-          <div className="bg-white overflow-hidden shadow rounded-lg print:shadow-none print:border print:border-gray-200">
+          <div className="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg print:shadow-none print:border print:border-gray-200 dark:border-gray-700">
           <div className="p-5">
             <div className="flex items-center">
               <div className="flex-shrink-0 print:hidden">
@@ -1130,9 +1130,9 @@ export const Dashboard: React.FC = () => {
               </div>
               <div className="ml-5 w-0 flex-1">
                 <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">Total Campos</dt>
+                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Total Campos</dt>
                   <dd>
-                    <div className="text-lg font-medium text-gray-900">{dashboardStats.totalFields}</div>
+                    <div className="text-lg font-medium text-gray-900 dark:text-gray-100">{dashboardStats.totalFields}</div>
                   </dd>
                 </dl>
               </div>
@@ -1140,7 +1140,7 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white overflow-hidden shadow rounded-lg print:shadow-none print:border print:border-gray-200">
+        <div className="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg print:shadow-none print:border print:border-gray-200 dark:border-gray-700">
           <div className="p-5">
             <div className="flex items-center">
               <div className="flex-shrink-0 print:hidden">
@@ -1148,9 +1148,9 @@ export const Dashboard: React.FC = () => {
               </div>
               <div className="ml-5 w-0 flex-1">
                 <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">Hectáreas Totales</dt>
+                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Hectáreas Totales</dt>
                   <dd>
-                    <div className="text-lg font-medium text-gray-900">{dashboardStats.totalHectares} ha</div>
+                    <div className="text-lg font-medium text-gray-900 dark:text-gray-100">{dashboardStats.totalHectares} ha</div>
                   </dd>
                 </dl>
               </div>
@@ -1158,7 +1158,7 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white overflow-hidden shadow rounded-lg print:shadow-none print:border print:border-gray-200">
+        <div className="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg print:shadow-none print:border print:border-gray-200 dark:border-gray-700">
           <div className="p-5">
             <div className="flex items-center">
               <div className="flex-shrink-0 print:hidden">
@@ -1166,9 +1166,9 @@ export const Dashboard: React.FC = () => {
               </div>
               <div className="ml-5 w-0 flex-1">
                 <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">Costo Total</dt>
+                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Costo Total</dt>
                   <dd>
-                    <div className="text-lg font-medium text-gray-900">{formatCLP(dashboardStats.totalCost)}</div>
+                    <div className="text-lg font-medium text-gray-900 dark:text-gray-100">{formatCLP(dashboardStats.totalCost)}</div>
                   </dd>
                 </dl>
               </div>
@@ -1176,7 +1176,7 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white overflow-hidden shadow rounded-lg print:shadow-none print:border print:border-gray-200">
+        <div className="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg print:shadow-none print:border print:border-gray-200 dark:border-gray-700">
           <div className="p-5">
             <div className="flex items-center">
               <div className="flex-shrink-0 print:hidden">
@@ -1184,9 +1184,9 @@ export const Dashboard: React.FC = () => {
               </div>
               <div className="ml-5 w-0 flex-1">
                 <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">Costo Promedio / ha</dt>
+                  <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Costo Promedio / ha</dt>
                   <dd>
-                    <div className="text-lg font-medium text-gray-900">{formatCLP(dashboardStats.costPerHectare)}</div>
+                    <div className="text-lg font-medium text-gray-900 dark:text-gray-100">{formatCLP(dashboardStats.costPerHectare)}</div>
                   </dd>
                 </dl>
               </div>
@@ -1196,8 +1196,8 @@ export const Dashboard: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 print:grid-cols-2 print:gap-4 print:mt-4 print:break-inside-avoid">
-          <div className="bg-white p-6 rounded-lg shadow print:shadow-none print:border print:border-gray-200">
-            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Costos por Campo</h3>
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow print:shadow-none print:border print:border-gray-200 dark:border-gray-700">
+            <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100 mb-4">Costos por Campo</h3>
             <div className="h-80 w-full print:h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
@@ -1215,8 +1215,8 @@ export const Dashboard: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-lg shadow print:shadow-none print:border print:border-gray-200">
-            <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Costo / Hectárea por Sector</h3>
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow print:shadow-none print:border print:border-gray-200 dark:border-gray-700">
+            <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100 mb-4">Costo / Hectárea por Sector</h3>
             <div className="h-80 w-full print:h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
@@ -1236,41 +1236,41 @@ export const Dashboard: React.FC = () => {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            <p className="text-xs text-gray-500 mt-2 text-center">* Mostrando los 10 sectores con mayor costo por hectárea</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">* Mostrando los 10 sectores con mayor costo por hectárea</p>
           </div>
       </div>
 
-      <div className="bg-white shadow overflow-hidden sm:rounded-lg print:shadow-none print:border print:border-gray-200 print:mt-4 print:break-inside-avoid">
-          <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
-            <h3 className="text-lg leading-6 font-medium text-gray-900">Desglose de Costos por Sector</h3>
-            <p className="mt-1 text-sm text-gray-500">Detalle de costos acumulados (Aplicaciones + Labores)</p>
+      <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg print:shadow-none print:border print:border-gray-200 dark:border-gray-700 print:mt-4 print:break-inside-avoid">
+          <div className="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+            <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100">Desglose de Costos por Sector</h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Detalle de costos acumulados (Aplicaciones + Labores)</p>
           </div>
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead className="bg-gray-50 dark:bg-gray-900">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sector / Campo</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Hectáreas</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Labores</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Aplicaciones</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Maquinaria</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Riego</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Combustible</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo Total</th>
-                  <th className="px-6 py-3 text-right text-xs font-bold text-gray-900 uppercase tracking-wider">Costo / Ha</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Sector / Campo</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Hectáreas</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Labores</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Aplicaciones</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Maquinaria</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Riego</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Combustible</th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Costo Total</th>
+                  <th className="px-6 py-3 text-right text-xs font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider">Costo / Ha</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {sectorChartData.map((sector, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50">
+                  <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{sector.name}</div>
-                      <div className="text-xs text-gray-500">{sector.fieldName}</div>
+                      <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{sector.name}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{sector.fieldName}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500 dark:text-gray-400">
                       {sector.hectares} ha
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600 dark:text-gray-400">
                       {formatCLP(sector.laborCost)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-blue-600">
@@ -1285,7 +1285,7 @@ export const Dashboard: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-purple-600">
                        {formatCLP(sector.fuelCost)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900 dark:text-gray-100">
                       {formatCLP(sector.totalCost)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-orange-600">
@@ -1295,7 +1295,7 @@ export const Dashboard: React.FC = () => {
                 ))}
                 {sectorChartData.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-6 py-10 text-center text-gray-500">
+                    <td colSpan={6} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
                       No hay datos de costos registrados aún.
                     </td>
                   </tr>
@@ -1310,16 +1310,16 @@ export const Dashboard: React.FC = () => {
       {/* Invoice Detail Modal */}
       {selectedInvoice && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-75 overflow-y-auto h-full w-full flex items-center justify-center z-50 p-4">
-          <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+          <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
             {/* Modal Header */}
-            <div className="flex items-center justify-between p-4 md:p-5 border-b rounded-t bg-gray-50">
-              <h3 className="text-xl font-semibold text-gray-900 flex items-center">
+            <div className="flex items-center justify-between p-4 md:p-5 border-b rounded-t bg-gray-50 dark:bg-gray-900">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 flex items-center">
                 <DollarSign className="w-5 h-5 mr-2 text-blue-600" />
                 Detalle de Factura N° {selectedInvoice.invoice_number || '-'}
               </h3>
               <button
                 onClick={() => setSelectedInvoice(null)}
-                className="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ms-auto inline-flex justify-center items-center"
+                className="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 dark:text-gray-100 rounded-lg text-sm w-8 h-8 ms-auto inline-flex justify-center items-center"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1329,11 +1329,11 @@ export const Dashboard: React.FC = () => {
             <div className="p-4 md:p-5 space-y-4 overflow-y-auto">
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
-                  <p className="text-sm text-gray-500 font-medium">Proveedor</p>
-                  <p className="text-base font-semibold text-gray-900">{selectedInvoice.supplier || 'Desconocido'}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Proveedor</p>
+                  <p className="text-base font-semibold text-gray-900 dark:text-gray-100">{selectedInvoice.supplier || 'Desconocido'}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500 font-medium">Fecha de Vencimiento</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Fecha de Vencimiento</p>
                   <p className="text-base font-semibold text-red-600">
                     {selectedInvoice.due_date ? new Date(selectedInvoice.due_date + 'T12:00:00').toLocaleDateString('es-CL') : 'N/A'}
                   </p>
@@ -1347,11 +1347,11 @@ export const Dashboard: React.FC = () => {
               )}
 
               <div>
-                <h4 className="text-md font-semibold text-gray-800 mb-3 border-b pb-2">Ítems de la Factura</h4>
+                <h4 className="text-md font-semibold text-gray-800 dark:text-gray-200 mb-3 border-b pb-2">Ítems de la Factura</h4>
                 {selectedInvoice.invoice_items && selectedInvoice.invoice_items.length > 0 ? (
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left text-gray-500">
-                      <thead className="text-xs text-gray-700 uppercase bg-gray-100">
+                    <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+                      <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-gray-100 dark:bg-gray-900">
                         <tr>
                           <th className="px-4 py-2">Categoría / Producto</th>
                           <th className="px-4 py-2 text-right">Cant.</th>
@@ -1361,23 +1361,23 @@ export const Dashboard: React.FC = () => {
                       </thead>
                       <tbody>
                         {selectedInvoice.invoice_items.map((item: any, idx: number) => (
-                          <tr key={idx} className="bg-white border-b">
+                          <tr key={idx} className="bg-white dark:bg-gray-800 border-b">
                             <td className="px-4 py-2">
-                              <div className="font-medium text-gray-900">{item.products?.name || item.category || 'Ítem'}</div>
+                              <div className="font-medium text-gray-900 dark:text-gray-100">{item.products?.name || item.category || 'Ítem'}</div>
                               {item.category && item.products?.name && (
-                                <div className="text-xs text-gray-500">{item.category}</div>
+                                <div className="text-xs text-gray-500 dark:text-gray-400">{item.category}</div>
                               )}
                             </td>
                             <td className="px-4 py-2 text-right">
                               {item.quantity} {item.products?.unit || ''}
                             </td>
                             <td className="px-4 py-2 text-right">{formatCLP(item.unit_price)}</td>
-                            <td className="px-4 py-2 text-right font-medium text-gray-900">{formatCLP(item.total_price)}</td>
+                            <td className="px-4 py-2 text-right font-medium text-gray-900 dark:text-gray-100">{formatCLP(item.total_price)}</td>
                           </tr>
                         ))}
                       </tbody>
                       <tfoot>
-                        <tr className="font-semibold text-gray-900 bg-gray-50">
+                        <tr className="font-semibold text-gray-900 dark:text-gray-100 bg-gray-50 dark:bg-gray-900">
                           <td colSpan={3} className="px-4 py-3 text-right">Total Factura:</td>
                           <td className="px-4 py-3 text-right text-lg text-blue-600">{formatCLP(selectedInvoice.total_amount)}</td>
                         </tr>
@@ -1385,13 +1385,13 @@ export const Dashboard: React.FC = () => {
                     </table>
                   </div>
                 ) : (
-                  <p className="text-gray-500 italic text-sm text-center py-4">No hay ítems registrados en esta factura.</p>
+                  <p className="text-gray-500 dark:text-gray-400 italic text-sm text-center py-4">No hay ítems registrados en esta factura.</p>
                 )}
               </div>
             </div>
             
             {/* Modal Footer */}
-            <div className="flex items-center justify-end p-4 border-t border-gray-200 rounded-b bg-gray-50">
+            <div className="flex items-center justify-end p-4 border-t border-gray-200 dark:border-gray-700 rounded-b bg-gray-50 dark:bg-gray-900">
               <button
                 onClick={() => setSelectedInvoice(null)}
                 className="text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center"
@@ -1405,33 +1405,33 @@ export const Dashboard: React.FC = () => {
 
       {showNewCompanyModal && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center z-50">
-          <div className="relative bg-white rounded-lg shadow-xl p-8 max-w-md w-full m-4">
+          <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-8 max-w-md w-full m-4">
             <button
               onClick={() => setShowNewCompanyModal(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:text-gray-400"
             >
               <X className="h-6 w-6" />
             </button>
             
-            <h2 className="text-2xl font-bold mb-6 text-gray-900">Nueva Empresa</h2>
+            <h2 className="text-2xl font-bold mb-6 text-gray-900 dark:text-gray-100">Nueva Empresa</h2>
             
             <form onSubmit={handleCreateCompany} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Nombre de la Empresa</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Nombre de la Empresa</label>
                 <input
                   type="text"
                   required
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                  className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
                   value={newCompanyName}
                   onChange={(e) => setNewCompanyName(e.target.value)}
                   placeholder="Ej: Agrícola Los Lagos"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">RUT (Opcional)</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">RUT (Opcional)</label>
                 <input
                   type="text"
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
+                  className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm"
                   value={newCompanyRut}
                   onChange={(e) => setNewCompanyRut(e.target.value)}
                   placeholder="Ej: 76.123.456-7"
@@ -1441,7 +1441,7 @@ export const Dashboard: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowNewCompanyModal(false)}
-                  className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                  className="py-2 px-4 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                 >
                   Cancelar
                 </button>
@@ -1464,7 +1464,7 @@ export const Dashboard: React.FC = () => {
           {/* Top Bar (Auto-hides slightly, visible on hover) */}
           <div className="flex justify-between items-center p-6 opacity-30 hover:opacity-100 transition-opacity absolute top-0 left-0 right-0 z-10">
             <div className="text-xl font-bold text-slate-400">{selectedCompany?.name}</div>
-            <button onClick={exitPresentation} className="text-slate-400 hover:text-red-500 bg-white/80 rounded-full p-2">
+            <button onClick={exitPresentation} className="text-slate-400 hover:text-red-500 bg-white dark:bg-gray-800/80 rounded-full p-2">
               <X className="w-8 h-8" />
             </button>
           </div>
@@ -1489,15 +1489,15 @@ export const Dashboard: React.FC = () => {
               <div className="w-full animate-fade-in-up">
                 <h2 className="text-4xl lg:text-5xl font-bold text-slate-800 mb-16 text-center">Resumen General</h2>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12">
-                  <div className="bg-white rounded-3xl shadow-2xl p-10 lg:p-12 text-center border-t-8 border-green-500">
+                  <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-10 lg:p-12 text-center border-t-8 border-green-500">
                     <div className="text-slate-500 text-xl lg:text-2xl font-medium mb-4">Costo Total Acumulado</div>
                     <div className="text-4xl lg:text-5xl xl:text-6xl font-bold text-slate-800">{formatCLP(Number(dashboardStats.totalCost) || 0)}</div>
                   </div>
-                  <div className="bg-white rounded-3xl shadow-2xl p-10 lg:p-12 text-center border-t-8 border-blue-500">
+                  <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-10 lg:p-12 text-center border-t-8 border-blue-500">
                     <div className="text-slate-500 text-xl lg:text-2xl font-medium mb-4">Costo Promedio / Hectárea</div>
                     <div className="text-4xl lg:text-5xl xl:text-6xl font-bold text-slate-800">{formatCLP(Number(dashboardStats.costPerHectare) || 0)}</div>
                   </div>
-                  <div className="bg-white rounded-3xl shadow-2xl p-10 lg:p-12 text-center border-t-8 border-orange-500">
+                  <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-10 lg:p-12 text-center border-t-8 border-orange-500">
                     <div className="text-slate-500 text-xl lg:text-2xl font-medium mb-4">Hectáreas Totales</div>
                     <div className="text-4xl lg:text-5xl xl:text-6xl font-bold text-slate-800">{dashboardStats.totalHectares} ha</div>
                   </div>
@@ -1509,7 +1509,7 @@ export const Dashboard: React.FC = () => {
             {currentSlide === 2 && (
               <div className="w-full h-full flex flex-col animate-fade-in-up pt-10">
                 <h2 className="text-4xl lg:text-5xl font-bold text-slate-800 mb-8 text-center">Costos por Campo</h2>
-                <div className="flex-1 bg-white rounded-3xl shadow-xl p-8 min-h-[400px]">
+                <div className="flex-1 bg-white dark:bg-gray-800 rounded-3xl shadow-xl p-8 min-h-[400px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData} margin={{ top: 20, right: 30, left: 60, bottom: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -1527,7 +1527,7 @@ export const Dashboard: React.FC = () => {
             {currentSlide === 3 && (
               <div className="w-full h-full flex flex-col animate-fade-in-up pt-10">
                 <h2 className="text-4xl lg:text-5xl font-bold text-slate-800 mb-8 text-center">Top 10 Sectores Más Costosos (/ha)</h2>
-                <div className="flex-1 bg-white rounded-3xl shadow-xl p-8 min-h-[400px]">
+                <div className="flex-1 bg-white dark:bg-gray-800 rounded-3xl shadow-xl p-8 min-h-[400px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={sectorChartData.slice(0, 10)} layout="vertical" margin={{ top: 20, right: 50, left: 120, bottom: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
@@ -1547,7 +1547,7 @@ export const Dashboard: React.FC = () => {
                 <h2 className="text-4xl lg:text-5xl font-bold text-slate-800 mb-8 text-center">Próximos Compromisos (Facturas)</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 overflow-y-auto pr-4 pb-10" style={{ maxHeight: 'calc(100vh - 250px)' }}>
                   {upcomingInvoices.map((inv, idx) => (
-                    <div key={idx} className="bg-white p-8 rounded-2xl shadow-lg border-l-8 border-red-500 flex flex-col">
+                    <div key={idx} className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg border-l-8 border-red-500 flex flex-col">
                       <div className="text-2xl font-bold text-slate-800 mb-2 truncate" title={inv.supplier}>{inv.supplier || 'Desconocido'}</div>
                       <div className="text-xl text-slate-500 mb-6">N° {inv.invoice_number}</div>
                       <div className="flex justify-between items-end mt-auto pt-4 border-t border-slate-100">
@@ -1571,7 +1571,7 @@ export const Dashboard: React.FC = () => {
           </div>
 
           {/* Bottom Bar / Controls */}
-          <div className="flex justify-between items-center p-6 bg-white/80 backdrop-blur-sm absolute bottom-0 left-0 right-0 z-10 border-t border-slate-200">
+          <div className="flex justify-between items-center p-6 bg-white dark:bg-gray-800/80 backdrop-blur-sm absolute bottom-0 left-0 right-0 z-10 border-t border-slate-200">
             <div className="text-slate-400 text-sm lg:text-base flex items-center">
               <span className="hidden sm:inline">Use las flechas del teclado </span>
               <span className="font-mono bg-slate-100 px-2 py-1 rounded ml-2">←</span>

@@ -781,14 +781,14 @@ export const ApplicationOrders: React.FC = () => {
           case 'pendiente': return 'bg-yellow-100 text-yellow-800';
           case 'completada': return 'bg-green-100 text-green-800';
           case 'cancelada': return 'bg-red-100 text-red-800';
-          default: return 'bg-gray-100 text-gray-800';
+          default: return 'bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200';
       }
   };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Ordenes de Aplicación</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Ordenes de Aplicación</h1>
         {!isEditing && (
             <button
                 onClick={() => {
@@ -812,25 +812,25 @@ export const ApplicationOrders: React.FC = () => {
       </div>
 
       {isEditing ? (
-          <div className="bg-white rounded-lg shadow p-6">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
               <div className="flex justify-between mb-6">
                   <h2 className="text-lg font-bold">Crear/Editar Orden</h2>
-                  <button onClick={() => setIsEditing(false)} className="text-gray-500 hover:text-gray-700">Cancelar</button>
+                  <button onClick={() => setIsEditing(false)} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300">Cancelar</button>
               </div>
 
               {/* Form Header Fields */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                   <div>
-                      <label className="block text-sm font-medium text-gray-700">Fecha Planificada</label>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha Planificada</label>
                       <input 
                           type="date" 
                           value={currentOrder.scheduled_date}
                           onChange={e => setCurrentOrder({...currentOrder, scheduled_date: e.target.value})}
-                          className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                          className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                       />
                   </div>
                   <div>
-                      <label className="block text-sm font-medium text-gray-700">Estado</label>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Estado</label>
                       <select 
                           value={currentOrder.status}
                           onChange={e => {
@@ -841,35 +841,35 @@ export const ApplicationOrders: React.FC = () => {
                               }
                               setCurrentOrder({...currentOrder, status: newStatus as any});
                           }}
-                          className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                          className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                       >
                           <option value="pendiente">Pendiente</option>
                           <option value="cancelada">Cancelada</option>
                       </select>
                   </div>
                   <div>
-                      <label className="block text-sm font-medium text-gray-700">Objetivo Aplicación</label>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Objetivo Aplicación</label>
                       <input 
                           type="text" 
                           value={currentOrder.objective || ''}
                           onChange={e => setCurrentOrder({...currentOrder, objective: e.target.value})}
-                          className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                          className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                           placeholder="Ej: Polilla, Arañita, etc."
                       />
                   </div>
                   <div>
-                      <label className="block text-sm font-medium text-gray-700">Campo</label>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Campo</label>
                       <select 
                           value={currentOrder.field_id || ''}
                           onChange={e => setCurrentOrder({...currentOrder, field_id: e.target.value, sector_id: ''})}
-                          className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                          className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                       >
                           <option value="">Seleccione...</option>
                           {fields.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                       </select>
                   </div>
                   <div>
-                      <label className="block text-sm font-medium text-gray-700">Sector</label>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Sector</label>
                       <select 
                           value={currentOrder.sector_id || ''}
                           onChange={e => {
@@ -907,7 +907,7 @@ export const ApplicationOrders: React.FC = () => {
                               });
                           }}
                           disabled={!currentOrder.field_id}
-                          className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                          className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                       >
                           <option value="">Seleccione...</option>
                           {fields.find(f => f.id === currentOrder.field_id)?.sectors?.map(s => (
@@ -916,17 +916,17 @@ export const ApplicationOrders: React.FC = () => {
                       </select>
                   </div>
                    <div>
-                      <label className="block text-sm font-medium text-gray-700">Variedad</label>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Variedad</label>
                       <input 
                           type="text" 
                           value={currentOrder.variety || ''}
                           onChange={e => setCurrentOrder({...currentOrder, variety: e.target.value})}
-                          className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                          className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                           placeholder="Ej: Forelle"
                       />
                   </div>
                   <div>
-                      <label className="block text-sm font-medium text-gray-700 text-indigo-600">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 text-indigo-600">
                           <span className="flex items-center"><ClipboardList className="w-4 h-4 mr-1"/>Cargar desde Programa (Opcional)</span>
                       </label>
                       <select 
@@ -942,11 +942,11 @@ export const ApplicationOrders: React.FC = () => {
                       </select>
                   </div>
                   <div>
-                      <label className="block text-sm font-medium text-gray-700">Tipo</label>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tipo</label>
                       <select 
                           value={currentOrder.application_type}
                           onChange={e => setCurrentOrder({...currentOrder, application_type: e.target.value})}
-                          className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                          className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                       >
                           <option value="fitosanitario">Fitosanitario</option>
                           <option value="fertilizacion">Fertilización</option>
@@ -958,16 +958,16 @@ export const ApplicationOrders: React.FC = () => {
 
               {/* Items Section */}
               <div className="border rounded-md p-4 mb-6">
-                  <h3 className="text-sm font-bold text-gray-700 mb-3">Productos y Dosis</h3>
+                  <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Productos y Dosis</h3>
                   
                   {/* Add Item Form */}
-                  <div className="flex flex-wrap items-end gap-2 mb-4 bg-gray-50 p-3 rounded">
+                  <div className="flex flex-wrap items-end gap-2 mb-4 bg-gray-50 dark:bg-gray-900 p-3 rounded">
                       <div className="flex-1 min-w-[200px]">
-                          <label className="block text-xs text-gray-500">Producto</label>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400">Producto</label>
                           <select 
                               value={currentItem.product_id}
                               onChange={e => setCurrentItem({...currentItem, product_id: e.target.value})}
-                              className="w-full border border-gray-300 rounded p-1.5 text-sm"
+                              className="w-full border border-gray-300 dark:border-gray-600 rounded p-1.5 text-sm"
                           >
                               <option value="">Seleccione...</option>
                               {products?.map(p => (
@@ -976,27 +976,27 @@ export const ApplicationOrders: React.FC = () => {
                           </select>
                       </div>
                       <div className="w-24">
-                          <label className="block text-xs text-gray-500">Tipo Dosis</label>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400">Tipo Dosis</label>
                           <select 
                               value={currentItem.dose_input_type}
                               onChange={e => setCurrentItem({...currentItem, dose_input_type: e.target.value as any})}
-                              className="w-full border border-gray-300 rounded p-1.5 text-sm"
+                              className="w-full border border-gray-300 dark:border-gray-600 rounded p-1.5 text-sm"
                           >
                               <option value="hl">/ 100L</option>
                               <option value="ha">/ Ha</option>
                           </select>
                       </div>
                       <div className="w-24">
-                          <label className="block text-xs text-gray-500">Dosis</label>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400">Dosis</label>
                           <input 
                               type="number" 
                               value={currentItem.dose_input_value}
                               onChange={e => setCurrentItem({...currentItem, dose_input_value: Number(e.target.value)})}
-                              className="w-full border border-gray-300 rounded p-1.5 text-sm"
+                              className="w-full border border-gray-300 dark:border-gray-600 rounded p-1.5 text-sm"
                           />
                           {/* Equivalent Calculator Helper */}
                           {currentItem.dose_input_value > 0 && currentOrder.water_liters_per_hectare > 0 && (
-                              <div className="text-[10px] text-gray-500 mt-1 whitespace-nowrap" title="Equivalencia automática">
+                              <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-1 whitespace-nowrap" title="Equivalencia automática">
                                   {currentItem.dose_input_type === 'hl' 
                                       ? `≈ ${((currentItem.dose_input_value * currentOrder.water_liters_per_hectare) / 100).toFixed(2)} / Ha` 
                                       : `≈ ${((currentItem.dose_input_value * 100) / currentOrder.water_liters_per_hectare).toFixed(2)} / 100L`}
@@ -1004,11 +1004,11 @@ export const ApplicationOrders: React.FC = () => {
                           )}
                       </div>
                       <div className="w-24">
-                          <label className="block text-xs text-gray-500">Unidad</label>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400">Unidad</label>
                           <select 
                               value={currentItem.unit_override}
                               onChange={e => setCurrentItem({...currentItem, unit_override: e.target.value})}
-                              className="w-full border border-gray-300 rounded p-1.5 text-sm"
+                              className="w-full border border-gray-300 dark:border-gray-600 rounded p-1.5 text-sm"
                           >
                               <option value="">Auto</option>
                               <option value="L">L</option>
@@ -1026,22 +1026,22 @@ export const ApplicationOrders: React.FC = () => {
                   </div>
 
                   {/* Items Table */}
-                  <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                      <thead className="bg-gray-50 dark:bg-gray-900">
                           <tr>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Producto</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Dosis / 100L</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Dosis / Ha</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Total a Pedir</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Producto</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Dosis / 100L</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Dosis / Ha</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Total a Pedir</th>
                               <th className="px-3 py-2"></th>
                           </tr>
                       </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
+                      <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                           {currentOrder.items?.map((item, idx) => (
                               <tr key={idx}>
                                   <td className="px-3 py-2 text-sm">
                                       <div className="font-medium">{item.product_name}</div>
-                                      <div className="text-xs text-gray-500">{item.active_ingredient}</div>
+                                      <div className="text-xs text-gray-500 dark:text-gray-400">{item.active_ingredient}</div>
                                   </td>
                                   <td className="px-3 py-2 text-sm">{item.dose_per_100l ? `${item.dose_per_100l} ${item.unit}` : '-'}</td>
                                   <td className="px-3 py-2 text-sm">{item.dose_per_hectare} {item.unit}</td>
@@ -1059,24 +1059,24 @@ export const ApplicationOrders: React.FC = () => {
 
               {/* Machinery & Tech Specs (Collapsed/Secondary) */}
               {currentOrder.application_type !== 'fertirriego' && (
-              <div className="bg-gray-50 p-4 rounded-md mb-6">
-                  <h3 className="text-sm font-bold text-gray-700 mb-3">Parámetros Técnicos y Maquinaria</h3>
+              <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md mb-6">
+                  <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Parámetros Técnicos y Maquinaria</h3>
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                       <div>
-                          <label className="block text-xs text-gray-500">Mojamiento (L/ha)</label>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400">Mojamiento (L/ha)</label>
                           <input 
                               type="number" 
                               value={currentOrder.water_liters_per_hectare}
                               onChange={e => setCurrentOrder({...currentOrder, water_liters_per_hectare: Number(e.target.value)})}
-                              className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
+                              className="mt-1 w-full border border-gray-300 dark:border-gray-600 rounded p-1.5 text-sm"
                           />
                       </div>
                       <div>
-                          <label className="block text-xs text-gray-500">Tractor</label>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400">Tractor</label>
                           <select 
                               value={currentOrder.tractor_id || ''}
                               onChange={e => setCurrentOrder({...currentOrder, tractor_id: e.target.value})}
-                              className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
+                              className="mt-1 w-full border border-gray-300 dark:border-gray-600 rounded p-1.5 text-sm"
                           >
                               <option value="">-</option>
                               {machines.filter(m => m.type?.toLowerCase().includes('tractor')).map(m => (
@@ -1085,11 +1085,11 @@ export const ApplicationOrders: React.FC = () => {
                           </select>
                       </div>
                       <div>
-                          <label className="block text-xs text-gray-500">Equipo</label>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400">Equipo</label>
                           <select 
                               value={currentOrder.sprayer_id || ''}
                               onChange={e => setCurrentOrder({...currentOrder, sprayer_id: e.target.value})}
-                              className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
+                              className="mt-1 w-full border border-gray-300 dark:border-gray-600 rounded p-1.5 text-sm"
                           >
                               <option value="">-</option>
                               {machines.filter(m => !m.type?.toLowerCase().includes('tractor')).map(m => (
@@ -1098,11 +1098,11 @@ export const ApplicationOrders: React.FC = () => {
                           </select>
                       </div>
                       <div>
-                          <label className="block text-xs text-gray-500">Operador</label>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400">Operador</label>
                           <select 
                               value={currentOrder.tractor_driver_id || ''}
                               onChange={e => setCurrentOrder({...currentOrder, tractor_driver_id: e.target.value})}
-                              className="mt-1 w-full border border-gray-300 rounded p-1.5 text-sm"
+                              className="mt-1 w-full border border-gray-300 dark:border-gray-600 rounded p-1.5 text-sm"
                           >
                               <option value="">-</option>
                               {workers?.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
@@ -1110,15 +1110,15 @@ export const ApplicationOrders: React.FC = () => {
                       </div>
                       {/* Optional Params */}
                       <div>
-                          <label className="block text-xs text-gray-500">Velocidad</label>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400">Velocidad</label>
                           <input type="number" value={currentOrder.speed || ''} onChange={e => setCurrentOrder({...currentOrder, speed: Number(e.target.value)})} className="w-full border p-1 rounded text-sm"/>
                       </div>
                       <div>
-                          <label className="block text-xs text-gray-500">Presión</label>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400">Presión</label>
                           <input type="number" value={currentOrder.pressure || ''} onChange={e => setCurrentOrder({...currentOrder, pressure: Number(e.target.value)})} className="w-full border p-1 rounded text-sm"/>
                       </div>
                        <div>
-                          <label className="block text-xs text-gray-500">Boquillas</label>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400">Boquillas</label>
                           <input type="text" value={currentOrder.nozzles || ''} onChange={e => setCurrentOrder({...currentOrder, nozzles: e.target.value})} className="w-full border p-1 rounded text-sm"/>
                       </div>
                   </div>
@@ -1128,41 +1128,41 @@ export const ApplicationOrders: React.FC = () => {
               {/* Footer Notes */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                   <div>
-                      <label className="block text-sm font-medium text-gray-700">Observaciones</label>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Observaciones</label>
                       <textarea 
                           value={currentOrder.notes || ''}
                           onChange={e => setCurrentOrder({...currentOrder, notes: e.target.value})}
                           rows={3}
-                          className="mt-1 block w-full border border-gray-300 rounded-md p-2 text-sm"
+                          className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md p-2 text-sm"
                           placeholder="Notas adicionales..."
                       />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                       <div>
-                          <label className="block text-sm font-medium text-gray-700">Reingreso (hrs)</label>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Reingreso (hrs)</label>
                           <input 
                               type="number" 
                               value={currentOrder.safety_period_hours || 0}
                               onChange={e => setCurrentOrder({...currentOrder, safety_period_hours: Number(e.target.value)})}
-                              className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                              className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                           />
                       </div>
                       <div>
-                          <label className="block text-sm font-medium text-gray-700">Carencia (días)</label>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Carencia (días)</label>
                           <input 
                               type="number" 
                               value={currentOrder.grace_period_days || 0}
                               onChange={e => setCurrentOrder({...currentOrder, grace_period_days: Number(e.target.value)})}
-                              className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                              className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                           />
                       </div>
                       <div>
-                          <label className="block text-sm font-medium text-gray-700">Días de Protección</label>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Días de Protección</label>
                           <input 
                               type="number" 
                               value={currentOrder.protection_days || 0}
                               onChange={e => setCurrentOrder({...currentOrder, protection_days: Number(e.target.value)})}
-                              className="mt-1 block w-full border border-gray-300 rounded-md p-2"
+                              className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                               title="¿Cuántos días dura la protección de esta aplicación?"
                           />
                       </div>
@@ -1181,33 +1181,33 @@ export const ApplicationOrders: React.FC = () => {
               </div>
           </div>
       ) : (
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-900">
                       <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">N°</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Huerto/Sector</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Objetivo</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
-                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Acciones</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">N°</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fecha</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Huerto/Sector</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Objetivo</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Estado</th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Acciones</th>
                       </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                       {orders.map((order) => (
-                          <tr key={order.id} className="hover:bg-gray-50">
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">#{order.order_number}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 dark:text-gray-100">#{order.order_number}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                   <div>Plan: {new Date(order.scheduled_date + 'T12:00:00').toLocaleDateString()}</div>
                                   {order.completed_date && (
                                       <div className="text-green-600 font-medium">Realizada: {new Date(order.completed_date + 'T12:00:00').toLocaleDateString()}</div>
                                   )}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                                   <div>{order.field?.name}</div>
-                                  <div className="text-xs text-gray-500">{order.sector?.name}</div>
+                                  <div className="text-xs text-gray-500 dark:text-gray-400">{order.sector?.name}</div>
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{order.objective || '-'}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{order.objective || '-'}</td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                   {order.status === 'pendiente' ? (
                                       <button
@@ -1232,7 +1232,7 @@ export const ApplicationOrders: React.FC = () => {
                               <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end gap-2">
                                   <button 
                                       onClick={() => handlePrintOrder(order)}
-                                      className="text-gray-600 hover:text-gray-900"
+                                      className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:text-gray-100"
                                       title="Imprimir PDF"
                                   >
                                       <Printer className="h-5 w-5" />
@@ -1266,7 +1266,7 @@ export const ApplicationOrders: React.FC = () => {
                       ))}
                       {orders.length === 0 && (
                           <tr>
-                              <td colSpan={6} className="px-6 py-4 text-center text-gray-500">No hay ordenes registradas</td>
+                              <td colSpan={6} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">No hay ordenes registradas</td>
                           </tr>
                       )}
                   </tbody>
