@@ -25,10 +25,14 @@ import {
   Lock,
   DollarSign,
   Sun,
-  Moon
+  Moon,
+  DownloadCloud
 } from 'lucide-react';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { useTheme } from '../contexts/ThemeContext';
+import { utils, writeFile } from 'xlsx';
+import { supabase } from '../supabase/client';
+import { toast } from 'sonner';
 
 type NavItem = {
   name: string;
@@ -49,6 +53,85 @@ export const Layout: React.FC = () => {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   const [isPasswordModalOpen, setIsPasswordModalOpen] = React.useState(false);
+  const [isBackingUp, setIsBackingUp] = React.useState(false);
+
+  const handleBackup = async () => {
+    if (!selectedCompany) return;
+    setIsBackingUp(true);
+    const toastId = toast.loading('Generando copia de seguridad de toda la empresa...');
+    
+    try {
+      const wb = utils.book_new();
+
+      // 1. Products
+      const { data: products } = await supabase.from('products').select('*').eq('company_id', selectedCompany.id);
+      if (products && products.length > 0) {
+        utils.book_append_sheet(wb, utils.json_to_sheet(products), 'Bodega_Inventario');
+      }
+
+      // 2. Fields & Sectors
+      const { data: fields } = await supabase.from('fields').select('*, sectors(*)').eq('company_id', selectedCompany.id);
+      if (fields && fields.length > 0) {
+         const flatSectors = fields.flatMap(f => (f.sectors || []).map((s: any) => ({
+           Campo: f.name,
+           Sector: s.name,
+           Hectareas: s.hectares
+         })));
+         utils.book_append_sheet(wb, utils.json_to_sheet(flatSectors), 'Campos_Sectores');
+      }
+
+      // 3. Invoices
+      const { data: invoices } = await supabase.from('invoices').select('*, invoice_items(*)').eq('company_id', selectedCompany.id);
+      if (invoices && invoices.length > 0) {
+         const flatInvoices = invoices.map(inv => ({
+           Numero: inv.invoice_number,
+           Proveedor: inv.supplier,
+           Fecha: inv.invoice_date,
+           Total: inv.total_amount,
+           Estado: inv.status,
+           Items: inv.invoice_items?.length || 0
+         }));
+         utils.book_append_sheet(wb, utils.json_to_sheet(flatInvoices), 'Facturas_Resumen');
+      }
+
+      // 4. Applications (by field)
+      if (fields && fields.length > 0) {
+          const fieldIds = fields.map(f => f.id);
+          const { data: apps } = await supabase.from('applications').select('*').in('field_id', fieldIds);
+          if (apps && apps.length > 0) {
+              utils.book_append_sheet(wb, utils.json_to_sheet(apps), 'Aplicaciones');
+          }
+      }
+
+      // 5. Incomes
+      const { data: incomes } = await supabase.from('income_entries').select('*').eq('company_id', selectedCompany.id);
+      if (incomes && incomes.length > 0) {
+          utils.book_append_sheet(wb, utils.json_to_sheet(incomes), 'Liquidaciones');
+      }
+
+      // 6. Machines
+      const { data: machines } = await supabase.from('machines').select('*').eq('company_id', selectedCompany.id);
+      if (machines && machines.length > 0) {
+          utils.book_append_sheet(wb, utils.json_to_sheet(machines), 'Maquinaria');
+      }
+      
+      // 7. Workers
+      const { data: workers } = await supabase.from('workers').select('*').eq('company_id', selectedCompany.id);
+      if (workers && workers.length > 0) {
+          utils.book_append_sheet(wb, utils.json_to_sheet(workers), 'Trabajadores');
+      }
+
+      const dateStr = new Date().toISOString().split('T')[0];
+      writeFile(wb, `Respaldo_AgroCostos_${selectedCompany.name.replace(/\s+/g, '_')}_${dateStr}.xlsx`);
+      
+      toast.success('Copia de seguridad descargada exitosamente', { id: toastId });
+    } catch (error: any) {
+      console.error(error);
+      toast.error('Error al generar el respaldo: ' + error.message, { id: toastId });
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -120,9 +203,19 @@ export const Layout: React.FC = () => {
         <div className="flex flex-col h-full">
           <div className="flex items-center justify-between h-16 border-b border-gray-200 dark:border-gray-700 px-4">
             <span className="text-xl font-bold text-green-700">AgroCostos</span>
-            <button onClick={toggleTheme} className="p-1.5 rounded-md text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Cambiar Tema">
-              {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            </button>
+            <div className="flex items-center space-x-2">
+              <button 
+                onClick={handleBackup} 
+                disabled={isBackingUp}
+                className={`p-1.5 rounded-md text-gray-500 hover:text-green-700 dark:text-gray-400 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-gray-700 transition-colors ${isBackingUp ? 'opacity-50 cursor-not-allowed' : ''}`} 
+                title="Descargar Respaldo (Excel)"
+              >
+                <DownloadCloud className="h-5 w-5" />
+              </button>
+              <button onClick={toggleTheme} className="p-1.5 rounded-md text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Cambiar Tema">
+                {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </button>
+            </div>
           </div>
           
           {/* Company Selector in Sidebar */}
@@ -223,6 +316,13 @@ export const Layout: React.FC = () => {
       <div className="md:hidden fixed top-0 left-0 w-full bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 z-10 flex items-center justify-between px-4 h-16 print:hidden">
         <span className="text-xl font-bold text-green-700">AgroCostos</span>
         <div className="flex items-center space-x-2">
+          <button 
+            onClick={handleBackup} 
+            disabled={isBackingUp}
+            className={`p-2 rounded-md text-gray-500 hover:text-green-700 dark:text-gray-400 dark:hover:text-green-400 ${isBackingUp ? 'opacity-50' : ''}`}
+          >
+            <DownloadCloud className="h-6 w-6" />
+          </button>
           <button onClick={toggleTheme} className="p-2 rounded-md text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">
             {theme === 'dark' ? <Sun className="h-6 w-6" /> : <Moon className="h-6 w-6" />}
           </button>
