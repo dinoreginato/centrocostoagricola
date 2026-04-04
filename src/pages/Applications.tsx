@@ -375,56 +375,64 @@ export const Applications: React.FC = () => {
   };
 
   const handleDownloadPDF = (action: 'save' | 'preview' = 'save') => {
-    const doc = new jsPDF();
+    const doc = new jsPDF({ orientation: 'landscape' });
     const filteredApps = applications.filter(app => filterSectorId === 'all' || app.sector_id === filterSectorId);
     
     // Title
     doc.setFontSize(18);
-    doc.text('Reporte de Aplicaciones', 14, 22);
+    doc.text('Libro de Campo (Cuaderno de Aplicaciones)', 14, 22);
     
     doc.setFontSize(11);
     doc.setTextColor(100);
-    const dateStr = new Date().toLocaleDateString();
-    let subtitle = `Generado el: ${dateStr}`;
+    const dateStr = new Date().toLocaleDateString('es-CL');
+    let subtitle = `Empresa: ${selectedCompany?.name} | Fecha de Emisión: ${dateStr}`;
     
     if (filterSectorId !== 'all') {
         const sectorName = applications.find(a => a.sector_id === filterSectorId)?.sector_name || 'Sector Seleccionado';
-        subtitle += ` - Filtrado por Sector: ${sectorName}`;
-    } else {
-        subtitle += ' - Todos los Sectores';
+        subtitle += ` | Sector: ${sectorName}`;
     }
     
     doc.text(subtitle, 14, 30);
     
-    // Table Data preparation
-    const tableRows = filteredApps.map(app => {
-        const details = app.items.map(item => 
-            `${item.product_name}${item.objective ? ` (${item.objective})` : ''}: ${item.dose_per_hectare} ${item.unit}/ha`
-        ).join('\n');
-        
-        return [
-            new Date(app.application_date).toLocaleDateString(),
-            app.field_name,
-            app.sector_name,
-            app.application_type,
-            details,
-            formatCLP(app.total_cost)
-        ];
+    // Flatten data: One row per product applied
+    const tableRows: any[] = [];
+    filteredApps.forEach(app => {
+        app.items.forEach(item => {
+            // Find active ingredient from loaded products
+            const productInfo = products.find(p => p.id === item.product_id);
+            const activeIngredient = productInfo?.active_ingredient || 'No especificado';
+            const objective = item.objective || app.application_type || 'Control Fitosanitario';
+
+            tableRows.push([
+                new Date(app.application_date).toLocaleDateString('es-CL'),
+                `${app.field_name} - ${app.sector_name}`,
+                `${app.sector_hectares} ha`,
+                objective,
+                item.product_name,
+                activeIngredient,
+                `${item.dose_per_hectare} ${item.unit}/ha`,
+                `${app.water_liters_per_hectare} L/ha`
+            ]);
+        });
     });
 
     autoTable(doc, {
-        head: [['Fecha', 'Campo', 'Sector', 'Tipo', 'Detalles', 'Costo Total']],
+        head: [['Fecha', 'Ubicación (Sector)', 'Superficie', 'Objetivo / Plaga', 'Producto Comercial', 'Ingrediente Activo', 'Dosis / Ha', 'Mojamiento']],
         body: tableRows,
         startY: 40,
-        styles: { fontSize: 8, cellPadding: 3 },
-        headStyles: { fillColor: [46, 191, 88] }, // Green header
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 2, valign: 'middle' },
+        headStyles: { fillColor: [46, 125, 50], textColor: 255, fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [249, 250, 251] },
         columnStyles: {
-            0: { cellWidth: 25 },
-            1: { cellWidth: 30 },
-            2: { cellWidth: 30 },
-            3: { cellWidth: 25 },
-            4: { cellWidth: 'auto' },
-            5: { cellWidth: 25, halign: 'right' },
+            0: { cellWidth: 20 },
+            1: { cellWidth: 40 },
+            2: { cellWidth: 20, halign: 'right' },
+            3: { cellWidth: 35 },
+            4: { cellWidth: 40 },
+            5: { cellWidth: 40 },
+            6: { cellWidth: 25, halign: 'right' },
+            7: { cellWidth: 25, halign: 'right' },
         }
     });
 
@@ -432,23 +440,29 @@ export const Applications: React.FC = () => {
     const finalY = (doc as any).lastAutoTable.finalY + 15;
     
     // Check if we need a new page
-    if (finalY > 250) {
+    if (finalY > 180) { // Landscape height is approx 210
         doc.addPage();
+        doc.setFontSize(14);
+        doc.setTextColor(0);
         doc.text('Resumen de Productos Utilizados', 14, 20);
     } else {
+        doc.setFontSize(14);
+        doc.setTextColor(0);
         doc.text('Resumen de Productos Utilizados', 14, finalY);
     }
 
-    const summaryStart = finalY > 250 ? 25 : finalY + 5;
+    const summaryStart = finalY > 180 ? 30 : finalY + 10;
 
     // Calculate totals
-    const productTotals: Record<string, {name: string, quantity: number, unit: string, cost: number}> = {};
+    const productTotals: Record<string, {name: string, active_ingredient: string, quantity: number, unit: string, cost: number}> = {};
     
     filteredApps.forEach(app => {
         app.items.forEach(item => {
              if (!productTotals[item.product_id]) {
+                 const productInfo = products.find(p => p.id === item.product_id);
                  productTotals[item.product_id] = {
                      name: item.product_name,
+                     active_ingredient: productInfo?.active_ingredient || 'No especificado',
                      quantity: 0,
                      unit: item.unit,
                      cost: 0
@@ -463,25 +477,30 @@ export const Applications: React.FC = () => {
         .sort((a, b) => a.name.localeCompare(b.name))
         .map(p => [
             p.name,
+            p.active_ingredient,
             `${p.quantity.toFixed(2)} ${p.unit}`,
             formatCLP(p.cost)
         ]);
 
     autoTable(doc, {
-        head: [['Producto', 'Cantidad Total', 'Costo Total']],
+        head: [['Producto Comercial', 'Ingrediente Activo', 'Cantidad Total Aplicada', 'Costo Total (CLP)']],
         body: summaryRows,
         startY: summaryStart,
         theme: 'striped',
         headStyles: { fillColor: [60, 60, 60] },
-        styles: { fontSize: 9 }
+        styles: { fontSize: 9 },
+        columnStyles: {
+            2: { halign: 'right' },
+            3: { halign: 'right' }
+        }
     });
 
     if (action === 'save') {
-        doc.save(`reporte_aplicaciones_${new Date().toISOString().split('T')[0]}.pdf`);
+        doc.save(`Libro_Campo_${selectedCompany?.name.replace(/\s+/g, '_')}_${dateStr}.pdf`);
     } else {
-        const pdfBlob = doc.output('bloburl');
-        setPdfPreviewUrl(pdfBlob.toString());
-        setPdfPreviewTitle('Reporte de Aplicaciones');
+        const pdfBlobUrl = doc.output('bloburl');
+        setPdfPreviewUrl(pdfBlobUrl.toString());
+        setPdfPreviewTitle(`Libro de Campo - ${selectedCompany?.name}`);
         setPdfPreviewOpen(true);
     }
   };
@@ -1339,18 +1358,19 @@ export const Applications: React.FC = () => {
                 <div className="flex shadow-sm rounded-md">
                     <button
                         onClick={() => handleDownloadPDF('preview')}
-                        className="inline-flex items-center px-2 py-1.5 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-l-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 focus:z-10 focus:ring-1 focus:ring-green-500 focus:border-green-500"
-                        title="Vista Previa PDF Oficina"
+                        className="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-l-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 focus:z-10 focus:ring-1 focus:ring-green-500 focus:border-green-500"
+                        title="Previsualizar Libro"
                     >
-                        <Eye className="h-4 w-4" />
+                        <Eye className="h-4 w-4 mr-2" />
+                        Previsualizar Libro
                     </button>
                     <button
                         onClick={() => handleDownloadPDF('save')}
-                        className="inline-flex items-center px-3 py-1.5 border border-l-0 border-gray-300 dark:border-gray-600 text-sm font-medium rounded-r-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 focus:z-10 focus:ring-1 focus:ring-green-500 focus:border-green-500"
-                        title="Descargar PDF Oficina"
+                        className="inline-flex items-center px-3 py-1.5 border border-l-0 border-green-600 text-sm font-medium rounded-r-md text-white bg-green-600 hover:bg-green-700 focus:z-10 focus:ring-1 focus:ring-green-500 focus:border-green-500"
+                        title="Exportar Libro de Campo (GlobalG.A.P)"
                     >
                         <Download className="h-4 w-4 mr-2" />
-                        PDF
+                        Exportar Libro de Campo (GlobalG.A.P)
                     </button>
                 </div>
 
