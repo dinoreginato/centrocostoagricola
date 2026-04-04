@@ -26,7 +26,11 @@ export const Dashboard: React.FC = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [showNewCompanyModal, setShowNewCompanyModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [simpleMode, setSimpleMode] = useState(true); // Default to Zen Mode
+  const [simpleMode, setSimpleMode] = useState(() => {
+    // Read from localStorage to remember preference, default to true (Zen Mode)
+    const savedMode = localStorage.getItem('dashboardMode');
+    return savedMode !== null ? savedMode === 'true' : true;
+  });
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null); // For invoice modal
   const [presentationMode, setPresentationMode] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -623,6 +627,12 @@ export const Dashboard: React.FC = () => {
     }
   };
 
+  const handleToggleMode = () => {
+    const newMode = !simpleMode;
+    setSimpleMode(newMode);
+    localStorage.setItem('dashboardMode', newMode.toString());
+  };
+
   if (loading) {
     return <div className="flex justify-center p-8">Cargando...</div>;
   }
@@ -689,7 +699,8 @@ export const Dashboard: React.FC = () => {
               </button>
 
               <button
-                onClick={() => setSimpleMode(!simpleMode)}
+                type="button"
+                onClick={handleToggleMode}
                 className={`inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 shadow-sm ${
                     simpleMode 
                     ? 'text-blue-700 bg-blue-100 hover:bg-blue-200' 
