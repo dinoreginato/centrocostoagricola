@@ -996,20 +996,76 @@ export const Reports: React.FC = () => {
         });
 
     } else if (activeTab === 'monthly') {
-        // MONTHLY EXPENSES REPORT
-        const tableBody = monthlyExpenses.map(m => [
-            m.month,
-            formatCLP(m.total)
-        ]);
+        // PROFESSIONAL MONTHLY EXPENSES REPORT
+        if (detailedReport && detailedReport.length > 0) {
+            let totalSeason = 0;
+            const pageWidth = doc.internal.pageSize.getWidth();
+            
+            detailedReport.forEach(month => {
+                totalSeason += month.total;
+                
+                if (yPos > doc.internal.pageSize.getHeight() - 40) {
+                    doc.addPage();
+                    yPos = 20;
+                }
 
-        autoTable(doc, {
-            startY: yPos,
-            head: [['Mes', 'Total Gastado']],
-            body: tableBody,
-            theme: 'striped',
-            headStyles: { fillColor: [136, 132, 216] }, // Purple
-            columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } }
-        });
+                doc.setFontSize(14);
+                doc.setTextColor(255, 255, 255);
+                
+                // Draw a nice banner for the month
+                doc.setFillColor(136, 132, 216); // Purple brand color
+                doc.rect(14, yPos - 6, pageWidth - 28, 10, 'F');
+                doc.text(`Resumen ${month.monthName}`, 16, yPos + 1);
+                
+                // Right align total
+                const totalText = `Total Mes: ${formatCLP(month.total)}`;
+                const textWidth = doc.getTextWidth(totalText);
+                doc.text(totalText, pageWidth - 16 - textWidth, yPos + 1);
+                
+                yPos += 10;
+                
+                // Now create a small table for categories in this month
+                const catBody = month.categories
+                    .sort((a, b) => b.total - a.total)
+                    .map(c => [c.name, formatCLP(c.total)]);
+                    
+                autoTable(doc, {
+                    startY: yPos,
+                    head: [['Categoría de Gasto', 'Monto']],
+                    body: catBody,
+                    theme: 'grid',
+                    headStyles: { fillColor: [240, 240, 240], textColor: [0,0,0], fontStyle: 'bold' },
+                    columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } },
+                    margin: { left: 14, right: 14 }
+                });
+                
+                yPos = (doc as any).lastAutoTable.finalY + 15;
+            });
+            
+            // Grand Total
+            if (yPos > doc.internal.pageSize.getHeight() - 20) { doc.addPage(); yPos = 20; }
+            doc.setFontSize(16);
+            doc.setTextColor(0);
+            doc.setFont("helvetica", "bold");
+            doc.text(`TOTAL TEMPORADA: ${formatCLP(totalSeason)}`, 14, yPos);
+            doc.setFont("helvetica", "normal");
+            
+        } else {
+            // Fallback
+            const tableBody = monthlyExpenses.map(m => [
+                m.month,
+                formatCLP(m.total)
+            ]);
+
+            autoTable(doc, {
+                startY: yPos,
+                head: [['Mes', 'Total Gastado']],
+                body: tableBody,
+                theme: 'striped',
+                headStyles: { fillColor: [136, 132, 216] }, // Purple
+                columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } }
+            });
+        }
 
     } else if (activeTab === 'categories') {
         // CATEGORIES REPORT
