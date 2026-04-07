@@ -122,7 +122,7 @@ const CHEMICAL_CATEGORIES = [
 export const Reports: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'applications' | 'monthly' | 'categories' | 'pending' | 'paid_payments' | 'chemicals' | 'detailed' | 'budget' | 'comparative' | 'profitability'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'applications' | 'monthly' | 'categories' | 'pending' | 'paid_payments' | 'chemicals' | 'detailed' | 'budget' | 'comparative' | 'profitability' | 'monthly_sector'>('general');
   const [activeGroup, setActiveGroup] = useState<'general' | 'financial' | 'inventory' | 'comparative' | 'profitability'>('general');
   
   // Pending Invoices Filter State
@@ -197,6 +197,100 @@ export const Reports: React.FC = () => {
 
   // Production Record Input State
   const [editingProdSectorId, setEditingProdSectorId] = useState<string | null>(null);
+
+  // --- NEW MEMOIZED DATA FOR MONTHLY SECTOR EVOLUTION ---
+  const monthlySectorData = React.useMemo(() => {
+    const filterBySeason = (items: any[], dateField: string) => 
+        items.filter(item => item[dateField] && isDateInSeason(item[dateField], selectedSeason));
+
+    const apps = filterBySeason(rawApplications, 'application_date');
+    const labor = filterBySeason(rawLabor, 'assigned_date');
+    const workers = filterBySeason(rawWorkerCosts, 'date');
+    const fuel = filterBySeason(rawFuel, 'assigned_date');
+    const fuelCons = filterBySeason(rawFuelConsumption, 'date');
+    const machinery = filterBySeason(rawMachinery, 'assigned_date');
+    const irrigation = filterBySeason(rawIrrigation, 'assigned_date');
+    const general = filterBySeason(rawGeneralCosts, 'date');
+
+    const fieldMap = new Map<string, any>();
+
+    const initSectorMonth = (fieldId: string, sectorId: string, monthIdx: number) => {
+        if (!fieldMap.has(fieldId)) {
+            const fieldInfo = rawFields.find(f => f.id === fieldId);
+            fieldMap.set(fieldId, {
+                field_id: fieldId,
+                field_name: fieldInfo?.name || 'Campo Desconocido',
+                sectors: new Map()
+            });
+        }
+        const fieldData = fieldMap.get(fieldId);
+        
+        if (!fieldData.sectors.has(sectorId)) {
+            let sectorInfo = null;
+            let hectares = 0;
+            const fInfo = rawFields.find(f => f.id === fieldId);
+            if (fInfo) {
+                sectorInfo = fInfo.sectors?.find((s: any) => s.id === sectorId);
+                hectares = sectorInfo?.hectares || 0;
+            }
+            fieldData.sectors.set(sectorId, {
+                sector_id: sectorId,
+                sector_name: sectorInfo?.name || 'Sector Desconocido',
+                hectares,
+                months: new Map()
+            });
+        }
+        const sectorData = fieldData.sectors.get(sectorId);
+
+        if (!sectorData.months.has(monthIdx)) {
+            sectorData.months.set(monthIdx, {
+                monthIndex: monthIdx,
+                labor: 0,
+                machinery: 0,
+                chemicals: 0,
+                fuel: 0,
+                irrigation: 0,
+                general: 0,
+                total: 0
+            });
+        }
+        return sectorData.months.get(monthIdx);
+    };
+
+    const addCost = (fieldId: string | undefined, sectorId: string, dateStr: string, amount: number, category: string) => {
+        if (!fieldId || !sectorId || !dateStr || isNaN(amount)) return;
+        // Adjust timezone offset to avoid month shift
+        const [year, month, day] = dateStr.split('T')[0].split('-');
+        const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+        const monthIdx = date.getMonth();
+        const monthData = initSectorMonth(fieldId, sectorId, monthIdx);
+        
+        monthData[category] += amount;
+        monthData.total += amount;
+    };
+
+    const getFieldIdForSector = (sId: string) => {
+        const field = rawFields.find(f => f.sectors?.some((s:any) => s.id === sId));
+        return field?.id;
+    };
+
+    apps.forEach(a => addCost(a.field_id, a.sector_id, a.application_date, Number(a.total_cost || 0), 'chemicals'));
+    labor.forEach(l => addCost(getFieldIdForSector(l.sector_id), l.sector_id, l.assigned_date, Number(l.assigned_amount || 0), 'labor'));
+    workers.forEach(w => addCost(getFieldIdForSector(w.sector_id), w.sector_id, w.date, Number(w.amount || 0), 'labor'));
+    fuel.forEach(f => addCost(getFieldIdForSector(f.sector_id), f.sector_id, f.assigned_date, Number(f.assigned_amount || 0), 'fuel'));
+    fuelCons.forEach(fc => addCost(getFieldIdForSector(fc.sector_id), fc.sector_id, fc.date, Number(fc.liters || 0) * Number(fc.estimated_price || 0), 'fuel'));
+    machinery.forEach(m => addCost(getFieldIdForSector(m.sector_id), m.sector_id, m.assigned_date, Number(m.assigned_amount || 0), 'machinery'));
+    irrigation.forEach(i => addCost(getFieldIdForSector(i.sector_id), i.sector_id, i.assigned_date, Number(i.assigned_amount || 0), 'irrigation'));
+    general.forEach(g => addCost(getFieldIdForSector(g.sector_id), g.sector_id, g.date, Number(g.amount || 0), 'general'));
+
+    return Array.from(fieldMap.values()).map(field => ({
+        ...field,
+        sectors: Array.from(field.sectors.values()).map((sector: any) => ({
+            ...sector,
+            months: Array.from(sector.months.values()).sort((a:any, b:any) => a.monthIndex - b.monthIndex)
+        })).sort((a:any, b:any) => a.sector_name.localeCompare(b.sector_name))
+    })).sort((a:any, b:any) => a.field_name.localeCompare(b.field_name));
+  }, [rawApplications, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawMachinery, rawIrrigation, rawGeneralCosts, rawFields, selectedSeason]);
   const [editingProdKg, setEditingProdKg] = useState<string>('');
   const [editingProdPrice, setEditingProdPrice] = useState<string>('');
 
@@ -975,6 +1069,101 @@ export const Reports: React.FC = () => {
             }
         });
 
+    } else if (activeTab === 'monthly_sector') {
+        // DETAILED MONTHLY EVOLUTION BY SECTOR
+        const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+        const pageWidth = doc.internal.pageSize.getWidth();
+        let totalGeneral = 0;
+
+        monthlySectorData.forEach((field: any, fieldIndex: number) => {
+            // Page break for each new field (except the first one if it fits)
+            if (fieldIndex > 0 || yPos > doc.internal.pageSize.getHeight() - 40) {
+                doc.addPage();
+                yPos = 20;
+            }
+
+            // Field Header
+            doc.setFillColor(34, 197, 94); // Green-500
+            doc.rect(14, yPos, pageWidth - 28, 12, 'F');
+            doc.setFontSize(14);
+            doc.setTextColor(255, 255, 255);
+            doc.setFont("helvetica", "bold");
+            doc.text(`CAMPO: ${field.field_name.toUpperCase()}`, 18, yPos + 8);
+            yPos += 18;
+
+            field.sectors.forEach((sector: any) => {
+                if (sector.months.length === 0) return; // Skip sectors with no costs
+
+                if (yPos > doc.internal.pageSize.getHeight() - 40) {
+                    doc.addPage();
+                    yPos = 20;
+                }
+
+                // Sector Header
+                doc.setFontSize(12);
+                doc.setTextColor(0, 0, 0);
+                doc.setFont("helvetica", "bold");
+                doc.text(`Sector: ${sector.sector_name} (${sector.hectares} ha)`, 14, yPos);
+                yPos += 5;
+
+                const tableBody = sector.months.map((m: any) => [
+                    monthNames[m.monthIndex],
+                    formatCLP(m.labor),
+                    formatCLP(m.chemicals),
+                    formatCLP(m.machinery),
+                    formatCLP(m.irrigation),
+                    formatCLP(m.fuel),
+                    formatCLP(m.general),
+                    formatCLP(m.total)
+                ]);
+
+                const sectorTotal = sector.months.reduce((sum: number, m: any) => sum + m.total, 0);
+                totalGeneral += sectorTotal;
+
+                tableBody.push([
+                    'TOTAL SECTOR',
+                    '-', '-', '-', '-', '-', '-',
+                    formatCLP(sectorTotal)
+                ]);
+
+                autoTable(doc, {
+                    startY: yPos,
+                    head: [['Mes', 'Mano Obra', 'Aplicaciones', 'Maquinaria', 'Riego', 'Petróleo', 'Otros', 'Total Mensual']],
+                    body: tableBody,
+                    theme: 'grid',
+                    headStyles: { fillColor: [240, 240, 240], textColor: [0,0,0] },
+                    styles: { fontSize: 8 },
+                    columnStyles: {
+                        1: { halign: 'right' },
+                        2: { halign: 'right' },
+                        3: { halign: 'right' },
+                        4: { halign: 'right' },
+                        5: { halign: 'right' },
+                        6: { halign: 'right' },
+                        7: { halign: 'right', fontStyle: 'bold' },
+                    },
+                    didParseCell: function (data) {
+                        if (data.row.index === tableBody.length - 1) {
+                            data.cell.styles.fontStyle = 'bold';
+                            data.cell.styles.fillColor = [245, 245, 245];
+                        }
+                    }
+                });
+
+                yPos = (doc as any).lastAutoTable.finalY + 15;
+            });
+        });
+
+        // Grand Total Page
+        if (yPos > doc.internal.pageSize.getHeight() - 30) {
+            doc.addPage();
+            yPos = 20;
+        }
+        doc.setFontSize(16);
+        doc.setTextColor(0);
+        doc.setFont("helvetica", "bold");
+        doc.text(`GRAN TOTAL EMPRESA: ${formatCLP(totalGeneral)}`, 14, yPos);
+
     } else if (activeTab === 'applications') {
         // APPLICATIONS / COST PER HA REPORT
         const tableBody = reportData.map(row => [
@@ -1238,6 +1427,7 @@ export const Reports: React.FC = () => {
       case 'pending': return 'Facturas Pendientes';
       case 'paid_payments': return 'Pagos Realizados por Categoría';
       case 'detailed': return 'Informe Detallado';
+      case 'monthly_sector': return 'Evolución Mensual por Sector';
       default: return 'Reporte';
     }
   };
@@ -1359,6 +1549,14 @@ export const Reports: React.FC = () => {
                 } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
               >
                 Presupuesto y Ventas
+              </button>
+              <button
+                onClick={() => setActiveTab('monthly_sector')}
+                className={`${
+                  activeTab === 'monthly_sector' ? 'bg-white dark:bg-gray-800 shadow-sm text-purple-700' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 dark:bg-gray-900'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Evolución Mensual (Por Sector)
               </button>
             </nav>
         )}
@@ -1787,6 +1985,42 @@ export const Reports: React.FC = () => {
                     </div>
                 </div>
             </div>
+          )}
+
+          {/* EVOLUCIÓN MENSUAL POR SECTOR (NEW) */}
+          {activeTab === 'monthly_sector' && (
+              <div className="space-y-6">
+                  <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg">
+                      <div className="px-4 py-5 sm:px-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                          <div>
+                              <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100">Evolución Mensual por Sector ({selectedSeason})</h3>
+                              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Resumen detallado de costos mes a mes por cada campo y sector. Optimizado para impresión PDF.</p>
+                          </div>
+                          <button
+                              onClick={() => handleGeneratePDF()}
+                              className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+                          >
+                              <Printer className="mr-2 h-4 w-4" /> Generar PDF Detallado
+                          </button>
+                      </div>
+                      
+                      <div className="p-6 text-center">
+                          <Layers className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Reporte Ejecutivo Listo para Imprimir</h3>
+                          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400 max-w-lg mx-auto">
+                              Este reporte compila la información de {monthlySectorData.length} campos y agrupa todos los gastos de Mano de Obra, Insumos, Maquinaria y Riego mes a mes para cada sector.
+                          </p>
+                          <div className="mt-6 flex justify-center">
+                             <button
+                                  onClick={() => handleGeneratePDF()}
+                                  className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700"
+                              >
+                                  <FileDown className="mr-2 h-5 w-5" /> Descargar PDF Ejecutivo
+                              </button>
+                          </div>
+                      </div>
+                  </div>
+              </div>
           )}
 
           {/* 0. GENERAL REPORT (NEW) */}
