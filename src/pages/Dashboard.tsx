@@ -397,7 +397,7 @@ export const Dashboard: React.FC = () => {
       // 6. Load Safety Status (Application Orders)
       const { data: ordersData } = await supabase
         .from('application_orders')
-        .select('sector_id, scheduled_date, safety_period_hours, grace_period_days, protection_days, application_type, objective, sector:sectors(name)')
+        .select('id, sector_id, scheduled_date, safety_period_hours, grace_period_days, protection_days, application_type, objective, sector:sectors(name), items:application_order_items(product:products(name))')
         .eq('company_id', selectedCompany.id)
         .order('scheduled_date', { ascending: false });
 
@@ -491,7 +491,8 @@ export const Dashboard: React.FC = () => {
                       message, 
                       daysRemaining,
                       lastApplicationDate: recentOrder.scheduled_date,
-                      protectionDaysTotal: recentOrder.protection_days
+                      protectionDaysTotal: recentOrder.protection_days,
+                      appliedProducts: recentOrder.items?.map((i: any) => i.product?.name).filter(Boolean) || []
                   });
               });
           });
@@ -1107,10 +1108,15 @@ export const Dashboard: React.FC = () => {
                                 {status.lastApplicationDate ? (
                                     <div className="mt-auto pt-3 border-t border-gray-200 dark:border-gray-700/50">
                                         <div className="text-[10px] text-gray-400 uppercase font-semibold">Última Aplicación</div>
-                                        <div className="text-xs text-gray-600 dark:text-gray-400 font-medium">
+                                        <div className="text-xs text-gray-600 dark:text-gray-400 font-medium mb-1">
                                             {new Date(status.lastApplicationDate + 'T12:00:00').toLocaleDateString('es-CL')} 
                                             <span className="ml-1 text-gray-400">({status.protectionDaysTotal} días)</span>
                                         </div>
+                                        {status.appliedProducts && status.appliedProducts.length > 0 && (
+                                            <div className="text-[10px] text-gray-500 italic truncate" title={status.appliedProducts.join(', ')}>
+                                                🧪 {status.appliedProducts.join(', ')}
+                                            </div>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="mt-auto pt-3 border-t border-gray-200 dark:border-gray-700/50">
