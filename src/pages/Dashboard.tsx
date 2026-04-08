@@ -492,7 +492,8 @@ export const Dashboard: React.FC = () => {
                       daysRemaining,
                       lastApplicationDate: recentOrder.scheduled_date,
                       protectionDaysTotal: recentOrder.protection_days,
-                      appliedProducts: recentOrder.items?.map((i: any) => i.product?.name).filter(Boolean) || []
+                      appliedProducts: recentOrder.items?.map((i: any) => i.product?.name).filter(Boolean) || [],
+                      protectionEndDate: protectionEndDate.toISOString()
                   });
               });
           });
@@ -1115,6 +1116,14 @@ export const Dashboard: React.FC = () => {
                                         {status.appliedProducts && status.appliedProducts.length > 0 && (
                                             <div className="text-[10px] text-gray-500 italic truncate" title={status.appliedProducts.join(', ')}>
                                                 🧪 {status.appliedProducts.join(', ')}
+                                            </div>
+                                        )}
+                                        {status.protectionEndDate && (
+                                            <div className="mt-2 pt-2 border-t border-dashed border-gray-200 dark:border-gray-700/50">
+                                                <div className="text-[10px] text-indigo-500 uppercase font-semibold">Siguiente Aplicación</div>
+                                                <div className="text-xs text-indigo-700 dark:text-indigo-400 font-medium">
+                                                    🗓️ {new Date(status.protectionEndDate).toLocaleDateString('es-CL')}
+                                                </div>
                                             </div>
                                         )}
                                     </div>
