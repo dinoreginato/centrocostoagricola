@@ -73,6 +73,26 @@ const AGROCHEMICAL_CATEGORIES = [
   'fertilizante', 'pesticida', 'herbicida', 'fungicida'
 ];
 
+const normalizeUnit = (u: string) => {
+  const lower = (u || '').toLowerCase().trim();
+  if (['l', 'lt', 'litro', 'litros'].includes(lower)) return 'l';
+  if (['cc', 'ml', 'cm3'].includes(lower)) return 'cc';
+  if (['kg', 'kgs', 'kilo', 'kilos'].includes(lower)) return 'kg';
+  if (['gr', 'grs', 'g', 'gramo', 'gramos'].includes(lower)) return 'gr';
+  return lower;
+};
+
+const getConversionFactor = (fromUnit: string, toUnit: string): number => {
+  const from = normalizeUnit(fromUnit);
+  const to = normalizeUnit(toUnit);
+  if (from === to) return 1;
+  if (from === 'cc' && to === 'l') return 0.001;
+  if (from === 'l' && to === 'cc') return 1000;
+  if (from === 'gr' && to === 'kg') return 0.001;
+  if (from === 'kg' && to === 'gr') return 1000;
+  return 1;
+};
+
 export const ApplicationOrders: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
@@ -326,8 +346,12 @@ export const ApplicationOrders: React.FC = () => {
 
       totalQty = doseHa * sector.hectares;
 
-      if (totalQty > product.current_stock) {
-          toast(`¡Advertencia de Stock!\n\nEstás ordenando aplicar ${totalQty.toFixed(2)} ${currentItem.unit_override || product.unit} de ${product.name}, pero solo tienes ${product.current_stock} en bodega.`);
+      const selectedUnit = currentItem.unit_override || product.unit;
+      const conversionFactor = getConversionFactor(selectedUnit, product.unit);
+      const totalQtyInBaseUnit = totalQty * conversionFactor;
+
+      if (totalQtyInBaseUnit > product.current_stock) {
+          toast(`¡Advertencia de Stock!\n\nEstás ordenando aplicar ${totalQtyInBaseUnit.toFixed(2)} ${product.unit} de ${product.name}, pero solo tienes ${product.current_stock} en bodega.`);
       }
 
       const newItem: OrderItem = {
@@ -335,7 +359,7 @@ export const ApplicationOrders: React.FC = () => {
           product_name: product.name,
           active_ingredient: product.active_ingredient,
           category: product.category,
-          unit: currentItem.unit_override || product.unit,
+          unit: selectedUnit,
           stock: product.current_stock,
           dose_per_hectare: Number(doseHa.toFixed(4)),
           dose_per_100l: Number(dose100L.toFixed(4)),
@@ -525,18 +549,26 @@ export const ApplicationOrders: React.FC = () => {
   const handleMarkAsCompleted = async (order: ApplicationOrder, completedDate: string) => {
       setLoading(true);
       try {
-          // 1. Calculate Total Cost from items - STRICT NUMBER CASTING
+          // 1. Calculate Total Cost from items - STRICT NUMBER CASTING & CONVERSION
           let totalCost = 0;
           const itemsData = order.items.map(item => {
-              const unitCost = Number(item.average_cost) || 0; // Fix: average_cost is flattened in loadData
-              const qty = Number(item.total_quantity) || 0;
-              const dose = Number(item.dose_per_hectare) || 0;
-              const itemTotal = unitCost * qty;
+              const product = products.find(p => p.id === item.product_id);
+              const baseUnit = product?.unit || item.unit;
+              const conversionFactor = getConversionFactor(item.unit, baseUnit);
+
+              const unitCost = Number(item.average_cost) || 0; 
+              const rawQty = Number(item.total_quantity) || 0;
+              const rawDose = Number(item.dose_per_hectare) || 0;
+
+              const qtyInBaseUnit = rawQty * conversionFactor;
+              const doseInBaseUnit = rawDose * conversionFactor;
+
+              const itemTotal = unitCost * qtyInBaseUnit;
               totalCost += itemTotal;
               return {
                   product_id: item.product_id,
-                  quantity_used: qty,
-                  dose_per_hectare: dose,
+                  quantity_used: qtyInBaseUnit,
+                  dose_per_hectare: doseInBaseUnit,
                   unit_cost: unitCost,
                   total_cost: itemTotal,
                   objective: item.objective || ''
