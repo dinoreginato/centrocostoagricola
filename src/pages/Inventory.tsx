@@ -65,6 +65,74 @@ export const Inventory: React.FC = () => {
   // SAG Import
   const sagFileInputRef = React.useRef<HTMLInputElement>(null);
 
+  const handleMergeDuplicates = async () => {
+    if (!window.confirm('¿Desea buscar y fusionar productos duplicados? (Se unificará el stock bajo el producto más reciente y se borrarán los repetidos)')) return;
+    setLoading(true);
+    try {
+      // Find duplicates by exact name (case insensitive)
+      const nameGroups = new Map<string, Product[]>();
+      
+      products.forEach(p => {
+        const key = p.name.toLowerCase().trim();
+        if (!nameGroups.has(key)) nameGroups.set(key, []);
+        nameGroups.get(key)!.push(p);
+      });
+
+      let mergedCount = 0;
+
+      for (const [key, group] of nameGroups.entries()) {
+        if (group.length > 1) {
+          // Sort by updated_at descending (newest first)
+          group.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+          
+          const master = group[0];
+          const duplicates = group.slice(1);
+          
+          // Calculate new total stock and weighted average cost
+          let totalStock = Number(master.current_stock);
+          let totalValue = Number(master.current_stock) * Number(master.average_cost);
+
+          for (const dup of duplicates) {
+             totalStock += Number(dup.current_stock);
+             totalValue += Number(dup.current_stock) * Number(dup.average_cost);
+             
+             // Reassign inventory movements to master
+             await supabase.from('inventory_movements').update({ product_id: master.id }).eq('product_id', dup.id);
+             // Reassign application items to master
+             await supabase.from('application_items').update({ product_id: master.id }).eq('product_id', dup.id);
+             // Reassign invoice items to master
+             await supabase.from('invoice_items').update({ product_id: master.id }).eq('product_id', dup.id);
+             
+             // Delete the duplicate
+             await supabase.from('products').delete().eq('id', dup.id);
+          }
+
+          const newAvgCost = totalStock > 0 ? totalValue / totalStock : master.average_cost;
+
+          // Update master
+          await supabase.from('products').update({
+             current_stock: totalStock,
+             average_cost: newAvgCost
+          }).eq('id', master.id);
+
+          mergedCount += duplicates.length;
+        }
+      }
+
+      if (mergedCount > 0) {
+        toast.success(`Se fusionaron ${mergedCount} productos duplicados exitosamente.`);
+        loadInventory();
+      } else {
+        toast('No se encontraron productos duplicados.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error('Error al fusionar: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleImportSAG = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -493,6 +561,14 @@ export const Inventory: React.FC = () => {
           <p className="text-sm text-gray-500 dark:text-gray-400">Gestión de inventario y costos promedio</p>
         </div>
         <div className="bg-white dark:bg-gray-800 px-4 py-2 rounded-lg shadow border border-gray-200 dark:border-gray-700 flex items-center space-x-2">
+          <button
+              onClick={handleMergeDuplicates}
+              className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 mr-2"
+              title="Fusionar productos duplicados con el mismo nombre"
+          >
+              <Package className="h-4 w-4 mr-2" />
+              Unir Duplicados
+          </button>
           <button
               onClick={generateShoppingListPDF}
               className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
