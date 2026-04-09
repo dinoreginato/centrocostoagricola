@@ -528,7 +528,7 @@ export const ApplicationOrders: React.FC = () => {
           // 1. Calculate Total Cost from items - STRICT NUMBER CASTING
           let totalCost = 0;
           const itemsData = order.items.map(item => {
-              const unitCost = Number(item.product?.average_cost) || 0; // Fix: average_cost is inside product
+              const unitCost = Number(item.average_cost) || 0; // Fix: average_cost is flattened in loadData
               const qty = Number(item.total_quantity) || 0;
               const dose = Number(item.dose_per_hectare) || 0;
               const itemTotal = unitCost * qty;
