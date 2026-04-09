@@ -525,21 +525,27 @@ export const ApplicationOrders: React.FC = () => {
   const handleMarkAsCompleted = async (order: ApplicationOrder, completedDate: string) => {
       setLoading(true);
       try {
-          // 1. Calculate Total Cost from items
+          // 1. Calculate Total Cost from items - STRICT NUMBER CASTING
           let totalCost = 0;
           const itemsData = order.items.map(item => {
-              const unitCost = item.average_cost || 0;
-              const itemTotal = unitCost * item.total_quantity;
+              const unitCost = Number(item.product?.average_cost) || 0; // Fix: average_cost is inside product
+              const qty = Number(item.total_quantity) || 0;
+              const dose = Number(item.dose_per_hectare) || 0;
+              const itemTotal = unitCost * qty;
               totalCost += itemTotal;
               return {
                   product_id: item.product_id,
-                  quantity_used: item.total_quantity,
-                  dose_per_hectare: item.dose_per_hectare,
+                  quantity_used: qty,
+                  dose_per_hectare: dose,
                   unit_cost: unitCost,
                   total_cost: itemTotal,
                   objective: item.objective || ''
               };
           });
+
+          const safeTotalCost = isNaN(totalCost) ? 0 : Number(totalCost.toFixed(2));
+          const waterLiters = Number(order.water_liters_per_hectare) || 0;
+          const safeWaterLiters = isNaN(waterLiters) ? 0 : Number(waterLiters.toFixed(2));
 
           // 2. Insert into Applications (Actual Execution)
           const { data: application, error: appError } = await supabase
@@ -549,8 +555,8 @@ export const ApplicationOrders: React.FC = () => {
                   sector_id: order.sector_id,
                   application_date: completedDate,
                   application_type: order.application_type,
-                  total_cost: Number(totalCost.toFixed(2)),
-                  water_liters_per_hectare: Number((order.water_liters_per_hectare || 0).toFixed(2))
+                  total_cost: safeTotalCost,
+                  water_liters_per_hectare: safeWaterLiters
               }])
               .select()
               .single();
@@ -559,15 +565,20 @@ export const ApplicationOrders: React.FC = () => {
 
           // 3. Insert Application Items & Deduct Stock
           for (const itemData of itemsData) {
+              const safeQty = isNaN(itemData.quantity_used) ? 0 : Number(itemData.quantity_used.toFixed(2));
+              const safeDose = isNaN(itemData.dose_per_hectare) ? 0 : Number(itemData.dose_per_hectare.toFixed(2));
+              const safeUnitCost = isNaN(itemData.unit_cost) ? 0 : Number(itemData.unit_cost.toFixed(2));
+              const safeItemTotal = isNaN(itemData.total_cost) ? 0 : Number(itemData.total_cost.toFixed(2));
+
               const { data: savedItem, error: itemError } = await supabase
                   .from('application_items')
                   .insert([{
                       application_id: application.id,
                       product_id: itemData.product_id,
-                      quantity_used: Number(itemData.quantity_used.toFixed(2)),
-                      dose_per_hectare: Number(itemData.dose_per_hectare.toFixed(2)),
-                      unit_cost: Number(itemData.unit_cost.toFixed(2)),
-                      total_cost: Number(itemData.total_cost.toFixed(2)),
+                      quantity_used: safeQty,
+                      dose_per_hectare: safeDose,
+                      unit_cost: safeUnitCost,
+                      total_cost: safeItemTotal,
                       objective: itemData.objective
                   }])
                   .select()
@@ -578,10 +589,13 @@ export const ApplicationOrders: React.FC = () => {
               // Deduct stock and create movement
               const product = products.find(p => p.id === itemData.product_id);
               if (product) {
-                  const newStock = product.current_stock - itemData.quantity_used;
+                  const currentStock = Number(product.current_stock) || 0;
+                  const newStock = currentStock - safeQty;
+                  const safeNewStock = isNaN(newStock) ? 0 : Number(newStock.toFixed(2));
+
                   await supabase
                       .from('products')
-                      .update({ current_stock: Number(newStock.toFixed(2)) })
+                      .update({ current_stock: safeNewStock })
                       .eq('id', itemData.product_id);
 
                   await supabase
@@ -589,8 +603,8 @@ export const ApplicationOrders: React.FC = () => {
                       .insert([{
                           product_id: itemData.product_id,
                           movement_type: 'salida',
-                          quantity: Number(itemData.quantity_used.toFixed(2)),
-                          unit_cost: Number(itemData.unit_cost.toFixed(2)),
+                          quantity: safeQty,
+                          unit_cost: safeUnitCost,
                           application_item_id: savedItem.id
                       }]);
               }
@@ -599,15 +613,19 @@ export const ApplicationOrders: React.FC = () => {
           // 4. Automatic Fuel Consumption (Skip if 'fertirriego')
           if (order.application_type !== 'fertirriego') {
               const sector = fields.find(f => f.id === order.field_id)?.sectors.find(s => s.id === order.sector_id);
-              if (sector && sector.hectares > 0) {
-                  const rate = selectedCompany.application_fuel_rate || 12;
-                  const fuelLiters = Math.max(rate * sector.hectares, 0.01);
-                  // Assume average diesel price around $1050 if we don't have it, or fetch from DB. 
-                  // For simplicity, we use 1050 as fallback. 
+              const hectares = Number(sector?.hectares) || 0;
+              
+              if (hectares > 0) {
+                  const rate = Number(selectedCompany.application_fuel_rate) || 12;
+                  const fuelLiters = Math.max(rate * hectares, 0.01);
+                  
                   const { data: fuelStats } = await supabase.rpc('get_fuel_stats', { p_company_id: selectedCompany.id, p_type: 'diesel' });
-                  const avgFuelPrice = fuelStats?.[0]?.avg_price || 1050;
+                  const avgFuelPrice = Number(fuelStats?.[0]?.avg_price) || 1050;
                   
                   const fuelCost = fuelLiters * avgFuelPrice;
+                  
+                  const safeFuelLiters = isNaN(fuelLiters) ? 0 : Number(fuelLiters.toFixed(2));
+                  const safeFuelCost = isNaN(fuelCost) ? 0 : Number(fuelCost.toFixed(2));
 
                   await supabase
                       .from('fuel_consumption')
@@ -615,8 +633,8 @@ export const ApplicationOrders: React.FC = () => {
                           company_id: selectedCompany.id,
                           date: completedDate,
                           activity: `Aplicación Orden #${order.order_number}`,
-                          liters: Number(fuelLiters.toFixed(2)),
-                          estimated_price: Number(fuelCost.toFixed(2)),
+                          liters: safeFuelLiters,
+                          estimated_price: safeFuelCost,
                           sector_id: order.sector_id,
                           application_id: application.id
                       }]);
