@@ -535,8 +535,8 @@ export const ApplicationOrders: React.FC = () => {
                   sector_id: order.sector_id,
                   application_date: completedDate,
                   application_type: order.application_type,
-                  total_cost: totalCost,
-                  water_liters_per_hectare: order.water_liters_per_hectare || 0,
+                  total_cost: Number(totalCost.toFixed(2)),
+                  water_liters_per_hectare: Number((order.water_liters_per_hectare || 0).toFixed(2)),
                   protection_days: order.protection_days || 0, // Propagate protection days to actual application
                   objective: order.objective || '' // Propagate objective to actual application
               }])
@@ -551,7 +551,12 @@ export const ApplicationOrders: React.FC = () => {
                   .from('application_items')
                   .insert([{
                       application_id: application.id,
-                      ...itemData
+                      product_id: itemData.product_id,
+                      quantity_used: Number(itemData.quantity_used.toFixed(2)),
+                      dose_per_hectare: Number(itemData.dose_per_hectare.toFixed(2)),
+                      unit_cost: Number(itemData.unit_cost.toFixed(2)),
+                      total_cost: Number(itemData.total_cost.toFixed(2)),
+                      objective: itemData.objective
                   }])
                   .select()
                   .single();
