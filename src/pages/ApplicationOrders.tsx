@@ -497,21 +497,35 @@ export const ApplicationOrders: React.FC = () => {
       }
   };
 
-  const handleMarkAsCompleted = async (order: ApplicationOrder, completedDate: string) => {
+  const handleRevertToPending = async (order: ApplicationOrder) => {
+      if (!window.confirm(`¿Está seguro de revertir la orden #${order.order_number} a PENDIENTE? Si esta orden generó un registro en "Aplicaciones", ese registro no se eliminará automáticamente, deberá borrarlo manualmente allá.`)) {
+          return;
+      }
       setLoading(true);
       try {
-          // 1. Update Order Status
-          const { error: orderError } = await supabase
+          const { error } = await supabase
               .from('application_orders')
               .update({ 
-                  status: 'completada',
-                  completed_date: completedDate
+                  status: 'pendiente',
+                  completed_date: null
               })
               .eq('id', order.id);
           
-          if (orderError) throw orderError;
+          if (error) throw error;
+          toast.success(`Orden #${order.order_number} revertida a PENDIENTE.`);
+          loadData();
+      } catch (error: any) {
+          console.error('Error reverting order:', error);
+          toast.error('Error al revertir: ' + error.message);
+      } finally {
+          setLoading(false);
+      }
+  };
 
-          // 2. Calculate Total Cost from items
+  const handleMarkAsCompleted = async (order: ApplicationOrder, completedDate: string) => {
+      setLoading(true);
+      try {
+          // 1. Calculate Total Cost from items
           let totalCost = 0;
           const itemsData = order.items.map(item => {
               const unitCost = item.average_cost || 0;
@@ -527,7 +541,7 @@ export const ApplicationOrders: React.FC = () => {
               };
           });
 
-          // 3. Insert into Applications (Actual Execution)
+          // 2. Insert into Applications (Actual Execution)
           const { data: application, error: appError } = await supabase
               .from('applications')
               .insert([{
@@ -536,16 +550,14 @@ export const ApplicationOrders: React.FC = () => {
                   application_date: completedDate,
                   application_type: order.application_type,
                   total_cost: Number(totalCost.toFixed(2)),
-                  water_liters_per_hectare: Number((order.water_liters_per_hectare || 0).toFixed(2)),
-                  protection_days: order.protection_days || 0, // Propagate protection days to actual application
-                  objective: order.objective || '' // Propagate objective to actual application
+                  water_liters_per_hectare: Number((order.water_liters_per_hectare || 0).toFixed(2))
               }])
               .select()
               .single();
 
           if (appError) throw appError;
 
-          // 4. Insert Application Items & Deduct Stock
+          // 3. Insert Application Items & Deduct Stock
           for (const itemData of itemsData) {
               const { data: savedItem, error: itemError } = await supabase
                   .from('application_items')
@@ -584,7 +596,7 @@ export const ApplicationOrders: React.FC = () => {
               }
           }
 
-          // 5. Automatic Fuel Consumption (Skip if 'fertirriego')
+          // 4. Automatic Fuel Consumption (Skip if 'fertirriego')
           if (order.application_type !== 'fertirriego') {
               const sector = fields.find(f => f.id === order.field_id)?.sectors.find(s => s.id === order.sector_id);
               if (sector && sector.hectares > 0) {
@@ -611,7 +623,18 @@ export const ApplicationOrders: React.FC = () => {
               }
           }
 
-          toast('Orden completada exitosamente. Se ha registrado la aplicación y descontado el inventario.');
+          // 5. Update Order Status (Moved to end to ensure atomic-like success)
+          const { error: orderError } = await supabase
+              .from('application_orders')
+              .update({ 
+                  status: 'completada',
+                  completed_date: completedDate
+              })
+              .eq('id', order.id);
+          
+          if (orderError) throw orderError;
+
+          toast.success('Orden completada exitosamente. Se ha registrado la aplicación y descontado el inventario.');
           loadData();
       } catch (error: any) {
           console.error('Error completing order:', error);
@@ -1229,9 +1252,16 @@ export const ApplicationOrders: React.FC = () => {
                                           {order.status.toUpperCase()}
                                       </button>
                                   ) : (
-                                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)}`}>
-                                          {order.status.toUpperCase()}
-                                      </span>
+                                      <button 
+                                          onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleRevertToPending(order);
+                                          }}
+                                          className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)} hover:opacity-75 cursor-pointer`}
+                                          title="Click para deshacer y volver a PENDIENTE"
+                                      >
+                                          {order.status.toUpperCase()} (Deshacer)
+                                      </button>
                                   )}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end gap-2">
