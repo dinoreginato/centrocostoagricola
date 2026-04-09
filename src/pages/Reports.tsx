@@ -1343,6 +1343,118 @@ export const Reports: React.FC = () => {
             footStyles: { fillColor: [240, 240, 240], textColor: [0,0,0], fontStyle: 'bold', halign: 'right' }
         });
 
+    } else if (activeTab === 'paid_payments') {
+        // PAID INVOICES REPORT
+        const paidItems = rawInvoices
+            .filter(inv => inv.status === 'Pagada')
+            .filter(inv => {
+                if (!paidStartDate && !paidEndDate) return true;
+                const dateToCheck = new Date((inv.due_date || inv.invoice_date) + 'T12:00:00');
+                const start = paidStartDate ? new Date(paidStartDate + 'T00:00:00') : null;
+                const end = paidEndDate ? new Date(paidEndDate + 'T23:59:59') : null;
+
+                if (start && end) return dateToCheck >= start && dateToCheck <= end;
+                if (start) return dateToCheck >= start;
+                if (end) return dateToCheck <= end;
+                return true;
+            });
+
+        const groupedData = new Map<string, { total: number, items: any[] }>();
+
+        paidItems.forEach(inv => {
+            const dueDate = inv.due_date || inv.invoice_date;
+            
+            if (inv.invoice_items && inv.invoice_items.length > 0) {
+                inv.invoice_items.forEach((item: any) => {
+                    const category = item.category || item.products?.category || 'Sin Categoría';
+                    if (!groupedData.has(category)) {
+                        groupedData.set(category, { total: 0, items: [] });
+                    }
+                    const group = groupedData.get(category)!;
+                    const amount = Number(item.total_price) || 0;
+                    group.total += amount;
+                    group.items.push({
+                        date: inv.invoice_date,
+                        dueDate: dueDate,
+                        supplier: inv.supplier,
+                        invoiceNumber: inv.invoice_number,
+                        description: item.products?.name || 'Item',
+                        amount: amount
+                    });
+                });
+            } else {
+                const category = 'Sin Categoría';
+                if (!groupedData.has(category)) {
+                    groupedData.set(category, { total: 0, items: [] });
+                }
+                const group = groupedData.get(category)!;
+                const amount = Number(inv.total_amount) || 0;
+                group.total += amount;
+                group.items.push({
+                    date: inv.invoice_date,
+                    dueDate: dueDate,
+                    supplier: inv.supplier,
+                    invoiceNumber: inv.invoice_number,
+                    description: 'Factura General',
+                    amount: amount
+                });
+            }
+        });
+
+        const sortedGroups = Array.from(groupedData.entries())
+            .sort((a, b) => b[1].total - a[1].total);
+
+        if (paidStartDate || paidEndDate) {
+            const startStr = paidStartDate ? new Date(paidStartDate + 'T12:00:00').toLocaleDateString('es-CL') : 'Inicio';
+            const endStr = paidEndDate ? new Date(paidEndDate + 'T12:00:00').toLocaleDateString('es-CL') : 'Fin';
+            doc.text(`Filtros: Vencimiento: ${startStr} - ${endStr}`, 14, 45);
+            yPos += 5;
+        }
+
+        if (sortedGroups.length === 0) {
+            doc.text('No hay datos para los filtros seleccionados.', 14, yPos);
+        }
+
+        sortedGroups.forEach(([category, data]) => {
+            if (yPos > 250) {
+                doc.addPage();
+                yPos = 20;
+            }
+
+            doc.setFontSize(14);
+            doc.setTextColor(0, 100, 0); // dark green
+            doc.text(`${category} - Total: ${formatCLP(data.total)}`, 14, yPos);
+            yPos += 10;
+
+            const sortedItems = data.items.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+
+            const tableData = sortedItems.map(item => [
+                new Date(item.dueDate + 'T12:00:00').toLocaleDateString('es-CL'),
+                new Date(item.date + 'T12:00:00').toLocaleDateString('es-CL'),
+                item.supplier,
+                item.invoiceNumber,
+                item.description,
+                formatCLP(item.amount)
+            ]);
+
+            autoTable(doc, {
+                startY: yPos,
+                head: [['Vencimiento', 'Fecha Emisión', 'Proveedor', 'N° Factura', 'Detalle', 'Monto']],
+                body: tableData,
+                theme: 'grid',
+                headStyles: { fillColor: [200, 200, 200], textColor: [0, 0, 0], fontStyle: 'bold' },
+                columnStyles: {
+                    5: { halign: 'right', fontStyle: 'bold' }
+                },
+                margin: { left: 14, right: 14 },
+                didDrawPage: (data) => {
+                    yPos = data.cursor.y + 10;
+                }
+            });
+            
+            yPos = (doc as any).lastAutoTable.finalY + 10;
+        });
+
     } else if (activeTab === 'detailed') {
         // DETAILED REPORT (Existing Logic)
         const filteredData = detailedReport
