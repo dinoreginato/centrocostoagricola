@@ -581,7 +581,7 @@ export const ApplicationOrders: React.FC = () => {
                   const newStock = product.current_stock - itemData.quantity_used;
                   await supabase
                       .from('products')
-                      .update({ current_stock: newStock })
+                      .update({ current_stock: Number(newStock.toFixed(2)) })
                       .eq('id', itemData.product_id);
 
                   await supabase
@@ -589,8 +589,8 @@ export const ApplicationOrders: React.FC = () => {
                       .insert([{
                           product_id: itemData.product_id,
                           movement_type: 'salida',
-                          quantity: itemData.quantity_used,
-                          unit_cost: itemData.unit_cost,
+                          quantity: Number(itemData.quantity_used.toFixed(2)),
+                          unit_cost: Number(itemData.unit_cost.toFixed(2)),
                           application_item_id: savedItem.id
                       }]);
               }
@@ -615,8 +615,8 @@ export const ApplicationOrders: React.FC = () => {
                           company_id: selectedCompany.id,
                           date: completedDate,
                           activity: `Aplicación Orden #${order.order_number}`,
-                          liters: fuelLiters,
-                          estimated_price: fuelCost,
+                          liters: Number(fuelLiters.toFixed(2)),
+                          estimated_price: Number(fuelCost.toFixed(2)),
                           sector_id: order.sector_id,
                           application_id: application.id
                       }]);
