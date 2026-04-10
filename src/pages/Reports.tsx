@@ -410,7 +410,7 @@ export const Reports: React.FC = () => {
       // 2b2. Fetch Worker Costs (Plant Staff)
       const { data: workers } = await supabase
         .from('worker_costs')
-        .select('sector_id, amount, date')
+        .select('sector_id, amount, date, description, workers(name)')
         .in('sector_id', sectorIds);
       setRawWorkerCosts(workers || []);
 
@@ -513,6 +513,11 @@ export const Reports: React.FC = () => {
       return isDateInSeason(inv.invoice_date, selectedSeason);
     });
 
+    const filteredWorkerCosts = rawWorkerCosts.filter(wc => {
+      if (!wc.date) return false;
+      return isDateInSeason(wc.date, selectedSeason);
+    });
+
     const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
     const monthsMap = new Map<number, DetailedMonth>();
 
@@ -570,6 +575,38 @@ export const Reports: React.FC = () => {
                     invoiceNumber: inv.invoice_number,
                     description: 'Factura sin detalle',
                     total: Number(inv.total_amount)
+                });
+            }
+        }
+    });
+
+    // Add worker costs
+    filteredWorkerCosts.forEach(wc => {
+        let date = new Date(wc.date + 'T12:00:00');
+        if (isNaN(date.getTime())) date = new Date(wc.date);
+        
+        if (!isNaN(date.getTime())) {
+            const monthIndex = date.getMonth();
+            const monthData = monthsMap.get(monthIndex);
+
+            if (monthData) {
+                const amount = Number(wc.amount) || 0;
+                monthData.total += amount;
+
+                const catName = 'Trabajadores de Planta';
+                let category = monthData.categories.find(c => c.name === catName);
+                if (!category) {
+                    category = { name: catName, total: 0, items: [] };
+                    monthData.categories.push(category);
+                }
+
+                category.total += amount;
+                category.items.push({
+                    date: wc.date,
+                    supplier: wc.workers?.name || 'Trabajador',
+                    invoiceNumber: 'Sueldo/Trato',
+                    description: wc.description || 'Gasto de personal',
+                    total: amount
                 });
             }
         }
@@ -820,6 +857,15 @@ export const Reports: React.FC = () => {
       }
     });
 
+    const filteredWorkerCosts = rawWorkerCosts.filter(wc => {
+      try {
+        if (!wc.date) return false;
+        return isDateInSeason(wc.date, selectedSeason);
+      } catch {
+        return false;
+      }
+    });
+
     // Previous Season Invoices
     const [startYearStr] = selectedSeason.split('-');
     const startYear = parseInt(startYearStr);
@@ -875,6 +921,27 @@ export const Reports: React.FC = () => {
       } catch (e) {}
     });
 
+    filteredWorkerCosts.forEach(wc => {
+      try {
+        if (!wc.date) return;
+        let date = new Date(wc.date + 'T12:00:00');
+        if (isNaN(date.getTime())) date = new Date(wc.date);
+
+        if (!isNaN(date.getTime())) {
+          const key = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
+          const mKey = monthNames[date.getMonth()];
+          const amount = Number(wc.amount) || 0;
+          
+          if (monthlyData.has(key)) {
+            monthlyData.set(key, (monthlyData.get(key) || 0) + amount);
+          }
+          if (compData.has(mKey)) {
+            compData.get(mKey)!.current += amount;
+          }
+        }
+      } catch (e) {}
+    });
+
     prevInvoices.forEach(inv => {
       try {
         if (!inv.invoice_date) return;
@@ -905,6 +972,11 @@ export const Reports: React.FC = () => {
         const cat = item.category || 'Sin Categoría';
         catData.set(cat, (catData.get(cat) || 0) + Number(item.total_price));
       });
+    });
+
+    filteredWorkerCosts.forEach(wc => {
+      const cat = 'Trabajadores de Planta';
+      catData.set(cat, (catData.get(cat) || 0) + Number(wc.amount));
     });
 
     setCategoryExpenses(Array.from(catData.entries())
