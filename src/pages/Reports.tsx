@@ -53,6 +53,12 @@ interface CategoryExpense {
   [key: string]: string | number;
 }
 
+interface CashflowRow {
+  category: string;
+  total: number;
+  months: number[];
+}
+
 interface PendingInvoice {
   id: string;
   invoice_number: string;
@@ -121,7 +127,7 @@ const CHEMICAL_CATEGORIES = [
 export const Reports: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'applications' | 'monthly' | 'categories' | 'pending' | 'paid_payments' | 'chemicals' | 'detailed' | 'budget' | 'comparative'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'applications' | 'monthly' | 'categories' | 'pending' | 'paid_payments' | 'chemicals' | 'detailed' | 'budget' | 'comparative' | 'cashflow'>('general');
   const [activeGroup, setActiveGroup] = useState<'general' | 'financial' | 'inventory' | 'comparative'>('general');
   
   // Pending Invoices Filter State
@@ -166,6 +172,7 @@ export const Reports: React.FC = () => {
   const [reportData, setReportData] = useState<ReportData[]>([]);
   const [monthlyExpenses, setMonthlyExpenses] = useState<MonthlyExpense[]>([]);
   const [categoryExpenses, setCategoryExpenses] = useState<CategoryExpense[]>([]);
+  const [cashflowData, setCashflowData] = useState<{ months: string[], rows: CashflowRow[], totalRow: number[], grandTotal: number } | null>(null);
   const [pendingInvoices, setPendingInvoices] = useState<PendingInvoice[]>([]);
   const [chemicalProducts, setChemicalProducts] = useState<ProductExpense[]>([]);
   const [detailedReport, setDetailedReport] = useState<DetailedMonth[]>([]);
@@ -315,7 +322,7 @@ export const Reports: React.FC = () => {
       // 2b2. Fetch Worker Costs (Plant Staff)
       const { data: workers } = await supabase
         .from('worker_costs')
-        .select('sector_id, amount, date, description, workers(name)')
+        .select('sector_id, amount, date')
         .in('sector_id', sectorIds);
       setRawWorkerCosts(workers || []);
 
@@ -418,11 +425,6 @@ export const Reports: React.FC = () => {
       return isDateInSeason(inv.invoice_date, selectedSeason);
     });
 
-    const filteredWorkerCosts = rawWorkerCosts.filter(wc => {
-      if (!wc.date) return false;
-      return isDateInSeason(wc.date, selectedSeason);
-    });
-
     const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
     const monthsMap = new Map<number, DetailedMonth>();
 
@@ -480,38 +482,6 @@ export const Reports: React.FC = () => {
                     invoiceNumber: inv.invoice_number,
                     description: 'Factura sin detalle',
                     total: Number(inv.total_amount)
-                });
-            }
-        }
-    });
-
-    // Add worker costs
-    filteredWorkerCosts.forEach(wc => {
-        let date = new Date(wc.date + 'T12:00:00');
-        if (isNaN(date.getTime())) date = new Date(wc.date);
-        
-        if (!isNaN(date.getTime())) {
-            const monthIndex = date.getMonth();
-            const monthData = monthsMap.get(monthIndex);
-
-            if (monthData) {
-                const amount = Number(wc.amount) || 0;
-                monthData.total += amount;
-
-                const catName = 'Trabajadores de Planta';
-                let category = monthData.categories.find(c => c.name === catName);
-                if (!category) {
-                    category = { name: catName, total: 0, items: [] };
-                    monthData.categories.push(category);
-                }
-
-                category.total += amount;
-                category.items.push({
-                    date: wc.date,
-                    supplier: wc.workers?.name || 'Trabajador',
-                    invoiceNumber: 'Sueldo/Trato',
-                    description: wc.description || 'Gasto de personal',
-                    total: amount
                 });
             }
         }
@@ -761,15 +731,6 @@ export const Reports: React.FC = () => {
       }
     });
 
-    const filteredWorkerCosts = rawWorkerCosts.filter(wc => {
-      try {
-        if (!wc.date) return false;
-        return isDateInSeason(wc.date, selectedSeason);
-      } catch {
-        return false;
-      }
-    });
-
     // Previous Season Invoices
     const [startYearStr] = selectedSeason.split('-');
     const startYear = parseInt(startYearStr);
@@ -790,14 +751,19 @@ export const Reports: React.FC = () => {
     const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
     
     // Generate keys for the season
+    const seasonMonths: string[] = [];
     // May(4) to Dec(11) of startYear
     for (let m = 4; m <= 11; m++) {
-        monthlyData.set(`${monthNames[m]} ${startYear}`, 0);
+        const key = `${monthNames[m]} ${startYear}`;
+        seasonMonths.push(key);
+        monthlyData.set(key, 0);
         compData.set(monthNames[m], { current: 0, prev: 0 });
     }
     // Jan(0) to Apr(3) of startYear + 1
     for (let m = 0; m <= 3; m++) {
-        monthlyData.set(`${monthNames[m]} ${startYear + 1}`, 0);
+        const key = `${monthNames[m]} ${startYear + 1}`;
+        seasonMonths.push(key);
+        monthlyData.set(key, 0);
         compData.set(monthNames[m], { current: 0, prev: 0 });
     }
 
@@ -814,27 +780,6 @@ export const Reports: React.FC = () => {
           const key = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
           const mKey = monthNames[date.getMonth()];
           const amount = Number(inv.total_amount) || 0;
-          
-          if (monthlyData.has(key)) {
-            monthlyData.set(key, (monthlyData.get(key) || 0) + amount);
-          }
-          if (compData.has(mKey)) {
-            compData.get(mKey)!.current += amount;
-          }
-        }
-      } catch (e) {}
-    });
-
-    filteredWorkerCosts.forEach(wc => {
-      try {
-        if (!wc.date) return;
-        let date = new Date(wc.date + 'T12:00:00');
-        if (isNaN(date.getTime())) date = new Date(wc.date);
-
-        if (!isNaN(date.getTime())) {
-          const key = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
-          const mKey = monthNames[date.getMonth()];
-          const amount = Number(wc.amount) || 0;
           
           if (monthlyData.has(key)) {
             monthlyData.set(key, (monthlyData.get(key) || 0) + amount);
@@ -886,6 +831,96 @@ export const Reports: React.FC = () => {
     setCategoryExpenses(Array.from(catData.entries())
       .map(([category, total]) => ({ category, total }))
       .sort((a, b) => b.total - a.total));
+
+    // 3. Cashflow (Matrix table)
+    const cashflowCategoryMap = new Map<string, number[]>();
+    
+    const ensureCategoryRow = (cat: string) => {
+      if (!cashflowCategoryMap.has(cat)) {
+        cashflowCategoryMap.set(cat, new Array(seasonMonths.length).fill(0));
+      }
+      return cashflowCategoryMap.get(cat)!;
+    };
+
+    filteredInvoices.forEach(inv => {
+      try {
+        if (!inv.invoice_date) return;
+        let date = new Date(inv.invoice_date + 'T12:00:00');
+        if (isNaN(date.getTime())) {
+          const parts = inv.invoice_date.split(/[-/]/);
+          if (parts.length === 3) date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
+        }
+
+        if (!isNaN(date.getTime())) {
+          const mKey = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
+          const monthIndex = seasonMonths.indexOf(mKey);
+          
+          if (monthIndex !== -1) {
+            if (inv.invoice_items && inv.invoice_items.length > 0) {
+              inv.invoice_items.forEach((item: any) => {
+                let cat = item.category || 'Sin Categoría';
+                const lowerCat = cat.toLowerCase();
+                const isChemical = CHEMICAL_CATEGORIES.some(c => c.toLowerCase() === lowerCat) || 
+                                   lowerCat.includes('insect') || lowerCat.includes('fung') || 
+                                   lowerCat.includes('herb') || lowerCat.includes('fert') || 
+                                   lowerCat.includes('plag');
+                
+                if (isChemical) {
+                  cat = 'Químicos';
+                }
+                const row = ensureCategoryRow(cat);
+                row[monthIndex] += Number(item.total_price) || 0;
+              });
+            } else {
+              const row = ensureCategoryRow('Sin Categoría');
+              row[monthIndex] += Number(inv.total_amount) || 0;
+            }
+          }
+        }
+      } catch (e) {}
+    });
+
+    filteredWorkerCosts.forEach(wc => {
+      try {
+        if (!wc.date) return;
+        let date = new Date(wc.date + 'T12:00:00');
+        if (isNaN(date.getTime())) date = new Date(wc.date);
+
+        if (!isNaN(date.getTime())) {
+          const mKey = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
+          const monthIndex = seasonMonths.indexOf(mKey);
+          
+          if (monthIndex !== -1) {
+            const row = ensureCategoryRow('Trabajadores de Planta');
+            row[monthIndex] += Number(wc.amount) || 0;
+          }
+        }
+      } catch (e) {}
+    });
+
+    const cashflowRows = Array.from(cashflowCategoryMap.entries()).map(([category, months]) => {
+      return {
+        category,
+        months,
+        total: months.reduce((a, b) => a + b, 0)
+      };
+    }).sort((a, b) => b.total - a.total);
+
+    const cashflowTotalRow = new Array(seasonMonths.length).fill(0);
+    cashflowRows.forEach(row => {
+      row.months.forEach((val, idx) => {
+        cashflowTotalRow[idx] += val;
+      });
+    });
+
+    const cashflowGrandTotal = cashflowTotalRow.reduce((a, b) => a + b, 0);
+
+    setCashflowData({
+      months: seasonMonths,
+      rows: cashflowRows,
+      totalRow: cashflowTotalRow,
+      grandTotal: cashflowGrandTotal
+    });
       
     // 5. Chemical Products Report
     const prodMap = new Map<string, ProductExpense>();
@@ -1303,6 +1338,7 @@ export const Reports: React.FC = () => {
     switch(activeTab) {
       case 'applications': return 'Costos de Aplicación';
       case 'monthly': return 'Gastos Mensuales';
+      case 'cashflow': return 'Flujo de Caja';
       case 'categories': return 'Gastos por Clasificación';
       case 'chemicals': return 'Insumos Químicos';
       case 'pending': return 'Facturas Pendientes';
@@ -1434,6 +1470,14 @@ export const Reports: React.FC = () => {
                 } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
               >
                 Gastos Mensuales
+              </button>
+              <button
+                onClick={() => setActiveTab('cashflow')}
+                className={`${
+                  activeTab === 'cashflow' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Flujo de Caja
               </button>
               <button
                 onClick={() => setActiveTab('categories')}
@@ -2084,6 +2128,72 @@ export const Reports: React.FC = () => {
                     </BarChart>
                   </ResponsiveContainer>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* CASHFLOW REPORT */}
+          {activeTab === 'cashflow' && cashflowData && (
+            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+              <div className="px-4 py-5 sm:px-6 border-b border-gray-200 flex justify-between items-center">
+                <div>
+                  <h3 className="text-lg leading-6 font-medium text-gray-900">Flujo de Caja ({selectedSeason})</h3>
+                  <p className="mt-1 text-sm text-gray-500">Gastos mensuales agrupados por categoría (químicos resumidos en una sola categoría)</p>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10">Categoría</th>
+                      {cashflowData.months.map((month, idx) => (
+                        <th key={idx} className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                          {month}
+                        </th>
+                      ))}
+                      <th className="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider bg-gray-100">Total Temporada</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {cashflowData.rows.length === 0 ? (
+                      <tr>
+                        <td colSpan={cashflowData.months.length + 2} className="px-6 py-4 text-center text-gray-500">No hay gastos registrados en {selectedSeason}</td>
+                      </tr>
+                    ) : (
+                      cashflowData.rows.map((row, index) => (
+                        <tr key={index} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0 bg-white hover:bg-gray-50 z-10 border-r border-gray-100">
+                            {row.category}
+                          </td>
+                          {row.months.map((amount, idx) => (
+                            <td key={idx} className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">
+                              {amount > 0 ? formatCLP(amount) : '-'}
+                            </td>
+                          ))}
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-900 bg-gray-50">
+                            {formatCLP(row.total)}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                    {/* Total Row */}
+                    {cashflowData.rows.length > 0 && (
+                      <tr className="bg-gray-100 font-bold border-t-2 border-gray-300">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 sticky left-0 bg-gray-100 z-10 border-r border-gray-200">
+                          TOTAL GENERAL
+                        </td>
+                        {cashflowData.totalRow.map((amount, idx) => (
+                          <td key={idx} className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                            {formatCLP(amount)}
+                          </td>
+                        ))}
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-purple-700 font-black text-base bg-gray-200">
+                          {formatCLP(cashflowData.grandTotal)}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
