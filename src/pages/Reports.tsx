@@ -769,6 +769,15 @@ export const Reports: React.FC = () => {
       }
     });
 
+    const filteredWorkerCosts = rawWorkerCosts.filter(wc => {
+      try {
+        if (!wc.date) return false;
+        return isDateInSeason(wc.date, selectedSeason);
+      } catch {
+        return false;
+      }
+    });
+
     // Previous Season Invoices
     const [startYearStr] = selectedSeason.split('-');
     const startYear = parseInt(startYearStr);
@@ -938,9 +947,7 @@ export const Reports: React.FC = () => {
               const row = ensureCategoryRow('Tratos (Mano de Obra)');
               row[monthIndex] += Number(wc.amount) || 0;
             } else {
-              const workerName = wc.workers?.name || 'Trabajador Desconocido';
-              const catName = `Planta: ${workerName}`;
-              const row = ensureCategoryRow(catName);
+              const row = ensureCategoryRow('Trabajadores de Planta');
               row[monthIndex] += Number(wc.amount) || 0;
             }
           }
