@@ -1231,6 +1231,54 @@ export const Reports: React.FC = () => {
             });
         }
 
+    } else if (activeTab === 'cashflow') {
+        // CASHFLOW MATRIX REPORT
+        if (cashflowData) {
+            const tableHead = [['Categoría', ...cashflowData.months, 'Total Temporada']];
+            const tableBody = cashflowData.rows.map(row => [
+                row.category,
+                ...row.months.map(m => m > 0 ? formatCLP(m) : '-'),
+                formatCLP(row.total)
+            ]);
+
+            // Add Total Row
+            tableBody.push([
+                'TOTAL GENERAL',
+                ...cashflowData.totalRow.map(m => formatCLP(m)),
+                formatCLP(cashflowData.grandTotal)
+            ]);
+
+            autoTable(doc, {
+                startY: yPos,
+                head: tableHead,
+                body: tableBody,
+                theme: 'grid',
+                headStyles: { fillColor: [136, 132, 216] }, // Purple theme
+                styles: { fontSize: 8, cellPadding: 2 },
+                columnStyles: {
+                    0: { fontStyle: 'bold', cellWidth: 'wrap' }
+                },
+                didParseCell: function(data) {
+                    // Right align all numeric columns
+                    if (data.column.index > 0) {
+                        data.cell.styles.halign = 'right';
+                    }
+                    // Style the last column (Total Temporada)
+                    if (data.column.index === cashflowData.months.length + 1) {
+                        data.cell.styles.fontStyle = 'bold';
+                        data.cell.styles.fillColor = [245, 245, 245];
+                    }
+                    // Style the last row (Total General)
+                    if (data.row.index === cashflowData.rows.length) {
+                        data.cell.styles.fontStyle = 'bold';
+                        data.cell.styles.fillColor = [230, 230, 230];
+                    }
+                }
+            });
+        } else {
+            doc.text('No hay datos de flujo de caja para esta temporada.', 14, yPos);
+        }
+
     } else if (activeTab === 'categories') {
         // CATEGORIES REPORT
         const tableBody = categoryExpenses.map(c => [
