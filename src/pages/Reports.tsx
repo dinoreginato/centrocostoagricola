@@ -190,7 +190,7 @@ export const Reports: React.FC = () => {
 
   // Update orientation when tab changes
   useEffect(() => {
-    if (activeTab === 'general' || activeTab === 'detailed') {
+    if (activeTab === 'general' || activeTab === 'detailed' || activeTab === 'cashflow') {
       setPdfOrientation('landscape');
     } else {
       setPdfOrientation('portrait');
