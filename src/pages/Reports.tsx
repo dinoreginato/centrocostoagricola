@@ -1266,10 +1266,10 @@ export const Reports: React.FC = () => {
                 head: tableHead,
                 body: tableBody,
                 theme: 'grid',
-                headStyles: { fillColor: [136, 132, 216] }, // Purple theme
-                styles: { fontSize: 8, cellPadding: 2 },
+                headStyles: { fillColor: [136, 132, 216], fontSize: 6, cellPadding: 1, halign: 'center' }, // Purple theme
+                styles: { fontSize: 6, cellPadding: 1, overflow: 'linebreak' }, // Smaller font and tighter padding to fit columns
                 columnStyles: {
-                    0: { fontStyle: 'bold', cellWidth: 'wrap' }
+                    0: { fontStyle: 'bold', cellWidth: 35 } // Fixed width for category column
                 },
                 didParseCell: function(data) {
                     // Right align all numeric columns
