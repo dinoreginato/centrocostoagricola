@@ -884,7 +884,7 @@ export const Reports: React.FC = () => {
       .map(([category, total]) => ({ category, total }))
       .sort((a, b) => b.total - a.total));
 
-    // 3. Cashflow (Matrix table)
+    // 3. Cashflow (Matrix table) based on DUE DATES
     const cashflowCategoryMap = new Map<string, number[]>();
     
     const ensureCategoryRow = (cat: string) => {
@@ -894,12 +894,25 @@ export const Reports: React.FC = () => {
       return cashflowCategoryMap.get(cat)!;
     };
 
-    filteredInvoices.forEach(inv => {
+    // Use rawInvoices to include invoices DUE in the current season, 
+    // even if they were issued previously
+    const cashflowInvoices = rawInvoices.filter(inv => {
       try {
-        if (!inv.invoice_date) return;
-        let date = new Date(inv.invoice_date + 'T12:00:00');
+        const targetDate = inv.due_date || inv.invoice_date;
+        if (!targetDate) return false;
+        return isDateInSeason(targetDate, selectedSeason);
+      } catch {
+        return false;
+      }
+    });
+
+    cashflowInvoices.forEach(inv => {
+      try {
+        const targetDateStr = inv.due_date || inv.invoice_date;
+        if (!targetDateStr) return;
+        let date = new Date(targetDateStr + 'T12:00:00');
         if (isNaN(date.getTime())) {
-          const parts = inv.invoice_date.split(/[-/]/);
+          const parts = targetDateStr.split(/[-/]/);
           if (parts.length === 3) date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
         }
 
