@@ -468,22 +468,18 @@ export const Labors: React.FC = () => {
     
     // Validate
     const totalAllocated = allocations.reduce((sum, a) => sum + Number(a.amount), 0);
-    const selectedLabor = pendingLabors.find(p => p.id === selectedLaborId);
     
-    if (!selectedLabor) return;
-    // When editing, we ignore the check against remaining amount for now as it's complex to recalc
-    // For negative amounts (Credit Notes), logic is reversed or just check absolute
+    // Only require selectedLabor if we are NOT editing
     if (!editingAssignmentId) {
+        const selectedLabor = pendingLabors.find(p => p.id === selectedLaborId);
+        if (!selectedLabor) return;
+
         if (selectedLabor.remaining_amount < 0) {
-             // It's a credit note or negative balance
-             // totalAllocated should be negative and not less than remaining (more negative)
-             // e.g. remaining -1000. allocated -1200 -> Error. allocated -500 -> OK.
              if (totalAllocated < selectedLabor.remaining_amount - 1) {
                  toast(`El monto asignado (${formatCLP(totalAllocated)}) excede el pendiente (${formatCLP(selectedLabor.remaining_amount)})`);
                  return;
              }
         } else {
-             // Normal positive balance
              if (totalAllocated > selectedLabor.remaining_amount + 1) { 
                 toast(`El monto asignado (${formatCLP(totalAllocated)}) excede el pendiente (${formatCLP(selectedLabor.remaining_amount)})`);
                 return;
@@ -795,26 +791,26 @@ export const Labors: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+            <h1 className="text-2xl font-bold text-gray-900 flex items-center">
                 <Tractor className="mr-2 h-8 w-8 text-green-600" />
                 Labores Agrícolas
             </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Asigna costos de labores (facturas) a sectores específicos</p>
+            <p className="text-sm text-gray-500">Asigna costos de labores (facturas) a sectores específicos</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Pending List */}
-        <div className="lg:col-span-1 bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-            <div className="p-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-                <h3 className="font-medium text-gray-900 dark:text-gray-100 flex items-center">
+        <div className="lg:col-span-1 bg-white rounded-lg shadow overflow-hidden">
+            <div className="p-4 bg-gray-50 border-b border-gray-200">
+                <h3 className="font-medium text-gray-900 flex items-center">
                     <AlertCircle className="h-4 w-4 mr-2 text-yellow-500" />
                     Labores Pendientes
                 </h3>
             </div>
-            <div className="divide-y divide-gray-200 dark:divide-gray-700 max-h-[600px] overflow-y-auto">
+            <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-auto">
                 {pendingLabors.length === 0 ? (
-                    <div className="p-8 text-center text-gray-500 dark:text-gray-400 text-sm">No hay labores pendientes de asignar.</div>
+                    <div className="p-8 text-center text-gray-500 text-sm">No hay labores pendientes de asignar.</div>
                 ) : (
                     pendingLabors.map(labor => (
                         <div 
@@ -823,12 +819,12 @@ export const Labors: React.FC = () => {
                             className={`p-4 cursor-pointer hover:bg-green-50 transition-colors ${selectedLaborId === labor.id ? 'bg-green-50 ring-2 ring-inset ring-green-500' : ''}`}
                         >
                             <div className="flex justify-between items-start mb-1">
-                                <span className="text-xs font-bold text-gray-500 dark:text-gray-400">#{labor.invoice_number}</span>
+                                <span className="text-xs font-bold text-gray-500">#{labor.invoice_number}</span>
                                 <span className="text-xs text-gray-400">{new Date(labor.date).toLocaleDateString()}</span>
                             </div>
-                            <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">{labor.description}</h4>
+                            <h4 className="text-sm font-medium text-gray-900 mb-1">{labor.description}</h4>
                             <div className="flex justify-between items-center mt-2">
-                                <span className="text-xs bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded-full">
+                                <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
                                     Total: {formatCLP(labor.total_amount)}
                                 </span>
                                 <span className="text-sm font-bold text-green-600">
@@ -844,15 +840,17 @@ export const Labors: React.FC = () => {
         {/* Middle: Assignment Form */}
         <div className="lg:col-span-2 space-y-6">
             {selectedLaborId ? (
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 border-t-4 border-green-500">
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
+                <div className="bg-white rounded-lg shadow p-6 border-t-4 border-green-500">
+                    <h3 className="text-lg font-medium text-gray-900 mb-4">
                         {editingAssignmentId ? 'Editar Asignación' : 'Asignar Costo a Sectores'}
                     </h3>
                     
-                    <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-md mb-6">
-                        <div className="text-sm text-gray-500 dark:text-gray-400">Item Seleccionado:</div>
-                        <div className="font-medium text-gray-900 dark:text-gray-100">
-                            {pendingLabors.find(p => p.id === selectedLaborId)?.description}
+                    <div className="bg-gray-50 p-4 rounded-md mb-6">
+                        <div className="text-sm text-gray-500">Item Seleccionado:</div>
+                        <div className="font-medium text-gray-900">
+                            {editingAssignmentId 
+                                ? history.find(h => h.id === editingAssignmentId)?.invoice_items?.products?.name || 'Item editado'
+                                : pendingLabors.find(p => p.id === selectedLaborId)?.description}
                         </div>
                         {!editingAssignmentId && (
                             <div className="text-right mt-2 text-lg font-bold text-green-600">
@@ -860,7 +858,7 @@ export const Labors: React.FC = () => {
                             </div>
                         )}
                         <div className="mt-4">
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Modo de Distribución</label>
+                            <label className="block text-sm font-medium text-gray-700">Modo de Distribución</label>
                             <div className="mt-2 flex space-x-4">
                                 <label className="inline-flex items-center">
                                     <input
@@ -900,11 +898,11 @@ export const Labors: React.FC = () => {
 
                         <div className="mt-4 grid grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tipo de Labor</label>
+                                <label className="block text-sm font-medium text-gray-700">Tipo de Labor</label>
                                 <select
                                     value={laborType}
                                     onChange={(e) => setLaborType(e.target.value)}
-                                    className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
                                 >
                                     {LABOR_TYPES.map(t => (
                                         <option key={t} value={t}>{t}</option>
@@ -912,12 +910,12 @@ export const Labors: React.FC = () => {
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha de Asignación</label>
+                                <label className="block text-sm font-medium text-gray-700">Fecha de Asignación</label>
                                 <input
                                     type="date"
                                     value={assignedDate}
                                     onChange={(e) => setAssignedDate(e.target.value)}
-                                    className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
                                 />
                             </div>
                         </div>
@@ -927,11 +925,11 @@ export const Labors: React.FC = () => {
                         {distributeBy === 'sector' && allocations.map((alloc, idx) => (
                             <div key={idx} className="flex gap-4 items-end">
                                 <div className="flex-1">
-                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Sector</label>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Sector</label>
                                     <select
                                         value={alloc.sector_id}
                                         onChange={(e) => updateAllocation(idx, 'sector_id', e.target.value)}
-                                        className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                        className="block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
                                     >
                                         <option value="">Seleccionar Sector...</option>
                                         {sectors.map(s => (
@@ -940,12 +938,12 @@ export const Labors: React.FC = () => {
                                     </select>
                                 </div>
                                 <div className="w-40">
-                                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Monto</label>
+                                    <label className="block text-xs font-medium text-gray-500 mb-1">Monto</label>
                                     <input
                                         type="number"
                                         value={alloc.amount}
                                         onChange={(e) => updateAllocation(idx, 'amount', Number(e.target.value))}
-                                        className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                                        className="block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
                                     />
                                 </div>
                                 {!editingAssignmentId && (
@@ -963,11 +961,11 @@ export const Labors: React.FC = () => {
                         {distributeBy === 'field' && (
                             <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Seleccionar Campo</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Seleccionar Campo</label>
                                     <select
                                         value={selectedFieldId}
                                         onChange={(e) => setSelectedFieldId(e.target.value)}
-                                        className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                        className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                                     >
                                         <option value="">Seleccione un Campo...</option>
                                         {fields.map(f => (
@@ -979,12 +977,12 @@ export const Labors: React.FC = () => {
                                     </p>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Monto Total a Distribuir</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Monto Total a Distribuir</label>
                                     <input
                                         type="number"
                                         value={fieldTotalAmount}
                                         onChange={(e) => setFieldTotalAmount(Number(e.target.value))}
-                                        className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                                        className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                                     />
                                 </div>
                             </div>
@@ -999,12 +997,12 @@ export const Labors: React.FC = () => {
                                     El costo se distribuirá proporcionalmente a las hectáreas de <strong>TODOS</strong> los sectores de la empresa.
                                 </p>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Monto Total a Distribuir</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Monto Total a Distribuir</label>
                                     <input
                                         type="number"
                                         value={fieldTotalAmount}
                                         onChange={(e) => setFieldTotalAmount(Number(e.target.value))}
-                                        className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm"
+                                        className="block w-full rounded-md border-gray-300 shadow-sm focus:border-purple-500 focus:ring-purple-500 sm:text-sm"
                                     />
                                 </div>
                             </div>
@@ -1020,10 +1018,10 @@ export const Labors: React.FC = () => {
                                 + Agregar otro sector
                             </button>
                             <div className="text-right">
-                                <span className="text-sm text-gray-500 dark:text-gray-400 mr-2">Total Asignado:</span>
+                                <span className="text-sm text-gray-500 mr-2">Total Asignado:</span>
                                 <span className={`font-bold ${
                                     allocations.reduce((sum, a) => sum + a.amount, 0) > (pendingLabors.find(p => p.id === selectedLaborId)?.remaining_amount || 0) 
-                                    ? 'text-red-600' : 'text-gray-900 dark:text-gray-100'
+                                    ? 'text-red-600' : 'text-gray-900'
                                 }`}>
                                     {formatCLP(allocations.reduce((sum, a) => sum + a.amount, 0))}
                                 </span>
@@ -1037,7 +1035,7 @@ export const Labors: React.FC = () => {
                                 setSelectedLaborId(null);
                                 setEditingAssignmentId(null);
                             }}
-                            className="px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
+                            className="px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
                         >
                             Cancelar
                         </button>
@@ -1052,17 +1050,17 @@ export const Labors: React.FC = () => {
                     </div>
                 </div>
             ) : (
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center border-2 border-dashed border-gray-300 dark:border-gray-600">
+                <div className="bg-white rounded-lg shadow p-12 text-center border-2 border-dashed border-gray-300">
                     <ArrowRight className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Selecciona una labor pendiente</h3>
-                    <p className="text-gray-500 dark:text-gray-400">Haz clic en un item de la izquierda para asignarlo a un sector.</p>
+                    <h3 className="text-lg font-medium text-gray-900">Selecciona una labor pendiente</h3>
+                    <p className="text-gray-500">Haz clic en un item de la izquierda para asignarlo a un sector.</p>
                 </div>
             )}
 
             {/* Recent History */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-col md:flex-row justify-between items-center gap-4">
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Historial de Asignaciones</h3>
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200 flex flex-col md:flex-row justify-between items-center gap-4">
+                    <h3 className="text-lg font-medium text-gray-900">Historial de Asignaciones</h3>
                     
                     <div className="flex items-center gap-2 w-full md:w-auto">
                         <input
@@ -1070,11 +1068,11 @@ export const Labors: React.FC = () => {
                             placeholder="Buscar por item, factura o sector..."
                             value={historySearch}
                             onChange={(e) => setHistorySearch(e.target.value)}
-                            className="text-sm border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-green-500 focus:ring-green-500 flex-1 md:w-64"
+                            className="text-sm border-gray-300 rounded-md shadow-sm focus:border-green-500 focus:ring-green-500 flex-1 md:w-64"
                         />
                         <button
                             onClick={handleExportExcel}
-                            className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                             title="Exportar a Excel"
                         >
                             <Download className="h-4 w-4 text-green-600" />
@@ -1106,8 +1104,8 @@ export const Labors: React.FC = () => {
                 </div>
                 
                 {/* Report Filters */}
-                <div className="px-6 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex flex-wrap gap-3 items-center">
-                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Filtros Reporte PDF:</span>
+                <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 flex flex-wrap gap-3 items-center">
+                    <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Filtros Reporte PDF:</span>
                     <select 
                         value={reportScope} 
                         onChange={(e) => {
@@ -1115,7 +1113,7 @@ export const Labors: React.FC = () => {
                             setReportFieldId('');
                             setReportSectorId('');
                         }}
-                        className="text-xs border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-green-500 focus:ring-green-500"
+                        className="text-xs border-gray-300 rounded-md shadow-sm focus:border-green-500 focus:ring-green-500"
                     >
                         <option value="all">General (Todo)</option>
                         <option value="field">Por Campo</option>
@@ -1126,7 +1124,7 @@ export const Labors: React.FC = () => {
                             <select 
                             value={reportFieldId} 
                             onChange={(e) => setReportFieldId(e.target.value)}
-                            className="text-xs border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-green-500 focus:ring-green-500"
+                            className="text-xs border-gray-300 rounded-md shadow-sm focus:border-green-500 focus:ring-green-500"
                         >
                             <option value="">Seleccione Campo...</option>
                             {fields.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
@@ -1137,7 +1135,7 @@ export const Labors: React.FC = () => {
                             <select 
                             value={reportSectorId} 
                             onChange={(e) => setReportSectorId(e.target.value)}
-                            className="text-xs border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-green-500 focus:ring-green-500"
+                            className="text-xs border-gray-300 rounded-md shadow-sm focus:border-green-500 focus:ring-green-500"
                         >
                             <option value="">Seleccione Sector...</option>
                             {sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -1149,7 +1147,7 @@ export const Labors: React.FC = () => {
                     <select
                         value={reportLaborType}
                         onChange={(e) => setReportLaborType(e.target.value)}
-                        className="text-xs border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-green-500 focus:ring-green-500"
+                        className="text-xs border-gray-300 rounded-md shadow-sm focus:border-green-500 focus:ring-green-500"
                     >
                         <option value="all">Todas las Labores</option>
                         {LABOR_TYPES.map(t => (
@@ -1159,40 +1157,40 @@ export const Labors: React.FC = () => {
                 </div>
 
                 <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                        <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0">
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50 sticky top-0">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fecha</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Tipo Labor</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Item / Factura</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Sector Asignado</th>
-                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Monto</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo Labor</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item / Factura</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sector Asignado</th>
+                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Monto</th>
                             </tr>
                         </thead>
-                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                        <tbody className="bg-white divide-y divide-gray-200">
                             {filteredHistory.map((h) => (
                                 <tr key={h.id}>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         {new Date(h.assigned_date).toLocaleDateString()}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                                             h.labor_type === 'Cosecha' ? 'bg-orange-100 text-orange-800' :
                                             h.labor_type === 'Poda' ? 'bg-blue-100 text-blue-800' :
                                             h.labor_type === 'Raleo' ? 'bg-purple-100 text-purple-800' :
-                                            'bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200'
+                                            'bg-gray-100 text-gray-800'
                                         }`}>
                                             {h.labor_type || 'General'}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
+                                    <td className="px-6 py-4 text-sm text-gray-900">
                                         <div className="font-medium">{h.invoice_items?.products?.name || 'Sin nombre'}</div>
-                                        <div className="text-xs text-gray-500 dark:text-gray-400">#{h.invoice_items?.invoices?.invoice_number}</div>
+                                        <div className="text-xs text-gray-500">#{h.invoice_items?.invoices?.invoice_number}</div>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         {h.sectors?.name}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 dark:text-gray-100 text-right">
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 text-right">
                                         <div className="flex items-center justify-end gap-3">
                                             {formatCLP(h.assigned_amount)}
                                             <div className="flex gap-1">
@@ -1224,7 +1222,7 @@ export const Labors: React.FC = () => {
                             ))}
                             {history.length === 0 && (
                                 <tr>
-                                    <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                                    <td colSpan={4} className="px-6 py-4 text-center text-sm text-gray-500">
                                         No hay historial reciente.
                                     </td>
                                 </tr>
