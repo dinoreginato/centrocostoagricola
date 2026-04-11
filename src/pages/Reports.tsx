@@ -315,7 +315,7 @@ export const Reports: React.FC = () => {
       // 2b. Fetch Labor Assignments
       const { data: labor } = await supabase
         .from('labor_assignments')
-        .select('sector_id, assigned_amount, assigned_date, labor_type')
+        .select('sector_id, assigned_amount, assigned_date, labor_type, invoice_item_id')
         .in('sector_id', sectorIds);
       setRawLabor(labor || []);
 
@@ -925,13 +925,23 @@ export const Reports: React.FC = () => {
               inv.invoice_items.forEach((item: any) => {
                 let cat = item.category || 'Sin Categoría';
                 const lowerCat = cat.toLowerCase();
+                
                 const isChemical = CHEMICAL_CATEGORIES.some(c => c.toLowerCase() === lowerCat) || 
                                    lowerCat.includes('insect') || lowerCat.includes('fung') || 
                                    lowerCat.includes('herb') || lowerCat.includes('fert') || 
                                    lowerCat.includes('plag');
+                                   
+                const isLabor = ['labores agrícolas', 'labores agricolas', 'mano de obra', 'servicio de labores'].some(c => lowerCat.includes(c));
                 
                 if (isChemical) {
                   cat = 'Químicos';
+                } else if (isLabor) {
+                  const assignment = rawLabor.find(l => l.invoice_item_id === item.id);
+                  if (assignment && assignment.labor_type && assignment.labor_type !== 'General') {
+                    cat = `Labor: ${assignment.labor_type}`;
+                  } else {
+                    cat = 'Labores Agrícolas (General)';
+                  }
                 }
                 const row = ensureCategoryRow(cat);
                 row[monthIndex] += Number(item.total_price) || 0;
