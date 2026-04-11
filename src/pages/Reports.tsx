@@ -319,10 +319,10 @@ export const Reports: React.FC = () => {
         .in('sector_id', sectorIds);
       setRawLabor(labor || []);
 
-      // 2b2. Fetch Worker Costs (Plant Staff)
+      // 2b2. Fetch Worker Costs (Plant Staff & Piece Rate)
       const { data: workers } = await supabase
         .from('worker_costs')
-        .select('sector_id, amount, date')
+        .select('sector_id, amount, date, description, workers(name), is_piece_rate, worker_name, labor_type')
         .in('sector_id', sectorIds);
       setRawWorkerCosts(workers || []);
 
@@ -425,6 +425,11 @@ export const Reports: React.FC = () => {
       return isDateInSeason(inv.invoice_date, selectedSeason);
     });
 
+    const filteredWorkerCosts = rawWorkerCosts.filter(wc => {
+      if (!wc.date) return false;
+      return isDateInSeason(wc.date, selectedSeason);
+    });
+
     const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
     const monthsMap = new Map<number, DetailedMonth>();
 
@@ -482,6 +487,39 @@ export const Reports: React.FC = () => {
                     invoiceNumber: inv.invoice_number,
                     description: 'Factura sin detalle',
                     total: Number(inv.total_amount)
+                });
+            }
+        }
+    });
+
+    filteredWorkerCosts.forEach(wc => {
+        let date = new Date(wc.date + 'T12:00:00');
+        if (isNaN(date.getTime())) date = new Date(wc.date);
+        
+        if (!isNaN(date.getTime())) {
+            const monthIndex = date.getMonth();
+            const monthData = monthsMap.get(monthIndex);
+
+            if (monthData) {
+                const amount = Number(wc.amount) || 0;
+                monthData.total += amount;
+
+                const workerName = wc.is_piece_rate ? wc.worker_name : (wc.workers?.name || 'Trabajador');
+                const catName = wc.is_piece_rate ? 'Tratos (Mano de Obra)' : 'Trabajadores de Planta';
+                
+                let category = monthData.categories.find(c => c.name === catName);
+                if (!category) {
+                    category = { name: catName, total: 0, items: [] };
+                    monthData.categories.push(category);
+                }
+
+                category.total += amount;
+                category.items.push({
+                    date: wc.date,
+                    supplier: workerName,
+                    invoiceNumber: wc.is_piece_rate ? 'Trato' : 'Sueldo/Anticipo',
+                    description: wc.description || (wc.is_piece_rate ? wc.labor_type : 'Gasto de personal'),
+                    total: amount
                 });
             }
         }
@@ -824,8 +862,13 @@ export const Reports: React.FC = () => {
     });
 
     filteredWorkerCosts.forEach(wc => {
-      const cat = 'Trabajadores de Planta';
-      catData.set(cat, (catData.get(cat) || 0) + Number(wc.amount));
+      if (wc.is_piece_rate) {
+        const cat = 'Tratos (Mano de Obra)';
+        catData.set(cat, (catData.get(cat) || 0) + Number(wc.amount));
+      } else {
+        const cat = 'Trabajadores de Planta';
+        catData.set(cat, (catData.get(cat) || 0) + Number(wc.amount));
+      }
     });
 
     setCategoryExpenses(Array.from(catData.entries())
@@ -891,8 +934,15 @@ export const Reports: React.FC = () => {
           const monthIndex = seasonMonths.indexOf(mKey);
           
           if (monthIndex !== -1) {
-            const row = ensureCategoryRow('Trabajadores de Planta');
-            row[monthIndex] += Number(wc.amount) || 0;
+            if (wc.is_piece_rate) {
+              const row = ensureCategoryRow('Tratos (Mano de Obra)');
+              row[monthIndex] += Number(wc.amount) || 0;
+            } else {
+              const workerName = wc.workers?.name || 'Trabajador Desconocido';
+              const catName = `Planta: ${workerName}`;
+              const row = ensureCategoryRow(catName);
+              row[monthIndex] += Number(wc.amount) || 0;
+            }
           }
         }
       } catch (e) {}
