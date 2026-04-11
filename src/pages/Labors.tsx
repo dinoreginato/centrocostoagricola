@@ -108,6 +108,9 @@ export const Labors: React.FC = () => {
 
   // Editing State
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
+  
+  // Inline Editing State
+  const [inlineEditingId, setInlineEditingId] = useState<string | null>(null);
 
   // History State
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -386,6 +389,28 @@ export const Labors: React.FC = () => {
           toast.error('Error: ' + error.message);
       } finally {
           setLoading(false);
+      }
+  };
+
+  const handleInlineLaborTypeChange = async (id: string, newLaborType: string) => {
+      setInlineEditingId(null); // Close dropdown immediately
+      const loadingToast = toast.loading('Actualizando...');
+      
+      try {
+          const { error } = await supabase
+              .from('labor_assignments')
+              .update({ labor_type: newLaborType })
+              .eq('id', id);
+              
+          if (error) throw error;
+          
+          // Optimistically update history state
+          setHistory(prev => prev.map(h => h.id === id ? { ...h, labor_type: newLaborType } : h));
+          toast.success('Tipo de labor actualizado', { id: loadingToast });
+      } catch (error: any) {
+          console.error('Error updating labor type:', error);
+          toast.error('Error: ' + error.message, { id: loadingToast });
+          loadData(); // Revert back by loading from server
       }
   };
 
@@ -1174,14 +1199,32 @@ export const Labors: React.FC = () => {
                                         {new Date(h.assigned_date).toLocaleDateString()}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                            h.labor_type === 'Cosecha' ? 'bg-orange-100 text-orange-800' :
-                                            h.labor_type === 'Poda' ? 'bg-blue-100 text-blue-800' :
-                                            h.labor_type === 'Raleo' ? 'bg-purple-100 text-purple-800' :
-                                            'bg-gray-100 text-gray-800'
-                                        }`}>
-                                            {h.labor_type || 'General'}
-                                        </span>
+                                        {inlineEditingId === h.id ? (
+                                            <select
+                                                autoFocus
+                                                value={h.labor_type || 'General'}
+                                                onChange={(e) => handleInlineLaborTypeChange(h.id, e.target.value)}
+                                                onBlur={() => setInlineEditingId(null)}
+                                                className="text-xs border-gray-300 rounded shadow-sm focus:border-green-500 focus:ring-green-500"
+                                            >
+                                                {LABOR_TYPES.map(t => (
+                                                    <option key={t} value={t}>{t}</option>
+                                                ))}
+                                            </select>
+                                        ) : (
+                                            <span 
+                                                onClick={() => setInlineEditingId(h.id)}
+                                                className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full cursor-pointer hover:opacity-80 transition-opacity ${
+                                                    h.labor_type === 'Cosecha' ? 'bg-orange-100 text-orange-800' :
+                                                    h.labor_type === 'Poda' ? 'bg-blue-100 text-blue-800' :
+                                                    h.labor_type === 'Raleo' ? 'bg-purple-100 text-purple-800' :
+                                                    'bg-gray-100 text-gray-800'
+                                                }`}
+                                                title="Clic para cambiar el tipo de labor"
+                                            >
+                                                {h.labor_type || 'General'}
+                                            </span>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 text-sm text-gray-900">
                                         <div className="font-medium">{h.invoice_items?.products?.name || 'Sin nombre'}</div>
