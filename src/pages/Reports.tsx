@@ -53,12 +53,6 @@ interface CategoryExpense {
   [key: string]: string | number;
 }
 
-interface CashflowRow {
-  category: string;
-  total: number;
-  months: number[];
-}
-
 interface PendingInvoice {
   id: string;
   invoice_number: string;
@@ -127,7 +121,7 @@ const CHEMICAL_CATEGORIES = [
 export const Reports: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'applications' | 'monthly' | 'categories' | 'pending' | 'paid_payments' | 'chemicals' | 'detailed' | 'budget' | 'comparative' | 'cashflow'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'labors' | 'applications' | 'monthly' | 'categories' | 'pending' | 'paid_payments' | 'chemicals' | 'detailed' | 'budget' | 'comparative'>('general');
   const [activeGroup, setActiveGroup] = useState<'general' | 'financial' | 'inventory' | 'comparative'>('general');
   
   // Pending Invoices Filter State
@@ -172,7 +166,6 @@ export const Reports: React.FC = () => {
   const [reportData, setReportData] = useState<ReportData[]>([]);
   const [monthlyExpenses, setMonthlyExpenses] = useState<MonthlyExpense[]>([]);
   const [categoryExpenses, setCategoryExpenses] = useState<CategoryExpense[]>([]);
-  const [cashflowData, setCashflowData] = useState<{ months: string[], rows: CashflowRow[], totalRow: number[], grandTotal: number } | null>(null);
   const [pendingInvoices, setPendingInvoices] = useState<PendingInvoice[]>([]);
   const [chemicalProducts, setChemicalProducts] = useState<ProductExpense[]>([]);
   const [detailedReport, setDetailedReport] = useState<DetailedMonth[]>([]);
@@ -190,7 +183,7 @@ export const Reports: React.FC = () => {
 
   // Update orientation when tab changes
   useEffect(() => {
-    if (activeTab === 'general' || activeTab === 'detailed' || activeTab === 'cashflow') {
+    if (activeTab === 'general' || activeTab === 'detailed' || activeTab === 'cashflow' || activeTab === 'labors') {
       setPdfOrientation('landscape');
     } else {
       setPdfOrientation('portrait');
@@ -315,14 +308,14 @@ export const Reports: React.FC = () => {
       // 2b. Fetch Labor Assignments
       const { data: labor } = await supabase
         .from('labor_assignments')
-        .select('sector_id, assigned_amount, assigned_date, labor_type, invoice_item_id')
+        .select('sector_id, assigned_amount, assigned_date, labor_type')
         .in('sector_id', sectorIds);
       setRawLabor(labor || []);
 
-      // 2b2. Fetch Worker Costs (Plant Staff & Piece Rate)
+      // 2b2. Fetch Worker Costs (Plant Staff)
       const { data: workers } = await supabase
         .from('worker_costs')
-        .select('sector_id, amount, date, description, workers(name), is_piece_rate, worker_name, labor_type')
+        .select('sector_id, amount, date')
         .in('sector_id', sectorIds);
       setRawWorkerCosts(workers || []);
 
@@ -425,11 +418,6 @@ export const Reports: React.FC = () => {
       return isDateInSeason(inv.invoice_date, selectedSeason);
     });
 
-    const filteredWorkerCosts = rawWorkerCosts.filter(wc => {
-      if (!wc.date) return false;
-      return isDateInSeason(wc.date, selectedSeason);
-    });
-
     const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
     const monthsMap = new Map<number, DetailedMonth>();
 
@@ -487,39 +475,6 @@ export const Reports: React.FC = () => {
                     invoiceNumber: inv.invoice_number,
                     description: 'Factura sin detalle',
                     total: Number(inv.total_amount)
-                });
-            }
-        }
-    });
-
-    filteredWorkerCosts.forEach(wc => {
-        let date = new Date(wc.date + 'T12:00:00');
-        if (isNaN(date.getTime())) date = new Date(wc.date);
-        
-        if (!isNaN(date.getTime())) {
-            const monthIndex = date.getMonth();
-            const monthData = monthsMap.get(monthIndex);
-
-            if (monthData) {
-                const amount = Number(wc.amount) || 0;
-                monthData.total += amount;
-
-                const workerName = wc.is_piece_rate ? wc.worker_name : (wc.workers?.name || 'Trabajador');
-                const catName = wc.is_piece_rate ? 'Tratos (Mano de Obra)' : 'Trabajadores de Planta';
-                
-                let category = monthData.categories.find(c => c.name === catName);
-                if (!category) {
-                    category = { name: catName, total: 0, items: [] };
-                    monthData.categories.push(category);
-                }
-
-                category.total += amount;
-                category.items.push({
-                    date: wc.date,
-                    supplier: workerName,
-                    invoiceNumber: wc.is_piece_rate ? 'Trato' : 'Sueldo/Anticipo',
-                    description: wc.description || (wc.is_piece_rate ? wc.labor_type : 'Gasto de personal'),
-                    total: amount
                 });
             }
         }
@@ -769,15 +724,6 @@ export const Reports: React.FC = () => {
       }
     });
 
-    const filteredWorkerCosts = rawWorkerCosts.filter(wc => {
-      try {
-        if (!wc.date) return false;
-        return isDateInSeason(wc.date, selectedSeason);
-      } catch {
-        return false;
-      }
-    });
-
     // Previous Season Invoices
     const [startYearStr] = selectedSeason.split('-');
     const startYear = parseInt(startYearStr);
@@ -798,19 +744,14 @@ export const Reports: React.FC = () => {
     const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
     
     // Generate keys for the season
-    const seasonMonths: string[] = [];
     // May(4) to Dec(11) of startYear
     for (let m = 4; m <= 11; m++) {
-        const key = `${monthNames[m]} ${startYear}`;
-        seasonMonths.push(key);
-        monthlyData.set(key, 0);
+        monthlyData.set(`${monthNames[m]} ${startYear}`, 0);
         compData.set(monthNames[m], { current: 0, prev: 0 });
     }
     // Jan(0) to Apr(3) of startYear + 1
     for (let m = 0; m <= 3; m++) {
-        const key = `${monthNames[m]} ${startYear + 1}`;
-        seasonMonths.push(key);
-        monthlyData.set(key, 0);
+        monthlyData.set(`${monthNames[m]} ${startYear + 1}`, 0);
         compData.set(monthNames[m], { current: 0, prev: 0 });
     }
 
@@ -870,137 +811,9 @@ export const Reports: React.FC = () => {
       });
     });
 
-    filteredWorkerCosts.forEach(wc => {
-      if (wc.is_piece_rate) {
-        const cat = 'Tratos (Mano de Obra)';
-        catData.set(cat, (catData.get(cat) || 0) + Number(wc.amount));
-      } else {
-        const cat = 'Trabajadores de Planta';
-        catData.set(cat, (catData.get(cat) || 0) + Number(wc.amount));
-      }
-    });
-
     setCategoryExpenses(Array.from(catData.entries())
       .map(([category, total]) => ({ category, total }))
       .sort((a, b) => b.total - a.total));
-
-    // 3. Cashflow (Matrix table) based on DUE DATES
-    const cashflowCategoryMap = new Map<string, number[]>();
-    
-    const ensureCategoryRow = (cat: string) => {
-      if (!cashflowCategoryMap.has(cat)) {
-        cashflowCategoryMap.set(cat, new Array(seasonMonths.length).fill(0));
-      }
-      return cashflowCategoryMap.get(cat)!;
-    };
-
-    // Use rawInvoices to include invoices DUE in the current season, 
-    // even if they were issued previously
-    const cashflowInvoices = rawInvoices.filter(inv => {
-      try {
-        const targetDate = inv.due_date || inv.invoice_date;
-        if (!targetDate) return false;
-        return isDateInSeason(targetDate, selectedSeason);
-      } catch {
-        return false;
-      }
-    });
-
-    cashflowInvoices.forEach(inv => {
-      try {
-        const targetDateStr = inv.due_date || inv.invoice_date;
-        if (!targetDateStr) return;
-        let date = new Date(targetDateStr + 'T12:00:00');
-        if (isNaN(date.getTime())) {
-          const parts = targetDateStr.split(/[-/]/);
-          if (parts.length === 3) date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
-        }
-
-        if (!isNaN(date.getTime())) {
-          const mKey = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
-          const monthIndex = seasonMonths.indexOf(mKey);
-          
-          if (monthIndex !== -1) {
-            if (inv.invoice_items && inv.invoice_items.length > 0) {
-              inv.invoice_items.forEach((item: any) => {
-                let cat = item.category || 'Sin Categoría';
-                const lowerCat = cat.toLowerCase();
-                
-                const isChemical = CHEMICAL_CATEGORIES.some(c => c.toLowerCase() === lowerCat) || 
-                                   lowerCat.includes('insect') || lowerCat.includes('fung') || 
-                                   lowerCat.includes('herb') || lowerCat.includes('fert') || 
-                                   lowerCat.includes('plag');
-                                   
-                const isLabor = ['labores agrícolas', 'labores agricolas', 'mano de obra', 'servicio de labores'].some(c => lowerCat.includes(c));
-                
-                if (isChemical) {
-                  cat = 'Químicos';
-                } else if (isLabor) {
-                  const assignment = rawLabor.find(l => l.invoice_item_id === item.id);
-                  if (assignment && assignment.labor_type && assignment.labor_type !== 'General') {
-                    cat = `Labor: ${assignment.labor_type}`;
-                  } else {
-                    cat = 'Labores Agrícolas (General)';
-                  }
-                }
-                const row = ensureCategoryRow(cat);
-                row[monthIndex] += Number(item.total_price) || 0;
-              });
-            } else {
-              const row = ensureCategoryRow('Sin Categoría');
-              row[monthIndex] += Number(inv.total_amount) || 0;
-            }
-          }
-        }
-      } catch (e) {}
-    });
-
-    filteredWorkerCosts.forEach(wc => {
-      try {
-        if (!wc.date) return;
-        let date = new Date(wc.date + 'T12:00:00');
-        if (isNaN(date.getTime())) date = new Date(wc.date);
-
-        if (!isNaN(date.getTime())) {
-          const mKey = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
-          const monthIndex = seasonMonths.indexOf(mKey);
-          
-          if (monthIndex !== -1) {
-            if (wc.is_piece_rate) {
-              const row = ensureCategoryRow('Tratos (Mano de Obra)');
-              row[monthIndex] += Number(wc.amount) || 0;
-            } else {
-              const row = ensureCategoryRow('Trabajadores de Planta');
-              row[monthIndex] += Number(wc.amount) || 0;
-            }
-          }
-        }
-      } catch (e) {}
-    });
-
-    const cashflowRows = Array.from(cashflowCategoryMap.entries()).map(([category, months]) => {
-      return {
-        category,
-        months,
-        total: months.reduce((a, b) => a + b, 0)
-      };
-    }).sort((a, b) => b.total - a.total);
-
-    const cashflowTotalRow = new Array(seasonMonths.length).fill(0);
-    cashflowRows.forEach(row => {
-      row.months.forEach((val, idx) => {
-        cashflowTotalRow[idx] += val;
-      });
-    });
-
-    const cashflowGrandTotal = cashflowTotalRow.reduce((a, b) => a + b, 0);
-
-    setCashflowData({
-      months: seasonMonths,
-      rows: cashflowRows,
-      totalRow: cashflowTotalRow,
-      grandTotal: cashflowGrandTotal
-    });
       
     // 5. Chemical Products Report
     const prodMap = new Map<string, ProductExpense>();
@@ -1160,6 +973,73 @@ export const Reports: React.FC = () => {
             }
         });
 
+    } else if (activeTab === 'labors') {
+        // LABORS BY SECTOR REPORT
+        const tableHead = [['Sector', 'Has', 'Poda', 'Raleo', 'Cosecha', 'Otras', 'Personal', 'Total', 'Costo/Ha']];
+        const tableBody = reportData.map(row => {
+            const totalLabors = row.labor_poda_cost + row.labor_raleo_cost + row.labor_cosecha_cost + row.labor_otros_cost + row.worker_cost;
+            return [
+                `${row.sector_name} (${row.field_name})`,
+                row.hectares.toString(),
+                formatCLP(row.labor_poda_cost),
+                formatCLP(row.labor_raleo_cost),
+                formatCLP(row.labor_cosecha_cost),
+                formatCLP(row.labor_otros_cost),
+                formatCLP(row.worker_cost),
+                formatCLP(totalLabors),
+                formatCLP(totalLabors / (row.hectares || 1))
+            ];
+        });
+
+        // Add Total Row
+        if (reportData.length > 0) {
+            const totalHas = reportData.reduce((sum, r) => sum + r.hectares, 0);
+            const totalPoda = reportData.reduce((sum, r) => sum + r.labor_poda_cost, 0);
+            const totalRaleo = reportData.reduce((sum, r) => sum + r.labor_raleo_cost, 0);
+            const totalCosecha = reportData.reduce((sum, r) => sum + r.labor_cosecha_cost, 0);
+            const totalOtros = reportData.reduce((sum, r) => sum + r.labor_otros_cost, 0);
+            const totalWorker = reportData.reduce((sum, r) => sum + r.worker_cost, 0);
+            const grandTotal = totalPoda + totalRaleo + totalCosecha + totalOtros + totalWorker;
+            
+            tableBody.push([
+                'TOTAL GENERAL',
+                totalHas.toString(),
+                formatCLP(totalPoda),
+                formatCLP(totalRaleo),
+                formatCLP(totalCosecha),
+                formatCLP(totalOtros),
+                formatCLP(totalWorker),
+                formatCLP(grandTotal),
+                '-'
+            ]);
+        }
+
+        autoTable(doc, {
+            startY: yPos,
+            head: tableHead,
+            body: tableBody,
+            theme: 'striped',
+            headStyles: { fillColor: [46, 125, 50], fontSize: 8 },
+            styles: { fontSize: 8, cellPadding: 2 },
+            columnStyles: {
+                1: { halign: 'right' },
+                2: { halign: 'right' },
+                3: { halign: 'right' },
+                4: { halign: 'right' },
+                5: { halign: 'right' },
+                6: { halign: 'right' },
+                7: { halign: 'right', fontStyle: 'bold' },
+                8: { halign: 'right', fontStyle: 'bold' }
+            },
+            didParseCell: function(data) {
+                // Style the last row (Total General)
+                if (reportData.length > 0 && data.row.index === reportData.length) {
+                    data.cell.styles.fontStyle = 'bold';
+                    data.cell.styles.fillColor = [230, 230, 230];
+                }
+            }
+        });
+
     } else if (activeTab === 'applications') {
         // APPLICATIONS / COST PER HA REPORT
         const tableBody = reportData.map(row => [
@@ -1252,54 +1132,6 @@ export const Reports: React.FC = () => {
                 headStyles: { fillColor: [136, 132, 216] }, // Purple
                 columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } }
             });
-        }
-
-    } else if (activeTab === 'cashflow') {
-        // CASHFLOW MATRIX REPORT
-        if (cashflowData) {
-            const tableHead = [['Categoría', ...cashflowData.months, 'Total Temporada']];
-            const tableBody = cashflowData.rows.map(row => [
-                row.category,
-                ...row.months.map(m => m > 0 ? formatCLP(m) : '-'),
-                formatCLP(row.total)
-            ]);
-
-            // Add Total Row
-            tableBody.push([
-                'TOTAL GENERAL',
-                ...cashflowData.totalRow.map(m => formatCLP(m)),
-                formatCLP(cashflowData.grandTotal)
-            ]);
-
-            autoTable(doc, {
-                startY: yPos,
-                head: tableHead,
-                body: tableBody,
-                theme: 'grid',
-                headStyles: { fillColor: [136, 132, 216], fontSize: 6, cellPadding: 1, halign: 'center' }, // Purple theme
-                styles: { fontSize: 6, cellPadding: 1, overflow: 'linebreak' }, // Smaller font and tighter padding to fit columns
-                columnStyles: {
-                    0: { fontStyle: 'bold', cellWidth: 35 } // Fixed width for category column
-                },
-                didParseCell: function(data) {
-                    // Right align all numeric columns
-                    if (data.column.index > 0) {
-                        data.cell.styles.halign = 'right';
-                    }
-                    // Style the last column (Total Temporada)
-                    if (data.column.index === cashflowData.months.length + 1) {
-                        data.cell.styles.fontStyle = 'bold';
-                        data.cell.styles.fillColor = [245, 245, 245];
-                    }
-                    // Style the last row (Total General)
-                    if (data.row.index === cashflowData.rows.length) {
-                        data.cell.styles.fontStyle = 'bold';
-                        data.cell.styles.fillColor = [230, 230, 230];
-                    }
-                }
-            });
-        } else {
-            doc.text('No hay datos de flujo de caja para esta temporada.', 14, yPos);
         }
 
     } else if (activeTab === 'categories') {
@@ -1465,6 +1297,7 @@ export const Reports: React.FC = () => {
   const getReportTitle = () => {
     switch(activeTab) {
       case 'applications': return 'Costos de Aplicación';
+      case 'labors': return 'Detalle de Labores por Sector';
       case 'monthly': return 'Gastos Mensuales';
       case 'cashflow': return 'Flujo de Caja';
       case 'categories': return 'Gastos por Clasificación';
@@ -1579,6 +1412,14 @@ export const Reports: React.FC = () => {
                 Costos Generales (USD/Kg)
               </button>
               <button
+                onClick={() => setActiveTab('labors')}
+                className={`${
+                  activeTab === 'labors' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Detalle de Labores
+              </button>
+              <button
                 onClick={() => setActiveTab('budget')}
                 className={`${
                   activeTab === 'budget' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
@@ -1598,14 +1439,6 @@ export const Reports: React.FC = () => {
                 } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
               >
                 Gastos Mensuales
-              </button>
-              <button
-                onClick={() => setActiveTab('cashflow')}
-                className={`${
-                  activeTab === 'cashflow' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
-                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
-              >
-                Flujo de Caja
               </button>
               <button
                 onClick={() => setActiveTab('categories')}
@@ -2176,6 +2009,83 @@ export const Reports: React.FC = () => {
         </div>
       )}
 
+      {/* LABORS REPORT (NEW) */}
+      {activeTab === 'labors' && (
+        <div className="space-y-6">
+          <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+            <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
+              <h3 className="text-lg leading-6 font-medium text-gray-900">Detalle de Labores Agrícolas por Sector ({selectedSeason})</h3>
+              <p className="mt-1 max-w-2xl text-sm text-gray-500">Desglose de costos de Poda, Raleo, Cosecha, Otras Labores y Tratos por cada sector.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sector/Campo</th>
+                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Hectáreas</th>
+                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Poda</th>
+                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Raleo</th>
+                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Cosecha</th>
+                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Otras Labores</th>
+                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-orange-50">Personal (Planta y Tratos)</th>
+                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-blue-50">Total Labores</th>
+                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo / Ha</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {reportData.map((row, index) => {
+                    const totalLabors = row.labor_poda_cost + row.labor_raleo_cost + row.labor_cosecha_cost + row.labor_otros_cost + row.worker_cost;
+                    return (
+                      <tr key={index} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-medium text-gray-900">{row.sector_name}</div>
+                            <div className="text-xs text-gray-500">{row.field_name}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">{row.hectares}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.labor_poda_cost)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.labor_raleo_cost)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.labor_cosecha_cost)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.labor_otros_cost)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-orange-600 bg-orange-50">{formatCLP(row.worker_cost)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-700 bg-blue-50">{formatCLP(totalLabors)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900">{formatCLP(totalLabors / (row.hectares || 1))}</td>
+                      </tr>
+                    );
+                  })}
+                  {reportData.length > 0 && (
+                    <tr className="bg-gray-100 font-bold border-t-2 border-gray-300">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">TOTAL GENERAL</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                        {reportData.reduce((sum, r) => sum + r.hectares, 0)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                        {formatCLP(reportData.reduce((sum, r) => sum + r.labor_poda_cost, 0))}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                        {formatCLP(reportData.reduce((sum, r) => sum + r.labor_raleo_cost, 0))}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                        {formatCLP(reportData.reduce((sum, r) => sum + r.labor_cosecha_cost, 0))}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                        {formatCLP(reportData.reduce((sum, r) => sum + r.labor_otros_cost, 0))}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-orange-700 bg-orange-100">
+                        {formatCLP(reportData.reduce((sum, r) => sum + r.worker_cost, 0))}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-blue-800 bg-blue-100">
+                        {formatCLP(reportData.reduce((sum, r) => sum + r.labor_poda_cost + r.labor_raleo_cost + r.labor_cosecha_cost + r.labor_otros_cost + r.worker_cost, 0))}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">-</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 1. APPLICATIONS REPORT */}
       {activeTab === 'applications' && (
             <div className="space-y-6">
@@ -2256,72 +2166,6 @@ export const Reports: React.FC = () => {
                     </BarChart>
                   </ResponsiveContainer>
                 )}
-              </div>
-            </div>
-          )}
-
-          {/* CASHFLOW REPORT */}
-          {activeTab === 'cashflow' && cashflowData && (
-            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-              <div className="px-4 py-5 sm:px-6 border-b border-gray-200 flex justify-between items-center">
-                <div>
-                  <h3 className="text-lg leading-6 font-medium text-gray-900">Flujo de Caja ({selectedSeason})</h3>
-                  <p className="mt-1 text-sm text-gray-500">Gastos mensuales agrupados por categoría (químicos resumidos en una sola categoría)</p>
-                </div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-10">Categoría</th>
-                      {cashflowData.months.map((month, idx) => (
-                        <th key={idx} className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                          {month}
-                        </th>
-                      ))}
-                      <th className="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider bg-gray-100">Total Temporada</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {cashflowData.rows.length === 0 ? (
-                      <tr>
-                        <td colSpan={cashflowData.months.length + 2} className="px-6 py-4 text-center text-gray-500">No hay gastos registrados en {selectedSeason}</td>
-                      </tr>
-                    ) : (
-                      cashflowData.rows.map((row, index) => (
-                        <tr key={index} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 sticky left-0 bg-white hover:bg-gray-50 z-10 border-r border-gray-100">
-                            {row.category}
-                          </td>
-                          {row.months.map((amount, idx) => (
-                            <td key={idx} className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">
-                              {amount > 0 ? formatCLP(amount) : '-'}
-                            </td>
-                          ))}
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-900 bg-gray-50">
-                            {formatCLP(row.total)}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                    {/* Total Row */}
-                    {cashflowData.rows.length > 0 && (
-                      <tr className="bg-gray-100 font-bold border-t-2 border-gray-300">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 sticky left-0 bg-gray-100 z-10 border-r border-gray-200">
-                          TOTAL GENERAL
-                        </td>
-                        {cashflowData.totalRow.map((amount, idx) => (
-                          <td key={idx} className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
-                            {formatCLP(amount)}
-                          </td>
-                        ))}
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-purple-700 font-black text-base bg-gray-200">
-                          {formatCLP(cashflowData.grandTotal)}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
               </div>
             </div>
           )}
