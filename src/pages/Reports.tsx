@@ -756,6 +756,16 @@ export const Reports: React.FC = () => {
         compData.set(monthNames[m], { current: 0, prev: 0 });
     }
 
+    const filteredWorkerCostsCurrent = rawWorkerCosts.filter(w => {
+      if (!w.date) return false;
+      return isDateInSeason(w.date, selectedSeason);
+    });
+
+    const filteredWorkerCostsPrev = rawWorkerCosts.filter(w => {
+      if (!w.date) return false;
+      return isDateInSeason(w.date, prevSeason);
+    });
+
     filteredInvoices.forEach(inv => {
       try {
         if (!inv.invoice_date) return;
@@ -780,6 +790,28 @@ export const Reports: React.FC = () => {
       } catch (e) {}
     });
 
+    filteredWorkerCostsCurrent.forEach(w => {
+      try {
+        let date = new Date(w.date + 'T12:00:00');
+        if (isNaN(date.getTime())) {
+          const parts = String(w.date).split(/[-/]/);
+          if (parts.length === 3) date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
+        }
+        if (!isNaN(date.getTime())) {
+          const key = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
+          const mKey = monthNames[date.getMonth()];
+          const amount = Number(w.amount) || 0;
+
+          if (monthlyData.has(key)) {
+            monthlyData.set(key, (monthlyData.get(key) || 0) + amount);
+          }
+          if (compData.has(mKey)) {
+            compData.get(mKey)!.current += amount;
+          }
+        }
+      } catch (e) {}
+    });
+
     prevInvoices.forEach(inv => {
       try {
         if (!inv.invoice_date) return;
@@ -793,6 +825,24 @@ export const Reports: React.FC = () => {
           const mKey = monthNames[date.getMonth()];
           const amount = Number(inv.total_amount) || 0;
           
+          if (compData.has(mKey)) {
+            compData.get(mKey)!.prev += amount;
+          }
+        }
+      } catch (e) {}
+    });
+
+    filteredWorkerCostsPrev.forEach(w => {
+      try {
+        let date = new Date(w.date + 'T12:00:00');
+        if (isNaN(date.getTime())) {
+          const parts = String(w.date).split(/[-/]/);
+          if (parts.length === 3) date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
+        }
+        if (!isNaN(date.getTime())) {
+          const mKey = monthNames[date.getMonth()];
+          const amount = Number(w.amount) || 0;
+
           if (compData.has(mKey)) {
             compData.get(mKey)!.prev += amount;
           }
