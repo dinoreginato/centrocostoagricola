@@ -82,6 +82,129 @@ export const Dashboard: React.FC = () => {
     return json?.data || [];
   };
 
+  const getNearestStation = (lat: number, lon: number, stations: any[]) => {
+    const candidatesInia = stations.filter((s: any) => (s.api || '').toUpperCase() === 'INIA');
+    const list = candidatesInia.length > 0 ? candidatesInia : stations;
+
+    let best: any = null;
+    let bestD = Infinity;
+    for (const st of list) {
+      const d = haversineKm(lat, lon, st.lat, st.lon);
+      if (d < bestD) {
+        bestD = d;
+        best = st;
+      }
+    }
+    if (!best) return null;
+
+    const api = String(best.api || '').toUpperCase();
+    const stationCode = api === 'INIA' ? `INIA-${best.id}` : `EXT-${best.id}`;
+    return { best, stationCode };
+  };
+
+  const backfillAgrometRainSelected = async () => {
+    if (!selectedCompany) return;
+    if (!companyFields || companyFields.length === 0) return;
+    if (rainScope === 'company') {
+      toast('Para Empresa necesitas definir un punto (Campo o Sector). Usa Por Campo o Por Sector.');
+      return;
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const year = today.slice(0, 4);
+    const from = `${year}-01-01`;
+
+    const field = companyFields.find((f: any) => f.id === rainFieldId) || null;
+    const sector = field?.sectors?.find((s: any) => s.id === rainSectorId) || null;
+
+    const latRaw = rainScope === 'sector'
+      ? (sector?.latitude != null ? sector.latitude : field?.latitude)
+      : field?.latitude;
+    const lonRaw = rainScope === 'sector'
+      ? (sector?.longitude != null ? sector.longitude : field?.longitude)
+      : field?.longitude;
+
+    const lat = latRaw != null ? Number(latRaw) : null;
+    const lon = lonRaw != null ? Number(lonRaw) : null;
+    if (lat == null || lon == null || Number.isNaN(lat) || Number.isNaN(lon)) {
+      toast('Faltan coordenadas (Lat/Lon) para el Campo/Sector seleccionado.');
+      return;
+    }
+
+    setRainSyncing(true);
+    const loadingToast = toast.loading('Rellenando lluvia del año...');
+    try {
+      const items = await fetchAgrometItemsResumen();
+      const stations = (items || [])
+        .filter((s: any) => s && (s.status === 1 || s.status === '1'))
+        .map((s: any) => ({
+          id: String(s.id),
+          nombre: String(s.nombre || ''),
+          api: String(s.api || ''),
+          lat: Number(s.latitud),
+          lon: Number(s.longitud)
+        }))
+        .filter((s: any) => !Number.isNaN(s.lat) && !Number.isNaN(s.lon));
+
+      const nearest = getNearestStation(lat, lon, stations);
+      if (!nearest) {
+        toast.error('No se encontraron estaciones disponibles', { id: loadingToast });
+        return;
+      }
+
+      const scopeFilter = rainScope === 'field'
+        ? { field_id: rainFieldId, sector_id: null }
+        : { field_id: null, sector_id: rainSectorId };
+
+      const { data: existingLogs } = await supabase
+        .from('rain_logs')
+        .select('date')
+        .eq('company_id', selectedCompany.id)
+        .gte('date', from)
+        .match(scopeFilter);
+
+      const existingDates = new Set((existingLogs || []).map((r: any) => r.date));
+
+      const resp = await fetch(`/api/agromet/pp-day?station=${encodeURIComponent(nearest.stationCode)}&from=${from}&to=${today}`);
+      if (!resp.ok) throw new Error('No se pudo obtener histórico de precipitación');
+      const json = await resp.json();
+      const series = json?.data || [];
+
+      const rows = series
+        .filter((r: any) => r?.date && r?.mm != null && !existingDates.has(r.date))
+        .map((r: any) => ({
+          company_id: selectedCompany.id,
+          date: r.date,
+          rain_mm: Number(r.mm),
+          source: 'agrometeorologia',
+          station_id: nearest.best.id,
+          station_name: nearest.best.nombre,
+          field_id: scopeFilter.field_id,
+          sector_id: scopeFilter.sector_id
+        }));
+
+      if (rows.length > 0) {
+        const { error } = await supabase.from('rain_logs').insert(rows);
+        if (error) throw error;
+      }
+
+      const { data: rainData } = await supabase
+        .from('rain_logs')
+        .select('*')
+        .eq('company_id', selectedCompany.id)
+        .gte('date', `${year}-01-01`)
+        .order('date', { ascending: false });
+
+      setRainLogs(rainData || []);
+      toast.success('Lluvia del año actualizada', { id: loadingToast });
+    } catch (e: any) {
+      console.error('Error backfill rain:', e);
+      toast.error('No se pudo rellenar la lluvia. Intenta nuevamente.', { id: loadingToast });
+    } finally {
+      setRainSyncing(false);
+    }
+  };
+
   const syncAgrometRain = async () => {
     if (!selectedCompany) return;
     if (!companyFields || companyFields.length === 0) return;
@@ -140,6 +263,7 @@ export const Dashboard: React.FC = () => {
         .map((s: any) => ({
           id: String(s.id),
           nombre: String(s.nombre || ''),
+          api: String(s.api || ''),
           lat: Number(s.latitud),
           lon: Number(s.longitud),
           stack: s['STACK-DAY'] || {}
@@ -151,16 +275,9 @@ export const Dashboard: React.FC = () => {
       const rowsToInsert: any[] = [];
 
       locations.forEach(loc => {
-        let best: any = null;
-        let bestD = Infinity;
-        for (const st of stations) {
-          const d = haversineKm(loc.lat, loc.lon, st.lat, st.lon);
-          if (d < bestD) {
-            bestD = d;
-            best = st;
-          }
-        }
-        if (!best) return;
+        const nearest = getNearestStation(loc.lat, loc.lon, stations);
+        if (!nearest) return;
+        const best = nearest.best;
 
         const stack = best.stack || {};
         Object.keys(stack).forEach(k => {
@@ -1251,13 +1368,12 @@ export const Dashboard: React.FC = () => {
                             <button
                                 type="button"
                                 onClick={() => {
-                                    rainSyncedRef.current = null;
-                                    syncAgrometRain();
+                                    backfillAgrometRainSelected();
                                 }}
                                 disabled={rainSyncing}
                                 className="text-blue-700 hover:text-blue-900 disabled:opacity-50"
                             >
-                                {rainSyncing ? 'Sincronizando...' : 'Sincronizar'}
+                                {rainSyncing ? 'Sincronizando...' : 'Rellenar Año'}
                             </button>
                         </div>
                     </div>
@@ -1282,7 +1398,7 @@ export const Dashboard: React.FC = () => {
                     <div className="space-y-2 max-h-24 overflow-y-auto pr-1 flex-1">
                         {scopedRainLogs.length === 0 ? (
                             <div className="text-xs text-gray-500 bg-gray-50 border border-gray-100 p-3 rounded-lg font-medium">
-                                Sin datos todavía. Verifica que el Campo/Sector tenga Latitud y Longitud y presiona “Sincronizar”.
+                                Sin datos todavía. Verifica que el Campo/Sector tenga Latitud y Longitud y presiona “Rellenar Año”.
                             </div>
                         ) : scopedRainLogs.slice(0, 4).map((log, idx) => (
                             <div key={idx} className="flex justify-between items-center text-sm border-b border-gray-50 pb-2 last:border-0 last:pb-0">
