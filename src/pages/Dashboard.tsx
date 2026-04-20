@@ -88,7 +88,6 @@ export const Dashboard: React.FC = () => {
 
     const syncKey = `${selectedCompany.id}:${new Date().toISOString().slice(0, 10)}`;
     if (rainSyncedRef.current === syncKey) return;
-    rainSyncedRef.current = syncKey;
 
     const activeYear = new Date().getFullYear();
     const existing = new Set<string>();
@@ -116,6 +115,7 @@ export const Dashboard: React.FC = () => {
     });
 
     if (locations.length === 0) return;
+    rainSyncedRef.current = syncKey;
 
     setRainSyncing(true);
     try {
@@ -1248,7 +1248,17 @@ export const Dashboard: React.FC = () => {
                         )}
                         <div className="flex items-center justify-between text-xs font-bold text-gray-500 uppercase tracking-wide">
                             <span>{scopedStationName ? `Estación: ${scopedStationName}` : 'Estación: -'}</span>
-                            <span>{rainSyncing ? 'Sincronizando...' : ' '}</span>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    rainSyncedRef.current = null;
+                                    syncAgrometRain();
+                                }}
+                                disabled={rainSyncing}
+                                className="text-blue-700 hover:text-blue-900 disabled:opacity-50"
+                            >
+                                {rainSyncing ? 'Sincronizando...' : 'Sincronizar'}
+                            </button>
                         </div>
                     </div>
                     <form onSubmit={handleSaveRain} className="flex gap-2 mb-5">
@@ -1270,7 +1280,11 @@ export const Dashboard: React.FC = () => {
                         </button>
                     </form>
                     <div className="space-y-2 max-h-24 overflow-y-auto pr-1 flex-1">
-                        {scopedRainLogs.slice(0, 4).map((log, idx) => (
+                        {scopedRainLogs.length === 0 ? (
+                            <div className="text-xs text-gray-500 bg-gray-50 border border-gray-100 p-3 rounded-lg font-medium">
+                                Sin datos todavía. Verifica que el Campo/Sector tenga Latitud y Longitud y presiona “Sincronizar”.
+                            </div>
+                        ) : scopedRainLogs.slice(0, 4).map((log, idx) => (
                             <div key={idx} className="flex justify-between items-center text-sm border-b border-gray-50 pb-2 last:border-0 last:pb-0">
                                 <span className="text-gray-500 font-bold text-xs uppercase tracking-wide">{new Date(log.date).toLocaleDateString('es-CL', {day: '2-digit', month: 'short'})}</span>
                                 <span className="font-bold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-md">{log.rain_mm} mm</span>
