@@ -47,8 +47,6 @@ export const Dashboard: React.FC = () => {
   
   // Rain State
   const [rainLogs, setRainLogs] = useState<any[]>([]);
-  const [newRainDate, setNewRainDate] = useState(new Date().toLocaleDateString('en-CA'));
-  const [newRainMm, setNewRainMm] = useState<number | ''>('');// New State
   const [companyFields, setCompanyFields] = useState<any[]>([]);
   const [rainScope, setRainScope] = useState<'field' | 'sector' | 'company'>('field');
   const [rainFieldId, setRainFieldId] = useState<string>('');
@@ -427,32 +425,6 @@ export const Dashboard: React.FC = () => {
     setPresentationMode(false);
     if (document.fullscreenElement && document.exitFullscreen) {
       document.exitFullscreen().catch(err => console.log('Error attempting to exit fullscreen:', err));
-    }
-  };
-
-  const handleSaveRain = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedCompany || !newRainMm) return;
-
-    try {
-        const { error } = await supabase
-            .from('rain_logs')
-            .insert([{
-                company_id: selectedCompany.id,
-                date: newRainDate,
-                rain_mm: Number(newRainMm),
-                source: 'manual',
-                field_id: rainScope === 'field' ? (rainFieldId || null) : null,
-                sector_id: rainScope === 'sector' ? (rainSectorId || null) : null
-            }]);
-
-        if (error) throw error;
-        
-        setNewRainMm('');
-        loadDashboardData();
-    } catch (err) {
-        console.error('Error saving rain:', err);
-        toast.error('Error al registrar lluvia');
     }
   };
 
@@ -1439,24 +1411,9 @@ export const Dashboard: React.FC = () => {
                             </button>
                         </div>
                     </div>
-                    <form onSubmit={handleSaveRain} className="flex gap-2 mb-5">
-                        <input 
-                            type="number" 
-                            step="0.1"
-                            value={newRainMm || ''}
-                            onChange={e => setNewRainMm(Number(e.target.value))}
-                            placeholder="Ej. 15.5 mm"
-                            className="flex-1 text-sm border border-gray-200 bg-gray-50 rounded-lg p-2.5 focus:ring-blue-500 focus:border-blue-500 font-medium"
-                            required
-                        />
-                        <button
-                            type="submit"
-                            disabled={rainScope === 'field' ? !rainFieldId : (rainScope === 'sector' ? !rainSectorId : !selectedCompany)}
-                            className="bg-blue-600 text-white text-sm px-5 py-2.5 rounded-lg hover:bg-blue-700 font-bold shadow-sm transition-colors disabled:opacity-50"
-                        >
-                            Guardar
-                        </button>
-                    </form>
+                    <div className="text-xs text-gray-500 bg-gray-50 border border-gray-100 p-3 rounded-lg font-medium mb-5">
+                        Los mm caídos se sincronizan automáticamente desde Agrometeorología.
+                    </div>
                     <div className="space-y-2 max-h-24 overflow-y-auto pr-1 flex-1">
                         {scopedRainLogs.length === 0 ? (
                             <div className="text-xs text-gray-500 bg-gray-50 border border-gray-100 p-3 rounded-lg font-medium">
