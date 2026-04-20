@@ -77,8 +77,10 @@ export const Dashboard: React.FC = () => {
   };
 
   const fetchAgrometItemsResumen = async () => {
-    const resp = await fetch('/api/agromet/items-resumen', { headers: { accept: 'application/json' } });
+    const resp = await fetch('/api/agromet/items-resumen.js', { headers: { accept: 'application/json' } });
     if (!resp.ok) throw new Error('No se pudo obtener Agrometeorología');
+    const ct = resp.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) throw new Error('Respuesta no válida desde Agrometeorología');
     const json = await resp.json();
     return json?.data || [];
   };
@@ -221,8 +223,10 @@ export const Dashboard: React.FC = () => {
 
       const existingDates = new Set((existingLogs || []).map((r: any) => r.date));
 
-      const resp = await fetch(`/api/agromet/pp-day?station=${encodeURIComponent(nearest.stationCode)}&from=${from}&to=${today}`);
+      const resp = await fetch(`/api/agromet/pp-day.js?station=${encodeURIComponent(nearest.stationCode)}&from=${from}&to=${today}`);
       if (!resp.ok) throw new Error('No se pudo obtener histórico de precipitación');
+      const ct = resp.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) throw new Error('Respuesta no válida desde Agrometeorología');
       const json = await resp.json();
       const series = json?.data || [];
 
