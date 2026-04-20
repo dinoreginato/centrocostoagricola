@@ -54,6 +54,7 @@ export const Dashboard: React.FC = () => {
   const [rainFieldId, setRainFieldId] = useState<string>('');
   const [rainSectorId, setRainSectorId] = useState<string>('');
   const [rainSyncing, setRainSyncing] = useState(false);
+  const [rainStation, setRainStation] = useState<{ id: string; name: string } | null>(null);
   const rainSyncedRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -82,6 +83,59 @@ export const Dashboard: React.FC = () => {
     return json?.data || [];
   };
 
+  useEffect(() => {
+    const loadNearestStation = async () => {
+      if (!selectedCompany) return;
+      if (rainScope === 'company') {
+        setRainStation(null);
+        return;
+      }
+      const field = companyFields.find((f: any) => f.id === rainFieldId) || null;
+      const sector = field?.sectors?.find((s: any) => s.id === rainSectorId) || null;
+
+      const latRaw = rainScope === 'sector'
+        ? (sector?.latitude != null ? sector.latitude : field?.latitude)
+        : field?.latitude;
+      const lonRaw = rainScope === 'sector'
+        ? (sector?.longitude != null ? sector.longitude : field?.longitude)
+        : field?.longitude;
+
+      const lat = latRaw != null ? Number(latRaw) : null;
+      const lon = lonRaw != null ? Number(lonRaw) : null;
+      if (lat == null || lon == null || Number.isNaN(lat) || Number.isNaN(lon)) {
+        setRainStation(null);
+        return;
+      }
+
+      try {
+        const items = await fetchAgrometItemsResumen();
+        const stations = (items || [])
+          .filter((s: any) => s && (s.status === 1 || s.status === '1'))
+          .map((s: any) => ({
+            id: String(s.id),
+            nombre: String(s.nombre || ''),
+            api: String(s.api || ''),
+            source: String(s.source || ''),
+            lat: Number(s.latitud),
+            lon: Number(s.longitud)
+          }))
+          .filter((s: any) => !Number.isNaN(s.lat) && !Number.isNaN(s.lon) && s.source);
+
+        const nearest = getNearestStation(lat, lon, stations);
+        if (!nearest) {
+          setRainStation(null);
+          return;
+        }
+
+        setRainStation({ id: nearest.best.id, name: nearest.best.nombre });
+      } catch (e) {
+        setRainStation(null);
+      }
+    };
+
+    loadNearestStation();
+  }, [selectedCompany, rainScope, rainFieldId, rainSectorId, companyFields]);
+
   const getNearestStation = (lat: number, lon: number, stations: any[]) => {
     const candidatesInia = stations.filter((s: any) => (s.api || '').toUpperCase() === 'INIA');
     const list = candidatesInia.length > 0 ? candidatesInia : stations;
@@ -97,8 +151,8 @@ export const Dashboard: React.FC = () => {
     }
     if (!best) return null;
 
-    const api = String(best.api || '').toUpperCase();
-    const stationCode = api === 'INIA' ? `INIA-${best.id}` : `EXT-${best.id}`;
+    const source = String(best.source || '').toUpperCase();
+    const stationCode = `${source || 'EXT'}-${best.id}`;
     return { best, stationCode };
   };
 
@@ -141,16 +195,18 @@ export const Dashboard: React.FC = () => {
           id: String(s.id),
           nombre: String(s.nombre || ''),
           api: String(s.api || ''),
+          source: String(s.source || ''),
           lat: Number(s.latitud),
           lon: Number(s.longitud)
         }))
-        .filter((s: any) => !Number.isNaN(s.lat) && !Number.isNaN(s.lon));
+        .filter((s: any) => !Number.isNaN(s.lat) && !Number.isNaN(s.lon) && s.source);
 
       const nearest = getNearestStation(lat, lon, stations);
       if (!nearest) {
         toast.error('No se encontraron estaciones disponibles', { id: loadingToast });
         return;
       }
+      setRainStation({ id: nearest.best.id, name: nearest.best.nombre });
 
       const scopeFilter = rainScope === 'field'
         ? { field_id: rainFieldId, sector_id: null }
@@ -264,11 +320,12 @@ export const Dashboard: React.FC = () => {
           id: String(s.id),
           nombre: String(s.nombre || ''),
           api: String(s.api || ''),
+          source: String(s.source || ''),
           lat: Number(s.latitud),
           lon: Number(s.longitud),
           stack: s['STACK-DAY'] || {}
         }))
-        .filter((s: any) => !Number.isNaN(s.lat) && !Number.isNaN(s.lon));
+        .filter((s: any) => !Number.isNaN(s.lat) && !Number.isNaN(s.lon) && s.source);
 
       if (stations.length === 0) return;
 
@@ -321,6 +378,7 @@ export const Dashboard: React.FC = () => {
       setRainLogs(rainData || []);
     } catch (e) {
       console.error('Error syncing agromet rain:', e);
+      toast.error('No se pudo sincronizar lluvia desde Agrometeorología');
     } finally {
       setRainSyncing(false);
     }
@@ -968,7 +1026,7 @@ export const Dashboard: React.FC = () => {
   });
 
   const scopedRainTotal = scopedRainLogs.reduce((sum: number, l: any) => sum + Number(l.rain_mm || 0), 0);
-  const scopedStationName = scopedRainLogs.find((l: any) => l.station_name)?.station_name || '';
+  const scopedStationName = scopedRainLogs.find((l: any) => l.station_name)?.station_name || rainStation?.name || '';
 
   return (
     <div className="space-y-6">
