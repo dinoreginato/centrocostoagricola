@@ -1,6 +1,6 @@
 const AGROMET_BASE = 'https://agrometeorologia.cl';
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   try {
     const htmlResp = await fetch(`${AGROMET_BASE}/`, {
       headers: {
@@ -51,5 +51,4 @@ module.exports = async (req, res) => {
     res.setHeader('content-type', 'application/json; charset=utf-8');
     res.end(JSON.stringify({ error: 'Error interno', detail: String(e?.message || e) }));
   }
-};
-
+}
