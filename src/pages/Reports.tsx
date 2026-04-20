@@ -862,6 +862,12 @@ export const Reports: React.FC = () => {
       });
     });
 
+    const totalPlantWorkers = filteredWorkerCostsCurrent.reduce((sum: number, w: any) => sum + (Number(w.amount) || 0), 0);
+    if (Math.abs(totalPlantWorkers) > 0.0001) {
+      const cat = 'Empleados de Planta';
+      catData.set(cat, (catData.get(cat) || 0) + totalPlantWorkers);
+    }
+
     setCategoryExpenses(Array.from(catData.entries())
       .map(([category, total]) => ({ category, total }))
       .sort((a, b) => b.total - a.total));
