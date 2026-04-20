@@ -366,6 +366,7 @@ export const Reports: React.FC = () => {
         .from('invoices')
         .select(`
           id, invoice_number, invoice_date, total_amount, supplier, status, due_date, document_type, notes,
+          tax_percentage, discount_amount, exempt_amount, special_tax_amount,
           invoice_items (
             id, category, total_price, quantity,
             products (name, unit, category)
@@ -2480,7 +2481,7 @@ export const Reports: React.FC = () => {
                 <div className="bg-white p-4 rounded-lg shadow border border-gray-200 flex flex-wrap gap-4 items-center justify-between">
                     <div>
                         <h3 className="text-lg font-medium text-gray-900">Pagos Realizados</h3>
-                        <p className="text-sm text-gray-500">Segmentado por categoría y fecha de vencimiento</p>
+                        <p className="text-sm text-gray-500">Montos con IVA incluido, segmentado por categoría y fecha de vencimiento</p>
                     </div>
                     <div className="flex flex-wrap items-end gap-2">
                         <div>
@@ -2514,6 +2515,31 @@ export const Reports: React.FC = () => {
 
                 {(() => {
                     // Logic to process Paid Invoices
+                    const isCreditNote = (documentType: any) => {
+                        const dt = String(documentType || '').toLowerCase();
+                        return dt.includes('nota de cr') || dt.includes('credito') || dt === 'nc';
+                    };
+
+                    const computeGrossItemAmount = (inv: any, itemNet: number) => {
+                        const subtotal = (inv.invoice_items || []).reduce((sum: number, it: any) => sum + (Number(it.total_price) || 0), 0);
+                        const discount = Number(inv.discount_amount) || 0;
+                        const exempt = Number(inv.exempt_amount) || 0;
+                        const special = Number(inv.special_tax_amount) || 0;
+                        const taxPct = String(inv.document_type || '').toLowerCase().includes('exenta') ? 0 : (Number(inv.tax_percentage) || 19);
+                        const multiplier = isCreditNote(inv.document_type) ? -1 : 1;
+
+                        const netAfterDiscount = subtotal - discount;
+                        const discountShare = subtotal > 0 ? (discount * (itemNet / subtotal)) : 0;
+                        const itemNetAfterDiscount = itemNet - discountShare;
+                        const baseForShares = netAfterDiscount > 0 ? netAfterDiscount : (subtotal > 0 ? subtotal : 1);
+                        const shareRatio = baseForShares > 0 ? (itemNetAfterDiscount / baseForShares) : 0;
+                        const itemExemptShare = exempt * shareRatio;
+                        const itemSpecialShare = special * shareRatio;
+                        const itemTax = itemNetAfterDiscount * (taxPct / 100);
+
+                        return (itemNetAfterDiscount + itemTax + itemExemptShare + itemSpecialShare) * multiplier;
+                    };
+
                     const paidItems = rawInvoices
                         .filter(inv => inv.status === 'Pagada')
                         .filter(inv => {
@@ -2542,7 +2568,8 @@ export const Reports: React.FC = () => {
                                     groupedData.set(category, { total: 0, items: [] });
                                 }
                                 const group = groupedData.get(category)!;
-                                const amount = Number(item.total_price) || 0;
+                                const amountNet = Number(item.total_price) || 0;
+                                const amount = computeGrossItemAmount(inv, amountNet);
                                 group.total += amount;
                                 group.items.push({
                                     date: inv.invoice_date,
