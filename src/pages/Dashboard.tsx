@@ -1,6 +1,6 @@
 import { toast } from 'sonner';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabase/client';
@@ -18,6 +18,19 @@ import {
 } from 'recharts';
 import { WeatherWidget } from '../components/WeatherWidget';
 import { fetchAgrometItemsResumen, fetchAgrometPpDay } from '../services/agromet';
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const toRad = (v: number) => (v * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 export const Dashboard: React.FC = () => {
   const { companies, selectedCompany, loading, selectCompany, addCompany, refreshCompanies } = useCompany();
@@ -56,24 +69,25 @@ export const Dashboard: React.FC = () => {
   const [rainStation, setRainStation] = useState<{ id: string; name: string } | null>(null);
   const rainSyncedRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    if (selectedCompany) {
-      loadDashboardData();
-    }
-  }, [selectedCompany]);
+  const getNearestStation = useCallback((lat: number, lon: number, stations: any[]) => {
+    const candidatesInia = stations.filter((s: any) => (s.api || '').toUpperCase() === 'INIA');
+    const list = candidatesInia.length > 0 ? candidatesInia : stations;
 
-  const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const toRad = (v: number) => (v * Math.PI) / 180;
-    const R = 6371;
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  };
+    let best: any = null;
+    let bestD = Infinity;
+    for (const st of list) {
+      const d = haversineKm(lat, lon, st.lat, st.lon);
+      if (d < bestD) {
+        bestD = d;
+        best = st;
+      }
+    }
+    if (!best) return null;
+
+    const source = String(best.source || '').toUpperCase();
+    const stationCode = `${source || 'EXT'}-${best.id}`;
+    return { best, stationCode };
+  }, []);
 
   useEffect(() => {
     const loadNearestStation = async () => {
@@ -126,27 +140,7 @@ export const Dashboard: React.FC = () => {
     };
 
     loadNearestStation();
-  }, [selectedCompany, rainScope, rainFieldId, rainSectorId, companyFields]);
-
-  const getNearestStation = (lat: number, lon: number, stations: any[]) => {
-    const candidatesInia = stations.filter((s: any) => (s.api || '').toUpperCase() === 'INIA');
-    const list = candidatesInia.length > 0 ? candidatesInia : stations;
-
-    let best: any = null;
-    let bestD = Infinity;
-    for (const st of list) {
-      const d = haversineKm(lat, lon, st.lat, st.lon);
-      if (d < bestD) {
-        bestD = d;
-        best = st;
-      }
-    }
-    if (!best) return null;
-
-    const source = String(best.source || '').toUpperCase();
-    const stationCode = `${source || 'EXT'}-${best.id}`;
-    return { best, stationCode };
-  };
+  }, [selectedCompany, rainScope, rainFieldId, rainSectorId, companyFields, getNearestStation]);
 
   const backfillAgrometRainSelected = async () => {
     if (!selectedCompany) return;
@@ -248,9 +242,9 @@ export const Dashboard: React.FC = () => {
     } finally {
       setRainSyncing(false);
     }
-  };
+  }
 
-  const syncAgrometRain = async () => {
+  const syncAgrometRain = useCallback(async () => {
     if (!selectedCompany) return;
     if (!companyFields || companyFields.length === 0) return;
 
@@ -371,13 +365,13 @@ export const Dashboard: React.FC = () => {
     } finally {
       setRainSyncing(false);
     }
-  };
+  }, [companyFields, getNearestStation, selectedCompany]);
 
   useEffect(() => {
     if (selectedCompany) {
-      syncAgrometRain();
+      void syncAgrometRain();
     }
-  }, [selectedCompany, companyFields]);
+  }, [selectedCompany, companyFields, syncAgrometRain]);
 
   // Keyboard navigation for presentation mode
   useEffect(() => {
@@ -415,7 +409,7 @@ export const Dashboard: React.FC = () => {
     }
   };
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
     if (!selectedCompany) return;
 
     try {
@@ -426,12 +420,10 @@ export const Dashboard: React.FC = () => {
         .eq('company_id', selectedCompany.id);
 
       setCompanyFields(fields || []);
-      if (!rainFieldId && fields && fields.length > 0) {
-        setRainFieldId(fields[0].id);
-      }
-      if (!rainSectorId && fields && fields.length > 0 && fields[0].sectors && fields[0].sectors.length > 0) {
-        setRainSectorId(fields[0].sectors[0].id);
-      }
+      setRainFieldId((prev) => prev || (fields && fields.length > 0 ? fields[0].id : prev));
+      setRainSectorId((prev) =>
+        prev || (fields && fields.length > 0 && fields[0].sectors && fields[0].sectors.length > 0 ? fields[0].sectors[0].id : prev)
+      );
 
       const totalFields = fields?.length || 0;
       const totalHectares = fields?.reduce((sum, field) => sum + Number(field.total_hectares), 0) || 0;
@@ -856,7 +848,13 @@ export const Dashboard: React.FC = () => {
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     }
-  };
+  }, [selectedCompany]);
+
+  useEffect(() => {
+    if (selectedCompany) {
+      void loadDashboardData();
+    }
+  }, [selectedCompany, loadDashboardData]);
 
   const handleDeleteCompany = async () => {
     if (!selectedCompany || !user) return;

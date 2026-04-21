@@ -1,9 +1,9 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Users, UserPlus, Trash2, Briefcase, Plus, Loader2, Download } from 'lucide-react';
+import { Users, UserPlus, Trash2, Briefcase, Loader2, Download } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -73,28 +73,7 @@ export const Workers: React.FC = () => {
   const [workerName, setWorkerName] = useState('');
   const [laborType, setLaborType] = useState('');
 
-  useEffect(() => {
-    if (selectedCompany) {
-      loadData();
-    }
-  }, [selectedCompany]);
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-        await Promise.all([
-            loadWorkers(),
-            loadSectorsAndFields(),
-            loadCosts()
-        ]);
-    } catch (error) {
-        console.error('Error loading data:', error);
-    } finally {
-        setLoading(false);
-    }
-  };
-
-  const loadWorkers = async () => {
+  const loadWorkers = useCallback(async () => {
       if (!selectedCompany) return;
       const { data } = await supabase
           .from('workers')
@@ -102,9 +81,9 @@ export const Workers: React.FC = () => {
           .eq('company_id', selectedCompany.id)
           .order('name');
       setWorkers(data || []);
-  };
+  }, [selectedCompany]);
 
-  const loadSectorsAndFields = async () => {
+  const loadSectorsAndFields = useCallback(async () => {
     if (!selectedCompany) return;
     
     const { data: fieldsData } = await supabase
@@ -119,17 +98,35 @@ export const Workers: React.FC = () => {
         .eq('fields.company_id', selectedCompany.id);
     
     setSectors(sectorsData || []);
-  };
+  }, [selectedCompany]);
 
-  const loadCosts = async () => {
-      if (!selectedCompany) return;
-      const { data } = await supabase
-          .from('worker_costs')
-          .select('*, workers(name), sectors(name)')
-          .eq('company_id', selectedCompany.id)
-          .order('date', { ascending: false });
-      setCosts(data || []);
-  };
+  const loadCosts = useCallback(async () => {
+    if (!selectedCompany) return;
+    const { data } = await supabase
+      .from('worker_costs')
+      .select('*, workers(name), sectors(name)')
+      .eq('company_id', selectedCompany.id)
+      .order('date', { ascending: false });
+
+    setCosts(data || []);
+  }, [selectedCompany]);
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      await Promise.all([loadWorkers(), loadSectorsAndFields(), loadCosts()]);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [loadCosts, loadSectorsAndFields, loadWorkers]);
+
+  useEffect(() => {
+    if (selectedCompany) {
+      void loadData();
+    }
+  }, [selectedCompany, loadData]);
 
   const handleCreateWorker = async (e: React.FormEvent) => {
       e.preventDefault();

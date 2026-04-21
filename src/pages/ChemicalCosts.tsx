@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
@@ -39,12 +39,6 @@ export const ChemicalCosts: React.FC = () => {
 
   const [viewMode, setViewMode] = useState<'list' | 'summary'>('summary');
 
-  useEffect(() => {
-    if (selectedCompany) {
-      loadData();
-    }
-  }, [selectedCompany, selectedYear]);
-
   const fetchYearlyExchangeRates = async (year: number) => {
     try {
       const response = await fetch(`https://mindicador.cl/api/dolar/${year}`);
@@ -81,7 +75,7 @@ export const ChemicalCosts: React.FC = () => {
     return 0; // Fallback if not found
   };
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!selectedCompany) return;
     setLoading(true);
     try {
@@ -154,7 +148,13 @@ export const ChemicalCosts: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedCompany, selectedYear]);
+
+  useEffect(() => {
+    if (selectedCompany) {
+      void loadData();
+    }
+  }, [selectedCompany, selectedYear, loadData]);
 
   const filteredItems = items.filter(item => 
     item.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||

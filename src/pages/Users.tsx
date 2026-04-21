@@ -1,6 +1,6 @@
 import { toast } from 'sonner';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany, UserRole } from '../contexts/CompanyContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabase/client';
@@ -23,31 +23,23 @@ export const Users: React.FC = () => {
   
   // Admin Company Management
   const [allCompanies, setAllCompanies] = useState<any[]>([]);
-  const [showAdminPanel, setShowAdminPanel] = useState(false);
   
   // Form
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserRole>('editor');
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-  useEffect(() => {
-    if (selectedCompany) {
-      loadMembers();
-    }
-    checkSystemAdmin();
-  }, [selectedCompany]);
-
-  const checkSystemAdmin = async () => {
-    if (user?.email === 'dino.reginato@gmail.com') {
-        loadAllCompaniesAdmin();
-    }
-  };
-
-  const loadAllCompaniesAdmin = async () => {
+  const loadAllCompaniesAdmin = useCallback(async () => {
       const { data, error } = await supabase.rpc('get_all_companies_admin');
       if (data) setAllCompanies(data);
       if (error) console.error('Error loading admin companies:', error);
-  };
+  }, []);
+
+  const checkSystemAdmin = useCallback(async () => {
+    if (user?.email === 'dino.reginato@gmail.com') {
+      await loadAllCompaniesAdmin();
+    }
+  }, [loadAllCompaniesAdmin, user?.email]);
 
   const handleDeleteCompanyAdmin = async (id: string, name: string) => {
       if (!window.confirm(`PELIGRO: ¿Estás seguro de eliminar la empresa "${name}" y TODOS sus datos? Esta acción es irreversible.`)) return;
@@ -62,7 +54,7 @@ export const Users: React.FC = () => {
       }
   };
 
-  const loadMembers = async () => {
+  const loadMembers = useCallback(async () => {
     if (!selectedCompany) return;
     setLoading(true);
     try {
@@ -85,7 +77,14 @@ export const Users: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedCompany]);
+
+  useEffect(() => {
+    if (selectedCompany) {
+      void loadMembers();
+    }
+    void checkSystemAdmin();
+  }, [selectedCompany, loadMembers, checkSystemAdmin]);
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();

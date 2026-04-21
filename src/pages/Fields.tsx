@@ -1,9 +1,9 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Plus, Map, MapPin, ChevronDown, ChevronRight, Loader2, Edit2, X, Check, Trash2, DollarSign } from 'lucide-react';
+import { Plus, Map, MapPin, ChevronDown, ChevronRight, Loader2, Edit2, X, Check, Trash2 } from 'lucide-react';
 
 interface Sector {
   id: string;
@@ -62,13 +62,7 @@ export const Fields: React.FC = () => {
   const [editSectorLatitude, setEditSectorLatitude] = useState('');
   const [editSectorLongitude, setEditSectorLongitude] = useState('');
 
-  useEffect(() => {
-    if (selectedCompany) {
-      loadFields();
-    }
-  }, [selectedCompany]);
-
-  const loadFields = async () => {
+  const loadFields = useCallback(async () => {
     if (!selectedCompany) return;
     setLoading(true);
     try {
@@ -85,7 +79,7 @@ export const Fields: React.FC = () => {
       const allSectors = fieldsData?.flatMap(f => f.sectors || []) || [];
       const sectorIds = allSectors.map(s => s.id);
 
-      let laborMap: Record<string, number> = {};
+      const laborMap: Record<string, number> = {};
 
       if (sectorIds.length > 0) {
         const { data: laborData, error: laborError } = await supabase
@@ -117,7 +111,13 @@ export const Fields: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedCompany]);
+
+  useEffect(() => {
+    if (selectedCompany) {
+      void loadFields();
+    }
+  }, [selectedCompany, loadFields]);
 
   const handleCreateField = async (e: React.FormEvent) => {
     e.preventDefault();

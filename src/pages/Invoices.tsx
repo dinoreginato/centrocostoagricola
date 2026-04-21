@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Plus, FileText, Calendar, Trash2, Save, Loader2, Filter, ChevronDown, Check, Download, Upload, RefreshCw, Search, Printer, ChevronLeft, ChevronRight, MapPin, Database } from 'lucide-react';
+import { Plus, FileText, Trash2, Save, Loader2, Check, Download, Upload, RefreshCw, Search, Printer, ChevronLeft, ChevronRight, MapPin, Database } from 'lucide-react';
 import { InvoicePrint } from '../components/InvoicePrint';
 
 interface InvoiceItem {
@@ -78,8 +78,6 @@ export const Invoices: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [machines, setMachines] = useState<{id: string, name: string}[]>([]);
   const [sectors, setSectors] = useState<{id: string, name: string, type: 'sector' | 'field' | 'company', hectares?: number, field_id?: string}[]>([]); // Enhanced for multi-level assignment
-  const [labors, setLabors] = useState<{id: string, name: string}[]>([]); // To store actual labor assignments if needed, or just types
-  const laborTypes = ['Cosecha', 'Poda', 'Raleo', 'Aplicación', 'Fertilización', 'Riego', 'Siembra', 'Preparación Suelo', 'Otros']; // Hardcoded common labor types
 
   const [laborType, setLaborType] = useState<string>(''); // For labor assignment
 
@@ -121,15 +119,6 @@ export const Invoices: React.FC = () => {
   const [suppliers, setSuppliers] = useState<string[]>([]);
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
 
-  // When Net Amount changes, auto-calculate tax
-  const handleNetTotalChange = (neto: number) => {
-      // Find the "total" item if it exists, or create a generic one
-      if (items.length === 0) {
-          // If no items, we can't easily set net, but if they enter it, we could create a dummy item
-          // For now, we rely on items to build the net.
-      }
-  };
-
   // Item Form State
   const [currentItem, setCurrentItem] = useState<Partial<InvoiceItem>>({
     product_id: '',
@@ -142,7 +131,7 @@ export const Invoices: React.FC = () => {
     destination_type: 'none',
     destination_id: '',
   });
-  const [isNewProduct, setIsNewProduct] = useState(false);
+  const [, setIsNewProduct] = useState(false);
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
   const [officialSuggestions, setOfficialSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -334,7 +323,7 @@ export const Invoices: React.FC = () => {
       query = query.eq('status', filterStatus);
     }
 
-    const { data, error } = await query;
+    const { data } = await query;
 
     if (data) {
       // Store all for search and filtering
@@ -655,7 +644,7 @@ export const Invoices: React.FC = () => {
     };
   };
 
-  const { subtotal, tax, total, isCreditNote } = calculateTotals();
+  const { subtotal, tax, total } = calculateTotals();
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const xmlInputRef = React.useRef<HTMLInputElement>(null); // New ref for XML
@@ -677,7 +666,7 @@ export const Invoices: React.FC = () => {
         reader.onload = (event) => {
             try {
                 // Ensure proper decoding of ISO-8859-1 which is common in Chilean SII XMLs
-                let xmlText = event.target?.result as string;
+                const xmlText = event.target?.result as string;
                 
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(xmlText, "text/xml");
@@ -700,7 +689,7 @@ export const Invoices: React.FC = () => {
                     try {
                         // This handles cases where UTF-8 is misread as ISO-8859-1 (the "�" symbol issue)
                         return decodeURIComponent(escape(text));
-                    } catch (e) {
+                    } catch (_e) {
                         // Fallback replacement for common corrupted Spanish characters
                         return text
                             .replace(/Ã‘/g, 'Ñ')

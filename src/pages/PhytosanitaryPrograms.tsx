@@ -1,8 +1,8 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
-import { Plus, Trash2, Edit, Save, Loader2, ChevronDown, ChevronRight, X, Upload } from 'lucide-react';
+import { Plus, Trash2, Edit, ChevronDown, ChevronRight, X, Upload } from 'lucide-react';
 import { read, utils } from 'xlsx';
 
 interface Program {
@@ -54,13 +54,7 @@ export const PhytosanitaryPrograms: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (selectedCompany) {
-      loadData();
-    }
-  }, [selectedCompany]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
       // Load Programs
@@ -108,7 +102,13 @@ export const PhytosanitaryPrograms: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedCompany]);
+
+  useEffect(() => {
+    if (selectedCompany) {
+      void loadData();
+    }
+  }, [selectedCompany, loadData]);
 
   const toggleEventExpansion = (eventId: string) => {
     const newExpanded = new Set(expandedEvents);

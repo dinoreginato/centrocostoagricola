@@ -1,5 +1,5 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
@@ -153,12 +153,6 @@ export const Applications: React.FC = () => {
     objective: ''
   });
 
-  useEffect(() => {
-    if (selectedCompany) {
-      loadData();
-    }
-  }, [selectedCompany]);
-
   // Update dose unit and suggest objective when product changes
   useEffect(() => {
     if (currentItem.product_id) {
@@ -220,6 +214,7 @@ export const Applications: React.FC = () => {
     currentItem.dose_input_type, 
     currentItem.dose_unit, 
     currentItem.product_id, 
+    currentItem.quantity,
     selectedSectorId, 
     selectedFieldId, 
     waterVolumePerHectare, 
@@ -227,7 +222,7 @@ export const Applications: React.FC = () => {
     products
   ]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!selectedCompany) return;
     
     // Load fields with sectors
@@ -297,7 +292,13 @@ export const Applications: React.FC = () => {
     } catch (err) {
         console.error('Error calculating fuel price:', err);
     }
-  };
+  }, [selectedCompany]);
+
+  useEffect(() => {
+    if (selectedCompany) {
+      void loadData();
+    }
+  }, [selectedCompany, loadData]);
 
   const handleAddItem = () => {
     const product = products.find(p => p.id === currentItem.product_id);

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Tractor, ArrowRight, Save, Loader2, CheckCircle2, AlertCircle, Trash2, Edit2, FileText, Printer, RefreshCw, Copy, Download } from 'lucide-react';
+import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, FileText, RefreshCw, Copy, Download } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { utils, writeFile } from 'xlsx';
@@ -200,7 +200,7 @@ export const Labors: React.FC = () => {
     });
 
     // Optimización: Usar RPC para obtener el total asignado de manera eficiente y escalable
-    let assignmentMap = new Map<string, number>();
+    const assignmentMap = new Map<string, number>();
     
     try {
         const { data: summary, error: rpcError } = await supabase
@@ -433,7 +433,7 @@ export const Labors: React.FC = () => {
 
         toast('Todas las asignaciones han sido eliminadas.');
         loadData();
-    } catch (error: any) {
+    } catch (_error: any) {
          // Fallback implementation
          try {
             const { data: assignments, error: fetchError } = await supabase

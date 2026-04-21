@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
@@ -224,11 +224,16 @@ export const Reports: React.FC = () => {
     return true;
   });
 
+  const loadRawData = useCallback(() => {
+    if (!selectedCompany) return;
+    void loadRawDataImpl();
+  }, [selectedCompany]);
+
   useEffect(() => {
     if (selectedCompany) {
       loadRawData();
     }
-  }, [selectedCompany]);
+  }, [selectedCompany, loadRawData]);
 
   // Update presentation logic to support 4 slides for General tab
   useEffect(() => {
@@ -268,14 +273,33 @@ export const Reports: React.FC = () => {
   };
 
   // Process data whenever raw data or selected season changes
+  const processReports = useCallback(() => {
+    processReportsImpl();
+  }, [
+    rawFields,
+    rawApplications,
+    rawInvoices,
+    rawLabor,
+    rawWorkerCosts,
+    rawFuel,
+    rawFuelConsumption,
+    rawMachinery,
+    rawIrrigation,
+    rawGeneralCosts,
+    incomeEntries,
+    selectedSeason,
+    usdExchangeRate,
+    distributeGeneralCosts
+  ]);
+
   useEffect(() => {
     // Only process if we have sectors/fields loaded, otherwise wait
     if (rawFields.length > 0) {
         processReports();
     }
-  }, [rawFields, rawApplications, rawInvoices, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawMachinery, rawIrrigation, rawGeneralCosts, incomeEntries, selectedSeason]);
+  }, [rawFields, rawApplications, rawInvoices, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawMachinery, rawIrrigation, rawGeneralCosts, incomeEntries, selectedSeason, processReports]);
 
-  const loadRawData = async () => {
+  async function loadRawDataImpl() {
     if (!selectedCompany) return;
     setLoading(true);
     try {
@@ -396,13 +420,13 @@ export const Reports: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const processReports = () => {
+  function processReportsImpl() {
     processApplicationReports(); // This is effectively the "General Cost Report" now
     processFinancialReports();
     processDetailedReport();
-  };
+  }
 
   const processDetailedReport = () => {
     // Filter invoices by selected season

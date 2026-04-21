@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { LayoutList, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2 } from 'lucide-react';
+import { LayoutList, ArrowRight, Save, Loader2, AlertCircle, Trash2 } from 'lucide-react';
 
 interface GeneralCostItem {
   id: string; // invoice_item_id
@@ -67,7 +67,6 @@ export const GeneralCosts: React.FC = () => {
   const [distributeBy, setDistributeBy] = useState<'sector' | 'field' | 'company'>('sector');
   const [selectedFieldId, setSelectedFieldId] = useState<string>('');
   const [fieldTotalAmount, setFieldTotalAmount] = useState<number>(0);
-  const [manualDescription, setManualDescription] = useState<string>(''); // For manual entries if we add that later
   
   // Editing State
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
@@ -153,7 +152,6 @@ export const GeneralCosts: React.FC = () => {
         // Normalize category: lower case, remove accents
         const rawCat = item.category || item.products?.category || '';
         const cat = rawCat.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-        const prodName = (item.products?.name || '').toLowerCase().trim();
         
         // Always exclude CORE modules and CHEMICALS
         // We now primarily check CATEGORY.
@@ -225,7 +223,7 @@ export const GeneralCosts: React.FC = () => {
         const itemTaxAmount = itemNet * (taxPercent / 100);
         const grossAmount = itemNet + itemTaxAmount + itemExemptShare + itemSpecialShare;
         
-        let total = isCreditNote ? -Math.abs(grossAmount) : Math.abs(grossAmount);
+        const total = isCreditNote ? -Math.abs(grossAmount) : Math.abs(grossAmount);
         
         // Ensure total is positive for logic, we handle negative signs if needed but usually costs are positive to distribute
         // If it's a credit note, we need to treat its total as negative so the assigned amount (also negative) cancels it out.
@@ -311,18 +309,6 @@ export const GeneralCosts: React.FC = () => {
     setDistributeBy('sector');
     setAllocations([{ sector_id: '', amount: cost.remaining_amount }]);
     setFieldTotalAmount(cost.remaining_amount);
-  };
-
-  const handleEditAssignment = (assignment: HistoryItem) => {
-      setEditingAssignmentId(assignment.id);
-      setSelectedCostId(assignment.invoice_item_id); // If null (manual entry), this might be null
-      setAssignedDate(assignment.assigned_date);
-      setAllocations([{ 
-          sector_id: assignment.sector_id, // We need sector_id in history fetch!
-          amount: assignment.assigned_amount 
-      }]);
-      // Note: Editing manual entries or entries without invoice link might need special handling
-      // For now assume all are linked
   };
 
   const handleDeleteAssignment = async (id: string) => {

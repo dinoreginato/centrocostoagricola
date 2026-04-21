@@ -145,7 +145,7 @@ export const Irrigation: React.FC = () => {
     });
 
     // Optimización: Usar RPC para obtener el total asignado de manera eficiente y escalable
-    let assignmentMap = new Map<string, number>();
+    const assignmentMap = new Map<string, number>();
     
     try {
         const { data: summary, error: rpcError } = await supabase
@@ -312,7 +312,7 @@ export const Irrigation: React.FC = () => {
 
         toast('Todas las asignaciones han sido eliminadas.');
         loadData();
-    } catch (error: any) {
+    } catch (_error: any) {
          // Fallback implementation
          try {
             const { data: assignments, error: fetchError } = await supabase

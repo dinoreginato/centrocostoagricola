@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Fuel as FuelIcon, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Plus, Droplet } from 'lucide-react';
+import { Fuel as FuelIcon, Save, Loader2, Trash2, Edit2, Droplet } from 'lucide-react';
 
 interface FuelLog {
   id: string;
@@ -179,10 +179,6 @@ export const Fuel: React.FC = () => {
         `)
         .eq('invoices.company_id', selectedCompany.id);
 
-    const targetCategories = activeTab === 'diesel' 
-        ? ['petroleo', 'diesel']
-        : ['bencina', 'gasolina', 'combustible'];
-        
     const fuelItems = items?.filter((item: any) => {
         const cat = (item.category || item.products?.category || '').toLowerCase().trim();
         const productName = (item.products?.name || '').toLowerCase();
@@ -240,9 +236,6 @@ export const Fuel: React.FC = () => {
         if (!type) return;
 
         // Date Grouping
-        const date = new Date(item.invoices.invoice_date);
-        // Fix timezone issue by using UTC or just simple string parsing if format is YYYY-MM-DD
-        // invoice_date from supabase is usually YYYY-MM-DD string.
         const dateStr = item.invoices.invoice_date; 
         const monthKey = dateStr.substring(0, 7); // YYYY-MM
 

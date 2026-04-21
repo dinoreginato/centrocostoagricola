@@ -1,6 +1,6 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect } from 'react';
-import { DollarSign, Plus, Save, Loader2, AlertCircle, Trash2, Edit2, Download } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Plus, Save, Loader2, AlertCircle, Trash2, Edit2, Download } from 'lucide-react';
 import { supabase } from '../supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
@@ -41,13 +41,7 @@ export function Incomes() {
   // Constants
   const [usdExchangeRate, setUsdExchangeRate] = useState<number>(950);
 
-  useEffect(() => {
-    if (selectedCompany) {
-      loadData();
-    }
-  }, [selectedCompany]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
       const [incomesResponse, fieldsResponse, settingsResponse] = await Promise.all([
@@ -87,7 +81,13 @@ export function Incomes() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedCompany]);
+
+  useEffect(() => {
+    if (selectedCompany) {
+      void loadData();
+    }
+  }, [selectedCompany, loadData]);
 
   const handleSaveIncome = async (e: React.FormEvent) => {
     e.preventDefault();

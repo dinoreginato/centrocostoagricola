@@ -1,9 +1,9 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Package, Search, AlertTriangle, Edit, Trash2, X, Save, History, ArrowDownLeft, ArrowUpRight, Upload, Download, ShoppingCart } from 'lucide-react';
+import { Package, Search, AlertTriangle, Edit, Trash2, X, Save, History, ArrowDownLeft, ArrowUpRight, Upload, ShoppingCart } from 'lucide-react';
 import { read, utils } from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -80,7 +80,7 @@ export const Inventory: React.FC = () => {
 
       let mergedCount = 0;
 
-      for (const [key, group] of nameGroups.entries()) {
+      for (const [, group] of nameGroups.entries()) {
         if (group.length > 1) {
           // Sort by updated_at descending (newest first)
           group.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
@@ -222,13 +222,7 @@ export const Inventory: React.FC = () => {
   };
 
 
-  useEffect(() => {
-    if (selectedCompany) {
-      loadInventory();
-    }
-  }, [selectedCompany]);
-
-  const loadInventory = async () => {
+  const loadInventory = useCallback(async () => {
     if (!selectedCompany) return;
     setLoading(true);
     try {
@@ -265,7 +259,13 @@ export const Inventory: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedCompany]);
+
+  useEffect(() => {
+    if (selectedCompany) {
+      void loadInventory();
+    }
+  }, [selectedCompany, loadInventory]);
 
   const loadHistory = async (product: Product) => {
     setViewingHistory(product);
@@ -434,7 +434,7 @@ export const Inventory: React.FC = () => {
             .select('*')
             .eq('company_id', selectedCompany?.id);
             
-        let projectedNeeds = new Map<string, number>();
+        const projectedNeeds = new Map<string, number>();
         
         if (programsData && programsData.length > 0) {
             const useProjection = confirm('¿Desea incluir proyecciones de compras basadas en un Programa Fitosanitario?');
