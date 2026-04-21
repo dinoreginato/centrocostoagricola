@@ -8,6 +8,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { utils, writeFile } from 'xlsx';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
+import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
 
 const LABOR_TYPES = [
   'General',
@@ -145,23 +146,12 @@ export const Labors: React.FC = () => {
   const loadSectors = async () => {
     if (!selectedCompany) return;
     
-    // Load Fields
-    const { data: fieldsData } = await supabase
-        .from('fields')
-        .select('*')
-        .eq('company_id', selectedCompany.id);
+    const [fieldsData, sectorsData] = await Promise.all([
+      fetchCompanyFieldsBasic({ companyId: selectedCompany.id }),
+      fetchCompanySectorsBasic({ companyId: selectedCompany.id })
+    ]);
     setFields(fieldsData || []);
-
-    // We need sectors linked to fields of this company
-    const { data } = await supabase
-        .from('sectors')
-        .select(`
-            id, name, hectares, field_id,
-            fields!inner(company_id)
-        `)
-        .eq('fields.company_id', selectedCompany.id);
-    
-    setSectors(data || []);
+    setSectors(sectorsData || []);
   };
 
   const loadPendingLabors = async () => {

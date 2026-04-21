@@ -4,6 +4,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Plus, Map, MapPin, ChevronDown, ChevronRight, Loader2, Edit2, X, Check, Trash2 } from 'lucide-react';
+import { fetchFieldsWithLaborCosts } from '../services/fields';
 
 interface Sector {
   id: string;
@@ -66,45 +67,7 @@ export const Fields: React.FC = () => {
     if (!selectedCompany) return;
     setLoading(true);
     try {
-      // 1. Fetch Fields and Sectors
-      const { data: fieldsData, error: fieldsError } = await supabase
-        .from('fields')
-        .select('*, sectors(*)')
-        .eq('company_id', selectedCompany.id)
-        .order('created_at', { ascending: false });
-
-      if (fieldsError) throw fieldsError;
-
-      // 2. Fetch Labor Costs for these sectors
-      const allSectors = fieldsData?.flatMap(f => f.sectors || []) || [];
-      const sectorIds = allSectors.map(s => s.id);
-
-      const laborMap: Record<string, number> = {};
-
-      if (sectorIds.length > 0) {
-        const { data: laborData, error: laborError } = await supabase
-          .from('labor_assignments')
-          .select('sector_id, assigned_amount')
-          .in('sector_id', sectorIds);
-        
-        if (laborError) {
-             console.error('Error loading labor costs:', laborError);
-        } else {
-             laborData?.forEach(item => {
-                 laborMap[item.sector_id] = (laborMap[item.sector_id] || 0) + Number(item.assigned_amount);
-             });
-        }
-      }
-
-      // 3. Merge data
-      const fieldsWithCosts = fieldsData?.map(field => ({
-          ...field,
-          sectors: field.sectors?.map(sector => ({
-              ...sector,
-              total_labor_cost: laborMap[sector.id] || 0
-          }))
-      }));
-
+      const fieldsWithCosts = await fetchFieldsWithLaborCosts({ companyId: selectedCompany.id });
       setFields(fieldsWithCosts || []);
     } catch (error) {
       console.error('Error loading fields:', error);

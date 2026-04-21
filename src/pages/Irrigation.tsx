@@ -5,6 +5,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Droplets, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Layers } from 'lucide-react';
+import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
 
 interface IrrigationItem {
   id: string; // invoice_item_id
@@ -98,22 +99,11 @@ export const Irrigation: React.FC = () => {
   const loadSectorsAndFields = async () => {
     if (!selectedCompany) return;
     
-    // Load Fields
-    const { data: fieldsData } = await supabase
-        .from('fields')
-        .select('id, name, total_hectares')
-        .eq('company_id', selectedCompany.id);
+    const [fieldsData, sectorsData] = await Promise.all([
+      fetchCompanyFieldsBasic({ companyId: selectedCompany.id }),
+      fetchCompanySectorsBasic({ companyId: selectedCompany.id })
+    ]);
     setFields(fieldsData || []);
-
-    // Load Sectors
-    const { data: sectorsData } = await supabase
-        .from('sectors')
-        .select(`
-            id, name, hectares, field_id,
-            fields!inner(company_id)
-        `)
-        .eq('fields.company_id', selectedCompany.id);
-    
     setSectors(sectorsData || []);
   };
 

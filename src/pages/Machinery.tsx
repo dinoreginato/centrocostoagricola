@@ -8,6 +8,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { utils, writeFile } from 'xlsx';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
+import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
 
 interface MachineryItem {
   id: string; // invoice_item_id
@@ -148,22 +149,11 @@ export const Machinery: React.FC = () => {
   const loadSectorsAndFields = async () => {
     if (!selectedCompany) return;
     
-    // Load Fields
-    const { data: fieldsData } = await supabase
-        .from('fields')
-        .select('id, name, total_hectares')
-        .eq('company_id', selectedCompany.id);
+    const [fieldsData, sectorsData] = await Promise.all([
+      fetchCompanyFieldsBasic({ companyId: selectedCompany.id }),
+      fetchCompanySectorsBasic({ companyId: selectedCompany.id })
+    ]);
     setFields(fieldsData || []);
-
-    // Load Sectors
-    const { data: sectorsData } = await supabase
-        .from('sectors')
-        .select(`
-            id, name, hectares, field_id,
-            fields!inner(company_id)
-        `)
-        .eq('fields.company_id', selectedCompany.id);
-    
     setSectors(sectorsData || []);
   };
 

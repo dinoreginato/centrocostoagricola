@@ -7,6 +7,7 @@ import { Package, Search, AlertTriangle, Edit, Trash2, X, Save, History, ArrowDo
 import { read, utils } from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { deleteOrArchiveInventoryProduct, fetchInventoryHistory, fetchInventoryProducts, mergeDuplicateInventoryProducts, searchOfficialProducts, updateInventoryProduct } from '../services/inventory';
 
 interface Product {
   id: string;
@@ -69,55 +70,7 @@ export const Inventory: React.FC = () => {
     if (!window.confirm('¿Desea buscar y fusionar productos duplicados? (Se unificará el stock bajo el producto más reciente y se borrarán los repetidos)')) return;
     setLoading(true);
     try {
-      // Find duplicates by exact name (case insensitive)
-      const nameGroups = new Map<string, Product[]>();
-      
-      products.forEach(p => {
-        const key = p.name.toLowerCase().trim();
-        if (!nameGroups.has(key)) nameGroups.set(key, []);
-        nameGroups.get(key)!.push(p);
-      });
-
-      let mergedCount = 0;
-
-      for (const [, group] of nameGroups.entries()) {
-        if (group.length > 1) {
-          // Sort by updated_at descending (newest first)
-          group.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
-          
-          const master = group[0];
-          const duplicates = group.slice(1);
-          
-          // Calculate new total stock and weighted average cost
-          let totalStock = Number(master.current_stock);
-          let totalValue = Number(master.current_stock) * Number(master.average_cost);
-
-          for (const dup of duplicates) {
-             totalStock += Number(dup.current_stock);
-             totalValue += Number(dup.current_stock) * Number(dup.average_cost);
-             
-             // Reassign inventory movements to master
-             await supabase.from('inventory_movements').update({ product_id: master.id }).eq('product_id', dup.id);
-             // Reassign application items to master
-             await supabase.from('application_items').update({ product_id: master.id }).eq('product_id', dup.id);
-             // Reassign invoice items to master
-             await supabase.from('invoice_items').update({ product_id: master.id }).eq('product_id', dup.id);
-             
-             // Delete the duplicate
-             await supabase.from('products').delete().eq('id', dup.id);
-          }
-
-          const newAvgCost = totalStock > 0 ? totalValue / totalStock : master.average_cost;
-
-          // Update master
-          await supabase.from('products').update({
-             current_stock: totalStock,
-             average_cost: newAvgCost
-          }).eq('id', master.id);
-
-          mergedCount += duplicates.length;
-        }
-      }
+      const { mergedCount } = await mergeDuplicateInventoryProducts({ products: products as any });
 
       if (mergedCount > 0) {
         toast.success(`Se fusionaron ${mergedCount} productos duplicados exitosamente.`);
@@ -226,30 +179,11 @@ export const Inventory: React.FC = () => {
     if (!selectedCompany) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .eq('company_id', selectedCompany.id)
-        .order('name');
+      const chemicalProducts = await fetchInventoryProducts({ companyId: selectedCompany.id });
+      setProducts(chemicalProducts as any);
 
-      if (error) throw error;
-      
-      const AGRO_KEYWORDS = [
-        'fertilizante', 'plaguicida', 'insecticida', 'fungicida', 'herbicida', 
-        'quimico', 'agro', 'urea', 'salitre', 'potasio', 'fosforo', 'nitrato', 'sulfato'
-      ];
-      
-      const chemicalProducts = (data || []).filter(product => {
-        const cat = (product.category || '').toLowerCase();
-        const name = product.name.toLowerCase();
-        const match = AGRO_KEYWORDS.some(term => cat.includes(term) || name.includes(term));
-        return match;
-      });
-
-      setProducts(chemicalProducts);
-      
       if (chemicalProducts.length > 0) {
-        const cats = Array.from(new Set(chemicalProducts.map(p => p.category))).filter(Boolean).sort();
+        const cats = Array.from(new Set(chemicalProducts.map((p: any) => p.category))).filter(Boolean).sort();
         setAvailableCategories(cats);
       } else {
         setAvailableCategories([]);
@@ -271,26 +205,8 @@ export const Inventory: React.FC = () => {
     setViewingHistory(product);
     setLoadingHistory(true);
     try {
-        const { data, error } = await supabase
-            .from('inventory_movements')
-            .select(`
-                *,
-                invoice_items (
-                    invoice:invoices (number, supplier, date)
-                ),
-                application_items (
-                    application:applications (
-                        application_date, 
-                        field:fields(name), 
-                        sector:sectors(name)
-                    )
-                )
-            `)
-            .eq('product_id', product.id)
-            .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        setHistoryData(data || []);
+        const data = await fetchInventoryHistory({ productId: product.id });
+        setHistoryData(data as any);
     } catch (error) {
         console.error('Error loading history:', error);
         toast.error('Error al cargar historial');
@@ -308,29 +224,10 @@ export const Inventory: React.FC = () => {
     try {
       if (!window.confirm(`¿Estás seguro de eliminar el producto "${name}" de tu bodega local?\n\n(Esto NO borrará las facturas históricas donde se haya comprado, solo lo ocultará de esta vista).`)) return;
 
-      const { error: deleteError } = await supabase.from('products').delete().eq('id', id);
-      
-      // If there's a foreign key constraint error (e.g. from invoice_items), 
-      // we do a "soft delete" or force deletion depending on requirements.
-      // Since users want it removed from view but it has invoices, the standard Postgres 
-      // setup will block DELETE. Instead of failing, we will catch the error and hide it.
-      if (deleteError) {
-          if (deleteError.code === '23503') { // Foreign key violation
-             toast(`Este producto tiene historial contable y no puede ser borrado físicamente de la base de datos para no romper la contabilidad.\n\nEn su lugar, ajustaremos su stock a 0 y lo quitaremos de tu vista principal.`);
-             // Soft delete workaround: update stock to 0 and maybe change category to 'Archivado'
-             await supabase.from('products').update({ 
-                 current_stock: 0, 
-                 minimum_stock: 0,
-                 category: 'Archivado' 
-             }).eq('id', id);
-             
-             // Remove from current UI state
-             setProducts(products.filter(p => p.id !== id));
-             return;
-          }
-          throw deleteError;
+      const res = await deleteOrArchiveInventoryProduct({ productId: id });
+      if (res.mode === 'archived') {
+        toast(`Este producto tiene historial contable y no puede ser borrado físicamente de la base de datos para no romper la contabilidad.\n\nEn su lugar, ajustaremos su stock a 0 y lo quitaremos de tu vista principal.`);
       }
-      
       setProducts(products.filter(p => p.id !== id));
       toast('Producto eliminado correctamente');
 
@@ -362,16 +259,13 @@ export const Inventory: React.FC = () => {
   };
 
   const searchOfficialForEdit = async (query: string) => {
-      if (query.length < 3) {
-          setEditSuggestions([]);
-          return;
+      try {
+        const data = await searchOfficialProducts({ query, limit: 5 });
+        setEditSuggestions(data || []);
+      } catch (error) {
+        console.error(error);
+        setEditSuggestions([]);
       }
-      const { data } = await supabase
-          .from('official_products')
-          .select('*')
-          .ilike('commercial_name', `%${query}%`)
-          .limit(5);
-      setEditSuggestions(data || []);
   };
 
   const selectOfficialForEdit = (official: any) => {
@@ -392,23 +286,20 @@ export const Inventory: React.FC = () => {
     if (!editingProduct || !editForm.name) return;
 
     try {
-      const { error } = await supabase
-        .from('products')
-        .update({
+      await updateInventoryProduct({
+        productId: editingProduct.id,
+        patch: {
           name: editForm.name,
           category: editForm.category,
           unit: editForm.unit,
-          current_stock: editForm.current_stock,
-          minimum_stock: editForm.minimum_stock,
-          average_cost: editForm.average_cost,
-          active_ingredient: editForm.active_ingredient,
-          lot_number: editForm.lot_number,
-          expiration_date: editForm.expiration_date ? editForm.expiration_date : null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', editingProduct.id);
-
-      if (error) throw error;
+          current_stock: editForm.current_stock as any,
+          minimum_stock: editForm.minimum_stock as any,
+          average_cost: editForm.average_cost as any,
+          active_ingredient: editForm.active_ingredient as any,
+          lot_number: editForm.lot_number as any,
+          expiration_date: editForm.expiration_date ? (editForm.expiration_date as any) : null
+        }
+      });
 
       setProducts(products.map(p => 
         p.id === editingProduct.id 
