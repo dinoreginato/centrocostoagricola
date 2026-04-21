@@ -5,6 +5,7 @@ import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Plus, FileText, Trash2, Save, Loader2, Check, Download, Upload, RefreshCw, Search, Printer, ChevronLeft, ChevronRight, MapPin, Database } from 'lucide-react';
 import { InvoicePrint } from '../components/InvoicePrint';
+import { fetchInvoiceDestinations, fetchInvoiceProducts, fetchInvoicesForCompany, fetchInvoiceSuppliers } from '../services/invoices';
 
 interface InvoiceItem {
   id?: string;
@@ -167,98 +168,13 @@ export const Invoices: React.FC = () => {
     
     setDestinationsLoading(true);
     try {
-        // --- 1. Load Machines ---
-        // Using 'machines' table, not 'machinery'
-        const { data: mData, error: mError } = await supabase
-            .from('machines')
-            .select('id, name, brand, model')
-            .eq('company_id', selectedCompany.id);
-        
-        if (mError) {
-            console.error('Error loading machinery:', mError);
-        } else {
-            setMachines((mData || []).map(m => ({ id: m.id, name: `${m.name} (${m.brand} ${m.model})` })));
-        }
-
-        // --- 2. Load Sectors/Fields ---
-        // Step 1: Fetch Fields for this company
-        const { data: fieldsData, error: fError } = await supabase
-            .from('fields')
-            .select('id, name')
-            .eq('company_id', selectedCompany.id);
-
-        if (fError) {
-             console.error('Error loading fields:', fError);
-             setSectors([]);
-        } else if (fieldsData && fieldsData.length > 0) {
-             const fieldIds = fieldsData.map(f => f.id);
-             
-             // Step 2: Fetch Sectors for these fields
-             const { data: sectorsData, error: sError } = await supabase
-                 .from('sectors')
-                 .select('id, name, field_id, hectares')
-                 .in('field_id', fieldIds);
-
-             if (sError) {
-                 console.error('Error loading sectors:', sError);
-             }
-
-             // Step 3: Combine Data
-             const allOptions: {id: string, name: string, type: 'sector' | 'field' | 'company', hectares?: number, field_id?: string}[] = [];
-             
-             // A. Company Option
-             allOptions.push({
-                 id: 'company_general',
-                 name: `🏢 [EMPRESA] ${selectedCompany.name}`,
-                 type: 'company'
-             });
-
-             // B. Field Options
-             fieldsData.forEach(f => {
-                 allOptions.push({
-                     id: f.id,
-                     name: `🌱 [CAMPO] ${f.name}`,
-                     type: 'field'
-                 });
-             });
-
-             // C. Sector Options
-             if (sectorsData) {
-                 // Map field names to sectors for sorting
-                 const sectorsWithField = sectorsData.map(s => {
-                     const field = fieldsData.find(f => f.id === s.field_id);
-                     return { ...s, fieldName: field?.name || '' };
-                 });
-
-                 // Sort by Field Name then Sector Name
-                 sectorsWithField.sort((a, b) => {
-                     const fieldCompare = a.fieldName.localeCompare(b.fieldName);
-                     if (fieldCompare !== 0) return fieldCompare;
-                     return a.name.localeCompare(b.name);
-                 });
-
-                 sectorsWithField.forEach(s => {
-                     allOptions.push({
-                         id: s.id,
-                         name: `└── ${s.name}`,
-                         type: 'sector',
-                         hectares: s.hectares,
-                         field_id: s.field_id
-                     });
-                 });
-             }
-             
-             setSectors(allOptions);
-        } else {
-             // No fields found, but still add Company option
-             setSectors([{
-                 id: 'company_general',
-                 name: `🏢 [EMPRESA] ${selectedCompany.name}`,
-                 type: 'company'
-             }]);
-        }
-
-    } catch (err) {
+        const { machines: m, destinations } = await fetchInvoiceDestinations({
+          companyId: selectedCompany.id,
+          companyName: selectedCompany.name
+        });
+        setMachines(m);
+        setSectors(destinations);
+    } catch (err: any) {
         console.error('Critical error loading destinations:', err);
     } finally {
         setDestinationsLoading(false);
@@ -281,58 +197,23 @@ export const Invoices: React.FC = () => {
 
   const loadSuppliers = async () => {
     if (!selectedCompany) return;
-    const { data } = await supabase
-      .from('invoices')
-      .select('supplier')
-      .eq('company_id', selectedCompany.id)
-      .not('supplier', 'is', null);
-    
-    if (data) {
-      const uniqueSuppliers = Array.from(new Set(data.map(i => i.supplier)));
-      setSuppliers(uniqueSuppliers);
-    }
+    const uniqueSuppliers = await fetchInvoiceSuppliers({ companyId: selectedCompany.id });
+    setSuppliers(uniqueSuppliers);
   };
 
   const loadProducts = async () => {
     if (!selectedCompany) return;
-    const { data } = await supabase
-      .from('products')
-      .select('id, name, unit, category')
-      .eq('company_id', selectedCompany.id);
+    const data = await fetchInvoiceProducts({ companyId: selectedCompany.id });
     setProducts(data || []);
   };
 
   const loadStats = async () => {
     if (!selectedCompany) return;
-    
-    // Fetch all invoices with items and products for client-side search/stats
-    let query = supabase
-      .from('invoices')
-      .select(`
-        id, invoice_number, supplier, supplier_rut, invoice_date, payment_date, total_amount, status, due_date, notes, document_type,
-        tax_percentage, discount_amount, exempt_amount, special_tax_amount,
-        invoice_items (
-          id, quantity, unit_price, total_price, category, product_id,
-          products (id, name, unit)
-        )
-      `)
-      .eq('company_id', selectedCompany.id)
-      .order('invoice_date', { ascending: false });
+    const data = await fetchInvoicesForCompany({ companyId: selectedCompany.id, status: filterStatus });
+    setAllInvoices(data as any[]);
 
-    if (filterStatus !== 'Todas') {
-      query = query.eq('status', filterStatus);
-    }
-
-    const { data } = await query;
-
-    if (data) {
-      // Store all for search and filtering
-      setAllInvoices(data as any[]);
-      
-      // Force refresh of search if active
-      if (searchQuery) {
-        setSearchQuery(prev => prev);
-      }
+    if (searchQuery) {
+      setSearchQuery((prev) => prev);
     }
   };
 
