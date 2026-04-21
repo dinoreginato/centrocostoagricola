@@ -18,6 +18,7 @@ import {
 } from 'recharts';
 import { WeatherWidget } from '../components/WeatherWidget';
 import { fetchAgrometItemsResumen, fetchAgrometPpDay } from '../services/agromet';
+import { loadDashboardRaw } from '../services/dashboard';
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
   const toRad = (v: number) => (v * Math.PI) / 180;
@@ -413,126 +414,34 @@ export const Dashboard: React.FC = () => {
     if (!selectedCompany) return;
 
     try {
-      // 1. Load fields and their sectors
-      const { data: fields } = await supabase
-        .from('fields')
-        .select('*, sectors(*)')
-        .eq('company_id', selectedCompany.id);
+      const {
+        fields,
+        allSectors,
+        applications,
+        laborAssignments,
+        fuelAssignments,
+        fuelConsumption,
+        machineryAssignments,
+        irrigationAssignments,
+        upcomingInvoices,
+        incomeEntries,
+        stockData,
+        ordersData,
+        rainLogs,
+        machines
+      } = await loadDashboardRaw({ companyId: selectedCompany.id });
 
       setCompanyFields(fields || []);
+      setUpcomingInvoices(upcomingInvoices || []);
+      setRainLogs(rainLogs || []);
+
       setRainFieldId((prev) => prev || (fields && fields.length > 0 ? fields[0].id : prev));
       setRainSectorId((prev) =>
-        prev || (fields && fields.length > 0 && fields[0].sectors && fields[0].sectors.length > 0 ? fields[0].sectors[0].id : prev)
+        prev || (fields && fields.length > 0 && (fields as any)[0].sectors && (fields as any)[0].sectors.length > 0 ? (fields as any)[0].sectors[0].id : prev)
       );
 
       const totalFields = fields?.length || 0;
-      const totalHectares = fields?.reduce((sum, field) => sum + Number(field.total_hectares), 0) || 0;
-
-      // Flatten sectors
-      const allSectors = fields?.flatMap(f => f.sectors || []) || [];
-      const sectorIds = allSectors.map(s => s.id);
-
-      // 2. Load Costs
-      // A. Applications
-      const { data: applications, error: appError } = await supabase
-        .from('applications')
-        .select('total_cost, field_id, sector_id')
-        .in('field_id', fields?.map(f => f.id) || []);
-
-      if (appError) throw appError;
-
-      // B. Labor Assignments
-      let laborAssignments: any[] = [];
-      if (sectorIds.length > 0) {
-          const { data: labors } = await supabase
-            .from('labor_assignments')
-            .select('assigned_amount, sector_id')
-            .in('sector_id', sectorIds);
-          laborAssignments = labors || [];
-      }
-
-      // C. Fuel Assignments (Legacy/Direct)
-      let fuelAssignments: any[] = [];
-      if (sectorIds.length > 0) {
-          const { data: fuels } = await supabase
-            .from('fuel_assignments')
-            .select('assigned_amount, sector_id')
-            .in('sector_id', sectorIds);
-          fuelAssignments = fuels || [];
-      }
-
-      // C2. Fuel Consumption (New Stock System)
-      let fuelConsumption: any[] = [];
-      if (sectorIds.length > 0) {
-          const { data: consumptions } = await supabase
-            .from('fuel_consumption')
-            .select('estimated_price, sector_id')
-            .in('sector_id', sectorIds);
-          fuelConsumption = consumptions || [];
-      }
-
-      // D. Machinery Assignments
-      let machineryAssignments: any[] = [];
-      if (sectorIds.length > 0) {
-          const { data: machineries } = await supabase
-            .from('machinery_assignments')
-            .select('assigned_amount, sector_id')
-            .in('sector_id', sectorIds);
-          machineryAssignments = machineries || [];
-      }
-
-      // E. Irrigation Assignments
-      let irrigationAssignments: any[] = [];
-      if (sectorIds.length > 0) {
-          const { data: irrigations } = await supabase
-            .from('irrigation_assignments')
-            .select('assigned_amount, sector_id')
-            .in('sector_id', sectorIds);
-          irrigationAssignments = irrigations || [];
-      }
-
-      // F. Upcoming Invoices for Zen Mode
-      const today = new Date();
-      const currentDay = today.getDate();
-      const currentMonth = today.getMonth();
-      const currentYear = today.getFullYear();
-      
-      let startDate, endDate;
-
-      if (currentDay <= 15) {
-          // Look for invoices due between 1st and 15th of current month
-          startDate = new Date(currentYear, currentMonth, 1);
-          endDate = new Date(currentYear, currentMonth, 15);
-      } else {
-          // Look for invoices due between 16th and end of current month
-          startDate = new Date(currentYear, currentMonth, 16);
-          endDate = new Date(currentYear, currentMonth + 1, 0); // Last day of month
-      }
-
-      const { data: invoices } = await supabase
-        .from('invoices')
-        .select(`
-          id,
-          invoice_number, 
-          supplier, 
-          total_amount, 
-          due_date, 
-          notes,
-          invoice_items (
-            quantity,
-            unit_price,
-            total_price,
-            category,
-            products (name, unit)
-          )
-        `)
-        .eq('company_id', selectedCompany.id)
-        .eq('status', 'Pendiente')
-        .gte('due_date', startDate.toISOString().split('T')[0])
-        .lte('due_date', endDate.toISOString().split('T')[0])
-        .order('due_date', { ascending: true });
-
-      setUpcomingInvoices(invoices || []);
+      const totalHectares = fields?.reduce((sum: number, field: any) => sum + Number(field.total_hectares), 0) || 0;
 
       // Calculate Totals
       const totalAppCost = applications?.reduce((sum, app) => sum + Number(app.total_cost), 0) || 0;
@@ -595,12 +504,7 @@ export const Dashboard: React.FC = () => {
       });
 
       setChartData(fieldCosts || []);
-
-      // Load Income Entries for Profitability
-      const { data: incomeEntries } = await supabase
-        .from('income_entries')
-        .select('*')
-        .eq('company_id', selectedCompany.id);
+      const incomeEntriesSafe = incomeEntries || [];
 
       // 4. Prepare Chart Data: Cost per Sector (Detailed)
       const sectorCosts = allSectors.map(sector => {
@@ -635,7 +539,7 @@ export const Dashboard: React.FC = () => {
           const totalSectorCost = sectorAppCost + sectorLaborCost + sectorFuelCost + sectorMachineryCost + sectorIrrigationCost;
           
           // Income
-          const sectorIncome = incomeEntries
+          const sectorIncome = incomeEntriesSafe
             ?.filter(inc => inc.sector_id === sector.id)
             .reduce((sum, inc) => sum + Number(inc.amount || 0), 0) || 0;
             
@@ -662,11 +566,6 @@ export const Dashboard: React.FC = () => {
       setSectorChartData(sectorCosts);
 
       // 5. Load Critical Stock & Expiring Products
-      const { data: stockData } = await supabase
-        .from('products')
-        .select('name, current_stock, minimum_stock, unit, expiration_date')
-        .eq('company_id', selectedCompany.id);
-
       if (stockData) {
           const critical = stockData.filter(p => p.minimum_stock > 0 && p.current_stock <= p.minimum_stock);
           
@@ -691,12 +590,6 @@ export const Dashboard: React.FC = () => {
       }
 
       // 6. Load Safety Status (Application Orders)
-      const { data: ordersData } = await supabase
-        .from('application_orders')
-        .select('sector_id, scheduled_date, safety_period_hours, grace_period_days, protection_days, application_type, objective, sector:sectors(name)')
-        .eq('company_id', selectedCompany.id)
-        .order('scheduled_date', { ascending: false });
-
       if (ordersData) {
           const now = new Date();
           const safetyStatus = allSectors.map(sector => {
@@ -803,24 +696,6 @@ export const Dashboard: React.FC = () => {
               
           setProtectionAlerts(sortedProtectionAlerts);
       }
-
-      // 7. Load Rain Logs
-      const activeYear = new Date().getFullYear();
-      const { data: rainData } = await supabase
-        .from('rain_logs')
-        .select('*')
-        .eq('company_id', selectedCompany.id)
-        .gte('date', `${activeYear}-01-01`)
-        .order('date', { ascending: false });
-        
-      setRainLogs(rainData || []);
-
-      // 8. Load Machines for Maintenance Alerts
-      const { data: machines } = await supabase
-        .from('machines')
-        .select('*')
-        .eq('company_id', selectedCompany.id);
-        
       if (machines) {
           const alerts = machines.filter(m => {
               if (!m.maintenance_interval_hours) return false;

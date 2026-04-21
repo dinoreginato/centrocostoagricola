@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { getSeasonFromDate, isDateInSeason } from '../lib/seasonUtils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -9,6 +8,7 @@ import { Loader2, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Pr
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
+import { loadReportsRawData } from '../services/reports';
 
 interface ReportData {
   field_name: string;
@@ -303,116 +303,22 @@ export const Reports: React.FC = () => {
     if (!selectedCompany) return;
     setLoading(true);
     try {
-      // 1. Fetch Fields
-      const { data: fields } = await supabase
-        .from('fields')
-        .select('id, name, sectors(id, name, hectares)')
-        .eq('company_id', selectedCompany.id);
-      
-      setRawFields(fields || []);
-      const fieldIds = (fields || []).map(f => f.id);
-      const sectorIds = (fields || []).flatMap(f => f.sectors.map((s:any) => s.id));
+      const res = await loadReportsRawData({ companyId: selectedCompany.id });
+      setRawFields(res.fields || []);
+      setRawApplications(res.applications || []);
+      setRawLabor(res.labor || []);
+      setRawWorkerCosts(res.workerCosts || []);
+      setRawFuel(res.fuel || []);
+      setRawFuelConsumption(res.fuelConsumption || []);
+      setRawMachinery(res.machinery || []);
+      setRawIrrigation(res.irrigation || []);
+      setRawGeneralCosts(res.generalCosts || []);
+      setIncomeEntries(res.incomeEntries || []);
+      setRawInvoices(res.invoices || []);
 
-      // 2. Fetch Applications
-      const { data: applications } = await supabase
-        .from('applications')
-        .select('field_id, sector_id, total_cost, application_date')
-        .in('field_id', fieldIds);
-      
-      setRawApplications(applications || []);
-
-      // 2b. Fetch Labor Assignments
-      const { data: labor } = await supabase
-        .from('labor_assignments')
-        .select('sector_id, assigned_amount, assigned_date, labor_type')
-        .in('sector_id', sectorIds);
-      setRawLabor(labor || []);
-
-      // 2b2. Fetch Worker Costs (Plant Staff)
-      const { data: workers } = await supabase
-        .from('worker_costs')
-        .select('sector_id, amount, date')
-        .in('sector_id', sectorIds);
-      setRawWorkerCosts(workers || []);
-
-      // 2c. Fetch Fuel Assignments (Direct)
-      const { data: fuel } = await supabase
-        .from('fuel_assignments')
-        .select('sector_id, assigned_amount, assigned_date')
-        .in('sector_id', sectorIds);
-      setRawFuel(fuel || []);
-
-      // 2d. Fetch Fuel Consumption (Stock System)
-      const { data: fuelCons } = await supabase
-        .from('fuel_consumption')
-        .select('sector_id, estimated_price, date, activity, liters') 
-        .in('sector_id', sectorIds);
-      setRawFuelConsumption(fuelCons || []);
-
-      // 2e. Fetch Machinery
-      const { data: machinery } = await supabase
-        .from('machinery_assignments')
-        .select('sector_id, assigned_amount, assigned_date')
-        .in('sector_id', sectorIds);
-      setRawMachinery(machinery || []);
-
-      // 2f. Fetch Irrigation
-      const { data: irrigation } = await supabase
-        .from('irrigation_assignments')
-        .select('sector_id, assigned_amount, assigned_date')
-        .in('sector_id', sectorIds);
-      setRawIrrigation(irrigation || []);
-
-      // 2g. Fetch General Costs (Distributed)
-      const { data: general } = await supabase
-        .from('general_costs')
-        .select('sector_id, amount, date')
-        .in('sector_id', sectorIds);
-      setRawGeneralCosts(general || []);
-
-      // 2h. Fetch Income Entries
-      const { data: income } = await supabase
-        .from('income_entries')
-        .select('*, fields(name), sectors(name)')
-        .eq('company_id', selectedCompany.id);
-      setIncomeEntries(income || []);
-
-      // 3. Fetch Invoices
-      const { data: invoicesData } = await supabase
-        .from('invoices')
-        .select(`
-          id, invoice_number, invoice_date, total_amount, supplier, status, due_date, document_type, notes,
-          tax_percentage, discount_amount, exempt_amount, special_tax_amount,
-          invoice_items (
-            id, category, total_price, quantity,
-            products (name, unit, category)
-          )
-        `)
-        .eq('company_id', selectedCompany.id);
-      
-      setRawInvoices(invoicesData || []);
-
-      // 4. Extract Seasons
-      const seasonsSet = new Set<string>();
-      seasonsSet.add(getSeasonFromDate(new Date()));
-
-      applications?.forEach(app => {
-        if (app.application_date) {
-          seasonsSet.add(getSeasonFromDate(new Date(app.application_date)));
-        }
-      });
-
-      invoicesData?.forEach(inv => {
-        if (inv.invoice_date) {
-            seasonsSet.add(getSeasonFromDate(new Date(inv.invoice_date)));
-        }
-      });
-
-      const sortedSeasons = Array.from(seasonsSet).sort().reverse();
-      setAvailableSeasons(sortedSeasons);
-      
-      if (!sortedSeasons.includes(selectedSeason)) {
-        setSelectedSeason(sortedSeasons[0]);
+      setAvailableSeasons(res.availableSeasons || []);
+      if (res.availableSeasons && res.availableSeasons.length > 0 && !res.availableSeasons.includes(selectedSeason)) {
+        setSelectedSeason(res.availableSeasons[0]);
       }
 
     } catch (error) {

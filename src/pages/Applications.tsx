@@ -7,6 +7,7 @@ import { Plus, Loader2, Save, Trash2, Calendar, Droplets, MapPin, RefreshCw, Edi
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
+import { deleteAllApplicationsRestoreStock, deleteApplicationAndRestoreStock, loadApplicationsPageData, updateApplicationInventory } from '../services/applications';
 
 interface Field {
   id: string;
@@ -224,73 +225,15 @@ export const Applications: React.FC = () => {
 
   const loadData = useCallback(async () => {
     if (!selectedCompany) return;
-    
-    // Load fields with sectors
-    const { data: fieldsData } = await supabase
-      .from('fields')
-      .select('*, sectors(*)')
-      .eq('company_id', selectedCompany.id);
-    setFields(fieldsData || []);
-
-    // Load products - Filter for Agrochemicals
-    const { data: productsData } = await supabase
-      .from('products')
-      .select('*')
-      .eq('company_id', selectedCompany.id)
-      .in('category', AGROCHEMICAL_CATEGORIES) // Filter by category
-      .gt('current_stock', 0);
-    setProducts(productsData || []);
-
-    // Load Applications History
-    const { data: appsData, error: appsError } = await supabase
-        .rpc('get_company_applications_v2', { p_company_id: selectedCompany.id });
-    
-    if (appsError) {
-        console.error('Error loading applications:', appsError);
-        toast.error('Error cargando historial: ' + appsError.message);
-    } else {
-        setApplications(appsData || []);
-    }
-
-    // Calculate Average Fuel Price (Diesel)
     try {
-        const { data: fuelItems } = await supabase
-            .from('invoice_items')
-            .select(`
-                quantity, total_price, category,
-                products (name),
-                invoices!inner (document_type)
-            `)
-            .eq('invoices.company_id', selectedCompany.id);
-
-        if (fuelItems) {
-            const targetCategories = ['petroleo', 'diesel'];
-            const filtered = fuelItems.filter((item: any) => {
-                const cat = (item.category || '').toLowerCase();
-                const name = (item.products?.name || '').toLowerCase();
-                return targetCategories.some(t => cat.includes(t) || name.includes(t)) && !cat.includes('bencina') && !name.includes('gasolina');
-            });
-
-            const totalLiters = filtered.reduce((sum, item: any) => {
-                 const docType = (item.invoices.document_type || '').toLowerCase();
-                 const isNC = docType.includes('nota de cr') || docType.includes('nc');
-                 const qty = Number(item.quantity || 0);
-                 return sum + (isNC ? -qty : qty);
-            }, 0);
-
-            const totalCost = filtered.reduce((sum, item: any) => {
-                 const docType = (item.invoices.document_type || '').toLowerCase();
-                 const isNC = docType.includes('nota de cr') || docType.includes('nc');
-                 const cost = Number(item.total_price || 0);
-                 return sum + (isNC ? -cost : cost);
-            }, 0);
-
-            if (totalLiters > 0) {
-                setAvgFuelPrice(totalCost / totalLiters);
-            }
-        }
-    } catch (err) {
-        console.error('Error calculating fuel price:', err);
+      const res = await loadApplicationsPageData({ companyId: selectedCompany.id, agrochemicalCategories: AGROCHEMICAL_CATEGORIES });
+      setFields(res.fields || []);
+      setProducts(res.products || []);
+      setApplications(res.applications || []);
+      if (res.avgFuelPrice !== null) setAvgFuelPrice(res.avgFuelPrice);
+    } catch (err: any) {
+      console.error('Error loading applications:', err);
+      toast.error('Error cargando datos: ' + (err.message || 'Error desconocido'));
     }
   }, [selectedCompany]);
 
@@ -363,8 +306,7 @@ export const Applications: React.FC = () => {
     if (!window.confirm('¿Estás seguro de eliminar esta aplicación?\n\n¡Cuidado! El stock descontado será RESTAURADO a la bodega.')) return;
     
     try {
-        const { error } = await supabase.rpc('delete_application_and_restore_stock', { target_application_id: id });
-        if (error) throw error;
+        await deleteApplicationAndRestoreStock({ applicationId: id });
         toast('Aplicación eliminada y stock restaurado exitosamente.');
         loadData();
     } catch (error: any) {
@@ -681,8 +623,7 @@ export const Applications: React.FC = () => {
     
     setLoading(true);
     try {
-        const { error } = await supabase.rpc('delete_all_applications_restore_stock', { target_company_id: selectedCompany.id });
-        if (error) throw error;
+        await deleteAllApplicationsRestoreStock({ companyId: selectedCompany.id });
         toast('Todas las aplicaciones han sido eliminadas y el stock restaurado.');
         loadData();
     } catch (error: any) {
@@ -752,7 +693,7 @@ export const Applications: React.FC = () => {
 
       if (editingId) {
         // UPDATE MODE
-        const { error } = await supabase.rpc('update_application_inventory', {
+        await updateApplicationInventory({
             p_application_id: editingId,
             p_field_id: selectedFieldId,
             p_sector_id: selectedSectorId,
@@ -769,8 +710,6 @@ export const Applications: React.FC = () => {
                 objective: item.objective || '' // Include objective
             }))
         });
-
-        if (error) throw error;
         
         // Update Fuel Record (Formula: 12L/ha)
         // We do this separately. Ideally should be in the RPC but keeping it here for now.

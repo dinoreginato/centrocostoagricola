@@ -4,6 +4,7 @@ import { supabase } from '../supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
 import { Plus, Trash2, Edit, ChevronDown, ChevronRight, X, Upload } from 'lucide-react';
 import { read, utils } from 'xlsx';
+import { loadPhytosanitaryProgramsData } from '../services/phytosanitaryPrograms';
 
 interface Program {
   id: string;
@@ -57,44 +58,12 @@ export const PhytosanitaryPrograms: React.FC = () => {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      // Load Programs
-      const { data: programsData, error: progErr } = await supabase
-        .from('phytosanitary_programs')
-        .select('*')
-        .eq('company_id', selectedCompany?.id)
-        .order('created_at', { ascending: false });
-      if (progErr) throw progErr;
-      setPrograms(programsData || []);
-
-      // Load Events
-      const { data: eventsData, error: evErr } = await supabase
-        .from('program_events')
-        .select('*, phytosanitary_programs!inner(company_id)')
-        .eq('phytosanitary_programs.company_id', selectedCompany?.id);
-      if (evErr) throw evErr;
-      setEvents(eventsData || []);
-
-      // Load Products in Events
-      const { data: epData, error: epErr } = await supabase
-        .from('program_event_products')
-        .select(`
-          *,
-          product:products(name, unit),
-          program_events!inner(
-            phytosanitary_programs!inner(company_id)
-          )
-        `)
-        .eq('program_events.phytosanitary_programs.company_id', selectedCompany?.id);
-      if (epErr) throw epErr;
-      setEventProducts(epData || []);
-
-      // Load Inventory for dropdowns
-      const { data: invData } = await supabase
-        .from('products')
-        .select('id, name, unit')
-        .eq('company_id', selectedCompany?.id)
-        .order('name');
-      setInventory(invData || []);
+      if (!selectedCompany) return;
+      const res = await loadPhytosanitaryProgramsData({ companyId: selectedCompany.id });
+      setPrograms(res.programs || []);
+      setEvents(res.events || []);
+      setEventProducts(res.eventProducts || []);
+      setInventory(res.inventory || []);
 
     } catch (err: any) {
       console.error(err);

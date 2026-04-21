@@ -6,6 +6,7 @@ import { Plus, Loader2, Save, Trash2, Printer, Edit, Copy, ClipboardList } from 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
+import { loadApplicationOrdersPageData } from '../services/applicationOrders';
 
 // Interfaces based on DB Schema
 interface ApplicationOrder {
@@ -142,72 +143,17 @@ export const ApplicationOrders: React.FC = () => {
     if (!selectedCompany) return;
     setLoading(true);
     try {
-        // 1. Load Orders
-        const { data: ordersData, error: ordersError } = await supabase
-            .from('application_orders')
-            .select(`
-                *,
-                field:fields(name),
-                sector:sectors(name, hectares),
-                tractor:machines!application_orders_tractor_id_fkey(name),
-                sprayer:machines!application_orders_sprayer_id_fkey(name),
-                driver:workers(name),
-                items:application_order_items(
-                    *,
-                    product:products(name, unit, active_ingredient, category, average_cost)
-                )
-            `)
-            .eq('company_id', selectedCompany.id)
-            .order('created_at', { ascending: false });
+        const res = await loadApplicationOrdersPageData({
+          companyId: selectedCompany.id,
+          agrochemicalCategories: AGROCHEMICAL_CATEGORIES
+        });
 
-        if (ordersError) throw ordersError;
-        
-        // Map items to flatten structure
-        const mappedOrders = ordersData?.map(o => ({
-            ...o,
-            items: Array.isArray(o.items) ? o.items.map((i: any) => ({
-                id: i.id,
-                product_id: i.product_id,
-                product_name: i.product?.name,
-                active_ingredient: i.product?.active_ingredient,
-                category: i.product?.category,
-                average_cost: i.product?.average_cost || 0,
-                unit: i.unit,
-                dose_per_hectare: i.dose_per_hectare,
-                dose_per_100l: i.dose_per_100l,
-                total_quantity: i.total_quantity,
-                objective: i.objective
-            })) : []
-        }));
-        
-        setOrders(mappedOrders || []);
-
-        // 2. Load Metadata (Fields, Products, Machines, Workers)
-        const [fieldsRes, productsRes, machinesRes, workersRes] = await Promise.all([
-            supabase.from('fields').select('*, sectors(*)').eq('company_id', selectedCompany.id),
-            supabase.from('products').select('*').eq('company_id', selectedCompany.id).in('category', AGROCHEMICAL_CATEGORIES).gt('current_stock', 0),
-            supabase.from('machines').select('id, name, type').eq('company_id', selectedCompany.id).eq('is_active', true),
-            supabase.from('workers').select('id, name, role').eq('company_id', selectedCompany.id).eq('is_active', true)
-        ]);
-
-        setFields(fieldsRes.data || []);
-        setProducts(productsRes.data || []);
-        setMachines(machinesRes.data || []);
-        setWorkers(workersRes.data || []);
-
-        // Load Phytosanitary Programs
-        const { data: progData } = await supabase.from('phytosanitary_programs').select('*').eq('company_id', selectedCompany.id).order('created_at', { ascending: false });
-        if (progData) {
-            const { data: evData } = await supabase.from('program_events').select(`
-                *,
-                products:program_event_products(
-                    *,
-                    product:products(*)
-                )
-            `).in('program_id', progData.map(p => p.id));
-            if (evData) setProgramEvents(evData);
-        }
-
+        setOrders(res.orders || []);
+        setFields(res.fields || []);
+        setProducts(res.products || []);
+        setMachines(res.machines || []);
+        setWorkers(res.workers || []);
+        setProgramEvents(res.programEvents || []);
     } catch (error: any) {
         console.error('Error loading data:', error);
         toast.error('Error cargando datos: ' + error.message);
