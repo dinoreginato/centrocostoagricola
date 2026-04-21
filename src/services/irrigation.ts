@@ -146,3 +146,21 @@ export async function deleteAllIrrigationAssignments(params: { companyId: string
   }
 }
 
+export async function updateIrrigationAssignment(params: { id: string; sectorId: string; assignedAmount: number; assignedDate: string }) {
+  const { error } = await supabase
+    .from('irrigation_assignments')
+    .update({
+      sector_id: params.sectorId,
+      assigned_amount: params.assignedAmount,
+      assigned_date: params.assignedDate
+    })
+    .eq('id', params.id);
+
+  if (error) throw error;
+}
+
+export async function insertIrrigationAssignments(params: { rows: any[] }) {
+  if (!params.rows || params.rows.length === 0) return;
+  const { error } = await supabase.from('irrigation_assignments').insert(params.rows);
+  if (error) throw error;
+}

@@ -138,3 +138,7 @@ export async function deleteAllLaborAssignments(params: { companyId: string }) {
   }
 }
 
+export async function updateLaborType(params: { assignmentId: string; laborType: string }) {
+  const { error } = await supabase.from('labor_assignments').update({ labor_type: params.laborType }).eq('id', params.assignmentId);
+  if (error) throw error;
+}

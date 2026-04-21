@@ -1,13 +1,12 @@
 import { toast } from 'sonner';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Users, UserPlus, Trash2, Briefcase, Loader2, Download } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
-import { fetchWorkerCosts, fetchWorkers } from '../services/workers';
+import { createWorker, deleteWorker, deleteWorkerCost, fetchWorkerCosts, fetchWorkers, insertWorkerCosts } from '../services/workers';
 
 interface Worker {
   id: string;
@@ -121,12 +120,7 @@ export const Workers: React.FC = () => {
 
       setLoading(true);
       try {
-          const { error } = await supabase.from('workers').insert({
-              company_id: selectedCompany.id,
-              name: newWorkerName,
-              role: newWorkerRole
-          });
-          if (error) throw error;
+          await createWorker({ companyId: selectedCompany.id, name: newWorkerName, role: newWorkerRole });
           
           setNewWorkerName('');
           setNewWorkerRole('');
@@ -141,9 +135,12 @@ export const Workers: React.FC = () => {
 
   const handleDeleteWorker = async (id: string) => {
       if (!confirm('¿Eliminar trabajador? Se borrarán sus registros de costos.')) return;
-      const { error } = await supabase.from('workers').delete().eq('id', id);
-      if (error) toast.error('Error al eliminar');
-      else loadWorkers();
+      try {
+        await deleteWorker({ workerId: id });
+        loadWorkers();
+      } catch {
+        toast.error('Error al eliminar');
+      }
   };
 
   const handleSaveCost = async (e: React.FormEvent) => {
@@ -202,11 +199,7 @@ export const Workers: React.FC = () => {
                 };
             });
 
-            const { error } = await supabase
-                .from('worker_costs')
-                .insert(costsToInsert);
-            
-            if (error) throw error;
+            await insertWorkerCosts({ rows: costsToInsert });
 
         } else if (distributeBy === 'field') {
             // Distribute by Field Logic
@@ -236,17 +229,11 @@ export const Workers: React.FC = () => {
                 };
             });
 
-            const { error } = await supabase
-                .from('worker_costs')
-                .insert(costsToInsert);
-            
-            if (error) throw error;
+            await insertWorkerCosts({ rows: costsToInsert });
 
         } else {
             // Single Sector Logic
-            const { error } = await supabase
-                .from('worker_costs')
-                .insert({
+            await insertWorkerCosts({ rows: [{
                     company_id: selectedCompany.id,
                     worker_id: isPieceRate ? null : selectedWorkerId,
                     date,
@@ -258,9 +245,7 @@ export const Workers: React.FC = () => {
                     piece_price: isPieceRate ? Number(piecePrice) : null,
                     worker_name: isPieceRate ? workerName : null,
                     labor_type: isPieceRate ? laborType : null
-                });
-
-            if (error) throw error;
+                }] });
         }
 
         // Reset form partial
@@ -285,9 +270,12 @@ export const Workers: React.FC = () => {
 
   const handleDeleteCost = async (id: string) => {
       if (!confirm('¿Eliminar este registro de costo?')) return;
-      const { error } = await supabase.from('worker_costs').delete().eq('id', id);
-      if (error) toast.error('Error al eliminar');
-      else loadCosts();
+      try {
+        await deleteWorkerCost({ costId: id });
+        loadCosts();
+      } catch {
+        toast.error('Error al eliminar');
+      }
   };
 
   const generatePayrollPDF = () => {

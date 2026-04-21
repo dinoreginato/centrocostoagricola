@@ -92,6 +92,36 @@ export async function searchOfficialProducts(params: { query: string; limit?: nu
   return (data || []) as any[];
 }
 
+export async function upsertOfficialProducts(params: { rows: OfficialProduct[] | any[] }) {
+  if (!params.rows || params.rows.length === 0) return;
+  const { error } = await supabase
+    .from('official_products')
+    .upsert(params.rows, { onConflict: 'registration_number', ignoreDuplicates: false });
+  if (error) throw error;
+}
+
+export async function fetchPhytosanitaryPrograms(params: { companyId: string }) {
+  const { data, error } = await supabase.from('phytosanitary_programs').select('*').eq('company_id', params.companyId);
+  if (error) throw error;
+  return data || [];
+}
+
+export async function fetchProgramEventsForProjection(params: { programId: string }) {
+  const { data, error } = await supabase
+    .from('program_events')
+    .select(
+      `
+      id,
+      water_per_ha,
+      program_event_products(product_id, dose, dose_unit)
+    `
+    )
+    .eq('program_id', params.programId);
+
+  if (error) throw error;
+  return data || [];
+}
+
 export async function updateInventoryProduct(params: {
   productId: string;
   patch: Partial<InventoryProduct> & { updated_at?: string };
@@ -165,4 +195,3 @@ export async function mergeDuplicateInventoryProducts(params: { products: Invent
 
   return { mergedCount };
 }
-

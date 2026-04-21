@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { supabase } from '../supabase/client';
 import { X, Loader2, Lock } from 'lucide-react';
+import { updateUserPassword } from '../services/auth';
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
@@ -35,11 +35,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({ isOpen
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.updateUser({
-        password: password
-      });
-
-      if (error) throw error;
+      await updateUserPassword({ password });
 
       setSuccess(true);
       setPassword('');

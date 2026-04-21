@@ -1,7 +1,6 @@
 import { toast } from 'sonner';
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, FileText, RefreshCw, Copy, Download } from 'lucide-react';
 import jsPDF from 'jspdf';
@@ -9,7 +8,7 @@ import autoTable from 'jspdf-autotable';
 import { utils, writeFile } from 'xlsx';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
-import { deleteAllLaborAssignments, deleteLaborAssignment, fetchLaborHistory, fetchPendingLaborItems } from '../services/labors';
+import { deleteAllLaborAssignments, deleteLaborAssignment, fetchLaborHistory, fetchPendingLaborItems, updateLaborType } from '../services/labors';
 
 const LABOR_TYPES = [
   'General',
@@ -268,12 +267,7 @@ export const Labors: React.FC = () => {
       const loadingToast = toast.loading('Actualizando...');
       
       try {
-          const { error } = await supabase
-              .from('labor_assignments')
-              .update({ labor_type: newLaborType })
-              .eq('id', id);
-              
-          if (error) throw error;
+          await updateLaborType({ assignmentId: id, laborType: newLaborType });
           
           // Optimistically update history state
           setHistory(prev => prev.map(h => h.id === id ? { ...h, labor_type: newLaborType } : h));

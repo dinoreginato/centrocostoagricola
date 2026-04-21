@@ -134,3 +134,24 @@ export async function loadFuelStockAndLogs(params: { companyId: string; activeTa
   return computeFuelStock({ items, consumption, activeTab: params.activeTab });
 }
 
+export async function updateFuelConsumptionLog(params: { id: string; patch: any }) {
+  const { error } = await supabase.from('fuel_consumption').update(params.patch).eq('id', params.id);
+  if (error) throw error;
+}
+
+export async function insertFuelConsumptionLogs(params: { rows: any[] }) {
+  if (!params.rows || params.rows.length === 0) return;
+  const { error } = await supabase.from('fuel_consumption').insert(params.rows);
+  if (error) throw error;
+}
+
+export async function deleteFuelConsumptionLog(params: { id: string }) {
+  const { error } = await supabase.from('fuel_consumption').delete().eq('id', params.id);
+  if (error) throw error;
+}
+
+export async function deleteFuelConsumptionLogs(params: { ids: string[] }) {
+  if (params.ids.length === 0) return;
+  const { error } = await supabase.from('fuel_consumption').delete().in('id', params.ids);
+  if (error) throw error;
+}

@@ -61,3 +61,36 @@ export async function fetchFieldsWithLaborCosts(params: { companyId: string }) {
   })) as any[];
 }
 
+export async function createField(params: { companyId: string; payload: any }) {
+  const { data, error } = await supabase.from('fields').insert([{ ...params.payload, company_id: params.companyId }]).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateField(params: { fieldId: string; patch: any }) {
+  const { data, error } = await supabase.from('fields').update(params.patch).eq('id', params.fieldId).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteField(params: { fieldId: string }) {
+  const { error } = await supabase.from('fields').delete().eq('id', params.fieldId);
+  if (error) throw error;
+}
+
+export async function createSector(params: { fieldId: string; payload: any }) {
+  const { data, error } = await supabase.from('sectors').insert([{ ...params.payload, field_id: params.fieldId }]).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateSector(params: { sectorId: string; patch: any }) {
+  const { data, error } = await supabase.from('sectors').update(params.patch).eq('id', params.sectorId).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteSector(params: { sectorId: string }) {
+  const { error } = await supabase.from('sectors').delete().eq('id', params.sectorId);
+  if (error) throw error;
+}

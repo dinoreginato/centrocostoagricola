@@ -2,11 +2,11 @@ import { toast } from 'sonner';
 
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Fuel as FuelIcon, Save, Loader2, Trash2, Edit2, Droplet } from 'lucide-react';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
-import { loadFuelStockAndLogs } from '../services/fuel';
+import { updateCompanyApplicationFuelRate } from '../services/companies';
+import { deleteFuelConsumptionLog, deleteFuelConsumptionLogs, insertFuelConsumptionLogs, loadFuelStockAndLogs, updateFuelConsumptionLog } from '../services/fuel';
 
 interface FuelLog {
   id: string;
@@ -88,12 +88,7 @@ export const Fuel: React.FC = () => {
     if (!selectedCompany) return;
     setConfigLoading(true);
     try {
-        const { error } = await supabase
-            .from('companies')
-            .update({ application_fuel_rate: applicationRate })
-            .eq('id', selectedCompany.id);
-
-        if (error) throw error;
+        await updateCompanyApplicationFuelRate({ companyId: selectedCompany.id, rate: applicationRate });
         
         await refreshCompanies(); // Refresh context to propagate changes
         toast('Tasa de consumo global actualizada correctamente.');
@@ -229,18 +224,16 @@ export const Fuel: React.FC = () => {
             // Recalculate cost based on current average price (or keep old price? Usually update cost if liters change)
             const cost = totalLiters * stats.avgPrice;
             
-            const { error } = await supabase
-                .from('fuel_consumption')
-                .update({
+            await updateFuelConsumptionLog({
+                id: editingLogId,
+                patch: {
                     date,
                     activity,
                     liters: totalLiters,
                     estimated_price: cost,
                     sector_id: selectedSectorId
-                })
-                .eq('id', editingLogId);
-            
-            if (error) throw error;
+                }
+            });
             
             toast('Registro actualizado exitosamente');
             handleCancelEdit();
@@ -277,11 +270,7 @@ export const Fuel: React.FC = () => {
                     };
                 });
     
-                const { error } = await supabase
-                    .from('fuel_consumption')
-                    .insert(logsToInsert);
-                
-                if (error) throw error;
+                await insertFuelConsumptionLogs({ rows: logsToInsert });
     
             } else if (distributeBy === 'field') {
                 // Distribute by Field Logic
@@ -312,27 +301,19 @@ export const Fuel: React.FC = () => {
                     };
                 });
     
-                const { error } = await supabase
-                    .from('fuel_consumption')
-                    .insert(logsToInsert);
-                
-                if (error) throw error;
+                await insertFuelConsumptionLogs({ rows: logsToInsert });
     
             } else {
                 // Single Sector Logic
                 const cost = totalLiters * stats.avgPrice;
-                const { error } = await supabase
-                    .from('fuel_consumption')
-                    .insert({
+                await insertFuelConsumptionLogs({ rows: [{
                         company_id: selectedCompany.id,
                         date,
                         activity: finalActivity,
                         liters: totalLiters,
                         estimated_price: cost,
                         sector_id: selectedSectorId
-                    });
-    
-                if (error) throw error;
+                    }] });
             }
             
             toast('Consumo registrado exitosamente');
@@ -354,16 +335,11 @@ export const Fuel: React.FC = () => {
 
   const handleDeleteLog = async (id: string) => {
       if (!confirm('¿Eliminar este registro?')) return;
-      
-      const { error } = await supabase
-          .from('fuel_consumption')
-          .delete()
-          .eq('id', id);
-
-      if (error) {
-          toast.error('Error al eliminar');
-      } else {
+      try {
+          await deleteFuelConsumptionLog({ id });
           loadStockAndLogs();
+      } catch {
+          toast.error('Error al eliminar');
       }
   };
 
@@ -388,12 +364,7 @@ export const Fuel: React.FC = () => {
       setLoading(true);
       try {
           const idsToDelete = visibleLogs.map(l => l.id);
-          const { error } = await supabase
-              .from('fuel_consumption')
-              .delete()
-              .in('id', idsToDelete);
-
-          if (error) throw error;
+          await deleteFuelConsumptionLogs({ ids: idsToDelete });
           
           toast('Registros eliminados exitosamente.');
           await loadStockAndLogs();

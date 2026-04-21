@@ -151,3 +151,21 @@ export async function deleteAllGeneralCostHistory(params: { companyId: string })
   if (error) throw error;
 }
 
+export async function updateGeneralCostAssignment(params: { id: string; sectorId: string; amount: number; date: string }) {
+  const { error } = await supabase
+    .from('general_costs')
+    .update({
+      sector_id: params.sectorId,
+      amount: params.amount,
+      date: params.date
+    })
+    .eq('id', params.id);
+
+  if (error) throw error;
+}
+
+export async function insertGeneralCostAssignments(params: { rows: any[] }) {
+  if (!params.rows || params.rows.length === 0) return;
+  const { error } = await supabase.from('general_costs').insert(params.rows);
+  if (error) throw error;
+}

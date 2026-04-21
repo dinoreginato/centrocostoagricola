@@ -1,10 +1,9 @@
 import { toast } from 'sonner';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Plus, Map, MapPin, ChevronDown, ChevronRight, Loader2, Edit2, X, Check, Trash2 } from 'lucide-react';
-import { fetchFieldsWithLaborCosts } from '../services/fields';
+import { createField, createSector, deleteField, deleteSector, fetchFieldsWithLaborCosts, updateField, updateSector } from '../services/fields';
 
 interface Sector {
   id: string;
@@ -87,20 +86,16 @@ export const Fields: React.FC = () => {
     if (!selectedCompany) return;
 
     try {
-      const { data, error } = await supabase
-        .from('fields')
-        .insert([{
-          company_id: selectedCompany.id,
+      const data = await createField({
+        companyId: selectedCompany.id,
+        payload: {
           name: newFieldName,
           total_hectares: parseFloat(newFieldHectares),
           fruit_type: newFieldFruit,
           latitude: newFieldLatitude ? parseFloat(newFieldLatitude) : null,
           longitude: newFieldLongitude ? parseFloat(newFieldLongitude) : null
-        }])
-        .select()
-        .single();
-
-      if (error) throw error;
+        }
+      });
 
       setFields([data, ...fields]);
       setShowFieldForm(false);
@@ -135,20 +130,16 @@ export const Fields: React.FC = () => {
   const handleUpdateField = async (e: React.FormEvent, fieldId: string) => {
     e.preventDefault();
     try {
-      const { data, error } = await supabase
-        .from('fields')
-        .update({
+      const data = await updateField({
+        fieldId,
+        patch: {
           name: editFieldName,
           total_hectares: parseFloat(editFieldHectares),
           fruit_type: editFieldFruit,
           latitude: editFieldLatitude ? parseFloat(editFieldLatitude) : null,
           longitude: editFieldLongitude ? parseFloat(editFieldLongitude) : null
-        })
-        .eq('id', fieldId)
-        .select()
-        .single();
-
-      if (error) throw error;
+        }
+      });
 
       setFields(fields.map(f => f.id === fieldId ? { ...f, ...data, sectors: f.sectors } : f));
       cancelEditingField();
@@ -161,12 +152,7 @@ export const Fields: React.FC = () => {
     if (!window.confirm('¿Estás seguro de que deseas eliminar este campo? Se eliminarán también todos sus sectores.')) return;
 
     try {
-      const { error } = await supabase
-        .from('fields')
-        .delete()
-        .eq('id', fieldId);
-
-      if (error) throw error;
+      await deleteField({ fieldId });
 
       setFields(fields.filter(f => f.id !== fieldId));
     } catch (error) {
@@ -180,20 +166,16 @@ export const Fields: React.FC = () => {
   const handleCreateSector = async (e: React.FormEvent, fieldId: string) => {
     e.preventDefault();
     try {
-      const { data, error } = await supabase
-        .from('sectors')
-        .insert([{
-          field_id: fieldId,
+      const data = await createSector({
+        fieldId,
+        payload: {
           name: newSectorName,
           hectares: parseFloat(newSectorHectares),
           budget: newSectorBudget ? parseFloat(newSectorBudget) : 0,
           latitude: newSectorLatitude ? parseFloat(newSectorLatitude) : null,
           longitude: newSectorLongitude ? parseFloat(newSectorLongitude) : null
-        }])
-        .select()
-        .single();
-
-      if (error) throw error;
+        }
+      });
 
       setFields(fields.map(f => {
         if (f.id === fieldId) {
@@ -237,20 +219,16 @@ export const Fields: React.FC = () => {
   const handleUpdateSector = async (e: React.FormEvent, sectorId: string, fieldId: string) => {
     e.preventDefault();
     try {
-      const { data, error } = await supabase
-        .from('sectors')
-        .update({
+      const data = await updateSector({
+        sectorId,
+        patch: {
           name: editSectorName,
           hectares: parseFloat(editSectorHectares),
           budget: editSectorBudget ? parseFloat(editSectorBudget) : 0,
           latitude: editSectorLatitude ? parseFloat(editSectorLatitude) : null,
           longitude: editSectorLongitude ? parseFloat(editSectorLongitude) : null
-        })
-        .eq('id', sectorId)
-        .select()
-        .single();
-
-      if (error) throw error;
+        }
+      });
 
       setFields(fields.map(f => {
         if (f.id === fieldId) {
@@ -271,12 +249,7 @@ export const Fields: React.FC = () => {
     if (!window.confirm('¿Eliminar este sector?')) return;
 
     try {
-      const { error } = await supabase
-        .from('sectors')
-        .delete()
-        .eq('id', sectorId);
-
-      if (error) throw error;
+      await deleteSector({ sectorId });
 
       setFields(fields.map(f => {
         if (f.id === fieldId) {

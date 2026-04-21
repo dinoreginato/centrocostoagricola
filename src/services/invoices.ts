@@ -164,3 +164,12 @@ export async function fetchInvoiceDestinations(params: { companyId: string; comp
 
   return { machines, destinations };
 }
+
+export async function markInvoiceAsPaid(params: { invoiceId: string; paymentDate: string }) {
+  const { error } = await supabase
+    .from('invoices')
+    .update({ status: 'Pagada', payment_date: params.paymentDate })
+    .eq('id', params.invoiceId);
+
+  if (error) throw error;
+}

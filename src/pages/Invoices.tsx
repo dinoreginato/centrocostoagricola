@@ -1,11 +1,11 @@
 import { toast } from 'sonner';
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Plus, FileText, Trash2, Save, Loader2, Check, Download, Upload, RefreshCw, Search, Printer, ChevronLeft, ChevronRight, MapPin, Database } from 'lucide-react';
 import { InvoicePrint } from '../components/InvoicePrint';
 import { fetchInvoiceDestinations, fetchInvoiceProducts, fetchInvoicesForCompany, fetchInvoiceSuppliers } from '../services/invoices';
+import { createInvoice, createInvoiceItem, createOrFindProductByName, deleteInvoiceItemsByIds, deleteInvoicesCascade, fetchInvoiceItems, fetchInvoicesBasic, findSupplierRut, insertGeneralCost, insertIrrigationAssignment, insertLaborAssignment, insertMachineryAssignment, invoiceExists, rpcDeleteInvoiceForce, rpcReverseInventoryMovement, rpcUpdateInventoryWithAverageCost, searchOfficialProductsForInvoice, updateInvoice, updateInvoiceItem } from '../services/invoiceMutations';
 
 interface InvoiceItem {
   id?: string;
@@ -356,16 +356,15 @@ export const Invoices: React.FC = () => {
       const isChemical = ['Fertilizantes', 'Fungicida', 'Herbicida', 'Insecticida', 'Plaguicida', 'Quimicos'].includes(currentItem.category || '');
       
       if (isChemical && val.length >= 3) {
-          const { data } = await supabase
-              .from('official_products')
-              .select('*')
-              .ilike('commercial_name', `%${val}%`)
-              .limit(5);
-          
-          if (data && data.length > 0) {
-              setOfficialSuggestions(data);
-              setShowSuggestions(true);
-          } else {
+          try {
+              const data = await searchOfficialProductsForInvoice({ query: val, limit: 5 });
+              if (data && data.length > 0) {
+                  setOfficialSuggestions(data);
+                  setShowSuggestions(true);
+              } else {
+                  setShowSuggestions(false);
+              }
+          } catch {
               setShowSuggestions(false);
           }
       } else {
@@ -762,24 +761,21 @@ export const Invoices: React.FC = () => {
             }
 
             // Check duplicate on import
-            const { data: existingImport } = await supabase
-              .from('invoices')
-              .select('id')
-              .eq('company_id', targetCompanyId)
-              .eq('invoice_number', invoiceDataMap.number)
-              .eq('supplier', invoiceDataMap.supplier)
-              .maybeSingle();
+            const alreadyExists = await invoiceExists({
+              companyId: targetCompanyId,
+              invoiceNumber: invoiceDataMap.number,
+              supplier: invoiceDataMap.supplier
+            });
 
-            if (existingImport) {
+            if (alreadyExists) {
               console.warn(`Skipping duplicate invoice: ${invoiceDataMap.number} - ${invoiceDataMap.supplier}`);
               // Optional: count as error or just skip silently? Let's skip.
               continue;
             }
 
             // 1. Create Invoice
-            const { data: invoiceData, error: invError } = await supabase
-              .from('invoices')
-              .insert([{
+            const invoiceData = await createInvoice({
+              payload: {
                 company_id: targetCompanyId,
                 invoice_number: invoiceDataMap.number,
                 supplier: invoiceDataMap.supplier,
@@ -793,11 +789,8 @@ export const Invoices: React.FC = () => {
                 exempt_amount: invoiceDataMap.exempt,
                 special_tax_amount: invoiceDataMap.specialTax,
                 total_amount: invoiceDataMap.total
-              }])
-              .select()
-              .single();
-
-            if (invError) throw invError;
+              }
+            });
 
             // 2. Process Items
             for (const item of inv.items) {
@@ -810,54 +803,29 @@ export const Invoices: React.FC = () => {
                 total: Number(item.total || item.total_price || 0)
               };
 
-              let productId;
-              const { data: existingProduct } = await supabase
-                .from('products')
-                .select('id')
-                .eq('company_id', targetCompanyId)
-                .ilike('name', itemMap.name)
-                .single();
+              const productId = await createOrFindProductByName({
+                companyId: targetCompanyId,
+                name: itemMap.name,
+                category: itemMap.category,
+                unit: itemMap.unit
+              });
 
-              if (existingProduct) {
-                productId = existingProduct.id;
-              } else {
-                const { data: newProduct, error: prodError } = await supabase
-                  .from('products')
-                  .insert([{
-                    company_id: targetCompanyId,
-                    name: itemMap.name,
-                    category: itemMap.category,
-                    unit: itemMap.unit,
-                    current_stock: 0,
-                    average_cost: 0
-                  }])
-                  .select()
-                  .single();
-                
-                if (prodError) throw prodError;
-                productId = newProduct.id;
-              }
-
-              const { data: invItem, error: itemError } = await supabase
-                .from('invoice_items')
-                .insert([{
+              const invItem = await createInvoiceItem({
+                payload: {
                   invoice_id: invoiceData.id,
                   product_id: productId,
                   quantity: itemMap.quantity,
                   unit_price: itemMap.price,
                   total_price: itemMap.total,
                   category: itemMap.category
-                }])
-                .select()
-                .single();
+                }
+              });
 
-              if (itemError) throw itemError;
-
-              await supabase.rpc('update_inventory_with_average_cost', {
-                product_id: productId,
-                quantity_in: itemMap.quantity,
-                unit_cost: itemMap.price,
-                invoice_item_id: invItem.id
+              await rpcUpdateInventoryWithAverageCost({
+                productId,
+                quantityIn: itemMap.quantity,
+                unitCost: itemMap.price,
+                invoiceItemId: invItem.id
               });
             }
             successCount++;
@@ -942,12 +910,7 @@ export const Invoices: React.FC = () => {
     try {
       setLoading(true);
       
-      // Use the new RPC function for atomic force delete
-      const { error } = await supabase.rpc('delete_invoice_force', {
-        target_invoice_id: id
-      });
-
-      if (error) throw error;
+      await rpcDeleteInvoiceForce({ invoiceId: id });
       
       toast('Factura eliminada (Forzado)');
       
@@ -971,13 +934,7 @@ export const Invoices: React.FC = () => {
 
     setLoading(true);
     try {
-      // Fetch all invoices
-      const { data: allInvoicesRaw, error } = await supabase
-        .from('invoices')
-        .select('id, invoice_number, supplier, created_at')
-        .eq('company_id', selectedCompany.id);
-
-      if (error) throw error;
+      const allInvoicesRaw = await fetchInvoicesBasic({ companyId: selectedCompany.id });
 
       const duplicatesToDelete: string[] = [];
       const seen = new Set<string>();
@@ -1004,21 +961,7 @@ export const Invoices: React.FC = () => {
             return;
         }
 
-        // Delete items first for these duplicates
-        const { error: itemsError } = await supabase
-            .from('invoice_items')
-            .delete()
-            .in('invoice_id', duplicatesToDelete);
-        
-        if (itemsError) throw itemsError;
-
-        // Delete invoices
-        const { error: deleteError } = await supabase
-            .from('invoices')
-            .delete()
-            .in('id', duplicatesToDelete);
-
-        if (deleteError) throw deleteError;
+        await deleteInvoicesCascade({ invoiceIds: duplicatesToDelete });
 
         toast(`Se eliminaron ${duplicatesToDelete.length} facturas duplicadas.`);
         loadStats();
@@ -1047,15 +990,7 @@ export const Invoices: React.FC = () => {
     }
     
     try {
-        const { error } = await supabase
-            .from('invoices')
-            .update({ 
-                status: newStatus,
-                payment_date: newPaymentDate
-            })
-            .eq('id', invoice.id);
-
-        if (error) throw error;
+        await updateInvoice({ invoiceId: invoice.id, patch: { status: newStatus, payment_date: newPaymentDate } });
 
         // Update local state directly to reflect change immediately
         const updatedInvoices = allInvoices.map(inv => 
@@ -1125,28 +1060,32 @@ export const Invoices: React.FC = () => {
                  if (totalHa > 0) {
                      for (const s of targetSectors) {
                          const shareAmount = (Number(s.hectares || 0) / totalHa) * itemGrossAmount;
-                         await supabase.from('machinery_assignments').insert([{
-                             company_id: selectedCompany.id,
-                             invoice_item_id: dbInvoiceItem.id,
-                             machine_id: null, // Null indicates general machinery cost
-                             date: invoiceDate,
-                             amount: shareAmount,
-                             sector_id: s.id, 
-                             notes: `Maquinaria General (Dist. Proporcional): ${formItem.product_name}`
-                         }]);
+                         await insertMachineryAssignment({
+                             payload: {
+                                 company_id: selectedCompany.id,
+                                 invoice_item_id: dbInvoiceItem.id,
+                                 machine_id: null,
+                                 date: invoiceDate,
+                                 amount: shareAmount,
+                                 sector_id: s.id,
+                                 notes: `Maquinaria General (Dist. Proporcional): ${formItem.product_name}`
+                             }
+                         });
                      }
                  }
              } else {
                  // Specific Machine
-                 await supabase.from('machinery_assignments').insert([{
-                     company_id: selectedCompany.id,
-                     invoice_item_id: dbInvoiceItem.id,
-                     machine_id: formItem.destination_id,
-                     date: invoiceDate,
-                     amount: itemGrossAmount,
-                     sector_id: null, 
-                     notes: 'Asignación automática desde Factura'
-                 }]);
+                 await insertMachineryAssignment({
+                     payload: {
+                         company_id: selectedCompany.id,
+                         invoice_item_id: dbInvoiceItem.id,
+                         machine_id: formItem.destination_id,
+                         date: invoiceDate,
+                         amount: itemGrossAmount,
+                         sector_id: null,
+                         notes: 'Asignación automática desde Factura'
+                     }
+                 });
              }
           } else if (['sector', 'field', 'company'].includes(formItem.destination_type)) {
               const selectedOption = sectors.find(s => s.id === formItem.destination_id);
@@ -1166,29 +1105,35 @@ export const Invoices: React.FC = () => {
                   const finalAmount = documentType === 'Nota de Crédito' ? -Math.abs(amount) : Math.abs(amount);
                   
                   if (isLabor) {
-                      await supabase.from('labor_assignments').insert([{
-                          ...baseAssignment,
-                          sector_id: sectorId,
-                          assigned_amount: finalAmount,
-                          labor_type: formItem.labor_type || 'General',
-                          worker_id: null,
-                          notes: notesStr
-                      }]);
+                      await insertLaborAssignment({
+                          payload: {
+                              ...baseAssignment,
+                              sector_id: sectorId,
+                              assigned_amount: finalAmount,
+                              labor_type: formItem.labor_type || 'General',
+                              worker_id: null,
+                              notes: notesStr
+                          }
+                      });
                   } else if (isIrrigation) {
-                      await supabase.from('irrigation_assignments').insert([{
-                          ...baseAssignment,
-                          sector_id: sectorId,
-                          amount: finalAmount,
-                          notes: notesStr
-                      }]);
+                      await insertIrrigationAssignment({
+                          payload: {
+                              ...baseAssignment,
+                              sector_id: sectorId,
+                              amount: finalAmount,
+                              notes: notesStr
+                          }
+                      });
                   } else {
-                      await supabase.from('general_costs').insert([{
-                          ...baseAssignment,
-                          sector_id: sectorId,
-                          amount: finalAmount,
-                          category: formItem.category,
-                          description: notesStr
-                      }]);
+                      await insertGeneralCost({
+                          payload: {
+                              ...baseAssignment,
+                              sector_id: sectorId,
+                              amount: finalAmount,
+                              category: formItem.category,
+                              description: notesStr
+                          }
+                      });
                   }
               };
               
@@ -1220,10 +1165,9 @@ export const Invoices: React.FC = () => {
       if (editingInvoiceId) {
         // --- UPDATE EXISTING INVOICE (DIFFING STRATEGY) ---
         
-        // 1. Update Invoice Details Header
-        const { error: updateError } = await supabase
-          .from('invoices')
-          .update({
+        await updateInvoice({
+          invoiceId: editingInvoiceId,
+          patch: {
             invoice_number: invoiceNumber,
             supplier: supplier,
             supplier_rut: supplierRut,
@@ -1237,22 +1181,12 @@ export const Invoices: React.FC = () => {
             exempt_amount: exemptAmount,
             special_tax_amount: specialTaxAmount,
             total_amount: total
-          })
-          .eq('id', editingInvoiceId);
-
-        if (updateError) throw updateError;
+          }
+        });
         
         invoiceId = editingInvoiceId;
 
-        // 2. Fetch current DB items to compare
-        const { data: currentDbItems, error: fetchError } = await supabase
-          .from('invoice_items')
-          .select('*')
-          .eq('invoice_id', editingInvoiceId);
-
-        if (fetchError) throw fetchError;
-        
-        const dbItems = currentDbItems || [];
+        const dbItems = await fetchInvoiceItems({ invoiceId: editingInvoiceId });
 
         // Identify items to DELETE (in DB but not in current State)
         const itemsToDelete = dbItems.filter(dbItem => !items.find(formItem => formItem.id === dbItem.id));
@@ -1270,20 +1204,16 @@ export const Invoices: React.FC = () => {
         for (const item of itemsToDelete) {
            // Reverse Inventory first
            if (item.product_id) {
-             await supabase.rpc('reverse_inventory_movement', {
-               target_product_id: item.product_id,
-               quantity_to_remove: item.quantity
+             await rpcReverseInventoryMovement({
+               payload: {
+                 target_product_id: item.product_id,
+                 quantity_to_remove: item.quantity
+               }
              });
            }
         }
         
-        if (deleteIds.length > 0) {
-            const { error: delErr } = await supabase
-                .from('invoice_items')
-                .delete()
-                .in('id', deleteIds);
-            if (delErr) throw delErr;
-        }
+        await deleteInvoiceItemsByIds({ ids: (deleteIds as any[]).filter(Boolean) });
 
         // B. Process UPDATES
         for (const item of itemsToUpdate) {
@@ -1296,23 +1226,13 @@ export const Invoices: React.FC = () => {
            // If product_id is 'new' or null, it means user typed a new name.
            // Or if they selected a different product ID.
            if (currentProductId === 'new' || !currentProductId) {
-                // Create new product
-                const { data: newProduct, error: productError } = await supabase
-                    .from('products')
-                    .insert([{
-                        company_id: selectedCompany.id,
-                        name: item.product_name,
-                        category: item.category,
-                        unit: item.unit,
-                        current_stock: 0, 
-                        average_cost: 0,
-                        active_ingredient: item.active_ingredient || ''
-                    }])
-                    .select()
-                    .single();
-                
-                if (productError) throw productError;
-                currentProductId = newProduct.id;
+                currentProductId = await createOrFindProductByName({
+                  companyId: selectedCompany.id,
+                  name: item.product_name,
+                  category: item.category,
+                  unit: item.unit,
+                  activeIngredient: item.active_ingredient || ''
+                });
            }
 
            // Check if fields changed
@@ -1327,33 +1247,34 @@ export const Invoices: React.FC = () => {
                // If product changed, we MUST reverse old product.
                
                if (quantityChanged || priceChanged || productChanged) {
-                   await supabase.rpc('reverse_inventory_movement', {
+                   await rpcReverseInventoryMovement({
+                     payload: {
                        target_product_id: oldItem.product_id,
                        quantity_to_remove: oldItem.quantity
+                     }
                    });
                }
 
                // 2. Update Item Record
-               const { error: upErr } = await supabase
-                   .from('invoice_items')
-                   .update({
-                       product_id: currentProductId, // Update product_id
-                       quantity: item.quantity,
-                       unit_price: item.unit_price,
-                       total_price: item.total_price,
-                       category: item.category
-                   })
-                   .eq('id', item.id);
-               if (upErr) throw upErr;
+               await updateInvoiceItem({
+                 invoiceItemId: item.id as string,
+                 patch: {
+                   product_id: currentProductId,
+                   quantity: item.quantity,
+                   unit_price: item.unit_price,
+                   total_price: item.total_price,
+                   category: item.category
+                 }
+               });
 
                // 3. Add NEW stock impact (re-calculate avg cost)
                // Only if inventory-relevant fields changed
                if (quantityChanged || priceChanged || productChanged) {
-                   await supabase.rpc('update_inventory_with_average_cost', {
-                       product_id: currentProductId,
-                       quantity_in: item.quantity,
-                       unit_cost: item.unit_price,
-                       invoice_item_id: item.id
+                   await rpcUpdateInventoryWithAverageCost({
+                     productId: currentProductId as string,
+                     quantityIn: item.quantity,
+                     unitCost: item.unit_price,
+                     invoiceItemId: item.id as string
                    });
                }
            }
@@ -1365,48 +1286,35 @@ export const Invoices: React.FC = () => {
 
             // Handle New Product Creation
             if (productId === 'new' || !productId) {
-                 const { data: newProduct, error: productError } = await supabase
-                    .from('products')
-                    .insert([{
-                      company_id: selectedCompany.id,
-                      name: item.product_name,
-                      category: item.category,
-                      unit: item.unit,
-                      current_stock: 0, 
-                      average_cost: 0,
-                      active_ingredient: item.active_ingredient || ''
-                    }])
-                    .select()
-                    .single();
-                  
-                  if (productError) throw productError;
-                  productId = newProduct.id;
+                 productId = await createOrFindProductByName({
+                   companyId: selectedCompany.id,
+                   name: item.product_name,
+                   category: item.category,
+                   unit: item.unit,
+                   activeIngredient: item.active_ingredient || ''
+                 });
             }
 
             // Insert Invoice Item
-            const { data: invoiceItem, error: itemError } = await supabase
-              .from('invoice_items')
-              .insert([{
+            const invoiceItem = await createInvoiceItem({
+              payload: {
                 invoice_id: invoiceId,
                 product_id: productId,
                 quantity: item.quantity,
                 unit_price: item.unit_price,
                 total_price: item.total_price,
                 category: item.category
-              }])
-              .select()
-              .single();
-
-            if (itemError) throw itemError;
+              }
+            });
 
             await processDirectAssignment(item, invoiceItem);
 
             // Update Inventory
-            await supabase.rpc('update_inventory_with_average_cost', {
-              product_id: productId,
-              quantity_in: item.quantity,
-              unit_cost: item.unit_price,
-              invoice_item_id: invoiceItem.id
+            await rpcUpdateInventoryWithAverageCost({
+              productId: productId as string,
+              quantityIn: item.quantity,
+              unitCost: item.unit_price,
+              invoiceItemId: invoiceItem.id
             });
         }
 
@@ -1414,23 +1322,20 @@ export const Invoices: React.FC = () => {
         // --- CREATE NEW INVOICE ---
         
         // 0. Check for duplicates before creating
-        const { data: existingInvoice } = await supabase
-          .from('invoices')
-          .select('id')
-          .eq('company_id', selectedCompany.id)
-          .eq('invoice_number', invoiceNumber)
-          .eq('supplier', supplier)
-          .maybeSingle();
+        const alreadyExists = await invoiceExists({
+          companyId: selectedCompany.id,
+          invoiceNumber,
+          supplier
+        });
 
-        if (existingInvoice) {
+        if (alreadyExists) {
           toast(`¡Atención! Ya existe una factura con el número "${invoiceNumber}" para el proveedor "${supplier}".\n\nNo se puede crear un duplicado.`);
           setLoading(false);
           return;
         }
 
-        const { data: invoice, error: invoiceError } = await supabase
-          .from('invoices')
-          .insert([{
+        const invoice = await createInvoice({
+          payload: {
             company_id: selectedCompany.id,
             invoice_number: invoiceNumber,
             supplier: supplier,
@@ -1445,11 +1350,8 @@ export const Invoices: React.FC = () => {
             exempt_amount: exemptAmount,
             special_tax_amount: specialTaxAmount,
             total_amount: total
-          }])
-          .select()
-          .single();
-
-        if (invoiceError) throw invoiceError;
+          }
+        });
         invoiceId = invoice.id;
 
         // Process Items for NEW Invoice
@@ -1457,47 +1359,34 @@ export const Invoices: React.FC = () => {
             let productId = item.product_id;
 
             if (productId === 'new' || !productId) {
-              const { data: newProduct, error: productError } = await supabase
-                .from('products')
-                .insert([{
-                  company_id: selectedCompany.id,
-                  name: item.product_name,
-                  category: item.category,
-                  unit: item.unit,
-                  current_stock: 0, 
-                  average_cost: 0,
-                  active_ingredient: item.active_ingredient || ''
-                }])
-                .select()
-                .single();
-              
-              if (productError) throw productError;
-              productId = newProduct.id;
+              productId = await createOrFindProductByName({
+                companyId: selectedCompany.id,
+                name: item.product_name,
+                category: item.category,
+                unit: item.unit,
+                activeIngredient: item.active_ingredient || ''
+              });
             }
 
             // Insert Invoice Item
-            const { data: invoiceItem, error: itemError } = await supabase
-              .from('invoice_items')
-              .insert([{
+            const invoiceItem = await createInvoiceItem({
+              payload: {
                 invoice_id: invoiceId,
                 product_id: productId,
                 quantity: item.quantity,
                 unit_price: item.unit_price,
                 total_price: item.total_price,
                 category: item.category
-              }])
-              .select()
-              .single();
-
-            if (itemError) throw itemError;
+              }
+            });
 
             await processDirectAssignment(item, invoiceItem);
 
-            await supabase.rpc('update_inventory_with_average_cost', {
-              product_id: productId,
-              quantity_in: item.quantity,
-              unit_cost: item.unit_price,
-              invoice_item_id: invoiceItem.id
+            await rpcUpdateInventoryWithAverageCost({
+              productId: productId as string,
+              quantityIn: item.quantity,
+              unitCost: item.unit_price,
+              invoiceItemId: invoiceItem.id
             });
         }
       }
@@ -1642,18 +1531,9 @@ export const Invoices: React.FC = () => {
                           const val = e.target.value;
                           setSupplier(val);
                           if (val.length > 3) {
-                              supabase.from('invoices')
-                                  .select('supplier_rut')
-                                  .eq('company_id', selectedCompany.id)
-                                  .eq('supplier', val)
-                                  .order('created_at', { ascending: false })
-                                  .limit(1)
-                                  .maybeSingle()
-                                  .then(({ data }) => {
-                                      if (data && data.supplier_rut) {
-                                          setSupplierRut(data.supplier_rut);
-                                      }
-                                  });
+                              void findSupplierRut({ companyId: selectedCompany.id, supplier: val }).then((rut) => {
+                                  if (rut) setSupplierRut(rut);
+                              });
                           }
                       }}
                       className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"

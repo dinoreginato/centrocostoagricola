@@ -1,12 +1,11 @@
 import { toast } from 'sonner';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Save, Loader2, AlertCircle, Trash2, Edit2, Download } from 'lucide-react';
-import { supabase } from '../supabase/client';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { utils, writeFile } from 'xlsx';
 import { getSeasonFromDate } from '../lib/seasonUtils';
-import { loadIncomesPageData } from '../services/incomes';
+import { deleteIncomeEntry, loadIncomesPageData, upsertIncomeEntry } from '../services/incomes';
 
 interface Income {
   id: string;
@@ -88,18 +87,7 @@ export function Incomes() {
             price_per_kg: Number(editingIncome.price_per_kg) || 0
         };
 
-        if (editingIncome.id) {
-            const { error } = await supabase
-                .from('income_entries')
-                .update(payload)
-                .eq('id', editingIncome.id);
-            if(error) throw error;
-        } else {
-            const { error } = await supabase
-                .from('income_entries')
-                .insert([payload]);
-            if(error) throw error;
-        }
+        await upsertIncomeEntry({ incomeId: (editingIncome as any).id, payload });
         
         setShowIncomeModal(false);
         setEditingIncome({});
@@ -114,8 +102,7 @@ export function Incomes() {
   const handleDelete = async (id: string) => {
       if (!window.confirm('¿Está seguro de eliminar este registro?')) return;
       try {
-          const { error } = await supabase.from('income_entries').delete().eq('id', id);
-          if (error) throw error;
+          await deleteIncomeEntry({ incomeId: id });
           loadData();
       } catch (err: any) {
           toast.error('Error al eliminar: ' + err.message);

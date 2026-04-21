@@ -3,7 +3,6 @@ import { toast } from 'sonner';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X, Trash2, Layout, AlertCircle, Play, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, ShieldAlert } from 'lucide-react';
 import { 
@@ -19,6 +18,9 @@ import {
 import { WeatherWidget } from '../components/WeatherWidget';
 import { fetchAgrometItemsResumen, fetchAgrometPpDay } from '../services/agromet';
 import { loadDashboardRaw } from '../services/dashboard';
+import { createCompanyForCurrentUser, deleteCompany } from '../services/companies';
+import { fetchRainLogDates, fetchRainLogKeysForYear, fetchRainLogsForYear, insertRainLogs } from '../services/rainLogs';
+import { markInvoiceAsPaid } from '../services/invoices';
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
   const toRad = (v: number) => (v * Math.PI) / 180;
@@ -152,7 +154,7 @@ export const Dashboard: React.FC = () => {
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    const year = today.slice(0, 4);
+    const year = Number(today.slice(0, 4));
     const from = `${year}-01-01`;
 
     const field = companyFields.find((f: any) => f.id === rainFieldId) || null;
@@ -199,14 +201,14 @@ export const Dashboard: React.FC = () => {
         ? { field_id: rainFieldId, sector_id: null }
         : { field_id: null, sector_id: rainSectorId };
 
-      const { data: existingLogs } = await supabase
-        .from('rain_logs')
-        .select('date')
-        .eq('company_id', selectedCompany.id)
-        .gte('date', from)
-        .match(scopeFilter);
-
-      const existingDates = new Set((existingLogs || []).map((r: any) => r.date));
+      const existingDates = new Set(
+        await fetchRainLogDates({
+          companyId: selectedCompany.id,
+          from,
+          fieldId: scopeFilter.field_id,
+          sectorId: scopeFilter.sector_id
+        })
+      );
 
       const series = await fetchAgrometPpDay({ station: nearest.stationCode, from, to: today });
 
@@ -223,18 +225,8 @@ export const Dashboard: React.FC = () => {
           sector_id: scopeFilter.sector_id
         }));
 
-      if (rows.length > 0) {
-        const { error } = await supabase.from('rain_logs').insert(rows);
-        if (error) throw error;
-      }
-
-      const { data: rainData } = await supabase
-        .from('rain_logs')
-        .select('*')
-        .eq('company_id', selectedCompany.id)
-        .gte('date', `${year}-01-01`)
-        .order('date', { ascending: false });
-
+      await insertRainLogs({ rows });
+      const rainData = await fetchRainLogsForYear({ companyId: selectedCompany.id, year });
       setRainLogs(rainData || []);
       toast.success('Lluvia del año actualizada', { id: loadingToast });
     } catch (e: any) {
@@ -282,11 +274,7 @@ export const Dashboard: React.FC = () => {
 
     setRainSyncing(true);
     try {
-      const { data: existingLogs } = await supabase
-        .from('rain_logs')
-        .select('date, field_id, sector_id')
-        .eq('company_id', selectedCompany.id)
-        .gte('date', `${activeYear}-01-01`);
+      const existingLogs = await fetchRainLogKeysForYear({ companyId: selectedCompany.id, year: activeYear });
 
       (existingLogs || []).forEach((l: any) => {
         const date = l.date;
@@ -347,18 +335,8 @@ export const Dashboard: React.FC = () => {
         });
       });
 
-      if (rowsToInsert.length > 0) {
-        const { error } = await supabase.from('rain_logs').insert(rowsToInsert);
-        if (error) throw error;
-      }
-
-      const { data: rainData } = await supabase
-        .from('rain_logs')
-        .select('*')
-        .eq('company_id', selectedCompany.id)
-        .gte('date', `${activeYear}-01-01`)
-        .order('date', { ascending: false });
-
+      await insertRainLogs({ rows: rowsToInsert });
+      const rainData = await fetchRainLogsForYear({ companyId: selectedCompany.id, year: activeYear });
       setRainLogs(rainData || []);
     } catch (_e) {
       console.error('Error syncing agromet rain:', _e);
@@ -752,12 +730,7 @@ export const Dashboard: React.FC = () => {
 
     setIsDeleting(true);
     try {
-        const { error } = await supabase
-            .from('companies')
-            .delete()
-            .eq('id', selectedCompany.id);
-        
-        if (error) throw error;
+        await deleteCompany({ companyId: selectedCompany.id });
         
         toast('Empresa eliminada exitosamente.');
         await refreshCompanies();
@@ -776,22 +749,13 @@ export const Dashboard: React.FC = () => {
 
     setIsCreating(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const data = await createCompanyForCurrentUser({
+        name: newCompanyName,
+        rut: newCompanyRut.trim() || null
+      });
 
-      const { data, error } = await supabase
-        .from('companies')
-        .insert([{
-          name: newCompanyName,
-          rut: newCompanyRut.trim() || null,
-          owner_id: user.id
-        }])
-        .select()
-        .single();
-
-      if (error) throw error;
       if (data) {
-        addCompany(data);
+        addCompany(data as any);
         setNewCompanyName('');
         setNewCompanyRut('');
         setShowNewCompanyModal(false);
@@ -983,14 +947,7 @@ export const Dashboard: React.FC = () => {
                                             const userInputDate = prompt('Marcar como Pagada.\nIngrese la fecha de pago (YYYY-MM-DD):', new Date().toLocaleDateString('en-CA'));
                                             if (userInputDate) {
                                                 try {
-                                                    const { error } = await supabase
-                                                        .from('invoices')
-                                                        .update({ 
-                                                            status: 'Pagada',
-                                                            payment_date: userInputDate
-                                                        })
-                                                        .eq('id', inv.id);
-                                                    if (error) throw error;
+                                                            await markInvoiceAsPaid({ invoiceId: inv.id, paymentDate: userInputDate });
                                                     toast('Factura marcada como pagada');
                                                     loadDashboardData(); // Reload
                                                 } catch {

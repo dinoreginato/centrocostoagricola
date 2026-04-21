@@ -2,11 +2,10 @@ import { toast } from 'sonner';
 
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Droplets, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Layers } from 'lucide-react';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
-import { deleteAllIrrigationAssignments, deleteIrrigationAssignment, fetchIrrigationHistory, fetchIrrigationPendingItems } from '../services/irrigation';
+import { deleteAllIrrigationAssignments, deleteIrrigationAssignment, fetchIrrigationHistory, fetchIrrigationPendingItems, insertIrrigationAssignments, updateIrrigationAssignment } from '../services/irrigation';
 
 interface IrrigationItem {
   id: string; // invoice_item_id
@@ -327,24 +326,16 @@ export const Irrigation: React.FC = () => {
         if (editingAssignmentId) {
             // Update single assignment
             const alloc = payload[0]; // Only one when editing
-            const { error } = await supabase
-                .from('irrigation_assignments')
-                .update({
-                    sector_id: alloc.sector_id,
-                    assigned_amount: alloc.assigned_amount,
-                    assigned_date: assignedDate
-                })
-                .eq('id', editingAssignmentId);
-
-            if (error) throw error;
+            await updateIrrigationAssignment({
+                id: editingAssignmentId,
+                sectorId: alloc.sector_id,
+                assignedAmount: alloc.assigned_amount,
+                assignedDate
+            });
             toast('Asignación actualizada exitosamente');
         } else {
             // Insert multiple
-            const { error } = await supabase
-                .from('irrigation_assignments')
-                .insert(payload);
-
-            if (error) throw error;
+            await insertIrrigationAssignments({ rows: payload });
             toast('Asignaciones guardadas exitosamente');
         }
 

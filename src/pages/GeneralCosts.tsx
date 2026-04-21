@@ -1,11 +1,10 @@
 import { toast } from 'sonner';
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { LayoutList, ArrowRight, Save, Loader2, AlertCircle, Trash2 } from 'lucide-react';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
-import { deleteAllGeneralCostHistory, deleteGeneralCostAssignment, fetchGeneralCostsHistory, fetchPendingGeneralCosts } from '../services/generalCosts';
+import { deleteAllGeneralCostHistory, deleteGeneralCostAssignment, fetchGeneralCostsHistory, fetchPendingGeneralCosts, insertGeneralCostAssignments, updateGeneralCostAssignment } from '../services/generalCosts';
 
 interface GeneralCostItem {
   id: string; // invoice_item_id
@@ -209,12 +208,12 @@ export const GeneralCosts: React.FC = () => {
 
         if (editingAssignmentId) {
             // Update single
-             const { error } = await supabase.from('general_costs').update({
-                 sector_id: allocations[0].sector_id,
-                 amount: allocations[0].amount,
-                 date: assignedDate
-             }).eq('id', editingAssignmentId);
-             if(error) throw error;
+             await updateGeneralCostAssignment({
+               id: editingAssignmentId,
+               sectorId: allocations[0].sector_id,
+               amount: allocations[0].amount,
+               date: assignedDate
+             });
         } else {
             // Insert
             if (distributeBy === 'sector') {
@@ -240,8 +239,7 @@ export const GeneralCosts: React.FC = () => {
                  }));
             }
             
-            const { error } = await supabase.from('general_costs').insert(payload);
-            if(error) throw error;
+            await insertGeneralCostAssignments({ rows: payload });
         }
 
         toast('Guardado correctamente');

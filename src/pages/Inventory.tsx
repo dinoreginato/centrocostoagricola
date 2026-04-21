@@ -1,13 +1,12 @@
 import { toast } from 'sonner';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Package, Search, AlertTriangle, Edit, Trash2, X, Save, History, ArrowDownLeft, ArrowUpRight, Upload, ShoppingCart } from 'lucide-react';
 import { read, utils } from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { deleteOrArchiveInventoryProduct, fetchInventoryHistory, fetchInventoryProducts, mergeDuplicateInventoryProducts, searchOfficialProducts, updateInventoryProduct } from '../services/inventory';
+import { deleteOrArchiveInventoryProduct, fetchInventoryHistory, fetchInventoryProducts, fetchPhytosanitaryPrograms, fetchProgramEventsForProjection, mergeDuplicateInventoryProducts, searchOfficialProducts, updateInventoryProduct, upsertOfficialProducts } from '../services/inventory';
 
 interface Product {
   id: string;
@@ -147,15 +146,12 @@ export const Inventory: React.FC = () => {
         for (let i = 0; i < mappedData.length; i += chunkSize) {
             const chunk = mappedData.slice(i, i + chunkSize);
             // Use upsert to avoid duplicates
-            const { error } = await supabase
-                .from('official_products')
-                .upsert(chunk, { onConflict: 'registration_number', ignoreDuplicates: false });
-            
-            if (error) {
+            try {
+                await upsertOfficialProducts({ rows: chunk });
+                insertedCount += chunk.length;
+            } catch (error: any) {
                 console.error('Error importing chunk:', error);
                 lastError = error.message;
-            } else {
-                insertedCount += chunk.length;
             }
         }
 
@@ -320,10 +316,7 @@ export const Inventory: React.FC = () => {
   const generateShoppingListPDF = async () => {
     try {
         // Load Phytosanitary Programs to give the user a choice to project purchases
-        const { data: programsData } = await supabase
-            .from('phytosanitary_programs')
-            .select('*')
-            .eq('company_id', selectedCompany?.id);
+        const programsData = selectedCompany ? await fetchPhytosanitaryPrograms({ companyId: selectedCompany.id }) : [];
             
         const projectedNeeds = new Map<string, number>();
         
@@ -341,11 +334,7 @@ export const Inventory: React.FC = () => {
                     
                     if (totalHa > 0) {
                         // Fetch all events and products for this program
-                        const { data: evData } = await supabase.from('program_events').select(`
-                            id,
-                            water_per_ha,
-                            program_event_products(product_id, dose, dose_unit)
-                        `).eq('program_id', prog.id);
+                        const evData = await fetchProgramEventsForProjection({ programId: prog.id });
                         
                         if (evData) {
                             evData.forEach(ev => {

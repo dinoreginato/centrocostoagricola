@@ -3,9 +3,8 @@ import { toast } from 'sonner';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany, UserRole } from '../contexts/CompanyContext';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../supabase/client';
 import { Plus, Trash2, Mail, Shield, Loader2 } from 'lucide-react';
-import { deleteCompanyAdmin, fetchAllCompaniesAdmin, fetchCompanyMembers } from '../services/users';
+import { addCompanyMember, deleteCompanyAdmin, fetchAllCompaniesAdmin, fetchCompanyMembers, getUserIdByEmail, removeCompanyMember } from '../services/users';
 
 interface Member {
   member_id: string;
@@ -85,10 +84,7 @@ export const Users: React.FC = () => {
 
     try {
       // 1. Get User ID by Email
-      const { data: userId, error: userError } = await supabase
-        .rpc('get_user_id_by_email', { email_input: newUserEmail });
-
-      if (userError) throw userError;
+      const userId = await getUserIdByEmail({ email: newUserEmail });
       if (!userId) {
         throw new Error('Usuario no encontrado. Asegúrate de que esté registrado en la plataforma.');
       }
@@ -99,15 +95,7 @@ export const Users: React.FC = () => {
       }
 
       // 3. Add to company_members
-      const { error: insertError } = await supabase
-        .from('company_members')
-        .insert([{
-          company_id: selectedCompany.id,
-          user_id: userId,
-          role: newUserRole
-        }]);
-
-      if (insertError) throw insertError;
+      await addCompanyMember({ companyId: selectedCompany.id, userId, role: newUserRole });
 
       setMessage({ type: 'success', text: 'Usuario agregado exitosamente.' });
       setNewUserEmail('');
@@ -124,12 +112,7 @@ export const Users: React.FC = () => {
     if (!window.confirm('¿Estás seguro de eliminar a este usuario de la empresa?')) return;
 
     try {
-      const { error } = await supabase
-        .from('company_members')
-        .delete()
-        .eq('id', memberId);
-
-      if (error) throw error;
+      await removeCompanyMember({ memberId });
       setMembers(members.filter(m => m.member_id !== memberId));
     } catch (error) {
       console.error('Error removing member:', error);

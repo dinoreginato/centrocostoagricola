@@ -27,3 +27,18 @@ export async function loadIncomesPageData(params: { companyId: string }) {
   };
 }
 
+export async function upsertIncomeEntry(params: { incomeId?: string | null; payload: any }) {
+  if (params.incomeId) {
+    const { error } = await supabase.from('income_entries').update(params.payload).eq('id', params.incomeId);
+    if (error) throw error;
+    return;
+  }
+
+  const { error } = await supabase.from('income_entries').insert([params.payload]);
+  if (error) throw error;
+}
+
+export async function deleteIncomeEntry(params: { incomeId: string }) {
+  const { error } = await supabase.from('income_entries').delete().eq('id', params.incomeId);
+  if (error) throw error;
+}
