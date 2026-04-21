@@ -120,7 +120,7 @@ export const Dashboard: React.FC = () => {
         }
 
         setRainStation({ id: nearest.best.id, name: nearest.best.nombre });
-      } catch (e) {
+      } catch {
         setRainStation(null);
       }
     };
@@ -365,8 +365,8 @@ export const Dashboard: React.FC = () => {
         .order('date', { ascending: false });
 
       setRainLogs(rainData || []);
-    } catch (e) {
-      console.error('Error syncing agromet rain:', e);
+    } catch (_e) {
+      console.error('Error syncing agromet rain:', _e);
       toast.error('No se pudo sincronizar lluvia desde Agrometeorología');
     } finally {
       setRainSyncing(false);
@@ -978,7 +978,6 @@ export const Dashboard: React.FC = () => {
   const rainActiveYear = new Date().getFullYear();
   const selectedField = companyFields.find((f: any) => f.id === rainFieldId) || null;
   const sectorOptions = (selectedField?.sectors || []) as any[];
-  const selectedSector = sectorOptions.find((s: any) => s.id === rainSectorId) || null;
 
   const scopedRainLogs = (rainLogs || []).filter((l: any) => {
     if (!l?.date) return false;
@@ -1121,7 +1120,7 @@ export const Dashboard: React.FC = () => {
                                                     if (error) throw error;
                                                     toast('Factura marcada como pagada');
                                                     loadDashboardData(); // Reload
-                                                } catch (err) {
+                                                } catch {
                                                     toast.error('Error al actualizar factura');
                                                 }
                                             }

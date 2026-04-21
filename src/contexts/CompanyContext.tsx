@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { supabase } from '../supabase/client';
 import { useAuth } from './AuthContext';
 
@@ -32,7 +32,7 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchUserRole = async (company: Company, userId: string) => {
+  const fetchUserRole = useCallback(async (company: Company, userId: string) => {
     if (company.owner_id === userId) {
       setUserRole('admin');
       return;
@@ -45,6 +45,8 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
         .eq('company_id', company.id)
         .eq('user_id', userId)
         .single();
+
+      if (error) throw error;
       
       if (data) {
         setUserRole(data.role as UserRole);
@@ -55,9 +57,9 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
       console.error('Error fetching role:', error);
       setUserRole('viewer');
     }
-  };
+  }, []);
 
-  const refreshCompanies = async () => {
+  const refreshCompanies = useCallback(async () => {
     if (!user) {
       setCompanies([]);
       setSelectedCompany(null);
@@ -120,11 +122,11 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchUserRole, user]);
 
   useEffect(() => {
     refreshCompanies();
-  }, [user]);
+  }, [refreshCompanies]);
 
   const selectCompany = async (companyId: string) => {
     const company = companies.find(c => c.id === companyId);

@@ -1,9 +1,8 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
-import { formatCLP } from '../lib/utils';
-import { Plus, Loader2, Save, Trash2, Calendar, FileText, Printer, CheckCircle, XCircle, Search, Edit, Copy, ClipboardList } from 'lucide-react';
+import { Plus, Loader2, Save, Trash2, Printer, Edit, Copy, ClipboardList } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
@@ -137,17 +136,10 @@ export const ApplicationOrders: React.FC = () => {
     unit_override: ''
   });
 
-  // Programs state
-  const [programs, setPrograms] = useState<any[]>([]);
   const [programEvents, setProgramEvents] = useState<any[]>([]);
 
-  useEffect(() => {
-    if (selectedCompany) {
-      loadData();
-    }
-  }, [selectedCompany]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
+    if (!selectedCompany) return;
     setLoading(true);
     try {
         // 1. Load Orders
@@ -206,7 +198,6 @@ export const ApplicationOrders: React.FC = () => {
         // Load Phytosanitary Programs
         const { data: progData } = await supabase.from('phytosanitary_programs').select('*').eq('company_id', selectedCompany.id).order('created_at', { ascending: false });
         if (progData) {
-            setPrograms(progData);
             const { data: evData } = await supabase.from('program_events').select(`
                 *,
                 products:program_event_products(
@@ -223,7 +214,13 @@ export const ApplicationOrders: React.FC = () => {
     } finally {
         setLoading(false);
     }
-  };
+  }, [selectedCompany]);
+
+  useEffect(() => {
+    if (selectedCompany) {
+      loadData();
+    }
+  }, [selectedCompany, loadData]);
 
   const handleLoadFromProgramEvent = (eventId: string) => {
     if (!eventId) return;
@@ -954,7 +951,6 @@ export const ApplicationOrders: React.FC = () => {
                               const newSectorId = e.target.value;
                               
                               // Find old and new sector hectares
-                              const oldSector = fields.find(f => f.id === currentOrder.field_id)?.sectors?.find(s => s.id === currentOrder.sector_id);
                               const newSector = fields.find(f => f.id === currentOrder.field_id)?.sectors?.find(s => s.id === newSectorId);
                               
                               let updatedItems = currentOrder.items;

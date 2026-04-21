@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Plus, Loader2, Save, Trash2, Beaker, Calendar, Droplets, MapPin, RefreshCw, Edit, Filter, Download, Eye, FileText } from 'lucide-react';
+import { Plus, Loader2, Save, Trash2, Calendar, Droplets, MapPin, RefreshCw, Edit, Filter, Download, Eye, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
@@ -165,8 +165,6 @@ export const Applications: React.FC = () => {
       const product = products.find(p => p.id === currentItem.product_id);
       if (product) {
         // Default to product unit, but if it's L allow cc, if Kg allow gr
-        const base = normalizeUnit(product.unit);
-
         // Find last used objective for this product
         let lastObjective = '';
         for (const app of applications) {

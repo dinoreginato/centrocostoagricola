@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Loader2, Search, Filter, DollarSign, Calendar } from 'lucide-react';
+import { Loader2, Search, Calendar } from 'lucide-react';
 
 interface ChemicalItem {
   id: string;
@@ -36,7 +36,6 @@ export const ChemicalCosts: React.FC = () => {
   const [items, setItems] = useState<ChemicalItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [exchangeRates, setExchangeRates] = useState<ExchangeRateCache>({});
 
   const [viewMode, setViewMode] = useState<'list' | 'summary'>('summary');
 
@@ -88,7 +87,6 @@ export const ChemicalCosts: React.FC = () => {
     try {
       // 1. Fetch Exchange Rates for the selected year
       const rates = await fetchYearlyExchangeRates(selectedYear);
-      setExchangeRates(prev => ({ ...prev, ...rates }));
 
       // 2. Fetch Invoices with items
       const { data: invoices } = await supabase

@@ -797,7 +797,7 @@ export const Invoices: React.FC = () => {
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
-        let jsonContent = event.target?.result as string;
+        const jsonContent = event.target?.result as string;
         let json;
 
         // Smart JSON Parsing Strategy
@@ -805,16 +805,16 @@ export const Invoices: React.FC = () => {
           text = text.trim();
           
           // 1. Try standard parse
-          try { return JSON.parse(text); } catch (e) {}
+          try { return JSON.parse(text); } catch (_e) { void _e; }
           
           // 2. Try wrapping in brackets (for comma-separated lists)
-          try { return JSON.parse(`[${text}]`); } catch (e) {}
+          try { return JSON.parse(`[${text}]`); } catch (_e) { void _e; }
 
           // 3. Try fixing concatenated objects like } { -> }, {
           try {
              const fixed = text.replace(/}\s*{/g, '},{');
              return JSON.parse(`[${fixed}]`);
-          } catch (e) {}
+          } catch (_e) { void _e; }
 
           // 4. Aggressive Regex Extraction (Finds anything looking like an object)
           // Matches { ... } allowing for one level of nesting
@@ -824,7 +824,7 @@ export const Invoices: React.FC = () => {
               // Join matches with commas and wrap in brackets
               return JSON.parse(`[${matches.join(',')}]`);
             }
-          } catch (e) {}
+          } catch (_e) { void _e; }
 
           throw new Error("No se pudo interpretar el formato del archivo.");
         };

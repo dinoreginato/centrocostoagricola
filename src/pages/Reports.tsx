@@ -3,9 +3,9 @@ import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { getSeasonFromDate, getSeasonRange, isDateInSeason } from '../lib/seasonUtils';
+import { getSeasonFromDate, isDateInSeason } from '../lib/seasonUtils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { FileDown, Loader2, Calendar, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer, Settings, DollarSign, Scale, Play, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
+import { Loader2, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer, Settings, DollarSign, Scale, Play, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
@@ -156,9 +156,6 @@ export const Reports: React.FC = () => {
 
   // Settings State (USD, etc)
   const [usdExchangeRate, setUsdExchangeRate] = useState<number>(950);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [showIncomeModal, setShowIncomeModal] = useState(false);
-  const [editingIncome, setEditingIncome] = useState<Partial<IncomeEntry>>({});
   const [distributeGeneralCosts, setDistributeGeneralCosts] = useState(false);
   const [pdfOrientation, setPdfOrientation] = useState<'portrait' | 'landscape'>('landscape'); // Default landscape
 
@@ -193,11 +190,6 @@ export const Reports: React.FC = () => {
   // Presentation State
   const [presentationMode, setPresentationMode] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
-
-  // Production Record Input State
-  const [editingProdSectorId, setEditingProdSectorId] = useState<string | null>(null);
-  const [editingProdKg, setEditingProdKg] = useState<string>('');
-  const [editingProdPrice, setEditingProdPrice] = useState<string>('');
 
   // Filtered Pending Invoices
   const filteredPendingInvoices = pendingInvoices.filter(invoice => {
@@ -787,7 +779,7 @@ export const Reports: React.FC = () => {
             compData.get(mKey)!.current += amount;
           }
         }
-      } catch (e) {}
+      } catch (_e) { void _e; }
     });
 
     filteredWorkerCostsCurrent.forEach(w => {
@@ -809,7 +801,7 @@ export const Reports: React.FC = () => {
             compData.get(mKey)!.current += amount;
           }
         }
-      } catch (e) {}
+      } catch (_e) { void _e; }
     });
 
     prevInvoices.forEach(inv => {
@@ -829,7 +821,7 @@ export const Reports: React.FC = () => {
             compData.get(mKey)!.prev += amount;
           }
         }
-      } catch (e) {}
+      } catch (_e) { void _e; }
     });
 
     filteredWorkerCostsPrev.forEach(w => {
@@ -847,7 +839,7 @@ export const Reports: React.FC = () => {
             compData.get(mKey)!.prev += amount;
           }
         }
-      } catch (e) {}
+      } catch (_e) { void _e; }
     });
 
     setMonthlyExpenses(Array.from(monthlyData.entries()).map(([month, total]) => ({ month, total })));
@@ -932,7 +924,7 @@ export const Reports: React.FC = () => {
             notes: inv.notes || '',
             categories
           };
-        } catch (e) { return null; }
+        } catch { return null; }
       })
       .filter(Boolean) as PendingInvoice[];
       

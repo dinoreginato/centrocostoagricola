@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Download, Printer } from 'lucide-react';
+import { X, Download } from 'lucide-react';
 
 interface PdfPreviewModalProps {
   isOpen: boolean;
