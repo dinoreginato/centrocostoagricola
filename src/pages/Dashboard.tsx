@@ -17,6 +17,7 @@ import {
   Legend
 } from 'recharts';
 import { WeatherWidget } from '../components/WeatherWidget';
+import { fetchAgrometItemsResumen, fetchAgrometPpDay } from '../services/agromet';
 
 export const Dashboard: React.FC = () => {
   const { companies, selectedCompany, loading, selectCompany, addCompany, refreshCompanies } = useCompany();
@@ -72,15 +73,6 @@ export const Dashboard: React.FC = () => {
       Math.sin(dLon / 2) * Math.sin(dLon / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
-  };
-
-  const fetchAgrometItemsResumen = async () => {
-    const resp = await fetch('/api/agromet/items-resumen.js', { headers: { accept: 'application/json' } });
-    if (!resp.ok) throw new Error('No se pudo obtener Agrometeorología');
-    const ct = resp.headers.get('content-type') || '';
-    if (!ct.includes('application/json')) throw new Error('Respuesta no válida desde Agrometeorología');
-    const json = await resp.json();
-    return json?.data || [];
   };
 
   useEffect(() => {
@@ -221,12 +213,7 @@ export const Dashboard: React.FC = () => {
 
       const existingDates = new Set((existingLogs || []).map((r: any) => r.date));
 
-      const resp = await fetch(`/api/agromet/pp-day.js?station=${encodeURIComponent(nearest.stationCode)}&from=${from}&to=${today}`);
-      if (!resp.ok) throw new Error('No se pudo obtener histórico de precipitación');
-      const ct = resp.headers.get('content-type') || '';
-      if (!ct.includes('application/json')) throw new Error('Respuesta no válida desde Agrometeorología');
-      const json = await resp.json();
-      const series = json?.data || [];
+      const series = await fetchAgrometPpDay({ station: nearest.stationCode, from, to: today });
 
       const rows = series
         .filter((r: any) => r?.date && r?.mm != null && !existingDates.has(r.date))

@@ -8,6 +8,14 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig({
   build: {
     sourcemap: 'hidden',
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (id.includes('node_modules/recharts')) return 'recharts';
+          return undefined;
+        }
+      }
+    }
   },
   plugins: [
     react({

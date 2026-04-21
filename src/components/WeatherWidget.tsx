@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import { Cloud, Sun, CloudRain, Wind, Droplets } from 'lucide-react';
+import { fetchOpenMeteoCurrentWeather } from '../services/openMeteo';
 
 interface WeatherData {
   temp: number;
@@ -24,14 +24,10 @@ export const WeatherWidget: React.FC = () => {
   useEffect(() => {
     const fetchWeather = async () => {
       try {
-        const response = await axios.get(
-          `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=America%2FSantiago`
-        );
-
-        const current = response.data.current;
+        const current = await fetchOpenMeteoCurrentWeather({ lat: LAT, lon: LON });
         
         // Map WMO weather codes to our simplified icons/descriptions
-        const code = current.weather_code;
+        const code = current.weatherCode;
         let description = 'Despejado';
         let icon = 'sun';
         
@@ -41,11 +37,11 @@ export const WeatherWidget: React.FC = () => {
         else if (code >= 95) { description = 'Tormenta'; icon = 'rain'; }
 
         setWeather({
-          temp: Math.round(current.temperature_2m),
+          temp: Math.round(current.temperatureC),
           description,
           icon,
-          humidity: current.relative_humidity_2m,
-          windSpeed: Math.round(current.wind_speed_10m),
+          humidity: current.humidityPercent,
+          windSpeed: Math.round(current.windSpeedKmh),
           location: 'Rengo, Chile' // Default location based on coordinates
         });
       } catch (error) {
