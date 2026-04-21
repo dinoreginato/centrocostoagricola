@@ -1,12 +1,24 @@
 import { toast } from 'sonner';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { Plus, Loader2, Save, Trash2, Printer, Edit, Copy, ClipboardList } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
-import { loadApplicationOrdersPageData } from '../services/applicationOrders';
+import {
+  createApplication,
+  createApplicationItem,
+  createFuelConsumption,
+  createInventoryMovement,
+  deleteApplicationOrderCascade,
+  findCompletedOrderApplicationId,
+  getFuelStats,
+  loadApplicationOrdersPageData,
+  markApplicationOrderCompleted,
+  revertApplicationOrderToPending,
+  updateProductStock,
+  upsertApplicationOrder
+} from '../services/applicationOrders';
 
 // Interfaces based on DB Schema
 interface ApplicationOrder {
@@ -332,7 +344,6 @@ export const ApplicationOrders: React.FC = () => {
 
       setLoading(true);
       try {
-          // 1. Insert/Update Order Header
           const orderData = {
               company_id: selectedCompany.id,
               field_id: currentOrder.field_id,
@@ -358,23 +369,7 @@ export const ApplicationOrders: React.FC = () => {
               variety: currentOrder.variety, // New field
               objective: currentOrder.objective // New field
           };
-
-          let orderId = currentOrder.id;
-
-          if (orderId) {
-              const { error } = await supabase.from('application_orders').update(orderData).eq('id', orderId);
-              if (error) throw error;
-              // Delete old items to rewrite
-              await supabase.from('application_order_items').delete().eq('order_id', orderId);
-          } else {
-              const { data, error } = await supabase.from('application_orders').insert([orderData]).select().single();
-              if (error) throw error;
-              orderId = data.id;
-          }
-
-          // 2. Insert Items
           const itemsData = currentOrder.items.map(item => ({
-              order_id: orderId,
               product_id: item.product_id,
               dose_per_hectare: item.dose_per_hectare,
               dose_per_100l: item.dose_per_100l,
@@ -382,9 +377,8 @@ export const ApplicationOrders: React.FC = () => {
               unit: item.unit,
               objective: item.objective
           }));
-
-          const { error: itemsError } = await supabase.from('application_order_items').insert(itemsData);
-          if (itemsError) throw itemsError;
+          
+          await upsertApplicationOrder({ orderId: currentOrder.id, orderData, itemsData });
 
           toast('Orden guardada correctamente');
           setIsEditing(false);
@@ -422,38 +416,17 @@ export const ApplicationOrders: React.FC = () => {
 
       setLoading(true);
       try {
-          // Find if this order has an associated application (if it was completed)
           const order = orders.find(o => o.id === id);
-          if (order && order.status === 'completada' && order.completed_date) {
-              // We need to find the corresponding application. We match by date, sector, and type.
-              // Note: A more robust way would be storing the order_id in the applications table, 
-              // but we'll use heuristic matching for now.
-              const { data: apps } = await supabase
-                  .from('applications')
-                  .select('id')
-                  .eq('sector_id', order.sector_id)
-                  .eq('application_date', order.completed_date)
-                  .eq('application_type', order.application_type);
+          const completedApplicationId =
+            order && order.status === 'completada' && order.completed_date
+              ? await findCompletedOrderApplicationId({
+                  sectorId: order.sector_id,
+                  completedDate: order.completed_date,
+                  applicationType: order.application_type
+                })
+              : null;
 
-              if (apps && apps.length > 0) {
-                  const appId = apps[0].id;
-                  
-                  // Before deleting the application, we should ideally revert stock and delete items
-                  // But to keep it simple and safe for now, we'll just delete the items and the application itself.
-                  // (Depending on your DB schema, ON DELETE CASCADE might handle this)
-                  
-                  await supabase.from('application_items').delete().eq('application_id', appId);
-                  await supabase.from('fuel_consumption').delete().eq('application_id', appId);
-                  await supabase.from('applications').delete().eq('id', appId);
-              }
-          }
-
-          // First delete items to avoid foreign key constraints
-          await supabase.from('application_order_items').delete().eq('order_id', id);
-          
-          // Then delete the order
-          const { error } = await supabase.from('application_orders').delete().eq('id', id);
-          if (error) throw error;
+          await deleteApplicationOrderCascade({ orderId: id, completedApplicationId });
           
           loadData();
       } catch (error: any) {
@@ -470,15 +443,7 @@ export const ApplicationOrders: React.FC = () => {
       }
       setLoading(true);
       try {
-          const { error } = await supabase
-              .from('application_orders')
-              .update({ 
-                  status: 'pendiente',
-                  completed_date: null
-              })
-              .eq('id', order.id);
-          
-          if (error) throw error;
+          await revertApplicationOrderToPending({ orderId: order.id });
           toast.success(`Orden #${order.order_number} revertida a PENDIENTE.`);
           loadData();
       } catch (error: any) {
@@ -522,21 +487,16 @@ export const ApplicationOrders: React.FC = () => {
           const waterLiters = Number(order.water_liters_per_hectare) || 0;
           const safeWaterLiters = isNaN(waterLiters) ? 0 : Number(waterLiters.toFixed(2));
 
-          // 2. Insert into Applications (Actual Execution)
-          const { data: application, error: appError } = await supabase
-              .from('applications')
-              .insert([{
-                  field_id: order.field_id,
-                  sector_id: order.sector_id,
-                  application_date: completedDate,
-                  application_type: order.application_type,
-                  total_cost: safeTotalCost,
-                  water_liters_per_hectare: safeWaterLiters
-              }])
-              .select()
-              .single();
-
-          if (appError) throw appError;
+          const application = await createApplication({
+            payload: {
+              field_id: order.field_id,
+              sector_id: order.sector_id,
+              application_date: completedDate,
+              application_type: order.application_type,
+              total_cost: safeTotalCost,
+              water_liters_per_hectare: safeWaterLiters
+            }
+          });
 
           // 3. Insert Application Items & Deduct Stock
           for (const itemData of itemsData) {
@@ -545,21 +505,17 @@ export const ApplicationOrders: React.FC = () => {
               const safeUnitCost = isNaN(itemData.unit_cost) ? 0 : Number(itemData.unit_cost.toFixed(2));
               const safeItemTotal = isNaN(itemData.total_cost) ? 0 : Number(itemData.total_cost.toFixed(2));
 
-              const { data: savedItem, error: itemError } = await supabase
-                  .from('application_items')
-                  .insert([{
-                      application_id: application.id,
-                      product_id: itemData.product_id,
-                      quantity_used: safeQty,
-                      dose_per_hectare: safeDose,
-                      unit_cost: safeUnitCost,
-                      total_cost: safeItemTotal,
-                      objective: itemData.objective
-                  }])
-                  .select()
-                  .single();
-
-              if (itemError) throw itemError;
+              const savedItem = await createApplicationItem({
+                payload: {
+                  application_id: application.id,
+                  product_id: itemData.product_id,
+                  quantity_used: safeQty,
+                  dose_per_hectare: safeDose,
+                  unit_cost: safeUnitCost,
+                  total_cost: safeItemTotal,
+                  objective: itemData.objective
+                }
+              });
 
               // Deduct stock and create movement
               const product = products.find(p => p.id === itemData.product_id);
@@ -568,20 +524,16 @@ export const ApplicationOrders: React.FC = () => {
                   const newStock = currentStock - safeQty;
                   const safeNewStock = isNaN(newStock) ? 0 : Number(newStock.toFixed(2));
 
-                  await supabase
-                      .from('products')
-                      .update({ current_stock: safeNewStock })
-                      .eq('id', itemData.product_id);
-
-                  await supabase
-                      .from('inventory_movements')
-                      .insert([{
-                          product_id: itemData.product_id,
-                          movement_type: 'salida',
-                          quantity: safeQty,
-                          unit_cost: safeUnitCost,
-                          application_item_id: savedItem.id
-                      }]);
+                  await updateProductStock({ productId: itemData.product_id, currentStock: safeNewStock });
+                  await createInventoryMovement({
+                    payload: {
+                      product_id: itemData.product_id,
+                      movement_type: 'salida',
+                      quantity: safeQty,
+                      unit_cost: safeUnitCost,
+                      application_item_id: savedItem.id
+                    }
+                  });
               }
           }
 
@@ -594,38 +546,29 @@ export const ApplicationOrders: React.FC = () => {
                   const rate = Number(selectedCompany.application_fuel_rate) || 12;
                   const fuelLiters = Math.max(rate * hectares, 0.01);
                   
-                  const { data: fuelStats } = await supabase.rpc('get_fuel_stats', { p_company_id: selectedCompany.id, p_type: 'diesel' });
-                  const avgFuelPrice = Number(fuelStats?.[0]?.avg_price) || 1050;
+                  const fuelStats = await getFuelStats({ companyId: selectedCompany.id, type: 'diesel' });
+                  const avgFuelPrice = Number((fuelStats as any)?.[0]?.avg_price) || 1050;
                   
                   const fuelCost = fuelLiters * avgFuelPrice;
                   
                   const safeFuelLiters = isNaN(fuelLiters) ? 0 : Number(fuelLiters.toFixed(2));
                   const safeFuelCost = isNaN(fuelCost) ? 0 : Number(fuelCost.toFixed(2));
 
-                  await supabase
-                      .from('fuel_consumption')
-                      .insert([{
-                          company_id: selectedCompany.id,
-                          date: completedDate,
-                          activity: `Aplicación Orden #${order.order_number}`,
-                          liters: safeFuelLiters,
-                          estimated_price: safeFuelCost,
-                          sector_id: order.sector_id,
-                          application_id: application.id
-                      }]);
+                  await createFuelConsumption({
+                    payload: {
+                      company_id: selectedCompany.id,
+                      date: completedDate,
+                      activity: `Aplicación Orden #${order.order_number}`,
+                      liters: safeFuelLiters,
+                      estimated_price: safeFuelCost,
+                      sector_id: order.sector_id,
+                      application_id: application.id
+                    }
+                  });
               }
           }
 
-          // 5. Update Order Status (Moved to end to ensure atomic-like success)
-          const { error: orderError } = await supabase
-              .from('application_orders')
-              .update({ 
-                  status: 'completada',
-                  completed_date: completedDate
-              })
-              .eq('id', order.id);
-          
-          if (orderError) throw orderError;
+          await markApplicationOrderCompleted({ orderId: order.id, completedDate });
 
           toast.success('Orden completada exitosamente. Se ha registrado la aplicación y descontado el inventario.');
           loadData();
