@@ -5,6 +5,7 @@ import { useCompany, UserRole } from '../contexts/CompanyContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../supabase/client';
 import { Plus, Trash2, Mail, Shield, Loader2 } from 'lucide-react';
+import { deleteCompanyAdmin, fetchAllCompaniesAdmin, fetchCompanyMembers } from '../services/users';
 
 interface Member {
   member_id: string;
@@ -30,9 +31,12 @@ export const Users: React.FC = () => {
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   const loadAllCompaniesAdmin = useCallback(async () => {
-      const { data, error } = await supabase.rpc('get_all_companies_admin');
-      if (data) setAllCompanies(data);
-      if (error) console.error('Error loading admin companies:', error);
+      try {
+        const data = await fetchAllCompaniesAdmin();
+        setAllCompanies(data);
+      } catch (error) {
+        console.error('Error loading admin companies:', error);
+      }
   }, []);
 
   const checkSystemAdmin = useCallback(async () => {
@@ -45,8 +49,7 @@ export const Users: React.FC = () => {
       if (!window.confirm(`PELIGRO: ¿Estás seguro de eliminar la empresa "${name}" y TODOS sus datos? Esta acción es irreversible.`)) return;
       
       try {
-          const { error } = await supabase.rpc('delete_company_admin', { target_company_id: id });
-          if (error) throw error;
+          await deleteCompanyAdmin({ targetCompanyId: id });
           toast('Empresa eliminada correctamente.');
           loadAllCompaniesAdmin();
       } catch (err: any) {
@@ -58,19 +61,7 @@ export const Users: React.FC = () => {
     if (!selectedCompany) return;
     setLoading(true);
     try {
-      // Direct query to company_members joining with auth.users is tricky due to permissions.
-      // We rely on the RPC 'get_company_members' which should bypass RLS or handle it correctly.
-      // Let's verify the RPC is actually returning what we expect.
-      const { data, error } = await supabase
-        .rpc('get_company_members', { company_id_input: selectedCompany.id });
-
-      if (error) {
-        console.error('RPC Error:', error);
-        throw error;
-      }
-      
-      // If data is empty but we just added someone, it might be an RLS issue on the SELECT side of the RPC?
-      // Or the RPC security definer is not set?
+      const data = await fetchCompanyMembers({ companyId: selectedCompany.id });
       setMembers(data || []);
     } catch (error) {
       console.error('Error loading members:', error);

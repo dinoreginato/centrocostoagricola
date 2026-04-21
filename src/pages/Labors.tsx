@@ -9,6 +9,7 @@ import autoTable from 'jspdf-autotable';
 import { utils, writeFile } from 'xlsx';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
+import { deleteAllLaborAssignments, deleteLaborAssignment, fetchLaborHistory, fetchPendingLaborItems } from '../services/labors';
 
 const LABOR_TYPES = [
   'General',
@@ -156,138 +157,24 @@ export const Labors: React.FC = () => {
 
   const loadPendingLabors = async () => {
     if (!selectedCompany) return;
-
-    // 1. Get all invoice items with category related to labor
-    // We fetch ALL items for the company and filter in memory.
-    // Corrected query: join with products to get the name, as invoice_items doesn't have product_name
-    
-    const { data: items, error } = await supabase
-        .from('invoice_items')
-        .select(`
-            id, total_price, category,
-            products (name),
-            invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
-        `)
-        .eq('invoices.company_id', selectedCompany.id)
-        .range(0, 9999);
-
-    if (error) {
-        console.error('Error fetching items:', error);
-        // Don't throw, just log and return empty to avoid crashing UI completely
-        // throw error; 
-    }
-
-    // Filter strictly by Category as requested
-    const laborCategories = ['labores agrícolas', 'labores agricolas', 'mano de obra', 'servicio de labores'];
-    const filteredItems = items?.filter((item: any) => {
-        // Double check company_id strictly
-        if (item.invoices?.company_id !== selectedCompany.id) return false;
-
-        const cat = (item.category || '').toLowerCase().trim();
-        
-        // Match only if category contains the labor keywords
-        return laborCategories.some(c => cat.includes(c));
-    });
-
-    // Optimización: Usar RPC para obtener el total asignado de manera eficiente y escalable
-    const assignmentMap = new Map<string, number>();
-    
     try {
-        const { data: summary, error: rpcError } = await supabase
-            .rpc('get_labor_assignments_summary', { p_company_id: selectedCompany.id });
-            
-        if (rpcError) throw rpcError;
-        
-        if (summary) {
-            summary.forEach((item: any) => {
-                assignmentMap.set(item.invoice_item_id, Number(item.total_assigned));
-            });
-        }
-    } catch (err) {
-        console.error('Error fetching assignment summary via RPC:', err);
-         const { data: fallbackData } = await supabase
-             .from('labor_assignments')
-             .select('invoice_item_id, assigned_amount, invoice_items!inner(invoices!inner(company_id))')
-             .eq('invoice_items.invoices.company_id', selectedCompany.id);
-             
-         if (fallbackData) {
-             fallbackData.forEach((item: any) => {
-                 const current = assignmentMap.get(item.invoice_item_id) || 0;
-                 assignmentMap.set(item.invoice_item_id, current + Number(item.assigned_amount));
-             });
-         }
+      const pending = await fetchPendingLaborItems({ companyId: selectedCompany.id });
+      setPendingLabors(pending as any);
+    } catch (error) {
+      console.error('Error fetching items:', error);
+      setPendingLabors([]);
     }
-
-    const pending: LaborItem[] = [];
-    filteredItems?.forEach((item: any) => {
-        // Double Check: Ensure item belongs to selected company
-        if (item.invoices?.company_id !== selectedCompany.id) return;
-
-        // Credit Note Logic (Robust)
-        const docType = (item.invoices.document_type || '').toLowerCase();
-        // Check for common credit note variations
-        const isCreditNote = docType.includes('nota de cr') || 
-                             docType.includes('nota de cre') || 
-                             docType.includes('nota credito') ||
-                             docType.includes('credito') || 
-                             docType === 'nc';
-
-        // Calculate Gross Amount (Bruto)
-        const taxPercent = item.invoices.tax_percentage !== undefined ? item.invoices.tax_percentage : 19;
-        const netAmount = Number(item.total_price);
-        const grossAmount = netAmount * (1 + (taxPercent / 100));
-
-        let total = grossAmount;
-        
-        // Ensure negative if it's a credit note, even if database stored it as positive
-        if (isCreditNote) {
-            total = -Math.abs(total);
-        } else {
-            // If NOT a credit note, ensure positive
-            total = Math.abs(total);
-        }
-
-        const assigned = assignmentMap.get(item.id) || 0;
-        const remaining = total - assigned;
-
-        // Tolerance for float errors (absolute value for negative amounts)
-        // Increased threshold to 500 to handle small discrepancies and clean up views
-        if (Math.abs(remaining) > 500) {  
-            pending.push({
-                id: item.id,
-                invoice_id: item.invoices.id,
-                invoice_number: item.invoices.invoice_number,
-                date: item.invoices.invoice_date,
-                description: `${item.products?.name || 'Sin descripción'} ${isCreditNote ? '(NC)' : ''} [${item.invoices.document_type}]`, // Added doc type for debug visibility
-                total_amount: total,
-                assigned_amount: assigned,
-                remaining_amount: remaining
-            });
-        }
-    });
-
-    setPendingLabors(pending);
   };
 
   const loadHistory = async () => {
     if (!selectedCompany) return;
-
-    // Fetch more items to allow better client-side search (e.g. last 500)
-    const { data } = await supabase
-        .from('labor_assignments')
-        .select(`
-            id, assigned_amount, assigned_date, labor_type, sector_id,
-            sectors (name, field_id),
-            invoice_items!inner (
-                products (name),
-                invoices!inner (invoice_number, company_id, invoice_date, document_type)
-            )
-        `)
-        .eq('invoice_items.invoices.company_id', selectedCompany.id)
-        .order('assigned_date', { ascending: false })
-        .limit(1000); // Increased limit for better reporting
-    
-    setHistory(data as unknown as HistoryItem[] || []);
+    try {
+      const data = await fetchLaborHistory({ companyId: selectedCompany.id });
+      setHistory((data as unknown as HistoryItem[]) || []);
+    } catch (error) {
+      console.error(error);
+      setHistory([]);
+    }
   };
 
   // Filtered History for Display
@@ -366,13 +253,7 @@ export const Labors: React.FC = () => {
       
       setLoading(true);
       try {
-          const { error } = await supabase
-              .from('labor_assignments')
-              .delete()
-              .eq('id', id);
-              
-          if (error) throw error;
-          
+          await deleteLaborAssignment({ assignmentId: id });
           loadData(); // Reload to update lists
       } catch (error: any) {
           console.error('Error deleting:', error);
@@ -409,54 +290,13 @@ export const Labors: React.FC = () => {
     if (!confirm('¿ESTÁ SEGURO? Esto eliminará TODAS las asignaciones de labores para esta empresa. Esta acción no se puede deshacer.')) return;
 
     setLoading(true);
-    // Use a custom RPC to delete by company_id directly in the database.
     try {
-        const { error: rpcError } = await supabase.rpc('delete_labor_assignments_by_company', {
-            p_company_id: selectedCompany.id
-        });
-        
-        if (rpcError) {
-             // If RPC doesn't exist yet, fall back to the batched method
-             console.warn('RPC delete failed, falling back to manual batch delete', rpcError);
-             throw rpcError; 
-        }
-
+        await deleteAllLaborAssignments({ companyId: selectedCompany.id });
         toast('Todas las asignaciones han sido eliminadas.');
         loadData();
-    } catch (_error: any) {
-         // Fallback implementation
-         try {
-            const { data: assignments, error: fetchError } = await supabase
-            .from('labor_assignments')
-            .select('id, invoice_items!inner(invoices!inner(company_id))')
-            .eq('invoice_items.invoices.company_id', selectedCompany.id);
-
-            if (fetchError) throw fetchError;
-
-            if (!assignments || assignments.length === 0) {
-                toast('No hay asignaciones para eliminar.');
-                return;
-            }
-
-            const ids = assignments.map(a => a.id);
-            // Smaller batch size
-            const BATCH_SIZE = 100; 
-            for (let i = 0; i < ids.length; i += BATCH_SIZE) {
-                const batch = ids.slice(i, i + BATCH_SIZE);
-                const { error: deleteError } = await supabase
-                    .from('labor_assignments')
-                    .delete()
-                    .in('id', batch);
-                
-                if (deleteError) throw deleteError;
-            }
-             toast('Todas las asignaciones han sido eliminadas (Método Manual).');
-             loadData();
-
-         } catch (manualError: any) {
-            console.error('Error deleting all:', manualError);
-            toast.error('Error al eliminar: ' + manualError.message);
-         }
+    } catch (manualError: any) {
+        console.error('Error deleting all:', manualError);
+        toast.error('Error al eliminar: ' + manualError.message);
     } finally {
         setLoading(false);
     }

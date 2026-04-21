@@ -4,6 +4,8 @@ import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { LayoutList, ArrowRight, Save, Loader2, AlertCircle, Trash2 } from 'lucide-react';
+import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
+import { deleteAllGeneralCostHistory, deleteGeneralCostAssignment, fetchGeneralCostsHistory, fetchPendingGeneralCosts } from '../services/generalCosts';
 
 interface GeneralCostItem {
   id: string; // invoice_item_id
@@ -99,196 +101,34 @@ export const GeneralCosts: React.FC = () => {
   const loadSectors = async () => {
     if (!selectedCompany) return;
     
-    // Load Fields
-    const { data: fieldsData } = await supabase
-        .from('fields')
-        .select('*')
-        .eq('company_id', selectedCompany.id);
+    const [fieldsData, sectorsData] = await Promise.all([
+      fetchCompanyFieldsBasic({ companyId: selectedCompany.id }),
+      fetchCompanySectorsBasic({ companyId: selectedCompany.id })
+    ]);
     setFields(fieldsData || []);
-
-    // Load Sectors
-    const { data } = await supabase
-        .from('sectors')
-        .select(`
-            id, name, hectares, field_id,
-            fields!inner(company_id)
-        `)
-        .eq('fields.company_id', selectedCompany.id);
-    
-    setSectors(data || []);
+    setSectors(sectorsData || []);
   };
 
   const loadPendingCosts = async () => {
     if (!selectedCompany) return;
-
-    // 1. Fetch Invoice Items with Exempt Amounts
-    const { data: items, error } = await supabase
-        .from('invoice_items')
-        .select(`
-            id, total_price, category,
-            products (name, category),
-            invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage, exempt_amount, special_tax_amount, total_amount)
-        `)
-        .eq('invoices.company_id', selectedCompany.id)
-        .range(0, 9999);
-
-    if (error) {
-        console.error('Error fetching items:', error);
-        return;
+    try {
+      const pending = await fetchPendingGeneralCosts({ companyId: selectedCompany.id });
+      setPendingCosts(pending as any);
+    } catch (error) {
+      console.error('Error fetching items:', error);
+      setPendingCosts([]);
     }
-
-    // Categories explicitly handled by other modules (Core)
-    const CORE_EXCLUDED = [
-        'mano de obra', 'labores agricolas', 'labores agricolas', 'servicio de labores',
-        'petroleo', 'combustible', 'diesel', 'bencina',
-        'riego', 'agua', 'electricidad',
-        'maquinaria', 'arriendo maquinaria', 'repuesto', 'mantencion',
-        // EXCLUDED CHEMICALS AS PER USER REQUEST - Handled by Applications module
-        'quimicos', 'fertilizantes', 'pesticida', 'fungicida', 'herbicida', 'insecticida', 'semillas', 'plantas', 'plaguicida'
-    ];
-
-    // Filter items
-    const filteredItems = items?.filter((item: any) => {
-        // Normalize category: lower case, remove accents
-        const rawCat = item.category || item.products?.category || '';
-        const cat = rawCat.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-        
-        // Always exclude CORE modules and CHEMICALS
-        // We now primarily check CATEGORY.
-        // If the category contains any core keyword, exclude it.
-        const isCore = CORE_EXCLUDED.some(ex => cat.includes(ex));
-        
-        if (isCore) return false;
-        
-        return true; 
-    });
-
-    // 2. Calculate Assigned Amounts
-    // We need to sum up assignments from `general_costs` table
-    // Use RPC to get the sum directly from the database to avoid pagination limits (1000 rows)
-    const { data: assignments, error: assignmentError } = await supabase
-        .rpc('get_general_costs_summary', { p_company_id: selectedCompany.id });
-
-    if (assignmentError) {
-        console.error('Error fetching cost summary:', assignmentError);
-    }
-
-    const assignmentMap = new Map<string, number>();
-    (assignments || []).forEach((a: any) => {
-        assignmentMap.set(a.invoice_item_id, Number(a.total_assigned));
-    });
-
-    // Pre-calculate subtotal for each invoice to properly apportion exempt/special taxes
-    const invoiceSubtotals = new Map<string, number>();
-    items?.forEach((item: any) => {
-        const invId = item.invoices.id;
-        const currentSum = invoiceSubtotals.get(invId) || 0;
-        invoiceSubtotals.set(invId, currentSum + (Number(item.total_price) || 0));
-    });
-
-    const pending: GeneralCostItem[] = [];
-    filteredItems?.forEach((item: any) => {
-        const docType = (item.invoices.document_type || '').toLowerCase();
-        const isCreditNote = docType.includes('nota de cr') || docType.includes('nc');
-
-        // Logic for Tax Calculation
-        // Invoices table might have tax_percentage. If not, default to 19.
-        // However, if the item total price is just the net, and it has exempt amounts, 
-        // the item level doesn't know it's exempt unless we check the invoice document_type.
-        let taxPercent = item.invoices.tax_percentage !== undefined ? item.invoices.tax_percentage : 19;
-        
-        // Force 0% tax for Exenta documents to ensure we don't add IVA
-        if (docType.includes('exenta') || docType.includes('honorario')) {
-            taxPercent = 0;
-        }
-
-        const itemNet = Number(item.total_price) || 0;
-        
-        // Use the pre-calculated subtotal of all items in this invoice
-        const invId = item.invoices.id;
-        const invoiceSubtotal = invoiceSubtotals.get(invId) || 0;
-        
-        const invoiceExempt = Number(item.invoices.exempt_amount) || 0;
-        const invoiceSpecial = Number(item.invoices.special_tax_amount) || 0;
-        
-        // Proportion of this item relative to the total of all items
-        // If subtotal is 0 (e.g. items with 0 price), we just split equally among items or give 100% if it's the only one.
-        // For simplicity, if subtotal is 0, we can't easily apportion. We'll default to 1 if it's the only item, or 0.
-        const itemProportion = invoiceSubtotal > 0 ? (itemNet / invoiceSubtotal) : 1;
-        
-        const itemExemptShare = itemProportion * invoiceExempt;
-        const itemSpecialShare = itemProportion * invoiceSpecial;
-        
-        // The final gross amount to distribute is the item's taxable amount + its tax + its share of the exempt/special amounts
-        const itemTaxAmount = itemNet * (taxPercent / 100);
-        const grossAmount = itemNet + itemTaxAmount + itemExemptShare + itemSpecialShare;
-        
-        const total = isCreditNote ? -Math.abs(grossAmount) : Math.abs(grossAmount);
-        
-        // Ensure total is positive for logic, we handle negative signs if needed but usually costs are positive to distribute
-        // If it's a credit note, we need to treat its total as negative so the assigned amount (also negative) cancels it out.
-        const assigned = assignmentMap.get(item.id) || 0;
-        
-        // For credit notes, total is negative, assigned is negative.
-        // Remaining should be total - assigned.
-        // Example: total = -100, assigned = -100. Remaining = 0.
-        // Example 2: total = -100, assigned = 0. Remaining = -100.
-        const remaining = total - assigned;
-
-        // Check if remaining is significant (ignore minor rounding differences)
-        // Also ensure we handle negative remaining amounts for credit notes properly
-        // If remaining is very close to 0 (e.g. between -500 and 500), consider it fully assigned
-        const isSignificant = Math.abs(remaining) > 500;
-
-        if (isSignificant) {  
-            pending.push({
-                id: item.id,
-                invoice_id: item.invoices.id,
-                invoice_number: item.invoices.invoice_number,
-                date: item.invoices.invoice_date,
-                description: `${item.products?.name || 'Item'} [${item.category}]`,
-                category: item.category,
-                total_amount: total,
-                assigned_amount: assigned,
-                remaining_amount: remaining
-            });
-        }
-    });
-
-    setPendingCosts(pending);
   };
 
   const loadHistory = async () => {
     if (!selectedCompany) return;
-
-    const { data } = await supabase
-        .from('general_costs')
-        .select(`
-            id, amount, date, category, description, invoice_item_id,
-            sectors (name),
-            invoice_items (
-                products (name),
-                invoices (invoice_number)
-            )
-        `)
-        .eq('company_id', selectedCompany.id)
-        .order('date', { ascending: false })
-        .limit(500);
-    
-    // Map to HistoryItem
-    const mapped: HistoryItem[] = (data || []).map((d: any) => ({
-        id: d.id,
-        assigned_amount: d.amount,
-        assigned_date: d.date,
-        sector_id: d.sectors?.id, // Note: select didn't fetch id, need to verify if needed for edit
-        invoice_item_id: d.invoice_item_id,
-        category: d.category,
-        description: d.description,
-        sectors: d.sectors,
-        invoice_items: d.invoice_items
-    }));
-    
-    setHistory(mapped);
+    try {
+      const mapped = await fetchGeneralCostsHistory({ companyId: selectedCompany.id });
+      setHistory(mapped as any);
+    } catch (error) {
+      console.error(error);
+      setHistory([]);
+    }
   };
 
   const filteredHistory = history.filter(h => {
@@ -314,9 +154,12 @@ export const GeneralCosts: React.FC = () => {
   const handleDeleteAssignment = async (id: string) => {
       if (!confirm('¿Eliminar asignación?')) return;
       setLoading(true);
-      const { error } = await supabase.from('general_costs').delete().eq('id', id);
-      if (!error) loadData();
-      else toast.error('Error al eliminar');
+      try {
+        await deleteGeneralCostAssignment({ id });
+        loadData();
+      } catch {
+        toast.error('Error al eliminar');
+      }
       setLoading(false);
   };
 
@@ -326,13 +169,7 @@ export const GeneralCosts: React.FC = () => {
     
     setLoading(true);
     try {
-        const { error } = await supabase
-            .from('general_costs')
-            .delete()
-            .eq('company_id', selectedCompany.id);
-        
-        if (error) throw error;
-        
+        await deleteAllGeneralCostHistory({ companyId: selectedCompany.id });
         toast('Historial eliminado correctamente. Todos los costos volverán a estar pendientes.');
         loadData();
     } catch (error: any) {

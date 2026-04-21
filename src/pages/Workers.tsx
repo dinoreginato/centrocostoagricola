@@ -6,6 +6,8 @@ import { formatCLP } from '../lib/utils';
 import { Users, UserPlus, Trash2, Briefcase, Loader2, Download } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
+import { fetchWorkerCosts, fetchWorkers } from '../services/workers';
 
 interface Worker {
   id: string;
@@ -75,39 +77,24 @@ export const Workers: React.FC = () => {
 
   const loadWorkers = useCallback(async () => {
       if (!selectedCompany) return;
-      const { data } = await supabase
-          .from('workers')
-          .select('*')
-          .eq('company_id', selectedCompany.id)
-          .order('name');
+      const data = await fetchWorkers({ companyId: selectedCompany.id });
       setWorkers(data || []);
   }, [selectedCompany]);
 
   const loadSectorsAndFields = useCallback(async () => {
     if (!selectedCompany) return;
     
-    const { data: fieldsData } = await supabase
-        .from('fields')
-        .select('*')
-        .eq('company_id', selectedCompany.id);
+    const [fieldsData, sectorsData] = await Promise.all([
+      fetchCompanyFieldsBasic({ companyId: selectedCompany.id }),
+      fetchCompanySectorsBasic({ companyId: selectedCompany.id })
+    ]);
     setFields(fieldsData || []);
-
-    const { data: sectorsData } = await supabase
-        .from('sectors')
-        .select('id, name, hectares, field_id, fields!inner(company_id)')
-        .eq('fields.company_id', selectedCompany.id);
-    
     setSectors(sectorsData || []);
   }, [selectedCompany]);
 
   const loadCosts = useCallback(async () => {
     if (!selectedCompany) return;
-    const { data } = await supabase
-      .from('worker_costs')
-      .select('*, workers(name), sectors(name)')
-      .eq('company_id', selectedCompany.id)
-      .order('date', { ascending: false });
-
+    const data = await fetchWorkerCosts({ companyId: selectedCompany.id });
     setCosts(data || []);
   }, [selectedCompany]);
 

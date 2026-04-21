@@ -6,6 +6,7 @@ import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Droplets, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Layers } from 'lucide-react';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
+import { deleteAllIrrigationAssignments, deleteIrrigationAssignment, fetchIrrigationHistory, fetchIrrigationPendingItems } from '../services/irrigation';
 
 interface IrrigationItem {
   id: string; // invoice_item_id
@@ -109,127 +110,24 @@ export const Irrigation: React.FC = () => {
 
   const loadPendingItems = async () => {
     if (!selectedCompany) return;
-
-    const { data: items, error } = await supabase
-        .from('invoice_items')
-        .select(`
-            id, total_price, category,
-            products (name, category),
-            invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
-        `)
-        .eq('invoices.company_id', selectedCompany.id)
-        .range(0, 9999);
-
-    if (error) {
-        console.error('Error fetching items:', error);
-    }
-
-    const targetCategories = ['riego', 'agua', 'electricidad'];
-    const filteredItems = items?.filter((item: any) => {
-        // Double check company_id strictly
-        if (item.invoices?.company_id !== selectedCompany.id) return false;
-
-        const cat = (item.category || item.products?.category || '').toLowerCase().trim();
-        // Check if category exactly matches or contains the key terms (for cases like "Riego Tecnificado")
-        return targetCategories.some(c => cat.includes(c));
-    });
-
-    // Optimización: Usar RPC para obtener el total asignado de manera eficiente y escalable
-    const assignmentMap = new Map<string, number>();
-    
     try {
-        const { data: summary, error: rpcError } = await supabase
-            .rpc('get_irrigation_assignments_summary', { p_company_id: selectedCompany.id });
-            
-        if (rpcError) throw rpcError;
-        
-        if (summary) {
-            summary.forEach((item: any) => {
-                assignmentMap.set(item.invoice_item_id, Number(item.total_assigned));
-            });
-        }
-    } catch (err) {
-        console.error('Error fetching assignment summary via RPC:', err);
-         const { data: fallbackData } = await supabase
-             .from('irrigation_assignments')
-             .select('invoice_item_id, assigned_amount, invoice_items!inner(invoices!inner(company_id))')
-             .eq('invoice_items.invoices.company_id', selectedCompany.id);
-             
-         if (fallbackData) {
-             fallbackData.forEach((item: any) => {
-                 const current = assignmentMap.get(item.invoice_item_id) || 0;
-                 assignmentMap.set(item.invoice_item_id, current + Number(item.assigned_amount));
-             });
-         }
+      const pending = await fetchIrrigationPendingItems({ companyId: selectedCompany.id });
+      setPendingItems(pending as any);
+    } catch (error) {
+      console.error('Error fetching items:', error);
+      setPendingItems([]);
     }
-
-    const pending: IrrigationItem[] = [];
-    filteredItems?.forEach((item: any) => {
-        // Double Check: Ensure item belongs to selected company
-        if (item.invoices?.company_id !== selectedCompany.id) return;
-
-        // Credit Note Logic (Robust)
-        const docType = (item.invoices.document_type || '').toLowerCase();
-        const isCreditNote = docType.includes('nota de cr') || 
-                             docType.includes('nota de cre') || 
-                             docType.includes('nota credito') ||
-                             docType.includes('credito') || 
-                             docType === 'nc';
-        
-        // Calculate Gross Amount (Bruto)
-        const taxPercent = item.invoices.tax_percentage !== undefined ? item.invoices.tax_percentage : 19;
-        const netAmount = Number(item.total_price);
-        const grossAmount = netAmount * (1 + (taxPercent / 100));
-
-        let total = grossAmount;
-        
-        // Force Negative for Credit Notes
-        if (isCreditNote) {
-            total = -Math.abs(total);
-        } else {
-            total = Math.abs(total);
-        }
-
-        const assigned = assignmentMap.get(item.id) || 0;
-        const remaining = total - assigned;
-
-        // Use a threshold of 500 to ignore small rounding errors or 
-        // to handle negative remaining amounts properly for credit notes
-        if (Math.abs(remaining) > 500) { 
-            pending.push({
-                id: item.id,
-                invoice_id: item.invoices.id,
-                invoice_number: item.invoices.invoice_number,
-                date: item.invoices.invoice_date,
-                description: `${item.products?.name || 'Sin descripción'} ${isCreditNote ? '(NC)' : ''} [${item.invoices.document_type}]`,
-                total_amount: total,
-                assigned_amount: assigned,
-                remaining_amount: remaining
-            });
-        }
-    });
-
-    setPendingItems(pending);
   };
 
   const loadHistory = async () => {
     if (!selectedCompany) return;
-
-    const { data } = await supabase
-        .from('irrigation_assignments')
-        .select(`
-            id, assigned_amount, assigned_date,
-            sectors (name),
-            invoice_items!inner (
-                products (name),
-                invoices!inner (invoice_number, company_id)
-            )
-        `)
-        .eq('invoice_items.invoices.company_id', selectedCompany.id)
-        .order('assigned_date', { ascending: false })
-        .limit(500);
-    
-    setHistory(data as unknown as HistoryItem[] || []);
+    try {
+      const data = await fetchIrrigationHistory({ companyId: selectedCompany.id });
+      setHistory((data as unknown as HistoryItem[]) || []);
+    } catch (error) {
+      console.error(error);
+      setHistory([]);
+    }
   };
 
   const filteredHistory = history.filter(h => {
@@ -267,13 +165,7 @@ export const Irrigation: React.FC = () => {
       
       setLoading(true);
       try {
-          const { error } = await supabase
-              .from('irrigation_assignments')
-              .delete()
-              .eq('id', id);
-              
-          if (error) throw error;
-          
+          await deleteIrrigationAssignment({ assignmentId: id });
           loadData();
       } catch (error: any) {
           console.error('Error deleting:', error);
@@ -288,54 +180,13 @@ export const Irrigation: React.FC = () => {
     if (!confirm('¿ESTÁ SEGURO? Esto eliminará TODAS las asignaciones de riego para esta empresa. Esta acción no se puede deshacer.')) return;
 
     setLoading(true);
-    // Use a custom RPC to delete by company_id directly in the database.
     try {
-        const { error: rpcError } = await supabase.rpc('delete_irrigation_assignments_by_company', {
-            p_company_id: selectedCompany.id
-        });
-        
-        if (rpcError) {
-             // If RPC doesn't exist yet, fall back to the batched method
-             console.warn('RPC delete failed, falling back to manual batch delete', rpcError);
-             throw rpcError; 
-        }
-
+        await deleteAllIrrigationAssignments({ companyId: selectedCompany.id });
         toast('Todas las asignaciones han sido eliminadas.');
         loadData();
-    } catch (_error: any) {
-         // Fallback implementation
-         try {
-            const { data: assignments, error: fetchError } = await supabase
-            .from('irrigation_assignments')
-            .select('id, invoice_items!inner(invoices!inner(company_id))')
-            .eq('invoice_items.invoices.company_id', selectedCompany.id);
-
-            if (fetchError) throw fetchError;
-
-            if (!assignments || assignments.length === 0) {
-                toast('No hay asignaciones para eliminar.');
-                return;
-            }
-
-            const ids = assignments.map(a => a.id);
-            // Smaller batch size
-            const BATCH_SIZE = 100; 
-            for (let i = 0; i < ids.length; i += BATCH_SIZE) {
-                const batch = ids.slice(i, i + BATCH_SIZE);
-                const { error: deleteError } = await supabase
-                    .from('irrigation_assignments')
-                    .delete()
-                    .in('id', batch);
-                
-                if (deleteError) throw deleteError;
-            }
-             toast('Todas las asignaciones han sido eliminadas (Método Manual).');
-             loadData();
-
-         } catch (manualError: any) {
-            console.error('Error deleting all:', manualError);
-            toast.error('Error al eliminar: ' + manualError.message);
-         }
+    } catch (manualError: any) {
+        console.error('Error deleting all:', manualError);
+        toast.error('Error al eliminar: ' + manualError.message);
     } finally {
         setLoading(false);
     }

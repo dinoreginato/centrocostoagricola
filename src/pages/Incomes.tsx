@@ -6,6 +6,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { utils, writeFile } from 'xlsx';
 import { getSeasonFromDate } from '../lib/seasonUtils';
+import { loadIncomesPageData } from '../services/incomes';
 
 interface Income {
   id: string;
@@ -44,35 +45,13 @@ export function Incomes() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [incomesResponse, fieldsResponse, settingsResponse] = await Promise.all([
-        supabase
-          .from('income_entries')
-          .select(`
-            *,
-            fields (name),
-            sectors (name)
-          `)
-          .eq('company_id', selectedCompany?.id)
-          .order('date', { ascending: false }),
-        supabase
-          .from('fields')
-          .select('id, name, sectors(id, name)')
-          .eq('company_id', selectedCompany?.id),
-        supabase
-          .from('system_settings')
-          .select('*')
-          .eq('company_id', selectedCompany?.id)
-          .single()
-      ]);
+      if (!selectedCompany) return;
+      const { incomes, fields, settings } = await loadIncomesPageData({ companyId: selectedCompany.id });
+      setIncomes(incomes || []);
+      setFields(fields || []);
 
-      if (incomesResponse.error) throw incomesResponse.error;
-      if (fieldsResponse.error) throw fieldsResponse.error;
-
-      setIncomes(incomesResponse.data || []);
-      setFields(fieldsResponse.data || []);
-      
-      if (settingsResponse.data && settingsResponse.data.usd_exchange_rate) {
-          setUsdExchangeRate(settingsResponse.data.usd_exchange_rate);
+      if (settings && (settings as any).usd_exchange_rate) {
+        setUsdExchangeRate((settings as any).usd_exchange_rate);
       }
 
     } catch (err: any) {

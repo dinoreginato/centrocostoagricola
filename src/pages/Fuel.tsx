@@ -5,6 +5,8 @@ import { useCompany } from '../contexts/CompanyContext';
 import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Fuel as FuelIcon, Save, Loader2, Trash2, Edit2, Droplet } from 'lucide-react';
+import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
+import { loadFuelStockAndLogs } from '../services/fuel';
 
 interface FuelLog {
   id: string;
@@ -147,175 +149,23 @@ export const Fuel: React.FC = () => {
   const loadSectorsAndFields = async () => {
     if (!selectedCompany) return;
     
-    // Fetch Fields
-    const { data: fieldsData } = await supabase
-        .from('fields')
-        .select('*')
-        .eq('company_id', selectedCompany.id);
-    setFields(fieldsData || []);
+    const [fieldsData, sectorsData] = await Promise.all([
+      fetchCompanyFieldsBasic({ companyId: selectedCompany.id }),
+      fetchCompanySectorsBasic({ companyId: selectedCompany.id })
+    ]);
 
-    // Fetch Sectors
-    const { data: sectorsData } = await supabase
-        .from('sectors')
-        .select('id, name, hectares, field_id, fields!inner(company_id)')
-        .eq('fields.company_id', selectedCompany.id);
-    
+    setFields(fieldsData || []);
     setSectors(sectorsData || []);
   };
 
-  // Helper for rounding
-  const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
-
   const loadStockAndLogs = async () => {
     if (!selectedCompany) return;
-
-    // 1. Get Invoices (Inflow)
-    const { data: items } = await supabase
-        .from('invoice_items')
-        .select(`
-            id, quantity, total_price, category,
-            products (name, unit, category),
-            invoices!inner (invoice_number, invoice_date, company_id, document_type, tax_percentage)
-        `)
-        .eq('invoices.company_id', selectedCompany.id);
-
-    const fuelItems = items?.filter((item: any) => {
-        const cat = (item.category || item.products?.category || '').toLowerCase().trim();
-        const productName = (item.products?.name || '').toLowerCase();
-        const unit = (item.products?.unit || '').toLowerCase().trim();
-        
-        // 1. Exclude explicitly non-fuel units
-        const invalidUnits = ['un', 'unid', 'unidad', 'und', 'pieza', 'kit', 'juego', 'global', 'servicio', 'hrs', 'horas'];
-        if (invalidUnits.includes(unit)) {
-            return false;
-        }
-
-        // 2. Strict Category/Name Classification (Matching Table Logic)
-        const isDieselMatch = ['petroleo', 'diesel'].some(t => cat.includes(t) || productName.includes(t));
-        const isGasolineMatch = ['bencina', 'gasolina', 'combustible'].some(t => cat.includes(t) || productName.includes(t));
-
-        let itemType: 'diesel' | 'gasoline' | null = null;
-
-        if (isDieselMatch && !productName.includes('bencina') && !productName.includes('gasolina')) {
-            itemType = 'diesel';
-        } else if (isGasolineMatch) {
-             itemType = 'gasoline';
-        }
-
-        if (activeTab === 'diesel') return itemType === 'diesel';
-        return itemType === 'gasoline';
-    }) || [];
-
-    setInvoices(fuelItems);
-
-    // --- Calculate Monthly Summary (All Fuel Types) ---
-    const summary: Record<string, { diesel: number; gas93: number; gas95: number }> = {};
-    
-    items?.forEach((item: any) => {
-        const cat = (item.category || item.products?.category || '').toLowerCase().trim();
-        const productName = (item.products?.name || '').toLowerCase();
-        const unit = (item.products?.unit || '').toLowerCase().trim();
-        
-        // Skip non-fuel
-        const invalidUnits = ['un', 'unid', 'unidad', 'und', 'pieza', 'kit', 'juego', 'global', 'servicio', 'hrs', 'horas'];
-        if (invalidUnits.includes(unit)) return;
-
-        // Determine Type
-        let type: 'diesel' | 'gas93' | 'gas95' | null = null;
-        
-        const isDiesel = ['petroleo', 'diesel'].some(t => cat.includes(t) || productName.includes(t));
-        const isGasoline = ['bencina', 'gasolina', 'combustible'].some(t => cat.includes(t) || productName.includes(t));
-
-        if (isDiesel && !productName.includes('bencina') && !productName.includes('gasolina')) {
-            type = 'diesel';
-        } else if (isGasoline) {
-            if (productName.includes('95')) type = 'gas95';
-            else type = 'gas93'; // Default to 93 if not specified or 93
-        }
-
-        if (!type) return;
-
-        // Date Grouping
-        const dateStr = item.invoices.invoice_date; 
-        const monthKey = dateStr.substring(0, 7); // YYYY-MM
-
-        if (!summary[monthKey]) {
-            summary[monthKey] = { diesel: 0, gas93: 0, gas95: 0 };
-        }
-
-        const qty = Number(item.quantity || 0);
-        const docType = (item.invoices.document_type || '').toLowerCase();
-        const isNC = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
-        const finalQty = isNC ? -Math.abs(qty) : qty;
-
-        if (type === 'diesel') summary[monthKey].diesel = round2(summary[monthKey].diesel + finalQty);
-        else if (type === 'gas93') summary[monthKey].gas93 = round2(summary[monthKey].gas93 + finalQty);
-        else if (type === 'gas95') summary[monthKey].gas95 = round2(summary[monthKey].gas95 + finalQty);
-    });
-    
-    setMonthlySummary(summary);
-
-    const totalPurchasedLiters = round2(fuelItems.reduce((sum, item: any) => {
-        const docType = (item.invoices.document_type || '').toLowerCase();
-        const isNC = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
-        
-        const qty = Number(item.quantity || 0);
-        // If it's a Credit Note, we subtract the quantity (unless it was already entered as negative)
-        return sum + (isNC ? -Math.abs(qty) : qty);
-    }, 0));
-
-    const totalPurchasedCost = fuelItems.reduce((sum, item: any) => {
-        const docType = (item.invoices.document_type || '').toLowerCase();
-        const isNC = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
-        
-        // Use Net Price for Fuel stock valuation usually, but we ensure robustness here.
-        // If user wants Gross here too, we can add it, but standard accounting usually tracks Net for stock value.
-        // We will keep it as is (Net) for now unless requested, as it affects Average Price.
-        const price = Number(item.total_price || 0);
-        return sum + (isNC ? -Math.abs(price) : price);
-    }, 0);
-
-    const avgPrice = totalPurchasedLiters > 0 ? totalPurchasedCost / totalPurchasedLiters : 0;
-
-    // 2. Get Consumption Logs (Outflow)
-    // We filter consumption logs by checking if the activity or product suggests diesel/gasoline
-    // Or we might need a 'type' column in fuel_consumption.
-    // For now, we assume existing logs are Diesel unless stated otherwise.
-    // But better: Filter based on what the user enters.
-    // Actually, we should probably add a 'fuel_type' column to fuel_consumption.
-    // However, to avoid migration now, let's rely on the 'activity' or just show all for now, 
-    // OR filter by a convention.
-    // Let's filter by the tab context. If tab is gasoline, we show gasoline logs.
-    // But how do we know? We can check if 'activity' contains "Gasolina" or "Bencina".
-    // Or we can just show all logs but that messes up the stock calculation.
-    
-    // To properly support this without migration, we can append "(Gasolina)" to activity when saving.
-    
-    const { data: consumption } = await supabase
-        .from('fuel_consumption')
-        .select('*, sectors(name)')
-        .eq('company_id', selectedCompany.id)
-        .order('date', { ascending: false });
-
-    const filteredConsumption = consumption?.filter(log => {
-        const activityLower = (log.activity || '').toLowerCase();
-        const isGasoline = activityLower.includes('gasolina') || activityLower.includes('bencina');
-        
-        if (activeTab === 'diesel') return !isGasoline;
-        return isGasoline;
-    }) || [];
-
-    setLogs(filteredConsumption);
-
-    const totalConsumedLiters = round2(filteredConsumption.reduce((sum, log) => sum + Number(log.liters), 0));
-
-    setStats({
-        totalPurchasedLiters,
-        totalPurchasedCost,
-        avgPrice,
-        totalConsumedLiters,
-        currentStock: round2(totalPurchasedLiters - totalConsumedLiters)
-    });
+    const tab = activeTab === 'diesel' ? 'diesel' : 'gasoline';
+    const result = await loadFuelStockAndLogs({ companyId: selectedCompany.id, activeTab: tab });
+    setInvoices(result.fuelItems);
+    setMonthlySummary(result.monthlySummary);
+    setLogs(result.logs);
+    setStats(result.stats);
   };
 
   const handleEditLog = (log: FuelLog) => {

@@ -9,6 +9,7 @@ import autoTable from 'jspdf-autotable';
 import { utils, writeFile } from 'xlsx';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
+import { deleteAllMachineryAssignments, deleteMachineryAssignment, fetchMachineryHistory, fetchPendingMachineryItems } from '../services/machinery';
 
 interface MachineryItem {
   id: string; // invoice_item_id
@@ -170,148 +171,24 @@ export const Machinery: React.FC = () => {
 
   const loadPendingItems = async () => {
     if (!selectedCompany) return;
-
-    // Load Pending Items
-    // Increased limit and added sorting to ensure we get the latest items
-    const { data: items, error } = await supabase
-        .from('invoice_items')
-        .select(`
-            id, total_price, category,
-            products (name, category),
-            invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
-        `)
-        .eq('invoices.company_id', selectedCompany.id)
-        .order('id', { ascending: false }) // Show newest items first
-        .range(0, 19999); // Increased limit significantly
-
-    if (error) {
-        console.error('Error fetching items:', error);
-    }
-    
-    // Updated filtering logic to be strict on categories as per user request
-    const filteredItems = items?.filter((item: any) => {
-        // Double check company_id strictly
-        if (item.invoices?.company_id !== selectedCompany.id) return false;
-
-        // Normalize category: lower case, remove accents
-        // Fallback to product category if item category is missing
-        const rawCat = item.category || item.products?.category || '';
-        const rawName = item.products?.name || ''; // Also check product name for keywords
-        
-        const cat = rawCat.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-        const name = rawName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-        
-        // Combine text to search in both category and name
-        const textToCheck = `${cat} ${name}`;
-
-        // Keywords (normalized)
-        // User requested STRICTLY 'maquinaria' and 'repuestos'
-        const allowedKeywords = ['maquinaria', 'repuesto'];
-        
-        return allowedKeywords.some(keyword => textToCheck.includes(keyword));
-    });
-
-    // Optimización: Usar RPC para obtener el total asignado de manera eficiente y escalable
-    // Reemplaza la carga masiva de asignaciones individuales
-    const assignmentMap = new Map<string, number>();
-    
     try {
-        const { data: summary, error: rpcError } = await supabase
-            .rpc('get_machinery_assignments_summary', { p_company_id: selectedCompany.id });
-            
-        if (rpcError) throw rpcError;
-        
-        if (summary) {
-            summary.forEach((item: any) => {
-                assignmentMap.set(item.invoice_item_id, Number(item.total_assigned));
-            });
-        }
-    } catch (err) {
-        console.error('Error fetching assignment summary via RPC:', err);
-        // Fallback (aunque no debería ser necesario si el RPC existe)
-        const { data: fallbackData } = await supabase
-            .from('machinery_assignments')
-            .select('invoice_item_id, assigned_amount, invoice_items!inner(invoices!inner(company_id))')
-            .eq('invoice_items.invoices.company_id', selectedCompany.id);
-            
-        if (fallbackData) {
-            fallbackData.forEach((item: any) => {
-                const current = assignmentMap.get(item.invoice_item_id) || 0;
-                assignmentMap.set(item.invoice_item_id, current + Number(item.assigned_amount));
-            });
-        }
+      const pending = await fetchPendingMachineryItems({ companyId: selectedCompany.id });
+      setPendingItems(pending as any);
+    } catch (error) {
+      console.error('Error fetching items:', error);
+      setPendingItems([]);
     }
-
-    const pending: MachineryItem[] = [];
-    filteredItems?.forEach((item: any) => {
-        // Double Check: Ensure item belongs to selected company
-        if (item.invoices?.company_id !== selectedCompany.id) return;
-
-        // Credit Note Logic (Robust)
-        const docType = (item.invoices.document_type || '').toLowerCase();
-        const isCreditNote = docType.includes('nota de cr') || 
-                             docType.includes('nota de cre') || 
-                             docType.includes('nota credito') ||
-                             docType.includes('credito') || 
-                             docType === 'nc';
-        
-        // Calculate Gross Amount (Bruto)
-        const taxPercent = item.invoices.tax_percentage !== undefined ? item.invoices.tax_percentage : 19;
-        const netAmount = Number(item.total_price);
-        const grossAmount = netAmount * (1 + (taxPercent / 100));
-
-        let total = grossAmount;
-        
-        // Force Negative for Credit Notes
-        if (isCreditNote) {
-            total = -Math.abs(total);
-        } else {
-            total = Math.abs(total);
-        }
-
-        const assigned = assignmentMap.get(item.id) || 0;
-        const remaining = total - assigned;
-
-        // Use a threshold of 500 to ignore small rounding errors or 
-        // to handle negative remaining amounts properly for credit notes
-        if (Math.abs(remaining) > 500) { 
-            pending.push({
-                id: item.id,
-                invoice_id: item.invoices.id,
-                invoice_number: item.invoices.invoice_number,
-                date: item.invoices.invoice_date,
-                description: `${item.products?.name || 'Sin descripción'} ${isCreditNote ? '(NC)' : ''} [${item.invoices.document_type}]`,
-                total_amount: total,
-                assigned_amount: assigned,
-                remaining_amount: remaining
-            });
-        }
-    });
-
-    setPendingItems(pending);
   };
 
   const loadHistory = async () => {
     if (!selectedCompany) return;
-
-    // Fetch more items to allow better client-side search (e.g. last 500)
-    const { data } = await supabase
-        .from('machinery_assignments')
-        .select(`
-            id, assigned_amount, assigned_date,
-            sector_id, invoice_item_id, machine_id,
-            sectors (name),
-            machines (name),
-            invoice_items!inner (
-                products (name),
-                invoices!inner (invoice_number, company_id, invoice_date, document_type)
-            )
-        `)
-        .eq('invoice_items.invoices.company_id', selectedCompany.id)
-        .order('assigned_date', { ascending: false })
-        .limit(500);
-    
-    setHistory(data as unknown as HistoryItem[] || []);
+    try {
+      const data = await fetchMachineryHistory({ companyId: selectedCompany.id });
+      setHistory((data as unknown as HistoryItem[]) || []);
+    } catch (error) {
+      console.error(error);
+      setHistory([]);
+    }
   };
 
   const loadMachineExpenses = async (machineId: string) => {
@@ -515,13 +392,7 @@ export const Machinery: React.FC = () => {
       
       setLoading(true);
       try {
-          const { error } = await supabase
-              .from('machinery_assignments')
-              .delete()
-              .eq('id', id);
-              
-          if (error) throw error;
-          
+          await deleteMachineryAssignment({ assignmentId: id });
           loadData();
       } catch (error: any) {
           console.error('Error deleting:', error);
@@ -565,62 +436,13 @@ export const Machinery: React.FC = () => {
     if (!confirm('¿ESTÁ SEGURO? Esto eliminará TODAS las asignaciones de maquinaria para esta empresa. Esta acción no se puede deshacer.')) return;
 
     setLoading(true);
-    // 1. Get all assignment IDs for this company via RPC to avoid query URL limits
-    // We fetch in chunks if necessary, but RPC is cleaner. 
-    // Let's stick to client-side fetch but minimal fields to keep payload small.
-    // The previous error "Bad Request" is likely due to the URL being too long when sending thousands of IDs in `.in('id', batch)`.
-    // OR the initial SELECT returned too many rows.
-    
-    // Better approach: Use a custom RPC to delete by company_id directly in the database.
-    // This avoids transferring IDs back and forth.
-    
     try {
-        const { error: rpcError } = await supabase.rpc('delete_machinery_assignments_by_company', {
-            p_company_id: selectedCompany.id
-        });
-        
-        if (rpcError) {
-             // If RPC doesn't exist yet, fall back to the batched method but with smaller batches and robust error handling
-             console.warn('RPC delete failed, falling back to manual batch delete', rpcError);
-             throw rpcError; 
-        }
-
+        await deleteAllMachineryAssignments({ companyId: selectedCompany.id });
         toast('Todas las asignaciones han sido eliminadas.');
         loadData();
-    } catch (_error: any) {
-         // Fallback implementation if RPC is missing
-         try {
-            const { data: assignments, error: fetchError } = await supabase
-            .from('machinery_assignments')
-            .select('id, invoice_items!inner(invoices!inner(company_id))')
-            .eq('invoice_items.invoices.company_id', selectedCompany.id);
-
-            if (fetchError) throw fetchError;
-
-            if (!assignments || assignments.length === 0) {
-                toast('No hay asignaciones para eliminar.');
-                return;
-            }
-
-            const ids = assignments.map(a => a.id);
-            // Smaller batch size to avoid Request-URI Too Long
-            const BATCH_SIZE = 100; 
-            for (let i = 0; i < ids.length; i += BATCH_SIZE) {
-                const batch = ids.slice(i, i + BATCH_SIZE);
-                const { error: deleteError } = await supabase
-                    .from('machinery_assignments')
-                    .delete()
-                    .in('id', batch);
-                
-                if (deleteError) throw deleteError;
-            }
-             toast('Todas las asignaciones han sido eliminadas (Método Manual).');
-             loadData();
-             
-         } catch (manualError: any) {
-            console.error('Error deleting all:', manualError);
-            toast.error('Error al eliminar: ' + manualError.message);
-         }
+    } catch (manualError: any) {
+        console.error('Error deleting all:', manualError);
+        toast.error('Error al eliminar: ' + manualError.message);
     } finally {
         setLoading(false);
     }
