@@ -4,47 +4,20 @@ import { Outlet, Link, useLocation, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useCompany } from '../contexts/CompanyContext';
 import { 
-  LayoutDashboard, 
-  Map, 
-  FileText, 
-  Package, 
-  ClipboardList, 
-  BarChart3, 
   LogOut,
   Menu,
   X,
-  Users,
-  Tractor,
-  Fuel,
-  Wrench,
-  Droplets,
-  Briefcase,
   Building2,
-  LayoutList,
-  Beaker,
   Lock,
-  DollarSign,
   Sun,
   Moon,
   DownloadCloud
 } from 'lucide-react';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { useTheme } from '../contexts/ThemeContext';
-import { utils, writeFile } from 'xlsx';
-import { supabase } from '../supabase/client';
 import { toast } from 'sonner';
-
-type NavItem = {
-  name: string;
-  href: string;
-  icon: any;
-  roles: string[];
-};
-
-type NavGroup = {
-  title: string;
-  items: NavItem[];
-};
+import { downloadCompanyBackup } from '../services/backup';
+import { getNavGroups, type NavItem, type NavGroup } from '../navigation/nav';
 
 export const Layout: React.FC = () => {
   const { user, loading, signOut } = useAuth();
@@ -61,72 +34,9 @@ export const Layout: React.FC = () => {
     const toastId = toast.loading('Generando copia de seguridad de toda la empresa...');
     
     try {
-      const wb = utils.book_new();
-
-      // 1. Products
-      const { data: products } = await supabase.from('products').select('*').eq('company_id', selectedCompany.id);
-      if (products && products.length > 0) {
-        utils.book_append_sheet(wb, utils.json_to_sheet(products), 'Bodega_Inventario');
-      }
-
-      // 2. Fields & Sectors
-      const { data: fields } = await supabase.from('fields').select('*, sectors(*)').eq('company_id', selectedCompany.id);
-      if (fields && fields.length > 0) {
-         const flatSectors = fields.flatMap(f => (f.sectors || []).map((s: any) => ({
-           Campo: f.name,
-           Sector: s.name,
-           Hectareas: s.hectares
-         })));
-         utils.book_append_sheet(wb, utils.json_to_sheet(flatSectors), 'Campos_Sectores');
-      }
-
-      // 3. Invoices
-      const { data: invoices } = await supabase.from('invoices').select('*, invoice_items(*)').eq('company_id', selectedCompany.id);
-      if (invoices && invoices.length > 0) {
-         const flatInvoices = invoices.map(inv => ({
-           Numero: inv.invoice_number,
-           Proveedor: inv.supplier,
-           Fecha: inv.invoice_date,
-           Total: inv.total_amount,
-           Estado: inv.status,
-           Items: inv.invoice_items?.length || 0
-         }));
-         utils.book_append_sheet(wb, utils.json_to_sheet(flatInvoices), 'Facturas_Resumen');
-      }
-
-      // 4. Applications (by field)
-      if (fields && fields.length > 0) {
-          const fieldIds = fields.map(f => f.id);
-          const { data: apps } = await supabase.from('applications').select('*').in('field_id', fieldIds);
-          if (apps && apps.length > 0) {
-              utils.book_append_sheet(wb, utils.json_to_sheet(apps), 'Aplicaciones');
-          }
-      }
-
-      // 5. Incomes
-      const { data: incomes } = await supabase.from('income_entries').select('*').eq('company_id', selectedCompany.id);
-      if (incomes && incomes.length > 0) {
-          utils.book_append_sheet(wb, utils.json_to_sheet(incomes), 'Liquidaciones');
-      }
-
-      // 6. Machines
-      const { data: machines } = await supabase.from('machines').select('*').eq('company_id', selectedCompany.id);
-      if (machines && machines.length > 0) {
-          utils.book_append_sheet(wb, utils.json_to_sheet(machines), 'Maquinaria');
-      }
-      
-      // 7. Workers
-      const { data: workers } = await supabase.from('workers').select('*').eq('company_id', selectedCompany.id);
-      if (workers && workers.length > 0) {
-          utils.book_append_sheet(wb, utils.json_to_sheet(workers), 'Trabajadores');
-      }
-
-      const dateStr = new Date().toISOString().split('T')[0];
-      writeFile(wb, `Respaldo_AgroCostos_${selectedCompany.name.replace(/\s+/g, '_')}_${dateStr}.xlsx`);
-      
+      await downloadCompanyBackup(selectedCompany);
       toast.success('Copia de seguridad descargada exitosamente', { id: toastId });
     } catch (error: any) {
-      console.error(error);
       toast.error('Error al generar el respaldo: ' + error.message, { id: toastId });
     } finally {
       setIsBackingUp(false);
@@ -145,51 +55,7 @@ export const Layout: React.FC = () => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  // Define navigation groups
-  const navGroups: NavGroup[] = [
-    {
-      title: 'Principal',
-      items: [
-        { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin', 'viewer'] },
-        { name: 'Reportes', href: '/reportes', icon: BarChart3, roles: ['admin', 'viewer'] },
-      ]
-    },
-    {
-      title: 'Finanzas y Costos',
-      items: [
-        { name: 'Facturas', href: '/facturas', icon: FileText, roles: ['admin'] },
-        { name: 'Liquidaciones', href: '/liquidaciones', icon: DollarSign, roles: ['admin'] },
-        { name: 'Distribución Costos', href: '/otros-costos', icon: LayoutList, roles: ['admin', 'editor', 'viewer'] },
-      ]
-    },
-    {
-      title: 'Operaciones',
-      items: [
-        { name: 'Labores', href: '/labores', icon: Users, roles: ['admin', 'editor', 'viewer'] },
-        { name: 'Maquinaria', href: '/maquinaria', icon: Tractor, roles: ['admin', 'editor', 'viewer'] },
-        { name: 'Riego', href: '/riego', icon: Droplets, roles: ['admin', 'editor', 'viewer'] },
-        { name: 'Petróleo', href: '/petroleo', icon: Fuel, roles: ['admin', 'editor', 'viewer'] },
-      ]
-    },
-    {
-      title: 'Inventario (Bodega)',
-      items: [
-        { name: 'Bodega', href: '/bodega', icon: Package, roles: ['admin', 'editor', 'viewer'] },
-        { name: 'Prog. Fitosanitario', href: '/programas-fitosanitarios', icon: ClipboardList, roles: ['admin', 'editor', 'viewer'] },
-        { name: 'Aplicaciones', href: '/aplicaciones', icon: ClipboardList, roles: ['admin', 'editor', 'viewer'] },
-        { name: 'Ordenes de Aplic.', href: '/ordenes-aplicacion', icon: FileText, roles: ['admin', 'editor', 'viewer'] },
-      ]
-    },
-    {
-      title: 'Administración',
-      items: [
-        { name: 'Campos', href: '/campos', icon: Map, roles: ['admin', 'viewer'] },
-        { name: 'Trabajadores', href: '/trabajadores', icon: Briefcase, roles: ['admin', 'editor', 'viewer'] },
-        { name: 'Precios Químicos', href: '/precios-quimicos', icon: Beaker, roles: ['admin', 'editor', 'viewer'] },
-        ...(userRole === 'admin' ? [{ name: 'Usuarios', href: '/usuarios', icon: Users, roles: ['admin'] }] : []),
-      ]
-    }
-  ];
+  const navGroups: NavGroup[] = getNavGroups(userRole);
 
   // Helper to check if a group has any visible items for the user
   const filterGroupItems = (items: NavItem[]) => {

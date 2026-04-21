@@ -938,8 +938,6 @@ export const Applications: React.FC = () => {
     }
   };
 
-  if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
-
   const selectedField = fields.find(f => f.id === selectedFieldId);
   const selectedSector = selectedField?.sectors.find(s => s.id === selectedSectorId);
 
@@ -980,6 +978,8 @@ export const Applications: React.FC = () => {
     });
     return Array.from(objectives).sort();
   }, [applications]);
+
+  if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
 
   return (
     <div className="space-y-6">

@@ -183,7 +183,7 @@ export const Reports: React.FC = () => {
 
   // Update orientation when tab changes
   useEffect(() => {
-    if (activeTab === 'general' || activeTab === 'detailed' || activeTab === 'cashflow' || activeTab === 'labors') {
+    if (activeTab === 'general' || activeTab === 'detailed' || activeTab === 'labors') {
       setPdfOrientation('landscape');
     } else {
       setPdfOrientation('portrait');
@@ -1356,7 +1356,6 @@ export const Reports: React.FC = () => {
       case 'applications': return 'Costos de Aplicación';
       case 'labors': return 'Detalle de Labores por Sector';
       case 'monthly': return 'Gastos Mensuales';
-      case 'cashflow': return 'Flujo de Caja';
       case 'categories': return 'Gastos por Clasificación';
       case 'chemicals': return 'Insumos Químicos';
       case 'pending': return 'Facturas Pendientes';

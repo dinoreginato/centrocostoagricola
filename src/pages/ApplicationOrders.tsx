@@ -464,7 +464,7 @@ export const ApplicationOrders: React.FC = () => {
       clonedOrder.items = (order.items || []).map(item => {
           const newItem = { ...item };
           delete newItem.id;
-          // @ts-ignore - Ignore the TypeScript error for removing an internal/untyped property
+          // @ts-expect-error - Ignore the TypeScript error for removing an internal/untyped property
           delete newItem.application_order_id;
           return newItem;
       });
