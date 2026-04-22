@@ -244,6 +244,12 @@ export async function rpcDeleteInvoiceForce(params: { invoiceId: string }) {
   if (error) throw error;
 }
 
+export async function rpcDeleteInvoiceItemsWithEffects(params: { invoiceItemIds: string[] }) {
+  if (params.invoiceItemIds.length === 0) return;
+  const { error } = await supabase.rpc('delete_invoice_items_with_effects', { p_invoice_item_ids: params.invoiceItemIds });
+  if (error) throw error;
+}
+
 export async function fetchInvoiceItems(params: { invoiceId: string }) {
   const { data, error } = await supabase
     .from('invoice_items')
@@ -315,8 +321,7 @@ export async function fetchInvoicesBasic(params: { companyId: string }) {
 
 export async function deleteInvoicesCascade(params: { invoiceIds: string[] }) {
   if (params.invoiceIds.length === 0) return;
-  const { error: itemsError } = await supabase.from('invoice_items').delete().in('invoice_id', params.invoiceIds);
-  if (itemsError) throw itemsError;
-  const { error } = await supabase.from('invoices').delete().in('id', params.invoiceIds);
-  if (error) throw error;
+  for (const invoiceId of params.invoiceIds) {
+    await rpcDeleteInvoiceForce({ invoiceId });
+  }
 }

@@ -5,7 +5,7 @@ import { formatCLP } from '../lib/utils';
 import { Plus, FileText, Trash2, Save, Loader2, Check, Download, Upload, RefreshCw, Search, Printer, ChevronLeft, ChevronRight, MapPin, Database } from 'lucide-react';
 import { InvoicePrint } from '../components/InvoicePrint';
 import { fetchInvoiceDestinations, fetchInvoiceProducts, fetchInvoicesForCompany, fetchInvoiceSuppliers } from '../services/invoices';
-import { createInvoice, createInvoiceItemWithEffects, createOrFindProductByName, deleteInvoiceItemsByIds, deleteInvoicesCascade, fetchInvoiceItems, fetchInvoicesBasic, findSupplierRut, invoiceExists, rpcDeleteInvoiceForce, rpcReverseInventoryMovement, rpcUpdateInvoiceItemWithInventory, searchOfficialProductsForInvoice, updateInvoice, updateInvoiceItem } from '../services/invoiceMutations';
+import { createInvoice, createInvoiceItemWithEffects, createOrFindProductByName, fetchInvoiceItems, fetchInvoicesBasic, findSupplierRut, invoiceExists, rpcDeleteInvoiceForce, rpcDeleteInvoiceItemsWithEffects, rpcUpdateInvoiceItemWithInventory, searchOfficialProductsForInvoice, updateInvoice, updateInvoiceItem } from '../services/invoiceMutations';
 
 interface InvoiceItem {
   id?: string;
@@ -952,7 +952,9 @@ export const Invoices: React.FC = () => {
             return;
         }
 
-        await deleteInvoicesCascade({ invoiceIds: duplicatesToDelete });
+        for (const duplicateId of duplicatesToDelete) {
+          await rpcDeleteInvoiceForce({ invoiceId: duplicateId });
+        }
 
         toast(`Se eliminaron ${duplicatesToDelete.length} facturas duplicadas.`);
         loadStats();
@@ -1175,23 +1177,8 @@ export const Invoices: React.FC = () => {
         // Identify items to ADD (in State but no ID)
         const itemsToAdd = items.filter(formItem => !formItem.id);
 
-        // A. Process DELETES
-        // Optimization: Gather IDs first for batch delete, but do inventory reversal individually
-        const deleteIds = itemsToDelete.map(i => i.id);
-
-        for (const item of itemsToDelete) {
-           // Reverse Inventory first
-           if (item.product_id) {
-             await rpcReverseInventoryMovement({
-               payload: {
-                 target_product_id: item.product_id,
-                 quantity_to_remove: item.quantity
-               }
-             });
-           }
-        }
-        
-        await deleteInvoiceItemsByIds({ ids: (deleteIds as any[]).filter(Boolean) });
+        const deleteIds = itemsToDelete.map(i => i.id).filter(Boolean) as string[];
+        await rpcDeleteInvoiceItemsWithEffects({ invoiceItemIds: deleteIds });
 
         // B. Process UPDATES
         for (const item of itemsToUpdate) {
