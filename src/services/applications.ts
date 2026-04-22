@@ -83,6 +83,10 @@ export type UpdateApplicationInventoryParams = {
     total_cost: number;
     objective?: string;
   }>;
+  p_create_fuel?: boolean;
+  p_fuel_liters?: number | null;
+  p_fuel_cost?: number | null;
+  p_fuel_activity?: string;
 };
 
 export type CreateApplicationInventoryParams = {

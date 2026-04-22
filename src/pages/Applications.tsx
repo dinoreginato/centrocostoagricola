@@ -6,7 +6,7 @@ import { Plus, Loader2, Save, Trash2, Calendar, Droplets, MapPin, RefreshCw, Edi
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
-import { createApplicationInventory, deleteAllApplicationsRestoreStock, deleteApplicationAndRestoreStock, loadApplicationsPageData, updateApplicationInventory, upsertFuelConsumptionForApplication } from '../services/applications';
+import { createApplicationInventory, deleteAllApplicationsRestoreStock, deleteApplicationAndRestoreStock, loadApplicationsPageData, updateApplicationInventory } from '../services/applications';
 
 interface Field {
   id: string;
@@ -692,6 +692,13 @@ export const Applications: React.FC = () => {
 
       if (editingId) {
         // UPDATE MODE
+        const sector = fields.find(f => f.id === selectedFieldId)?.sectors.find(s => s.id === selectedSectorId);
+        
+        const shouldCreateFuel = Boolean(sector && sector.hectares > 0 && avgFuelPrice !== null);
+        const rate = selectedCompany.application_fuel_rate || 12;
+        const fuelLiters = shouldCreateFuel ? Math.max(rate * sector!.hectares, 0.01) : null;
+        const fuelCost = shouldCreateFuel ? Number(fuelLiters) * avgFuelPrice : null;
+
         await updateApplicationInventory({
             p_application_id: editingId,
             p_field_id: selectedFieldId,
@@ -707,35 +714,12 @@ export const Applications: React.FC = () => {
                 unit_cost: item.unit_cost,
                 total_cost: item.total_cost,
                 objective: item.objective || '' // Include objective
-            }))
+            })),
+            p_create_fuel: shouldCreateFuel,
+            p_fuel_liters: fuelLiters,
+            p_fuel_cost: fuelCost,
+            p_fuel_activity: 'Aplicación (Automática)'
         });
-        
-        // Update Fuel Record (Formula: 12L/ha)
-        // We do this separately. Ideally should be in the RPC but keeping it here for now.
-        // For Update, we check if record exists or create it.
-        const sector = fields.find(f => f.id === selectedFieldId)?.sectors.find(s => s.id === selectedSectorId);
-        
-        if (sector && sector.hectares > 0) {
-            // Use configured rate or default to 12
-            const rate = selectedCompany.application_fuel_rate || 12;
-            const fuelLiters = rate * sector.hectares;
-            const finalLiters = Math.max(fuelLiters, 0.01);
-            const fuelCost = finalLiters * avgFuelPrice;
-            
-            try {
-                await upsertFuelConsumptionForApplication({
-                    companyId: selectedCompany.id,
-                    applicationId: editingId,
-                    sectorId: selectedSectorId,
-                    date: applicationDate,
-                    liters: finalLiters,
-                    estimatedPrice: fuelCost,
-                    activity: 'Aplicación (Automática)'
-                });
-            } catch (error: any) {
-                console.error('Error upserting fuel record:', error);
-            }
-        }
 
         toast('Aplicación actualizada exitosamente');
         handleCancelEdit(); // Reset form
