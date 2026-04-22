@@ -234,6 +234,37 @@ export async function rpcUpdateInvoiceItemWithInventory(params: {
   if (error) throw error;
 }
 
+export async function rpcUpdateInvoiceItemWithEffects(params: {
+  invoiceItemId: string;
+  productId: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  category: string;
+  recalcInventory: boolean;
+  replaceAssignments: boolean;
+  laborAssignments?: LaborAssignmentInput[];
+  irrigationAssignments?: IrrigationAssignmentInput[];
+  machineryAssignments?: MachineryAssignmentInput[];
+  generalCosts?: GeneralCostInput[];
+}) {
+  const { error } = await supabase.rpc('update_invoice_item_with_effects', {
+    p_invoice_item_id: params.invoiceItemId,
+    p_product_id: params.productId,
+    p_quantity: params.quantity,
+    p_unit_price: params.unitPrice,
+    p_total_price: params.totalPrice,
+    p_category: params.category,
+    p_recalc_inventory: params.recalcInventory,
+    p_replace_assignments: params.replaceAssignments,
+    p_labor_assignments: params.laborAssignments || [],
+    p_irrigation_assignments: params.irrigationAssignments || [],
+    p_machinery_assignments: params.machineryAssignments || [],
+    p_general_costs: params.generalCosts || []
+  });
+  if (error) throw error;
+}
+
 export async function rpcReverseInventoryMovement(params: { payload: ReverseInventoryMovementParams }) {
   const { error } = await supabase.rpc('reverse_inventory_movement', params.payload);
   if (error) throw error;

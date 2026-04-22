@@ -5,7 +5,7 @@ import { formatCLP } from '../lib/utils';
 import { Plus, FileText, Trash2, Save, Loader2, Check, Download, Upload, RefreshCw, Search, Printer, ChevronLeft, ChevronRight, MapPin, Database } from 'lucide-react';
 import { InvoicePrint } from '../components/InvoicePrint';
 import { fetchInvoiceDestinations, fetchInvoiceProducts, fetchInvoicesForCompany, fetchInvoiceSuppliers } from '../services/invoices';
-import { createInvoice, createInvoiceItemWithEffects, createOrFindProductByName, fetchInvoiceItems, fetchInvoicesBasic, findSupplierRut, invoiceExists, rpcDeleteInvoiceForce, rpcDeleteInvoiceItemsWithEffects, rpcUpdateInvoiceItemWithInventory, searchOfficialProductsForInvoice, updateInvoice, updateInvoiceItem } from '../services/invoiceMutations';
+import { createInvoice, createInvoiceItemWithEffects, createOrFindProductByName, fetchInvoiceItems, fetchInvoicesBasic, findSupplierRut, invoiceExists, rpcDeleteInvoiceForce, rpcDeleteInvoiceItemsWithEffects, rpcUpdateInvoiceItemWithEffects, searchOfficialProductsForInvoice, updateInvoice } from '../services/invoiceMutations';
 
 interface InvoiceItem {
   id?: string;
@@ -17,6 +17,7 @@ interface InvoiceItem {
   category: string;
   unit: string;
   active_ingredient?: string;
+  assignment_dirty?: boolean;
   // Direct Assignment Fields
   destination_type?: 'machine' | 'sector' | 'field' | 'company' | 'none';
   destination_id?: string; 
@@ -129,6 +130,7 @@ export const Invoices: React.FC = () => {
     category: 'Fertilizantes',
     unit: 'L',
     active_ingredient: '',
+    assignment_dirty: false,
     destination_type: 'none',
     destination_id: '',
   });
@@ -401,6 +403,7 @@ export const Invoices: React.FC = () => {
       category: currentItem.category || 'Otros',
       unit: currentItem.unit || 'un',
       active_ingredient: currentItem.active_ingredient,
+      assignment_dirty: Boolean((currentItem as any).assignment_dirty),
       destination_type: currentItem.destination_type,
       destination_id: currentItem.destination_id,
       labor_type: laborType,
@@ -431,6 +434,7 @@ export const Invoices: React.FC = () => {
       unit_price: 0,
       category: 'Fertilizantes',
       unit: 'L',
+      assignment_dirty: false,
       destination_id: '',
       destination_type: 'none',
       labor_type: undefined
@@ -449,6 +453,7 @@ export const Invoices: React.FC = () => {
         category: item.category,
         unit: item.unit,
         active_ingredient: item.active_ingredient || '',
+        assignment_dirty: item.assignment_dirty || false,
         destination_type: item.destination_type,
         destination_id: item.destination_id,
         labor_type: item.labor_type
@@ -469,6 +474,7 @@ export const Invoices: React.FC = () => {
       category: 'Fertilizantes',
       unit: 'L',
       active_ingredient: '',
+      assignment_dirty: false,
       destination_id: '',
       destination_type: 'none',
       labor_type: undefined
@@ -1200,30 +1206,31 @@ export const Invoices: React.FC = () => {
                 });
            }
 
-           // Check if fields changed
            const quantityChanged = oldItem.quantity !== item.quantity;
            const priceChanged = oldItem.unit_price !== item.unit_price;
            const productChanged = oldItem.product_id !== currentProductId;
            const categoryChanged = oldItem.category !== item.category;
+           const replaceAssignments = Boolean(item.assignment_dirty);
+           const recalcInventory = quantityChanged || priceChanged || productChanged;
+           const shouldUpdate = recalcInventory || categoryChanged || replaceAssignments;
 
-           if (quantityChanged || priceChanged || productChanged || categoryChanged) {
-               if (quantityChanged || priceChanged || productChanged) {
-                   await rpcUpdateInvoiceItemWithInventory({
-                     invoiceItemId: item.id as string,
-                     productId: currentProductId as string,
-                     quantity: item.quantity,
-                     unitPrice: item.unit_price,
-                     totalPrice: item.total_price,
-                     category: item.category
-                   });
-               } else {
-                   await updateInvoiceItem({
-                     invoiceItemId: item.id as string,
-                     patch: {
-                       category: item.category
-                     }
-                   });
-               }
+           if (shouldUpdate) {
+               const assignments = replaceAssignments ? buildDirectAssignments(item) : null;
+
+               await rpcUpdateInvoiceItemWithEffects({
+                 invoiceItemId: item.id as string,
+                 productId: currentProductId as string,
+                 quantity: item.quantity,
+                 unitPrice: item.unit_price,
+                 totalPrice: item.total_price,
+                 category: item.category,
+                 recalcInventory,
+                 replaceAssignments,
+                 laborAssignments: assignments?.laborAssignments,
+                 irrigationAssignments: assignments?.irrigationAssignments,
+                 machineryAssignments: assignments?.machineryAssignments,
+                 generalCosts: assignments?.generalCosts
+               });
            }
         }
 
@@ -1686,7 +1693,8 @@ export const Invoices: React.FC = () => {
                                   ...currentItem, 
                                   category: newCat,
                                   destination_type: determineDestinationType(newCat) as any,
-                                  destination_id: '' // Reset destination when category changes
+                                  destination_id: '', // Reset destination when category changes
+                                  assignment_dirty: true
                               });
                           }}
                           className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors overflow-hidden text-ellipsis whitespace-nowrap"
@@ -1752,7 +1760,8 @@ export const Invoices: React.FC = () => {
                             onChange={e => setCurrentItem({
                                 ...currentItem, 
                                 destination_type: e.target.value as any,
-                                destination_id: '' // Reset ID when type changes
+                                destination_id: '', // Reset ID when type changes
+                                assignment_dirty: true
                             })}
                             className="w-full bg-blue-50 border border-blue-200 text-blue-900 text-sm rounded-lg p-2.5 font-medium shadow-sm transition-colors"
                          >
@@ -1765,7 +1774,7 @@ export const Invoices: React.FC = () => {
                          
                          <select
                             value={currentItem.destination_id || ''}
-                            onChange={e => setCurrentItem({...currentItem, destination_id: e.target.value})}
+                            onChange={e => setCurrentItem({...currentItem, destination_id: e.target.value, assignment_dirty: true})}
                             disabled={destinationsLoading || !currentItem.destination_type || currentItem.destination_type === 'none'}
                             className="w-full bg-white dark:bg-gray-800 border border-blue-200 text-gray-900 dark:text-gray-100 text-sm rounded-lg p-2.5 disabled:bg-gray-100 dark:bg-gray-900 disabled:border-gray-200 dark:border-gray-700 shadow-sm transition-colors"
                          >
