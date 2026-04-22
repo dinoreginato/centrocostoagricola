@@ -1,5 +1,82 @@
 import { supabase } from '../supabase/client';
 
+export type InvoiceStatus = 'Pendiente' | 'Pagada';
+
+export type InvoiceInsert = {
+  company_id: string;
+  invoice_number: string;
+  supplier: string;
+  supplier_rut?: string | null;
+  invoice_date: string;
+  due_date?: string | null;
+  status: InvoiceStatus | string;
+  notes?: string | null;
+  document_type?: string | null;
+  tax_percentage?: number | null;
+  discount_amount?: number | null;
+  exempt_amount?: number | null;
+  special_tax_amount?: number | null;
+  total_amount?: number | null;
+  payment_date?: string | null;
+};
+
+export type InvoiceUpdate = Partial<Omit<InvoiceInsert, 'company_id'>>;
+
+export type InvoiceItemInsert = {
+  invoice_id: string;
+  product_id: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  category: string;
+};
+
+export type InvoiceItemUpdate = Partial<Omit<InvoiceItemInsert, 'invoice_id'>>;
+
+export type ReverseInventoryMovementParams =
+  | { invoice_item_id: string }
+  | { target_product_id: string; quantity_to_remove: number };
+
+export type MachineryAssignmentInsert = {
+  company_id: string;
+  invoice_item_id: string;
+  date: string;
+  amount: number;
+  sector_id?: string | null;
+  machine_id?: string | null;
+  notes?: string | null;
+};
+
+export type LaborAssignmentInsert = {
+  company_id: string;
+  invoice_item_id: string;
+  date: string;
+  sector_id: string;
+  assigned_amount: number;
+  labor_type: string;
+  worker_id?: string | null;
+  notes?: string | null;
+};
+
+export type IrrigationAssignmentInsert = {
+  company_id: string;
+  invoice_item_id: string;
+  date: string;
+  sector_id: string;
+  amount: number;
+  notes?: string | null;
+};
+
+export type GeneralCostInsert = {
+  company_id: string;
+  invoice_item_id: string;
+  date: string;
+  sector_id: string;
+  amount: number;
+  category: string;
+  description: string;
+};
+
 export async function searchOfficialProductsForInvoice(params: { query: string; limit?: number }) {
   const { data, error } = await supabase
     .from('official_products')
@@ -23,13 +100,13 @@ export async function invoiceExists(params: { companyId: string; invoiceNumber: 
   return Boolean(data);
 }
 
-export async function createInvoice(params: { payload: any }) {
+export async function createInvoice(params: { payload: InvoiceInsert }) {
   const { data, error } = await supabase.from('invoices').insert([params.payload]).select().single();
   if (error) throw error;
   return data;
 }
 
-export async function updateInvoice(params: { invoiceId: string; patch: any }) {
+export async function updateInvoice(params: { invoiceId: string; patch: InvoiceUpdate }) {
   const { error } = await supabase.from('invoices').update(params.patch).eq('id', params.invoiceId);
   if (error) throw error;
 }
@@ -71,7 +148,7 @@ export async function createOrFindProductByName(params: {
   return newProduct.id as string;
 }
 
-export async function createInvoiceItem(params: { payload: any }) {
+export async function createInvoiceItem(params: { payload: InvoiceItemInsert }) {
   const { data, error } = await supabase.from('invoice_items').insert([params.payload]).select().single();
   if (error) throw error;
   return data;
@@ -88,7 +165,7 @@ export async function deleteInvoiceItemsByIds(params: { ids: string[] }) {
   if (error) throw error;
 }
 
-export async function updateInvoiceItem(params: { invoiceItemId: string; patch: any }) {
+export async function updateInvoiceItem(params: { invoiceItemId: string; patch: InvoiceItemUpdate }) {
   const { error } = await supabase.from('invoice_items').update(params.patch).eq('id', params.invoiceItemId);
   if (error) throw error;
 }
@@ -108,7 +185,7 @@ export async function rpcUpdateInventoryWithAverageCost(params: {
   if (error) throw error;
 }
 
-export async function rpcReverseInventoryMovement(params: { payload: any }) {
+export async function rpcReverseInventoryMovement(params: { payload: ReverseInventoryMovementParams }) {
   const { error } = await supabase.rpc('reverse_inventory_movement', params.payload);
   if (error) throw error;
 }
@@ -127,22 +204,22 @@ export async function fetchInvoiceItems(params: { invoiceId: string }) {
   return data || [];
 }
 
-export async function insertMachineryAssignment(params: { payload: any }) {
+export async function insertMachineryAssignment(params: { payload: MachineryAssignmentInsert }) {
   const { error } = await supabase.from('machinery_assignments').insert([params.payload]);
   if (error) throw error;
 }
 
-export async function insertLaborAssignment(params: { payload: any }) {
+export async function insertLaborAssignment(params: { payload: LaborAssignmentInsert }) {
   const { error } = await supabase.from('labor_assignments').insert([params.payload]);
   if (error) throw error;
 }
 
-export async function insertIrrigationAssignment(params: { payload: any }) {
+export async function insertIrrigationAssignment(params: { payload: IrrigationAssignmentInsert }) {
   const { error } = await supabase.from('irrigation_assignments').insert([params.payload]);
   if (error) throw error;
 }
 
-export async function insertGeneralCost(params: { payload: any }) {
+export async function insertGeneralCost(params: { payload: GeneralCostInsert }) {
   const { error } = await supabase.from('general_costs').insert([params.payload]);
   if (error) throw error;
 }

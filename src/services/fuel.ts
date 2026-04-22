@@ -4,6 +4,54 @@ function round2(num: number) {
   return Math.round((num + Number.EPSILON) * 100) / 100;
 }
 
+type FuelInvoiceItem = {
+  id: string;
+  quantity: number | null;
+  total_price: number | null;
+  category: string | null;
+  products?: { name: string | null; unit: string | null; category: string | null } | { name: string | null; unit: string | null; category: string | null }[] | null;
+  invoices:
+    | {
+        invoice_number: string | null;
+        invoice_date: string;
+        company_id: string;
+        document_type: string | null;
+        tax_percentage?: number | null;
+      }
+    | {
+        invoice_number: string | null;
+        invoice_date: string;
+        company_id: string;
+        document_type: string | null;
+        tax_percentage?: number | null;
+      }[];
+};
+
+export type FuelConsumptionLog = {
+  id: string;
+  date: string;
+  activity: string | null;
+  liters: number;
+  estimated_price: number | null;
+  sector_id: string | null;
+  sectors?: { name: string | null } | null;
+};
+
+export type FuelConsumptionInsert = {
+  company_id: string;
+  date: string;
+  activity: string;
+  liters: number;
+  estimated_price: number;
+  sector_id: string;
+  application_id?: string | null;
+};
+
+function pickFirst<T>(value: T | T[] | null | undefined): T | undefined {
+  if (!value) return undefined;
+  return Array.isArray(value) ? value[0] : value;
+}
+
 export async function fetchFuelInvoiceItems(params: { companyId: string }) {
   const { data, error } = await supabase
     .from('invoice_items')
@@ -17,7 +65,7 @@ export async function fetchFuelInvoiceItems(params: { companyId: string }) {
     .eq('invoices.company_id', params.companyId);
 
   if (error) throw error;
-  return (data || []) as any[];
+  return (data || []) as unknown as FuelInvoiceItem[];
 }
 
 export async function fetchFuelConsumptionLogs(params: { companyId: string }) {
@@ -28,17 +76,22 @@ export async function fetchFuelConsumptionLogs(params: { companyId: string }) {
     .order('date', { ascending: false });
 
   if (error) throw error;
-  return (data || []) as any[];
+  return (data || []) as FuelConsumptionLog[];
 }
 
-export function computeFuelStock(params: { items: any[]; consumption: any[]; activeTab: 'diesel' | 'gasoline' }) {
+export function computeFuelStock(params: {
+  items: FuelInvoiceItem[];
+  consumption: FuelConsumptionLog[];
+  activeTab: 'diesel' | 'gasoline';
+}) {
   const items = params.items || [];
 
   const fuelItems =
-    items.filter((item: any) => {
-      const cat = String(item.category || item.products?.category || '').toLowerCase().trim();
-      const productName = String(item.products?.name || '').toLowerCase();
-      const unit = String(item.products?.unit || '').toLowerCase().trim();
+    items.filter((item) => {
+      const product = pickFirst(item.products);
+      const cat = String(item.category || product?.category || '').toLowerCase().trim();
+      const productName = String(product?.name || '').toLowerCase();
+      const unit = String(product?.unit || '').toLowerCase().trim();
 
       const invalidUnits = ['un', 'unid', 'unidad', 'und', 'pieza', 'kit', 'juego', 'global', 'servicio', 'hrs', 'horas'];
       if (invalidUnits.includes(unit)) return false;
@@ -56,10 +109,11 @@ export function computeFuelStock(params: { items: any[]; consumption: any[]; act
 
   const monthlySummary: Record<string, { diesel: number; gas93: number; gas95: number }> = {};
 
-  items.forEach((item: any) => {
-    const cat = String(item.category || item.products?.category || '').toLowerCase().trim();
-    const productName = String(item.products?.name || '').toLowerCase();
-    const unit = String(item.products?.unit || '').toLowerCase().trim();
+  items.forEach((item) => {
+    const product = pickFirst(item.products);
+    const cat = String(item.category || product?.category || '').toLowerCase().trim();
+    const productName = String(product?.name || '').toLowerCase();
+    const unit = String(product?.unit || '').toLowerCase().trim();
 
     const invalidUnits = ['un', 'unid', 'unidad', 'und', 'pieza', 'kit', 'juego', 'global', 'servicio', 'hrs', 'horas'];
     if (invalidUnits.includes(unit)) return;
@@ -73,12 +127,13 @@ export function computeFuelStock(params: { items: any[]; consumption: any[]; act
 
     if (!type) return;
 
-    const dateStr = String(item.invoices.invoice_date);
+    const inv = pickFirst(item.invoices);
+    const dateStr = String(inv?.invoice_date || '');
     const monthKey = dateStr.substring(0, 7);
     if (!monthlySummary[monthKey]) monthlySummary[monthKey] = { diesel: 0, gas93: 0, gas95: 0 };
 
     const qty = Number(item.quantity || 0);
-    const docType = String(item.invoices.document_type || '').toLowerCase();
+    const docType = String(inv?.document_type || '').toLowerCase();
     const isNC = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
     const finalQty = isNC ? -Math.abs(qty) : qty;
 
@@ -88,16 +143,18 @@ export function computeFuelStock(params: { items: any[]; consumption: any[]; act
   });
 
   const totalPurchasedLiters = round2(
-    fuelItems.reduce((sum: number, item: any) => {
-      const docType = String(item.invoices.document_type || '').toLowerCase();
+    fuelItems.reduce((sum: number, item) => {
+      const inv = pickFirst(item.invoices);
+      const docType = String(inv?.document_type || '').toLowerCase();
       const isNC = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
       const qty = Number(item.quantity || 0);
       return sum + (isNC ? -Math.abs(qty) : qty);
     }, 0)
   );
 
-  const totalPurchasedCost = fuelItems.reduce((sum: number, item: any) => {
-    const docType = String(item.invoices.document_type || '').toLowerCase();
+  const totalPurchasedCost = fuelItems.reduce((sum: number, item) => {
+    const inv = pickFirst(item.invoices);
+    const docType = String(inv?.document_type || '').toLowerCase();
     const isNC = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
     const price = Number(item.total_price || 0);
     return sum + (isNC ? -Math.abs(price) : price);
@@ -106,14 +163,14 @@ export function computeFuelStock(params: { items: any[]; consumption: any[]; act
   const avgPrice = totalPurchasedLiters > 0 ? totalPurchasedCost / totalPurchasedLiters : 0;
 
   const filteredConsumption =
-    (params.consumption || []).filter((log: any) => {
+    (params.consumption || []).filter((log) => {
       const activityLower = String(log.activity || '').toLowerCase();
       const isGasoline = activityLower.includes('gasolina') || activityLower.includes('bencina');
       if (params.activeTab === 'diesel') return !isGasoline;
       return isGasoline;
     }) || [];
 
-  const totalConsumedLiters = round2(filteredConsumption.reduce((sum: number, log: any) => sum + Number(log.liters), 0));
+  const totalConsumedLiters = round2(filteredConsumption.reduce((sum: number, log) => sum + Number(log.liters), 0));
 
   return {
     fuelItems,
@@ -134,12 +191,15 @@ export async function loadFuelStockAndLogs(params: { companyId: string; activeTa
   return computeFuelStock({ items, consumption, activeTab: params.activeTab });
 }
 
-export async function updateFuelConsumptionLog(params: { id: string; patch: any }) {
+export async function updateFuelConsumptionLog(params: {
+  id: string;
+  patch: Partial<Pick<FuelConsumptionLog, 'date' | 'activity' | 'liters' | 'estimated_price' | 'sector_id'>>;
+}) {
   const { error } = await supabase.from('fuel_consumption').update(params.patch).eq('id', params.id);
   if (error) throw error;
 }
 
-export async function insertFuelConsumptionLogs(params: { rows: any[] }) {
+export async function insertFuelConsumptionLogs(params: { rows: FuelConsumptionInsert[] }) {
   if (!params.rows || params.rows.length === 0) return;
   const { error } = await supabase.from('fuel_consumption').insert(params.rows);
   if (error) throw error;
