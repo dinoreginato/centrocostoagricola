@@ -1035,7 +1035,8 @@ export const Invoices: React.FC = () => {
               laborAssignments: [] as Array<{ sector_id: string; assigned_amount: number; assigned_date: string; labor_type: string; worker_id: string | null; notes: string }>,
               irrigationAssignments: [] as Array<{ sector_id: string; assigned_amount: number; assigned_date: string; notes: string }>,
               machineryAssignments: [] as Array<{ sector_id: string | null; machine_id: string | null; assigned_amount: number; assigned_date: string; notes: string }>,
-              generalCosts: [] as Array<{ sector_id: string; amount: number; date: string; category: string; description: string }>
+              generalCosts: [] as Array<{ sector_id: string; amount: number; date: string; category: string; description: string }>,
+              fuelAssignments: [] as Array<{ sector_id: string; assigned_amount: number; assigned_date: string }>
           };
 
           if (!formItem.destination_type || !formItem.destination_id || formItem.destination_type === 'none') return result;
@@ -1090,6 +1091,10 @@ export const Invoices: React.FC = () => {
               const isIrrigation = formItem.category?.toLowerCase().includes('riego') || 
                                    formItem.category?.toLowerCase().includes('agua') || 
                                    formItem.category?.toLowerCase().includes('electricidad');
+              const isFuel = (() => {
+                  const c = String(formItem.category || '').toLowerCase();
+                  return c.includes('petroleo') || c.includes('diesel') || c.includes('combustible') || c.includes('bencina') || c.includes('gasolina');
+              })();
               
               const insertAssignment = (sectorId: string, amount: number, notesStr: string) => {
                   // For Credit Notes, amount should be negative
@@ -1110,6 +1115,12 @@ export const Invoices: React.FC = () => {
                           assigned_amount: finalAmount,
                           assigned_date: invoiceDate,
                           notes: notesStr
+                      });
+                  } else if (isFuel) {
+                      result.fuelAssignments.push({
+                          sector_id: sectorId,
+                          assigned_amount: finalAmount,
+                          assigned_date: invoiceDate
                       });
                   } else {
                       result.generalCosts.push({
@@ -1229,7 +1240,8 @@ export const Invoices: React.FC = () => {
                  laborAssignments: assignments?.laborAssignments,
                  irrigationAssignments: assignments?.irrigationAssignments,
                  machineryAssignments: assignments?.machineryAssignments,
-                 generalCosts: assignments?.generalCosts
+                 generalCosts: assignments?.generalCosts,
+                 fuelAssignments: assignments?.fuelAssignments
                });
            }
         }
@@ -1261,7 +1273,8 @@ export const Invoices: React.FC = () => {
               laborAssignments: assignments.laborAssignments,
               irrigationAssignments: assignments.irrigationAssignments,
               machineryAssignments: assignments.machineryAssignments,
-              generalCosts: assignments.generalCosts
+              generalCosts: assignments.generalCosts,
+              fuelAssignments: assignments.fuelAssignments
             });
         }
 
@@ -1327,7 +1340,8 @@ export const Invoices: React.FC = () => {
               laborAssignments: assignments.laborAssignments,
               irrigationAssignments: assignments.irrigationAssignments,
               machineryAssignments: assignments.machineryAssignments,
-              generalCosts: assignments.generalCosts
+              generalCosts: assignments.generalCosts,
+              fuelAssignments: assignments.fuelAssignments
             });
         }
       }

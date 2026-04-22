@@ -78,6 +78,7 @@ export type LaborAssignmentInput = Omit<LaborAssignmentInsert, 'invoice_item_id'
 export type IrrigationAssignmentInput = Omit<IrrigationAssignmentInsert, 'invoice_item_id'>;
 export type MachineryAssignmentInput = Omit<MachineryAssignmentInsert, 'invoice_item_id'>;
 export type GeneralCostInput = Omit<GeneralCostInsert, 'company_id' | 'invoice_item_id'>;
+export type FuelAssignmentInput = { sector_id: string; assigned_amount: number; assigned_date: string };
 
 export async function createInvoiceItemWithEffects(params: {
   invoiceId: string;
@@ -90,6 +91,7 @@ export async function createInvoiceItemWithEffects(params: {
   irrigationAssignments?: IrrigationAssignmentInput[];
   machineryAssignments?: MachineryAssignmentInput[];
   generalCosts?: GeneralCostInput[];
+  fuelAssignments?: FuelAssignmentInput[];
 }): Promise<{ id: string }> {
   const { data, error } = await supabase.rpc('create_invoice_item_with_effects', {
     p_invoice_id: params.invoiceId,
@@ -101,7 +103,8 @@ export async function createInvoiceItemWithEffects(params: {
     p_labor_assignments: params.laborAssignments || [],
     p_irrigation_assignments: params.irrigationAssignments || [],
     p_machinery_assignments: params.machineryAssignments || [],
-    p_general_costs: params.generalCosts || []
+    p_general_costs: params.generalCosts || [],
+    p_fuel_assignments: params.fuelAssignments || []
   });
   if (error) throw error;
   return { id: data as string };
@@ -247,6 +250,7 @@ export async function rpcUpdateInvoiceItemWithEffects(params: {
   irrigationAssignments?: IrrigationAssignmentInput[];
   machineryAssignments?: MachineryAssignmentInput[];
   generalCosts?: GeneralCostInput[];
+  fuelAssignments?: FuelAssignmentInput[];
 }) {
   const { error } = await supabase.rpc('update_invoice_item_with_effects', {
     p_invoice_item_id: params.invoiceItemId,
@@ -260,7 +264,8 @@ export async function rpcUpdateInvoiceItemWithEffects(params: {
     p_labor_assignments: params.laborAssignments || [],
     p_irrigation_assignments: params.irrigationAssignments || [],
     p_machinery_assignments: params.machineryAssignments || [],
-    p_general_costs: params.generalCosts || []
+    p_general_costs: params.generalCosts || [],
+    p_fuel_assignments: params.fuelAssignments || []
   });
   if (error) throw error;
 }
