@@ -28,6 +28,11 @@ export type InventoryMovement = {
   movement_type: 'entrada' | 'salida';
   quantity: number;
   unit_cost: number;
+  manual?: boolean;
+  notes?: string | null;
+  prev_stock?: number | null;
+  prev_average_cost?: number | null;
+  created_by?: string | null;
   invoice_items?: {
     invoice?: {
       number: string;
@@ -170,6 +175,31 @@ export async function updateInventoryProduct(params: {
 }) {
   const payload = { ...params.patch, updated_at: params.patch.updated_at ?? new Date().toISOString() };
   const { error } = await supabase.from('products').update(payload).eq('id', params.productId);
+  if (error) throw error;
+}
+
+export type ManualInventoryMovementInput = {
+  productId: string;
+  movementType: 'entrada' | 'salida';
+  quantity: number;
+  unitCost?: number | null;
+  notes?: string | null;
+};
+
+export async function applyManualInventoryMovement(params: ManualInventoryMovementInput): Promise<{ movementId: string }> {
+  const { data, error } = await supabase.rpc('apply_manual_inventory_movement', {
+    p_product_id: params.productId,
+    p_movement_type: params.movementType,
+    p_quantity: params.quantity,
+    p_unit_cost: params.unitCost ?? null,
+    p_notes: params.notes ?? null
+  });
+  if (error) throw error;
+  return { movementId: data as string };
+}
+
+export async function revertManualInventoryMovement(params: { movementId: string }) {
+  const { error } = await supabase.rpc('revert_manual_inventory_movement', { p_movement_id: params.movementId });
   if (error) throw error;
 }
 

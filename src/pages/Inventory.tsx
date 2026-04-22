@@ -6,7 +6,7 @@ import { Package, Search, AlertTriangle, Edit, Trash2, X, Save, History, ArrowDo
 import { read, utils } from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { deleteOrArchiveInventoryProduct, fetchInventoryHistory, fetchInventoryProducts, fetchPhytosanitaryPrograms, fetchProgramEventsForProjection, mergeDuplicateInventoryProducts, searchOfficialProducts, updateInventoryProduct, upsertOfficialProducts } from '../services/inventory';
+import { applyManualInventoryMovement, deleteOrArchiveInventoryProduct, fetchInventoryHistory, fetchInventoryProducts, fetchPhytosanitaryPrograms, fetchProgramEventsForProjection, mergeDuplicateInventoryProducts, searchOfficialProducts, updateInventoryProduct, upsertOfficialProducts } from '../services/inventory';
 
 interface Product {
   id: string;
@@ -28,6 +28,8 @@ interface InventoryMovement {
   movement_type: 'entrada' | 'salida';
   quantity: number;
   unit_cost: number;
+  manual?: boolean;
+  notes?: string | null;
   invoice_items?: {
     invoice: {
       number: string;
@@ -56,6 +58,10 @@ export const Inventory: React.FC = () => {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editForm, setEditForm] = useState<Partial<Product>>({});
   const [editSuggestions, setEditSuggestions] = useState<any[]>([]);
+  const [adjustType, setAdjustType] = useState<'entrada' | 'salida'>('entrada');
+  const [adjustQty, setAdjustQty] = useState<number>(0);
+  const [adjustUnitCost, setAdjustUnitCost] = useState<number>(0);
+  const [adjustNotes, setAdjustNotes] = useState<string>('');
 
   // History State
   const [viewingHistory, setViewingHistory] = useState<Product | null>(null);
@@ -246,12 +252,20 @@ export const Inventory: React.FC = () => {
       lot_number: product.lot_number || '',
       expiration_date: product.expiration_date || ''
     });
+    setAdjustType('entrada');
+    setAdjustQty(0);
+    setAdjustUnitCost(Number(product.average_cost || 0));
+    setAdjustNotes('');
   };
 
   const cancelEdit = () => {
     setEditingProduct(null);
     setEditForm({});
     setEditSuggestions([]);
+    setAdjustType('entrada');
+    setAdjustQty(0);
+    setAdjustUnitCost(0);
+    setAdjustNotes('');
   };
 
   const searchOfficialForEdit = async (query: string) => {
@@ -288,26 +302,68 @@ export const Inventory: React.FC = () => {
           name: editForm.name,
           category: editForm.category,
           unit: editForm.unit,
-          current_stock: editForm.current_stock as any,
           minimum_stock: editForm.minimum_stock as any,
-          average_cost: editForm.average_cost as any,
           active_ingredient: editForm.active_ingredient as any,
           lot_number: editForm.lot_number as any,
           expiration_date: editForm.expiration_date ? (editForm.expiration_date as any) : null
         }
       });
 
-      setProducts(products.map(p => 
-        p.id === editingProduct.id 
-          ? { ...p, ...editForm } as Product 
-          : p
-      ));
+      const { current_stock: _current_stock, average_cost: _average_cost, ...rest } = editForm;
+      setProducts(products.map(p => (p.id === editingProduct.id ? ({ ...p, ...rest } as Product) : p)));
       
       cancelEdit();
       toast('Producto actualizado');
     } catch (error: any) {
       console.error('Error updating product:', error);
       toast.error('Error al actualizar: ' + error.message);
+    }
+  };
+
+  const handleApplyManualAdjustment = async () => {
+    if (!selectedCompany || !editingProduct) return;
+    if (adjustQty <= 0) {
+      toast('Ingrese una cantidad válida');
+      return;
+    }
+    if (adjustType === 'entrada' && adjustUnitCost < 0) {
+      toast('Ingrese un costo unitario válido');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await applyManualInventoryMovement({
+        productId: editingProduct.id,
+        movementType: adjustType,
+        quantity: adjustQty,
+        unitCost: adjustType === 'entrada' ? adjustUnitCost : null,
+        notes: adjustNotes || null
+      });
+
+      const chemicalProducts = await fetchInventoryProducts({ companyId: selectedCompany.id });
+      setProducts(chemicalProducts as any);
+      const cats = Array.from(new Set(chemicalProducts.map((p) => p.category))).filter(Boolean).sort();
+      setAvailableCategories(cats);
+
+      const updated = chemicalProducts.find((p) => p.id === editingProduct.id);
+      if (updated) {
+        setEditForm((prev) => ({ ...prev, current_stock: updated.current_stock, average_cost: updated.average_cost }));
+      }
+
+      if (viewingHistory && viewingHistory.id === editingProduct.id) {
+        const data = await fetchInventoryHistory({ productId: editingProduct.id });
+        setHistoryData(data as any);
+      }
+
+      setAdjustQty(0);
+      setAdjustNotes('');
+      toast('Ajuste aplicado');
+    } catch (error: any) {
+      console.error('Error applying adjustment:', error);
+      toast.error('Error al ajustar: ' + error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -715,7 +771,10 @@ export const Inventory: React.FC = () => {
                                                       </div>
                                                   </div>
                                               ) : (
-                                                  <span className="italic text-gray-400">Ajuste Manual / Desconocido</span>
+                                                  <div>
+                                                      <div className="italic text-gray-400">Ajuste Manual / Desconocido</div>
+                                                      {movement.notes ? <div className="text-xs text-gray-500 dark:text-gray-400">{movement.notes}</div> : null}
+                                                  </div>
                                               )}
                                           </td>
                                           <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
@@ -821,13 +880,9 @@ export const Inventory: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Stock Actual</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={editForm.current_stock || 0}
-                    onChange={e => setEditForm({...editForm, current_stock: Number(e.target.value)})}
-                    className="w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
-                  />
+                  <div className="w-full border border-gray-200 dark:border-gray-700 rounded-md p-2 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+                    {Number(editForm.current_stock ?? 0).toFixed(2)} {editForm.unit || 'un'}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Stock Mínimo (Alerta)</label>
@@ -860,13 +915,67 @@ export const Inventory: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Costo Promedio</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={editForm.average_cost || 0}
-                    onChange={e => setEditForm({...editForm, average_cost: Number(e.target.value)})}
-                    className="w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
-                  />
+                  <div className="w-full border border-gray-200 dark:border-gray-700 rounded-md p-2 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+                    {formatCLP(Number(editForm.average_cost ?? 0))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="border border-gray-200 dark:border-gray-700 rounded-md p-3 bg-gray-50 dark:bg-gray-900">
+                <div className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2">Ajuste Manual</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Tipo</label>
+                    <select
+                      value={adjustType}
+                      onChange={e => setAdjustType(e.target.value as 'entrada' | 'salida')}
+                      className="w-full border border-gray-300 dark:border-gray-600 rounded-md p-2 bg-white dark:bg-gray-800"
+                    >
+                      <option value="entrada">Entrada (+)</option>
+                      <option value="salida">Salida (-)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Cantidad</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={adjustQty || 0}
+                      onChange={e => setAdjustQty(Number(e.target.value))}
+                      className="w-full border border-gray-300 dark:border-gray-600 rounded-md p-2 bg-white dark:bg-gray-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Costo Unitario</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={adjustUnitCost || 0}
+                      onChange={e => setAdjustUnitCost(Number(e.target.value))}
+                      disabled={adjustType !== 'entrada'}
+                      className="w-full border border-gray-300 dark:border-gray-600 rounded-md p-2 bg-white dark:bg-gray-800 disabled:bg-gray-100 dark:disabled:bg-gray-900"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Nota</label>
+                    <input
+                      type="text"
+                      value={adjustNotes}
+                      onChange={e => setAdjustNotes(e.target.value)}
+                      className="w-full border border-gray-300 dark:border-gray-600 rounded-md p-2 bg-white dark:bg-gray-800"
+                      placeholder="Ej. Ajuste por inventario físico"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end mt-3">
+                  <button
+                    type="button"
+                    onClick={handleApplyManualAdjustment}
+                    disabled={loading}
+                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center disabled:opacity-60"
+                  >
+                    <Save className="h-4 w-4 mr-2" /> Aplicar Ajuste
+                  </button>
                 </div>
               </div>
 
