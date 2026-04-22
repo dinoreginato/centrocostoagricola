@@ -78,3 +78,75 @@ export async function updateApplicationInventory(payload: any) {
   const { error } = await supabase.rpc('update_application_inventory', payload);
   if (error) throw error;
 }
+
+export async function findFuelConsumptionForApplication(params: { applicationId: string }) {
+  const { data, error } = await supabase.from('fuel_consumption').select('id').eq('application_id', params.applicationId).maybeSingle();
+  if (error) throw error;
+  return data as any | null;
+}
+
+export async function upsertFuelConsumptionForApplication(params: {
+  companyId: string;
+  applicationId: string;
+  sectorId: string;
+  date: string;
+  liters: number;
+  estimatedPrice: number;
+  activity?: string;
+}) {
+  const existing = await findFuelConsumptionForApplication({ applicationId: params.applicationId });
+
+  if (existing?.id) {
+    const { error } = await supabase
+      .from('fuel_consumption')
+      .update({
+        date: params.date,
+        sector_id: params.sectorId,
+        liters: params.liters,
+        estimated_price: params.estimatedPrice
+      })
+      .eq('id', existing.id);
+    if (error) throw error;
+    return existing.id as string;
+  }
+
+  const { data, error } = await supabase
+    .from('fuel_consumption')
+    .insert([
+      {
+        company_id: params.companyId,
+        date: params.date,
+        activity: params.activity || 'Aplicación (Automática)',
+        liters: params.liters,
+        estimated_price: params.estimatedPrice,
+        sector_id: params.sectorId,
+        application_id: params.applicationId
+      }
+    ])
+    .select('id')
+    .single();
+  if (error) throw error;
+  return (data as any).id as string;
+}
+
+export async function createApplication(params: { payload: any }) {
+  const { data, error } = await supabase.from('applications').insert([params.payload]).select().single();
+  if (error) throw error;
+  return data as any;
+}
+
+export async function createApplicationItem(params: { payload: any }) {
+  const { data, error } = await supabase.from('application_items').insert([params.payload]).select().single();
+  if (error) throw error;
+  return data as any;
+}
+
+export async function updateProductCurrentStock(params: { productId: string; newStock: number }) {
+  const { error } = await supabase.from('products').update({ current_stock: params.newStock }).eq('id', params.productId);
+  if (error) throw error;
+}
+
+export async function insertInventoryMovement(params: { payload: any }) {
+  const { error } = await supabase.from('inventory_movements').insert([params.payload]);
+  if (error) throw error;
+}

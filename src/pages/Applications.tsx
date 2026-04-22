@@ -1,13 +1,12 @@
 import { toast } from 'sonner';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Plus, Loader2, Save, Trash2, Calendar, Droplets, MapPin, RefreshCw, Edit, Filter, Download, Eye, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
-import { deleteAllApplicationsRestoreStock, deleteApplicationAndRestoreStock, loadApplicationsPageData, updateApplicationInventory } from '../services/applications';
+import { createApplication, createApplicationItem, deleteAllApplicationsRestoreStock, deleteApplicationAndRestoreStock, insertInventoryMovement, loadApplicationsPageData, updateApplicationInventory, updateProductCurrentStock, upsertFuelConsumptionForApplication } from '../services/applications';
 
 interface Field {
   id: string;
@@ -723,41 +722,18 @@ export const Applications: React.FC = () => {
             const finalLiters = Math.max(fuelLiters, 0.01);
             const fuelCost = finalLiters * avgFuelPrice;
             
-            // Check if exists
-            const { data: existingFuel } = await supabase
-                .from('fuel_consumption')
-                .select('id')
-                .eq('application_id', editingId)
-                .maybeSingle();
-
-            if (existingFuel) {
-                const { error: updateError } = await supabase
-                    .from('fuel_consumption')
-                    .update({
-                        date: applicationDate,
-                        sector_id: selectedSectorId,
-                        liters: finalLiters,
-                        estimated_price: fuelCost
-                    })
-                    .eq('id', existingFuel.id);
-                
-                if (updateError) console.error('Error updating fuel record:', updateError);
-
-            } else {
-                // Create if missing
-                const { error: insertError } = await supabase
-                    .from('fuel_consumption')
-                    .insert([{
-                        company_id: selectedCompany.id,
-                        date: applicationDate,
-                        activity: 'Aplicación (Automática)',
-                        liters: finalLiters,
-                        estimated_price: fuelCost,
-                        sector_id: selectedSectorId,
-                        application_id: editingId
-                    }]);
-                
-                if (insertError) console.error('Error creating missing fuel record on update:', insertError);
+            try {
+                await upsertFuelConsumptionForApplication({
+                    companyId: selectedCompany.id,
+                    applicationId: editingId,
+                    sectorId: selectedSectorId,
+                    date: applicationDate,
+                    liters: finalLiters,
+                    estimatedPrice: fuelCost,
+                    activity: 'Aplicación (Automática)'
+                });
+            } catch (error: any) {
+                console.error('Error upserting fuel record:', error);
             }
         }
 
@@ -767,59 +743,46 @@ export const Applications: React.FC = () => {
       } else {
         // CREATE MODE
         // 1. Create Application
-        const { data: application, error: appError } = await supabase
-          .from('applications')
-          .insert([{
+        const application = await createApplication({
+          payload: {
             field_id: selectedFieldId,
             sector_id: selectedSectorId,
             application_date: applicationDate,
             application_type: applicationType,
             total_cost: totalCost,
             water_liters_per_hectare: waterVolumePerHectare
-          }])
-          .select()
-          .single();
-
-        if (appError) throw appError;
+          }
+        });
 
         // 2. Process Items and Deduct Stock
         for (const item of items) {
           // Create Application Item
-          const { data: savedItem, error: itemError } = await supabase
-            .from('application_items')
-            .insert([{
+          const savedItem = await createApplicationItem({
+            payload: {
               application_id: application.id,
               product_id: item.product_id,
               quantity_used: item.quantity_used,
-              dose_per_hectare: item.dose_per_hectare, 
+              dose_per_hectare: item.dose_per_hectare,
               unit_cost: item.unit_cost,
               total_cost: item.total_cost,
-              objective: item.objective || '' // Include objective
-            }])
-            .select()
-            .single();
-
-          if (itemError) throw itemError;
+              objective: item.objective || ''
+            }
+          });
 
           // Deduct Stock
           const product = products.find(p => p.id === item.product_id);
           if (product) {
               const newStock = product.current_stock - item.quantity_used;
-              await supabase
-                  .from('products')
-                  .update({ current_stock: newStock })
-                  .eq('id', item.product_id);
+              await updateProductCurrentStock({ productId: item.product_id, newStock });
               
               // Record Inventory Movement (Salida) linked to Application Item
-              await supabase
-                  .from('inventory_movements')
-                  .insert([{
+              await insertInventoryMovement({ payload: {
                       product_id: item.product_id,
                       movement_type: 'salida',
                       quantity: item.quantity_used,
                       unit_cost: item.unit_cost,
                       application_item_id: savedItem.id // LINK TO APPLICATION
-                  }]);
+                  } });
           }
         }
 
@@ -842,19 +805,17 @@ export const Applications: React.FC = () => {
                 application_id: application.id
             });
 
-            const { error: fuelError } = await supabase
-                .from('fuel_consumption')
-                .insert([{
-                    company_id: selectedCompany.id,
+            try {
+                await upsertFuelConsumptionForApplication({
+                    companyId: selectedCompany.id,
+                    applicationId: application.id,
+                    sectorId: selectedSectorId,
                     date: applicationDate,
-                    activity: 'Aplicación (Automática)',
                     liters: finalLiters,
-                    estimated_price: fuelCost,
-                    sector_id: selectedSectorId,
-                    application_id: application.id
-                }]);
-            
-            if (fuelError) {
+                    estimatedPrice: fuelCost,
+                    activity: 'Aplicación (Automática)'
+                });
+            } catch (fuelError: any) {
                 console.error('Error creating fuel record:', fuelError);
                 toast('La aplicación se guardó, pero hubo un error registrando el petróleo: ' + fuelError.message);
             }

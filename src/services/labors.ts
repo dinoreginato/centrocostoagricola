@@ -142,3 +142,33 @@ export async function updateLaborType(params: { assignmentId: string; laborType:
   const { error } = await supabase.from('labor_assignments').update({ labor_type: params.laborType }).eq('id', params.assignmentId);
   if (error) throw error;
 }
+
+export async function updateLaborAssignment(params: { assignmentId: string; patch: any }) {
+  const { error } = await supabase.from('labor_assignments').update(params.patch).eq('id', params.assignmentId);
+  if (error) throw error;
+}
+
+export async function insertLaborAssignments(params: { rows: any[] }) {
+  if (!params.rows || params.rows.length === 0) return;
+  const { error } = await supabase.from('labor_assignments').insert(params.rows);
+  if (error) throw error;
+}
+
+export async function fetchLaborAssignmentsForAutoClassify(params: { companyId: string }) {
+  const { data, error } = await supabase
+    .from('labor_assignments')
+    .select(
+      `
+      id, labor_type,
+      invoice_items!inner (
+        products (name),
+        invoices!inner (company_id)
+      )
+    `
+    )
+    .eq('invoice_items.invoices.company_id', params.companyId)
+    .or('labor_type.eq.General,labor_type.is.null');
+
+  if (error) throw error;
+  return data || [];
+}

@@ -1,7 +1,6 @@
 import { toast } from 'sonner';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Layers, Settings, X, Printer, FileText, RefreshCw, AlertTriangle, Copy, Download } from 'lucide-react';
 import jsPDF from 'jspdf';
@@ -9,7 +8,7 @@ import autoTable from 'jspdf-autotable';
 import { utils, writeFile } from 'xlsx';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
-import { deleteAllMachineryAssignments, deleteMachineryAssignment, fetchMachineryHistory, fetchPendingMachineryItems } from '../services/machinery';
+import { deactivateMachine, deleteAllMachineryAssignments, deleteMachineryAssignment, deleteMachineryAssignmentsByInvoiceItem, fetchActiveMachines, fetchInvoiceItemForMachinery, fetchMachineExpenses, fetchMachineryAssignmentsWithMachine, fetchMachineryHistory, fetchPendingMachineryItems, insertMachineryAssignments, syncMachineryAssignmentsForItem, updateMachineryAssignment, upsertMachine } from '../services/machinery';
 
 interface MachineryItem {
   id: string; // invoice_item_id
@@ -160,12 +159,7 @@ export const Machinery: React.FC = () => {
 
   const loadMachines = async () => {
       if (!selectedCompany) return;
-      const { data } = await supabase
-          .from('machines')
-          .select('id, name, type, brand, model, plate, description, current_hours, maintenance_interval_hours, last_maintenance_hours')
-          .eq('company_id', selectedCompany.id)
-          .eq('is_active', true)
-          .order('name');
+      const data = await fetchActiveMachines({ companyId: selectedCompany.id });
       setMachines(data || []);
   };
 
@@ -195,19 +189,7 @@ export const Machinery: React.FC = () => {
       if (!selectedCompany) return;
       setLoading(true);
       try {
-          const { data } = await supabase
-              .from('machinery_assignments')
-              .select(`
-                  id, assigned_amount, assigned_date,
-                  sectors (name),
-                  invoice_items!inner (
-                      products (name),
-                      invoices!inner (invoice_number)
-                  )
-              `)
-              .eq('machine_id', machineId)
-              .order('assigned_date', { ascending: false });
-          
+          const data = await fetchMachineExpenses({ machineId });
           const mappedExpenses: MachineExpense[] = (data || []).map((item: any) => ({
               id: item.id,
               date: item.assigned_date,
@@ -251,17 +233,7 @@ export const Machinery: React.FC = () => {
   const handleCloneAssignment = async (assignment: HistoryItem) => {
       setLoading(true);
       try {
-          const { data: itemData, error } = await supabase
-              .from('invoice_items')
-              .select(`
-                  id, total_price, category,
-                  products (name, category),
-                  invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
-              `)
-              .eq('id', assignment.invoice_item_id)
-              .single();
-
-          if (error) throw error;
+          const itemData = await fetchInvoiceItemForMachinery({ invoiceItemId: assignment.invoice_item_id });
 
           const invoice = (Array.isArray(itemData.invoices) ? itemData.invoices[0] : itemData.invoices) as any;
           const product = (Array.isArray(itemData.products) ? itemData.products[0] : itemData.products) as any;
@@ -318,17 +290,7 @@ export const Machinery: React.FC = () => {
       setLoading(true);
       try {
           // 1. Fetch the full invoice item details because it might not be in the pending list
-          const { data: itemData, error } = await supabase
-              .from('invoice_items')
-              .select(`
-                  id, total_price, category,
-                  products (name, category),
-                  invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
-              `)
-              .eq('id', assignment.invoice_item_id)
-              .single();
-
-          if (error) throw error;
+          const itemData = await fetchInvoiceItemForMachinery({ invoiceItemId: assignment.invoice_item_id });
 
           // 2. Reconstruct the MachineryItem object for the form
           // Fix: Handle potential array response for joined tables
@@ -408,12 +370,7 @@ export const Machinery: React.FC = () => {
       setLoading(true);
       try {
           // 1. Delete ALL assignments for this invoice_item_id
-          const { error: deleteError } = await supabase
-              .from('machinery_assignments')
-              .delete()
-              .eq('invoice_item_id', assignment.invoice_item_id);
-
-          if (deleteError) throw deleteError;
+          await deleteMachineryAssignmentsByInvoiceItem({ invoiceItemId: assignment.invoice_item_id });
 
           toast('Item reseteado. Ahora aparecerá en la lista de pendientes para asignar nuevamente.');
           await loadData();
@@ -467,20 +424,7 @@ export const Machinery: React.FC = () => {
             company_id: selectedCompany.id
         };
 
-        if (editingMachine.id) {
-            // Update
-            const { error } = await supabase
-                .from('machines')
-                .update(machineData)
-                .eq('id', editingMachine.id);
-            if (error) throw error;
-        } else {
-            // Create
-            const { error } = await supabase
-                .from('machines')
-                .insert([machineData]);
-            if (error) throw error;
-        }
+        await upsertMachine({ companyId: selectedCompany.id, machineId: editingMachine.id, payload: machineData });
 
         setShowMachineModal(false);
         setEditingMachine(null);
@@ -498,12 +442,7 @@ export const Machinery: React.FC = () => {
       
       setLoading(true);
       try {
-          const { error } = await supabase
-              .from('machines')
-              .update({ is_active: false }) // Soft delete
-              .eq('id', id);
-          
-          if (error) throw error;
+          await deactivateMachine({ machineId: id });
           loadMachines();
       } catch (error: any) {
           console.error('Error deleting machine:', error);
@@ -655,38 +594,30 @@ export const Machinery: React.FC = () => {
             const alloc = payload[0]; 
 
             // 1. Update the specific assignment (Sector, Amount, Date, Machine)
-            const { error: specificError } = await supabase
-                .from('machinery_assignments')
-                .update({
+            await updateMachineryAssignment({
+                assignmentId: editingAssignmentId,
+                patch: {
                     sector_id: alloc.sector_id,
                     assigned_amount: alloc.assigned_amount,
                     assigned_date: assignedDate,
                     machine_id: selectedMachineId || null
-                })
-                .eq('id', editingAssignmentId);
-
-            if (specificError) throw specificError;
+                }
+            });
 
             // 2. Update Date and Machine for ALL other assignments of this item to keep them synced
-            const { error: syncError } = await supabase
-                .from('machinery_assignments')
-                .update({
+            await syncMachineryAssignmentsForItem({
+                invoiceItemId: selectedItemId,
+                excludeAssignmentId: editingAssignmentId,
+                patch: {
                     assigned_date: assignedDate,
                     machine_id: selectedMachineId || null
-                })
-                .eq('invoice_item_id', selectedItemId)
-                .neq('id', editingAssignmentId); // Don't update the one we just updated (redundant but safe)
-
-             if (syncError) throw syncError;
+                }
+            });
 
             toast('Asignación actualizada (Fecha y Máquina sincronizadas en todo el item)');
         } else {
             // Insert multiple
-            const { error } = await supabase
-                .from('machinery_assignments')
-                .insert(payload);
-
-            if (error) throw error;
+            await insertMachineryAssignments({ rows: payload });
             toast('Asignaciones guardadas exitosamente');
         }
 
@@ -798,21 +729,7 @@ export const Machinery: React.FC = () => {
 
     try {
         // Fetch all assignments with machine info
-        const { data } = await supabase
-            .from('machinery_assignments')
-            .select(`
-                id, assigned_amount, assigned_date,
-                sectors (name),
-                machines (name, type, brand, model),
-                invoice_items!inner (
-                    products (name),
-                    invoices!inner (invoice_number)
-                )
-            `)
-            .eq('invoice_items.invoices.company_id', selectedCompany.id)
-            .not('machine_id', 'is', null) // Only items assigned to a machine
-            .order('machine_id', { ascending: true })
-            .order('assigned_date', { ascending: false });
+        const data = await fetchMachineryAssignmentsWithMachine({ companyId: selectedCompany.id });
 
         if (!data || data.length === 0) {
             toast('No hay gastos de maquinaria registrados para generar el reporte.');

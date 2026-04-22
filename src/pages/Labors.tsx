@@ -8,7 +8,7 @@ import autoTable from 'jspdf-autotable';
 import { utils, writeFile } from 'xlsx';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
-import { deleteAllLaborAssignments, deleteLaborAssignment, fetchLaborHistory, fetchPendingLaborItems, updateLaborType } from '../services/labors';
+import { deleteAllLaborAssignments, deleteLaborAssignment, fetchLaborAssignmentsForAutoClassify, fetchLaborHistory, fetchPendingLaborItems, insertLaborAssignments, updateLaborAssignment, updateLaborType } from '../services/labors';
 
 const LABOR_TYPES = [
   'General',
@@ -359,17 +359,15 @@ export const Labors: React.FC = () => {
             // Update existing assignment
             // Note: We only support single row editing in this simple mode
             const alloc = allocations[0];
-            const { error } = await supabase
-                .from('labor_assignments')
-                .update({
+            await updateLaborAssignment({
+                assignmentId: editingAssignmentId,
+                patch: {
                     sector_id: alloc.sector_id,
                     assigned_amount: alloc.amount,
                     assigned_date: assignedDate,
                     labor_type: laborType
-                })
-                .eq('id', editingAssignmentId);
-
-            if (error) throw error;
+                }
+            });
             toast('Asignación actualizada exitosamente');
         } else {
             // Create new assignments
@@ -412,11 +410,7 @@ export const Labors: React.FC = () => {
                  }));
             }
 
-            const { error } = await supabase
-                .from('labor_assignments')
-                .insert(payload);
-
-            if (error) throw error;
+            await insertLaborAssignments({ rows: payload });
             toast('Asignación guardada exitosamente');
         }
 
@@ -440,19 +434,7 @@ export const Labors: React.FC = () => {
       setLoading(true);
       try {
           // 1. Fetch all assignments that are 'General' or null
-          const { data: assignments, error: fetchError } = await supabase
-              .from('labor_assignments')
-              .select(`
-                  id, labor_type,
-                  invoice_items!inner (
-                      products (name),
-                      invoices!inner (company_id)
-                  )
-              `)
-              .eq('invoice_items.invoices.company_id', selectedCompany.id)
-              .or('labor_type.eq.General,labor_type.is.null');
-
-          if (fetchError) throw fetchError;
+          const assignments = await fetchLaborAssignmentsForAutoClassify({ companyId: selectedCompany.id });
 
           if (!assignments || assignments.length === 0) {
               toast('No se encontraron asignaciones pendientes de clasificación.');
@@ -482,15 +464,12 @@ export const Labors: React.FC = () => {
 
               if (matchedType && matchedType !== 'General') {
                   updatedCount++;
-                  return supabase
-                      .from('labor_assignments')
-                      .update({ labor_type: matchedType })
-                      .eq('id', assignment.id);
+                  return updateLaborType({ assignmentId: assignment.id, laborType: matchedType });
               }
               return null;
           });
 
-          await Promise.all(updates);
+          await Promise.all(updates.filter(Boolean));
 
           toast(`Proceso completado. Se actualizaron ${updatedCount} asignaciones.`);
           loadData();

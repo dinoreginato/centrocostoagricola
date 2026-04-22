@@ -144,3 +144,119 @@ export async function deleteAllMachineryAssignments(params: { companyId: string 
     }
   }
 }
+
+export async function fetchActiveMachines(params: { companyId: string }) {
+  const { data, error } = await supabase
+    .from('machines')
+    .select('id, name, type, brand, model, plate, description, current_hours, maintenance_interval_hours, last_maintenance_hours')
+    .eq('company_id', params.companyId)
+    .eq('is_active', true)
+    .order('name');
+
+  if (error) throw error;
+  return data || [];
+}
+
+export async function fetchInvoiceItemForMachinery(params: { invoiceItemId: string }) {
+  const { data, error } = await supabase
+    .from('invoice_items')
+    .select(
+      `
+      id, total_price, category,
+      products (name, category),
+      invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
+    `
+    )
+    .eq('id', params.invoiceItemId)
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteMachineryAssignmentsByInvoiceItem(params: { invoiceItemId: string }) {
+  const { error } = await supabase.from('machinery_assignments').delete().eq('invoice_item_id', params.invoiceItemId);
+  if (error) throw error;
+}
+
+export async function updateMachineryAssignment(params: { assignmentId: string; patch: any }) {
+  const { error } = await supabase.from('machinery_assignments').update(params.patch).eq('id', params.assignmentId);
+  if (error) throw error;
+}
+
+export async function syncMachineryAssignmentsForItem(params: { invoiceItemId: string; excludeAssignmentId: string; patch: any }) {
+  const { error } = await supabase
+    .from('machinery_assignments')
+    .update(params.patch)
+    .eq('invoice_item_id', params.invoiceItemId)
+    .neq('id', params.excludeAssignmentId);
+  if (error) throw error;
+}
+
+export async function insertMachineryAssignments(params: { rows: any[] }) {
+  if (!params.rows || params.rows.length === 0) return;
+  const { error } = await supabase.from('machinery_assignments').insert(params.rows);
+  if (error) throw error;
+}
+
+export async function upsertMachine(params: { companyId: string; machineId?: string | null; payload: any }) {
+  const machineData = { ...params.payload, company_id: params.companyId };
+
+  if (params.machineId) {
+    const { error } = await supabase.from('machines').update(machineData).eq('id', params.machineId);
+    if (error) throw error;
+    return params.machineId;
+  }
+
+  const { data, error } = await supabase.from('machines').insert([machineData]).select().single();
+  if (error) throw error;
+  return (data as any).id as string;
+}
+
+export async function deactivateMachine(params: { machineId: string }) {
+  const { error } = await supabase.from('machines').update({ is_active: false }).eq('id', params.machineId);
+  if (error) throw error;
+}
+
+export async function fetchMachineExpenses(params: { machineId: string }) {
+  const { data, error } = await supabase
+    .from('machinery_assignments')
+    .select(
+      `
+      id, assigned_amount, assigned_date,
+      sectors (name),
+      invoice_items!inner (
+        products (name),
+        invoices!inner (invoice_number)
+      )
+    `
+    )
+    .eq('machine_id', params.machineId)
+    .order('assigned_date', { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
+
+export async function fetchMachineryAssignmentsWithMachine(params: { companyId: string }) {
+  const { data, error } = await supabase
+    .from('machinery_assignments')
+    .select(
+      `
+      id, assigned_amount, assigned_date,
+      sectors (name),
+      machines (name, type, brand, model),
+      invoice_items!inner (
+        products (name),
+        invoices!inner (invoice_number, company_id)
+      )
+    `
+    )
+    .eq('invoice_items.invoices.company_id', params.companyId)
+    .not('machine_id', 'is', null)
+    .order('machine_id', { ascending: true })
+    .order('assigned_date', { ascending: false });
+
+  if (error) throw error;
+  return data || [];
+}
