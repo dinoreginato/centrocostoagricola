@@ -1,6 +1,118 @@
 import { supabase } from '../supabase/client';
 
-export async function loadApplicationOrdersPageData(params: { companyId: string; agrochemicalCategories: string[] }) {
+export type ApplicationOrderStatus = 'pendiente' | 'completada' | 'cancelada';
+
+export type ApplicationOrderItem = {
+  id: string;
+  product_id: string;
+  product_name: string;
+  unit: string;
+  dose_per_hectare: number;
+  dose_per_100l?: number | null;
+  total_quantity: number;
+  objective?: string | null;
+  active_ingredient?: string | null;
+  category?: string | null;
+  average_cost?: number | null;
+};
+
+export type ApplicationOrder = {
+  id: string;
+  company_id: string;
+  order_number: number;
+  scheduled_date: string;
+  completed_date?: string | null;
+  status: ApplicationOrderStatus;
+  field_id: string;
+  sector_id: string;
+  application_type: string;
+  water_liters_per_hectare: number;
+  tank_capacity: number;
+  tractor_id?: string | null;
+  sprayer_id?: string | null;
+  tractor_driver_id?: string | null;
+  speed?: number | null;
+  pressure?: number | null;
+  rpm?: number | null;
+  nozzles?: string | null;
+  notes?: string | null;
+  safety_period_hours?: number | null;
+  grace_period_days?: number | null;
+  protection_days?: number | null;
+  variety?: string | null;
+  objective?: string | null;
+  field?: { name: string } | null;
+  sector?: { name: string; hectares: number } | null;
+  tractor?: { name: string } | null;
+  sprayer?: { name: string } | null;
+  driver?: { name: string } | null;
+  items: ApplicationOrderItem[];
+};
+
+export type FieldWithSectors = {
+  id: string;
+  name: string;
+  sectors: Array<{ id: string; name: string; hectares: number }>;
+};
+
+export type ProductRow = {
+  id: string;
+  name: string;
+  unit: string;
+  current_stock: number;
+  category: string;
+  average_cost: number;
+  active_ingredient?: string | null;
+};
+
+export type MachineRow = { id: string; name: string; type: string };
+export type WorkerRow = { id: string; name: string; role: string };
+
+export type ProgramEventForOrder = {
+  id: string;
+  program_id: string;
+  stage_name?: string | null;
+  phytosanitary_programs?: { name?: string | null } | null;
+  products?: Array<{
+    id: string;
+    product_id: string;
+    dose?: number | null;
+    dose_unit?: string | null;
+    product?: ProductRow | null;
+  }> | null;
+};
+
+type RawOrderItem = {
+  id: string;
+  product_id: string;
+  unit: string;
+  dose_per_hectare: number;
+  dose_per_100l?: number | null;
+  total_quantity: number;
+  objective?: string | null;
+  product?: { name?: string | null; unit?: string | null; active_ingredient?: string | null; category?: string | null; average_cost?: number | null } | null;
+};
+
+type RawOrder = Omit<ApplicationOrder, 'items' | 'field' | 'sector' | 'tractor' | 'sprayer' | 'driver'> & {
+  field?: { name: string } | null;
+  sector?: { name: string; hectares: number } | null;
+  tractor?: { name: string } | null;
+  sprayer?: { name: string } | null;
+  driver?: { name: string } | null;
+  items?: RawOrderItem[] | null;
+};
+
+export async function loadApplicationOrdersPageData(params: {
+  companyId: string;
+  agrochemicalCategories: string[];
+}): Promise<{
+  orders: ApplicationOrder[];
+  fields: FieldWithSectors[];
+  products: ProductRow[];
+  machines: MachineRow[];
+  workers: WorkerRow[];
+  programEvents: ProgramEventForOrder[];
+}> {
   const { data: ordersData, error: ordersError } = await supabase
     .from('application_orders')
     .select(
@@ -22,25 +134,24 @@ export async function loadApplicationOrdersPageData(params: { companyId: string;
 
   if (ordersError) throw ordersError;
 
-  const mappedOrders =
-    ordersData?.map((o: any) => ({
-      ...o,
-      items: Array.isArray(o.items)
-        ? o.items.map((i: any) => ({
-            id: i.id,
-            product_id: i.product_id,
-            product_name: i.product?.name,
-            active_ingredient: i.product?.active_ingredient,
-            category: i.product?.category,
-            average_cost: i.product?.average_cost || 0,
-            unit: i.unit,
-            dose_per_hectare: i.dose_per_hectare,
-            dose_per_100l: i.dose_per_100l,
-            total_quantity: i.total_quantity,
-            objective: i.objective
-          }))
-        : []
-    })) || [];
+  const mappedOrders = ((ordersData || []) as unknown as RawOrder[]).map((o) => ({
+    ...(o as any),
+    items: Array.isArray(o.items)
+      ? o.items.map((i) => ({
+          id: i.id,
+          product_id: i.product_id,
+          product_name: i.product?.name ?? '',
+          active_ingredient: i.product?.active_ingredient ?? null,
+          category: i.product?.category ?? null,
+          average_cost: i.product?.average_cost ?? 0,
+          unit: i.unit,
+          dose_per_hectare: i.dose_per_hectare,
+          dose_per_100l: i.dose_per_100l ?? null,
+          total_quantity: i.total_quantity,
+          objective: i.objective ?? null
+        }))
+      : []
+  })) as unknown as ApplicationOrder[];
 
   const [fieldsRes, productsRes, machinesRes, workersRes, progRes] = await Promise.all([
     supabase.from('fields').select('*, sectors(*)').eq('company_id', params.companyId),
@@ -87,15 +198,20 @@ export async function loadApplicationOrdersPageData(params: { companyId: string;
 
   return {
     orders: mappedOrders,
-    fields: fieldsRes.data || [],
-    products: productsRes.data || [],
-    machines: machinesRes.data || [],
-    workers: workersRes.data || [],
-    programEvents
+    fields: (fieldsRes.data || []) as unknown as FieldWithSectors[],
+    products: (productsRes.data || []) as unknown as ProductRow[],
+    machines: (machinesRes.data || []) as unknown as MachineRow[],
+    workers: (workersRes.data || []) as unknown as WorkerRow[],
+    programEvents: (programEvents || []) as unknown as ProgramEventForOrder[]
   };
 }
 
-export async function upsertApplicationOrder(params: { orderId?: string | null; orderData: any; itemsData: any[] }) {
+export type ApplicationOrderUpsert = Omit<ApplicationOrder, 'id' | 'items' | 'field' | 'sector' | 'tractor' | 'sprayer' | 'driver'>;
+export type ApplicationOrderItemUpsert = Omit<ApplicationOrderItem, 'id' | 'product_name' | 'active_ingredient' | 'category' | 'average_cost'>;
+
+export type ApplicationOrderUpsertInput = Omit<ApplicationOrderUpsert, 'order_number'> & { order_number?: number };
+
+export async function upsertApplicationOrder(params: { orderId?: string | null; orderData: ApplicationOrderUpsertInput; itemsData: ApplicationOrderItemUpsert[] }) {
   let orderId = params.orderId || null;
 
   if (orderId) {
@@ -131,7 +247,7 @@ export async function findCompletedOrderApplicationId(params: { sectorId: string
     .eq('application_type', params.applicationType);
 
   if (error) throw error;
-  return data && data.length > 0 ? (data[0] as any).id : null;
+  return data && data.length > 0 ? (data[0] as { id: string }).id : null;
 }
 
 export async function deleteApplicationByIdCascade(params: { applicationId: string }) {
@@ -155,16 +271,35 @@ export async function deleteApplicationOrderCascade(params: { orderId: string; c
   if (error) throw error;
 }
 
-export async function createApplication(params: { payload: any }) {
+export type ApplicationInsert = {
+  field_id: string;
+  sector_id: string;
+  application_date: string;
+  application_type: string;
+  total_cost: number;
+  water_liters_per_hectare: number;
+};
+
+export async function createApplication(params: { payload: ApplicationInsert }) {
   const { data, error } = await supabase.from('applications').insert([params.payload]).select().single();
   if (error) throw error;
-  return data;
+  return data as { id: string };
 }
 
-export async function createApplicationItem(params: { payload: any }) {
+export type ApplicationItemInsert = {
+  application_id: string;
+  product_id: string;
+  quantity_used: number;
+  dose_per_hectare: number;
+  unit_cost: number;
+  total_cost: number;
+  objective?: string;
+};
+
+export async function createApplicationItem(params: { payload: ApplicationItemInsert }) {
   const { data, error } = await supabase.from('application_items').insert([params.payload]).select().single();
   if (error) throw error;
-  return data;
+  return data as { id: string };
 }
 
 export async function updateProductStock(params: { productId: string; currentStock: number }) {
@@ -172,7 +307,15 @@ export async function updateProductStock(params: { productId: string; currentSto
   if (error) throw error;
 }
 
-export async function createInventoryMovement(params: { payload: any }) {
+export type InventoryMovementInsert = {
+  product_id: string;
+  movement_type: 'salida' | 'entrada';
+  quantity: number;
+  unit_cost: number;
+  application_item_id?: string;
+};
+
+export async function createInventoryMovement(params: { payload: InventoryMovementInsert }) {
   const { error } = await supabase.from('inventory_movements').insert([params.payload]);
   if (error) throw error;
 }
@@ -180,10 +323,20 @@ export async function createInventoryMovement(params: { payload: any }) {
 export async function getFuelStats(params: { companyId: string; type: string }) {
   const { data, error } = await supabase.rpc('get_fuel_stats', { p_company_id: params.companyId, p_type: params.type });
   if (error) throw error;
-  return data || [];
+  return (data || []) as Array<{ avg_price?: number | null }>;
 }
 
-export async function createFuelConsumption(params: { payload: any }) {
+export type FuelConsumptionInsert = {
+  company_id: string;
+  date: string;
+  activity: string;
+  liters: number;
+  estimated_price: number;
+  sector_id: string;
+  application_id?: string | null;
+};
+
+export async function createFuelConsumption(params: { payload: FuelConsumptionInsert }) {
   const { error } = await supabase.from('fuel_consumption').insert([params.payload]);
   if (error) throw error;
 }

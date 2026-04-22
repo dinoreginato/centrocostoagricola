@@ -38,19 +38,17 @@ export type ReverseInventoryMovementParams =
   | { target_product_id: string; quantity_to_remove: number };
 
 export type MachineryAssignmentInsert = {
-  company_id: string;
   invoice_item_id: string;
-  date: string;
-  amount: number;
+  assigned_date: string;
+  assigned_amount: number;
   sector_id?: string | null;
   machine_id?: string | null;
   notes?: string | null;
 };
 
 export type LaborAssignmentInsert = {
-  company_id: string;
   invoice_item_id: string;
-  date: string;
+  assigned_date: string;
   sector_id: string;
   assigned_amount: number;
   labor_type: string;
@@ -59,11 +57,10 @@ export type LaborAssignmentInsert = {
 };
 
 export type IrrigationAssignmentInsert = {
-  company_id: string;
   invoice_item_id: string;
-  date: string;
+  assigned_date: string;
   sector_id: string;
-  amount: number;
+  assigned_amount: number;
   notes?: string | null;
 };
 

@@ -1062,11 +1062,10 @@ export const Invoices: React.FC = () => {
                          const shareAmount = (Number(s.hectares || 0) / totalHa) * itemGrossAmount;
                          await insertMachineryAssignment({
                              payload: {
-                                 company_id: selectedCompany.id,
                                  invoice_item_id: dbInvoiceItem.id,
                                  machine_id: null,
-                                 date: invoiceDate,
-                                 amount: shareAmount,
+                                 assigned_date: invoiceDate,
+                                 assigned_amount: shareAmount,
                                  sector_id: s.id,
                                  notes: `Maquinaria General (Dist. Proporcional): ${formItem.product_name}`
                              }
@@ -1077,11 +1076,10 @@ export const Invoices: React.FC = () => {
                  // Specific Machine
                  await insertMachineryAssignment({
                      payload: {
-                         company_id: selectedCompany.id,
                          invoice_item_id: dbInvoiceItem.id,
                          machine_id: formItem.destination_id,
-                         date: invoiceDate,
-                         amount: itemGrossAmount,
+                         assigned_date: invoiceDate,
+                         assigned_amount: itemGrossAmount,
                          sector_id: null,
                          notes: 'Asignación automática desde Factura'
                      }
@@ -1095,6 +1093,10 @@ export const Invoices: React.FC = () => {
                                    formItem.category?.toLowerCase().includes('electricidad');
               
               const baseAssignment = {
+                  invoice_item_id: dbInvoiceItem.id,
+                  assigned_date: invoiceDate,
+              };
+              const baseGeneralCost = {
                   company_id: selectedCompany.id,
                   invoice_item_id: dbInvoiceItem.id,
                   date: invoiceDate,
@@ -1120,14 +1122,14 @@ export const Invoices: React.FC = () => {
                           payload: {
                               ...baseAssignment,
                               sector_id: sectorId,
-                              amount: finalAmount,
+                              assigned_amount: finalAmount,
                               notes: notesStr
                           }
                       });
                   } else {
                       await insertGeneralCost({
                           payload: {
-                              ...baseAssignment,
+                              ...baseGeneralCost,
                               sector_id: sectorId,
                               amount: finalAmount,
                               category: formItem.category,

@@ -143,12 +143,24 @@ export async function updateLaborType(params: { assignmentId: string; laborType:
   if (error) throw error;
 }
 
-export async function updateLaborAssignment(params: { assignmentId: string; patch: any }) {
+export type LaborAssignmentInsert = {
+  invoice_item_id: string;
+  sector_id: string;
+  assigned_amount: number;
+  assigned_date: string;
+  labor_type: string;
+  worker_id?: string | null;
+  notes?: string | null;
+};
+
+export type LaborAssignmentUpdate = Partial<Omit<LaborAssignmentInsert, 'invoice_item_id'>>;
+
+export async function updateLaborAssignment(params: { assignmentId: string; patch: LaborAssignmentUpdate }) {
   const { error } = await supabase.from('labor_assignments').update(params.patch).eq('id', params.assignmentId);
   if (error) throw error;
 }
 
-export async function insertLaborAssignments(params: { rows: any[] }) {
+export async function insertLaborAssignments(params: { rows: LaborAssignmentInsert[] }) {
   if (!params.rows || params.rows.length === 0) return;
   const { error } = await supabase.from('labor_assignments').insert(params.rows);
   if (error) throw error;

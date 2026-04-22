@@ -15,9 +15,51 @@ export type InventoryProduct = {
 };
 
 export type OfficialProduct = {
+  registration_number: string;
   commercial_name: string;
   active_ingredient?: string | null;
   concentration?: string | null;
+  company_name?: string | null;
+};
+
+export type InventoryMovement = {
+  id: string;
+  created_at: string;
+  movement_type: 'entrada' | 'salida';
+  quantity: number;
+  unit_cost: number;
+  invoice_items?: {
+    invoice?: {
+      number: string;
+      supplier: string;
+      date: string;
+    } | null;
+  } | null;
+  application_items?: {
+    application?: {
+      application_date: string;
+      field?: { name: string } | null;
+      sector?: { name: string } | null;
+    } | null;
+  } | null;
+};
+
+export type PhytosanitaryProgram = {
+  id: string;
+  name?: string | null;
+  season?: string | null;
+};
+
+export type ProgramEventProductProjection = {
+  product_id: string;
+  dose: number;
+  dose_unit: string;
+};
+
+export type ProgramEventProjection = {
+  id: string;
+  water_per_ha: number | null;
+  program_event_products: ProgramEventProductProjection[] | null;
 };
 
 const AGRO_KEYWORDS = [
@@ -36,7 +78,7 @@ const AGRO_KEYWORDS = [
   'sulfato'
 ];
 
-export async function fetchInventoryProducts(params: { companyId: string }) {
+export async function fetchInventoryProducts(params: { companyId: string }): Promise<InventoryProduct[]> {
   const { data, error } = await supabase
     .from('products')
     .select('*')
@@ -53,7 +95,7 @@ export async function fetchInventoryProducts(params: { companyId: string }) {
   });
 }
 
-export async function fetchInventoryHistory(params: { productId: string }) {
+export async function fetchInventoryHistory(params: { productId: string }): Promise<InventoryMovement[]> {
   const { data, error } = await supabase
     .from('inventory_movements')
     .select(
@@ -75,10 +117,10 @@ export async function fetchInventoryHistory(params: { productId: string }) {
     .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return (data || []) as any[];
+  return (data || []) as unknown as InventoryMovement[];
 }
 
-export async function searchOfficialProducts(params: { query: string; limit?: number }) {
+export async function searchOfficialProducts(params: { query: string; limit?: number }): Promise<OfficialProduct[]> {
   const q = params.query.trim();
   if (q.length < 3) return [];
 
@@ -89,10 +131,10 @@ export async function searchOfficialProducts(params: { query: string; limit?: nu
     .limit(params.limit ?? 5);
 
   if (error) throw error;
-  return (data || []) as any[];
+  return (data || []) as unknown as OfficialProduct[];
 }
 
-export async function upsertOfficialProducts(params: { rows: OfficialProduct[] | any[] }) {
+export async function upsertOfficialProducts(params: { rows: OfficialProduct[] }) {
   if (!params.rows || params.rows.length === 0) return;
   const { error } = await supabase
     .from('official_products')
@@ -100,13 +142,13 @@ export async function upsertOfficialProducts(params: { rows: OfficialProduct[] |
   if (error) throw error;
 }
 
-export async function fetchPhytosanitaryPrograms(params: { companyId: string }) {
+export async function fetchPhytosanitaryPrograms(params: { companyId: string }): Promise<PhytosanitaryProgram[]> {
   const { data, error } = await supabase.from('phytosanitary_programs').select('*').eq('company_id', params.companyId);
   if (error) throw error;
-  return data || [];
+  return (data || []) as unknown as PhytosanitaryProgram[];
 }
 
-export async function fetchProgramEventsForProjection(params: { programId: string }) {
+export async function fetchProgramEventsForProjection(params: { programId: string }): Promise<ProgramEventProjection[]> {
   const { data, error } = await supabase
     .from('program_events')
     .select(
@@ -119,7 +161,7 @@ export async function fetchProgramEventsForProjection(params: { programId: strin
     .eq('program_id', params.programId);
 
   if (error) throw error;
-  return data || [];
+  return (data || []) as unknown as ProgramEventProjection[];
 }
 
 export async function updateInventoryProduct(params: {
@@ -149,7 +191,7 @@ export async function deleteOrArchiveInventoryProduct(params: { productId: strin
   throw deleteError;
 }
 
-export async function mergeDuplicateInventoryProducts(params: { products: InventoryProduct[] }) {
+export async function mergeDuplicateInventoryProducts(params: { products: InventoryProduct[] }): Promise<{ mergedCount: number }> {
   const nameGroups = new Map<string, InventoryProduct[]>();
   params.products.forEach((p) => {
     const key = String(p.name || '').toLowerCase().trim();
