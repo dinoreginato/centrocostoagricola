@@ -5,7 +5,7 @@ import { formatCLP } from '../lib/utils';
 import { Plus, FileText, Trash2, Save, Loader2, Check, Download, Upload, RefreshCw, Search, Printer, ChevronLeft, ChevronRight, MapPin, Database } from 'lucide-react';
 import { InvoicePrint } from '../components/InvoicePrint';
 import { fetchInvoiceDestinations, fetchInvoiceProducts, fetchInvoicesForCompany, fetchInvoiceSuppliers } from '../services/invoices';
-import { createInvoice, createInvoiceItem, createOrFindProductByName, deleteInvoiceItemsByIds, deleteInvoicesCascade, fetchInvoiceItems, fetchInvoicesBasic, findSupplierRut, insertGeneralCost, insertIrrigationAssignment, insertLaborAssignment, insertMachineryAssignment, invoiceExists, rpcDeleteInvoiceForce, rpcReverseInventoryMovement, rpcUpdateInventoryWithAverageCost, searchOfficialProductsForInvoice, updateInvoice, updateInvoiceItem } from '../services/invoiceMutations';
+import { createInvoice, createInvoiceItemWithEffects, createOrFindProductByName, deleteInvoiceItemsByIds, deleteInvoicesCascade, fetchInvoiceItems, fetchInvoicesBasic, findSupplierRut, invoiceExists, rpcDeleteInvoiceForce, rpcReverseInventoryMovement, rpcUpdateInvoiceItemWithInventory, searchOfficialProductsForInvoice, updateInvoice, updateInvoiceItem } from '../services/invoiceMutations';
 
 interface InvoiceItem {
   id?: string;
@@ -810,22 +810,13 @@ export const Invoices: React.FC = () => {
                 unit: itemMap.unit
               });
 
-              const invItem = await createInvoiceItem({
-                payload: {
-                  invoice_id: invoiceData.id,
-                  product_id: productId,
-                  quantity: itemMap.quantity,
-                  unit_price: itemMap.price,
-                  total_price: itemMap.total,
-                  category: itemMap.category
-                }
-              });
-
-              await rpcUpdateInventoryWithAverageCost({
+              await createInvoiceItemWithEffects({
+                invoiceId: invoiceData.id,
                 productId,
-                quantityIn: itemMap.quantity,
-                unitCost: itemMap.price,
-                invoiceItemId: invItem.id
+                quantity: itemMap.quantity,
+                unitPrice: itemMap.price,
+                totalPrice: itemMap.total,
+                category: itemMap.category
               });
             }
             successCount++;
@@ -1031,9 +1022,15 @@ export const Invoices: React.FC = () => {
       
       const total = calculateFinalTotal(); // Fix the reference to total
 
-      // --- HELPER: Process Direct Assignment ---
-      const processDirectAssignment = async (formItem: any, dbInvoiceItem: any) => {
-          if (!formItem.destination_type || !formItem.destination_id || formItem.destination_type === 'none') return;
+      const buildDirectAssignments = (formItem: any) => {
+          const result = {
+              laborAssignments: [] as Array<{ sector_id: string; assigned_amount: number; assigned_date: string; labor_type: string; worker_id: string | null; notes: string }>,
+              irrigationAssignments: [] as Array<{ sector_id: string; assigned_amount: number; assigned_date: string; notes: string }>,
+              machineryAssignments: [] as Array<{ sector_id: string | null; machine_id: string | null; assigned_amount: number; assigned_date: string; notes: string }>,
+              generalCosts: [] as Array<{ sector_id: string; amount: number; date: string; category: string; description: string }>
+          };
+
+          if (!formItem.destination_type || !formItem.destination_id || formItem.destination_type === 'none') return result;
 
           const invoiceTotalValue = total;
           const invoiceExempt = exemptAmount || 0;
@@ -1060,29 +1057,23 @@ export const Invoices: React.FC = () => {
                  if (totalHa > 0) {
                      for (const s of targetSectors) {
                          const shareAmount = (Number(s.hectares || 0) / totalHa) * itemGrossAmount;
-                         await insertMachineryAssignment({
-                             payload: {
-                                 invoice_item_id: dbInvoiceItem.id,
-                                 machine_id: null,
-                                 assigned_date: invoiceDate,
-                                 assigned_amount: shareAmount,
-                                 sector_id: s.id,
-                                 notes: `Maquinaria General (Dist. Proporcional): ${formItem.product_name}`
-                             }
+                         result.machineryAssignments.push({
+                             machine_id: null,
+                             sector_id: s.id,
+                             assigned_date: invoiceDate,
+                             assigned_amount: shareAmount,
+                             notes: `Maquinaria General (Dist. Proporcional): ${formItem.product_name}`
                          });
                      }
                  }
              } else {
                  // Specific Machine
-                 await insertMachineryAssignment({
-                     payload: {
-                         invoice_item_id: dbInvoiceItem.id,
-                         machine_id: formItem.destination_id,
-                         assigned_date: invoiceDate,
-                         assigned_amount: itemGrossAmount,
-                         sector_id: null,
-                         notes: 'Asignación automática desde Factura'
-                     }
+                 result.machineryAssignments.push({
+                     machine_id: formItem.destination_id,
+                     sector_id: null,
+                     assigned_date: invoiceDate,
+                     assigned_amount: itemGrossAmount,
+                     notes: 'Asignación automática desde Factura'
                  });
              }
           } else if (['sector', 'field', 'company'].includes(formItem.destination_type)) {
@@ -1092,49 +1083,33 @@ export const Invoices: React.FC = () => {
                                    formItem.category?.toLowerCase().includes('agua') || 
                                    formItem.category?.toLowerCase().includes('electricidad');
               
-              const baseAssignment = {
-                  invoice_item_id: dbInvoiceItem.id,
-                  assigned_date: invoiceDate,
-              };
-              const baseGeneralCost = {
-                  company_id: selectedCompany.id,
-                  invoice_item_id: dbInvoiceItem.id,
-                  date: invoiceDate,
-              };
-
-              const insertAssignment = async (sectorId: string, amount: number, notesStr: string) => {
+              const insertAssignment = (sectorId: string, amount: number, notesStr: string) => {
                   // For Credit Notes, amount should be negative
                   const finalAmount = documentType === 'Nota de Crédito' ? -Math.abs(amount) : Math.abs(amount);
                   
                   if (isLabor) {
-                      await insertLaborAssignment({
-                          payload: {
-                              ...baseAssignment,
-                              sector_id: sectorId,
-                              assigned_amount: finalAmount,
-                              labor_type: formItem.labor_type || 'General',
-                              worker_id: null,
-                              notes: notesStr
-                          }
+                      result.laborAssignments.push({
+                          sector_id: sectorId,
+                          assigned_amount: finalAmount,
+                          assigned_date: invoiceDate,
+                          labor_type: formItem.labor_type || 'General',
+                          worker_id: null,
+                          notes: notesStr
                       });
                   } else if (isIrrigation) {
-                      await insertIrrigationAssignment({
-                          payload: {
-                              ...baseAssignment,
-                              sector_id: sectorId,
-                              assigned_amount: finalAmount,
-                              notes: notesStr
-                          }
+                      result.irrigationAssignments.push({
+                          sector_id: sectorId,
+                          assigned_amount: finalAmount,
+                          assigned_date: invoiceDate,
+                          notes: notesStr
                       });
                   } else {
-                      await insertGeneralCost({
-                          payload: {
-                              ...baseGeneralCost,
-                              sector_id: sectorId,
-                              amount: finalAmount,
-                              category: formItem.category,
-                              description: notesStr
-                          }
+                      result.generalCosts.push({
+                          sector_id: sectorId,
+                          amount: finalAmount,
+                          date: invoiceDate,
+                          category: formItem.category,
+                          description: notesStr
                       });
                   }
               };
@@ -1145,7 +1120,7 @@ export const Invoices: React.FC = () => {
                   if (totalHa > 0) {
                       for (const s of targetSectors) {
                           const shareAmount = (Number(s.hectares || 0) / totalHa) * itemGrossAmount;
-                          await insertAssignment(s.id, shareAmount, `Gasto Empresa (Dist. Proporcional): ${formItem.product_name}`);
+                          insertAssignment(s.id, shareAmount, `Gasto Empresa (Dist. Proporcional): ${formItem.product_name}`);
                       }
                   }
               } else if (selectedOption?.type === 'field' || formItem.destination_type === 'field') {
@@ -1154,13 +1129,14 @@ export const Invoices: React.FC = () => {
                   if (totalHa > 0) {
                       for (const s of targetSectors) {
                           const shareAmount = (Number(s.hectares || 0) / totalHa) * itemGrossAmount;
-                          await insertAssignment(s.id, shareAmount, `Gasto Campo (Dist. Proporcional): ${formItem.product_name}`);
+                          insertAssignment(s.id, shareAmount, `Gasto Campo (Dist. Proporcional): ${formItem.product_name}`);
                       }
                   }
               } else {
-                  await insertAssignment(formItem.destination_id, itemGrossAmount, `Asignación Directa: ${formItem.product_name}`);
+                  insertAssignment(formItem.destination_id, itemGrossAmount, `Asignación Directa: ${formItem.product_name}`);
               }
           }
+          return result;
       };
       // ----------------------------------------------
 
@@ -1244,39 +1220,21 @@ export const Invoices: React.FC = () => {
            const categoryChanged = oldItem.category !== item.category;
 
            if (quantityChanged || priceChanged || productChanged || categoryChanged) {
-               // 1. Reverse OLD stock impact (if quantity or product changed)
-               // Even if only price changed, we usually reverse and re-apply to update avg cost correctly.
-               // If product changed, we MUST reverse old product.
-               
                if (quantityChanged || priceChanged || productChanged) {
-                   await rpcReverseInventoryMovement({
-                     payload: {
-                       target_product_id: oldItem.product_id,
-                       quantity_to_remove: oldItem.quantity
-                     }
-                   });
-               }
-
-               // 2. Update Item Record
-               await updateInvoiceItem({
-                 invoiceItemId: item.id as string,
-                 patch: {
-                   product_id: currentProductId,
-                   quantity: item.quantity,
-                   unit_price: item.unit_price,
-                   total_price: item.total_price,
-                   category: item.category
-                 }
-               });
-
-               // 3. Add NEW stock impact (re-calculate avg cost)
-               // Only if inventory-relevant fields changed
-               if (quantityChanged || priceChanged || productChanged) {
-                   await rpcUpdateInventoryWithAverageCost({
+                   await rpcUpdateInvoiceItemWithInventory({
+                     invoiceItemId: item.id as string,
                      productId: currentProductId as string,
-                     quantityIn: item.quantity,
-                     unitCost: item.unit_price,
-                     invoiceItemId: item.id as string
+                     quantity: item.quantity,
+                     unitPrice: item.unit_price,
+                     totalPrice: item.total_price,
+                     category: item.category
+                   });
+               } else {
+                   await updateInvoiceItem({
+                     invoiceItemId: item.id as string,
+                     patch: {
+                       category: item.category
+                     }
                    });
                }
            }
@@ -1297,26 +1255,19 @@ export const Invoices: React.FC = () => {
                  });
             }
 
-            // Insert Invoice Item
-            const invoiceItem = await createInvoiceItem({
-              payload: {
-                invoice_id: invoiceId,
-                product_id: productId,
-                quantity: item.quantity,
-                unit_price: item.unit_price,
-                total_price: item.total_price,
-                category: item.category
-              }
-            });
+            const assignments = buildDirectAssignments(item);
 
-            await processDirectAssignment(item, invoiceItem);
-
-            // Update Inventory
-            await rpcUpdateInventoryWithAverageCost({
+            await createInvoiceItemWithEffects({
+              invoiceId,
               productId: productId as string,
-              quantityIn: item.quantity,
-              unitCost: item.unit_price,
-              invoiceItemId: invoiceItem.id
+              quantity: item.quantity,
+              unitPrice: item.unit_price,
+              totalPrice: item.total_price,
+              category: item.category,
+              laborAssignments: assignments.laborAssignments,
+              irrigationAssignments: assignments.irrigationAssignments,
+              machineryAssignments: assignments.machineryAssignments,
+              generalCosts: assignments.generalCosts
             });
         }
 
@@ -1370,25 +1321,19 @@ export const Invoices: React.FC = () => {
               });
             }
 
-            // Insert Invoice Item
-            const invoiceItem = await createInvoiceItem({
-              payload: {
-                invoice_id: invoiceId,
-                product_id: productId,
-                quantity: item.quantity,
-                unit_price: item.unit_price,
-                total_price: item.total_price,
-                category: item.category
-              }
-            });
+            const assignments = buildDirectAssignments(item);
 
-            await processDirectAssignment(item, invoiceItem);
-
-            await rpcUpdateInventoryWithAverageCost({
+            await createInvoiceItemWithEffects({
+              invoiceId,
               productId: productId as string,
-              quantityIn: item.quantity,
-              unitCost: item.unit_price,
-              invoiceItemId: invoiceItem.id
+              quantity: item.quantity,
+              unitPrice: item.unit_price,
+              totalPrice: item.total_price,
+              category: item.category,
+              laborAssignments: assignments.laborAssignments,
+              irrigationAssignments: assignments.irrigationAssignments,
+              machineryAssignments: assignments.machineryAssignments,
+              generalCosts: assignments.generalCosts
             });
         }
       }

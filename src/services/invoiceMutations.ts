@@ -74,6 +74,39 @@ export type GeneralCostInsert = {
   description: string;
 };
 
+export type LaborAssignmentInput = Omit<LaborAssignmentInsert, 'invoice_item_id'>;
+export type IrrigationAssignmentInput = Omit<IrrigationAssignmentInsert, 'invoice_item_id'>;
+export type MachineryAssignmentInput = Omit<MachineryAssignmentInsert, 'invoice_item_id'>;
+export type GeneralCostInput = Omit<GeneralCostInsert, 'company_id' | 'invoice_item_id'>;
+
+export async function createInvoiceItemWithEffects(params: {
+  invoiceId: string;
+  productId: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  category: string;
+  laborAssignments?: LaborAssignmentInput[];
+  irrigationAssignments?: IrrigationAssignmentInput[];
+  machineryAssignments?: MachineryAssignmentInput[];
+  generalCosts?: GeneralCostInput[];
+}): Promise<{ id: string }> {
+  const { data, error } = await supabase.rpc('create_invoice_item_with_effects', {
+    p_invoice_id: params.invoiceId,
+    p_product_id: params.productId,
+    p_quantity: params.quantity,
+    p_unit_price: params.unitPrice,
+    p_total_price: params.totalPrice,
+    p_category: params.category,
+    p_labor_assignments: params.laborAssignments || [],
+    p_irrigation_assignments: params.irrigationAssignments || [],
+    p_machinery_assignments: params.machineryAssignments || [],
+    p_general_costs: params.generalCosts || []
+  });
+  if (error) throw error;
+  return { id: data as string };
+}
+
 export async function searchOfficialProductsForInvoice(params: { query: string; limit?: number }) {
   const { data, error } = await supabase
     .from('official_products')
@@ -178,6 +211,25 @@ export async function rpcUpdateInventoryWithAverageCost(params: {
     quantity_in: params.quantityIn,
     unit_cost: params.unitCost,
     invoice_item_id: params.invoiceItemId
+  });
+  if (error) throw error;
+}
+
+export async function rpcUpdateInvoiceItemWithInventory(params: {
+  invoiceItemId: string;
+  productId: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  category: string;
+}) {
+  const { error } = await supabase.rpc('update_invoice_item_with_inventory', {
+    p_invoice_item_id: params.invoiceItemId,
+    p_product_id: params.productId,
+    p_quantity: params.quantity,
+    p_unit_price: params.unitPrice,
+    p_total_price: params.totalPrice,
+    p_category: params.category
   });
   if (error) throw error;
 }

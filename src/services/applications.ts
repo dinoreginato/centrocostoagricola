@@ -85,6 +85,20 @@ export type UpdateApplicationInventoryParams = {
   }>;
 };
 
+export type CreateApplicationInventoryParams = {
+  p_field_id: string;
+  p_sector_id: string;
+  p_date: string;
+  p_type: string;
+  p_water_rate: number;
+  p_total_cost: number;
+  p_items: UpdateApplicationInventoryParams['p_items'];
+  p_create_fuel?: boolean;
+  p_fuel_liters?: number | null;
+  p_fuel_cost?: number | null;
+  p_fuel_activity?: string;
+};
+
 export type ApplicationInsert = {
   field_id: string;
   sector_id: string;
@@ -200,6 +214,12 @@ export async function deleteAllApplicationsRestoreStock(params: { companyId: str
 export async function updateApplicationInventory(payload: UpdateApplicationInventoryParams) {
   const { error } = await supabase.rpc('update_application_inventory', payload);
   if (error) throw error;
+}
+
+export async function createApplicationInventory(payload: CreateApplicationInventoryParams): Promise<string> {
+  const { data, error } = await supabase.rpc('create_application_inventory', payload);
+  if (error) throw error;
+  return data as string;
 }
 
 export async function findFuelConsumptionForApplication(params: { applicationId: string }): Promise<FuelConsumptionIdRow | null> {

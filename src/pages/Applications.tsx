@@ -6,7 +6,7 @@ import { Plus, Loader2, Save, Trash2, Calendar, Droplets, MapPin, RefreshCw, Edi
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
-import { createApplication, createApplicationItem, deleteAllApplicationsRestoreStock, deleteApplicationAndRestoreStock, insertInventoryMovement, loadApplicationsPageData, updateApplicationInventory, updateProductCurrentStock, upsertFuelConsumptionForApplication } from '../services/applications';
+import { createApplicationInventory, deleteAllApplicationsRestoreStock, deleteApplicationAndRestoreStock, loadApplicationsPageData, updateApplicationInventory, upsertFuelConsumptionForApplication } from '../services/applications';
 
 interface Field {
   id: string;
@@ -742,86 +742,33 @@ export const Applications: React.FC = () => {
 
       } else {
         // CREATE MODE
-        // 1. Create Application
-        const application = await createApplication({
-          payload: {
-            field_id: selectedFieldId,
-            sector_id: selectedSectorId,
-            application_date: applicationDate,
-            application_type: applicationType,
-            total_cost: totalCost,
-            water_liters_per_hectare: waterVolumePerHectare
-          }
-        });
-
-        // 2. Process Items and Deduct Stock
-        for (const item of items) {
-          // Create Application Item
-          const savedItem = await createApplicationItem({
-            payload: {
-              application_id: application.id,
-              product_id: item.product_id,
-              quantity_used: item.quantity_used,
-              dose_per_hectare: item.dose_per_hectare,
-              unit_cost: item.unit_cost,
-              total_cost: item.total_cost,
-              objective: item.objective || ''
-            }
-          });
-
-          // Deduct Stock
-          const product = products.find(p => p.id === item.product_id);
-          if (product) {
-              const newStock = product.current_stock - item.quantity_used;
-              await updateProductCurrentStock({ productId: item.product_id, newStock });
-              
-              // Record Inventory Movement (Salida) linked to Application Item
-              await insertInventoryMovement({ payload: {
-                      product_id: item.product_id,
-                      movement_type: 'salida',
-                      quantity: item.quantity_used,
-                      unit_cost: item.unit_cost,
-                      application_item_id: savedItem.id // LINK TO APPLICATION
-                  } });
-          }
-        }
-
-        // 3. Create Automatic Fuel Consumption Record
         const sector = fields.find(f => f.id === selectedFieldId)?.sectors.find(s => s.id === selectedSectorId);
-        
-        if (sector && sector.hectares > 0) {
-            // Use configured rate or default to 12
-            const rate = selectedCompany.application_fuel_rate || 12;
-            const fuelLiters = rate * sector.hectares;
-            // Ensure we have at least a small amount to pass check constraint > 0
-            const finalLiters = Math.max(fuelLiters, 0.01);
-            const fuelCost = finalLiters * avgFuelPrice;
-            
-            console.log('Attempting to create fuel record:', {
-                company_id: selectedCompany.id,
-                date: applicationDate,
-                liters: finalLiters,
-                sector_id: selectedSectorId,
-                application_id: application.id
-            });
 
-            try {
-                await upsertFuelConsumptionForApplication({
-                    companyId: selectedCompany.id,
-                    applicationId: application.id,
-                    sectorId: selectedSectorId,
-                    date: applicationDate,
-                    liters: finalLiters,
-                    estimatedPrice: fuelCost,
-                    activity: 'Aplicación (Automática)'
-                });
-            } catch (fuelError: any) {
-                console.error('Error creating fuel record:', fuelError);
-                toast('La aplicación se guardó, pero hubo un error registrando el petróleo: ' + fuelError.message);
-            }
-        } else {
-            console.warn('Skipping fuel record: Sector not found or 0 hectares', sector);
-        }
+        const shouldCreateFuel = Boolean(sector && sector.hectares > 0 && avgFuelPrice !== null);
+        const rate = selectedCompany.application_fuel_rate || 12;
+        const fuelLiters = shouldCreateFuel ? Math.max(rate * sector!.hectares, 0.01) : null;
+        const fuelCost = shouldCreateFuel ? Number(fuelLiters) * avgFuelPrice : null;
+
+        await createApplicationInventory({
+          p_field_id: selectedFieldId,
+          p_sector_id: selectedSectorId,
+          p_date: applicationDate,
+          p_type: applicationType,
+          p_water_rate: waterVolumePerHectare,
+          p_total_cost: totalCost,
+          p_items: items.map((item) => ({
+            product_id: item.product_id,
+            quantity_used: item.quantity_used,
+            dose_per_hectare: item.dose_per_hectare,
+            unit_cost: item.unit_cost,
+            total_cost: item.total_cost,
+            objective: item.objective || ''
+          })),
+          p_create_fuel: shouldCreateFuel,
+          p_fuel_liters: fuelLiters,
+          p_fuel_cost: fuelCost,
+          p_fuel_activity: 'Aplicación (Automática)'
+        });
 
         toast('Aplicación registrada exitosamente');
         handleCancelEdit(); // Reset form
