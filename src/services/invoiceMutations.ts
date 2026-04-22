@@ -249,7 +249,7 @@ export async function findSupplierRut(params: { companyId: string; supplier: str
     .limit(1)
     .maybeSingle();
   if (error) throw error;
-  return (data as any)?.supplier_rut || null;
+  return (data as { supplier_rut: string | null } | null)?.supplier_rut ?? null;
 }
 
 export async function fetchInvoicesBasic(params: { companyId: string }) {

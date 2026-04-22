@@ -6,6 +6,9 @@ type CompanyRef = {
   name: string;
 };
 
+type FieldRow = { id: string; name: string; sectors?: Array<{ name: string; hectares: number }> | null };
+type InvoiceRow = { invoice_number: string; supplier: string; invoice_date: string; total_amount: number; status: string; invoice_items?: unknown[] | null };
+
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
   return String(error);
@@ -29,8 +32,8 @@ export async function downloadCompanyBackup(company: CompanyRef) {
     .eq('company_id', company.id);
   if (fieldsError) throw new Error(getErrorMessage(fieldsError));
   if (fields && fields.length > 0) {
-    const flatSectors = fields.flatMap((f: any) =>
-      (f.sectors || []).map((s: any) => ({
+    const flatSectors = (fields as unknown as FieldRow[]).flatMap((f) =>
+      (f.sectors || []).map((s) => ({
         Campo: f.name,
         Sector: s.name,
         Hectareas: s.hectares
@@ -45,7 +48,7 @@ export async function downloadCompanyBackup(company: CompanyRef) {
     .eq('company_id', company.id);
   if (invoicesError) throw new Error(getErrorMessage(invoicesError));
   if (invoices && invoices.length > 0) {
-    const flatInvoices = invoices.map((inv: any) => ({
+    const flatInvoices = (invoices as unknown as InvoiceRow[]).map((inv) => ({
       Numero: inv.invoice_number,
       Proveedor: inv.supplier,
       Fecha: inv.invoice_date,
@@ -57,7 +60,7 @@ export async function downloadCompanyBackup(company: CompanyRef) {
   }
 
   if (fields && fields.length > 0) {
-    const fieldIds = fields.map((f: any) => f.id);
+    const fieldIds = (fields as unknown as FieldRow[]).map((f) => f.id);
     const { data: apps, error: appsError } = await supabase
       .from('applications')
       .select('*')

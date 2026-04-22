@@ -1,4 +1,5 @@
 import { supabase } from '../supabase/client';
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 
 export async function resetPasswordForEmail(params: { email: string; redirectTo: string }) {
   const { error } = await supabase.auth.resetPasswordForEmail(params.email, { redirectTo: params.redirectTo });
@@ -26,7 +27,7 @@ export async function getSession() {
 }
 
 export function onAuthStateChange(
-  handler: (event: string, session: any) => void
+  handler: (event: AuthChangeEvent, session: Session | null) => void
 ) {
   return supabase.auth.onAuthStateChange((event, session) => handler(event, session));
 }

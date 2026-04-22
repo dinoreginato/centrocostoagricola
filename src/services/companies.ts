@@ -1,5 +1,14 @@
 import { supabase } from '../supabase/client';
 
+export type Company = {
+  id: string;
+  name: string;
+  rut: string | null;
+  owner_id: string | null;
+  created_at?: string;
+  application_fuel_rate?: number | null;
+} & Record<string, unknown>;
+
 export async function deleteCompany(params: { companyId: string }) {
   const { error } = await supabase.from('companies').delete().eq('id', params.companyId);
   if (error) throw error;
@@ -33,10 +42,10 @@ export async function updateCompanyApplicationFuelRate(params: { companyId: stri
   if (error) throw error;
 }
 
-export async function fetchCompanies() {
+export async function fetchCompanies(): Promise<Company[]> {
   const { data, error } = await supabase.from('companies').select('*').order('created_at', { ascending: false });
   if (error) throw error;
-  return data || [];
+  return (data || []) as unknown as Company[];
 }
 
 export async function claimOrphanCompanies(params: { companyIds: string[]; ownerId: string }) {
@@ -52,5 +61,5 @@ export async function claimOrphanCompanies(params: { companyIds: string[]; owner
 export async function fetchCompanyMemberRole(params: { companyId: string; userId: string }) {
   const { data, error } = await supabase.from('company_members').select('role').eq('company_id', params.companyId).eq('user_id', params.userId).single();
   if (error) throw error;
-  return (data as any)?.role as string | null;
+  return (data as { role: string } | null)?.role ?? null;
 }

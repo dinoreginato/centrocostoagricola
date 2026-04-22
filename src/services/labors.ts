@@ -107,7 +107,19 @@ export async function fetchLaborHistory(params: { companyId: string }) {
     .limit(500);
 
   if (error) throw error;
-  return (data || []) as any[];
+  return (data || []) as unknown as Array<{
+    id: string;
+    assigned_amount: number;
+    assigned_date: string;
+    sector_id: string | null;
+    invoice_item_id: string;
+    labor_type: string;
+    sectors: { name: string | null } | null;
+    invoice_items: {
+      products?: { name: string | null } | null;
+      invoices?: { invoice_number: string | null; company_id?: string | null } | null;
+    };
+  }>;
 }
 
 export async function deleteLaborAssignment(params: { assignmentId: string }) {

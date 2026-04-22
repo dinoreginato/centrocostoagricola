@@ -51,7 +51,7 @@ export async function upsertPhytosanitaryProgram(params: { companyId: string; pr
 
   const { data, error } = await supabase.from('phytosanitary_programs').insert([basePayload]).select().single();
   if (error) throw error;
-  return (data as any).id as string;
+  return (data as { id: string }).id;
 }
 
 export async function deletePhytosanitaryProgram(params: { programId: string }) {
@@ -75,7 +75,7 @@ export async function upsertProgramEvent(params: { programId: string; eventId?: 
 
   const { data, error } = await supabase.from('program_events').insert([basePayload]).select().single();
   if (error) throw error;
-  return (data as any).id as string;
+  return (data as { id: string }).id;
 }
 
 export async function deleteProgramEvent(params: { eventId: string }) {
@@ -99,7 +99,7 @@ export async function upsertProgramEventProduct(params: { eventId: string; event
 
   const { data, error } = await supabase.from('program_event_products').insert([basePayload]).select().single();
   if (error) throw error;
-  return (data as any).id as string;
+  return (data as { id: string }).id;
 }
 
 export async function deleteProgramEventProduct(params: { eventProductId: string }) {

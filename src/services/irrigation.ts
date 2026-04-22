@@ -11,14 +11,55 @@ export type IrrigationPendingItem = {
   remaining_amount: number;
 };
 
+type IrrigationSummaryRow = { invoice_item_id: string; total_assigned: number | null };
+type IrrigationFallbackRow = { invoice_item_id: string; assigned_amount: number | null };
+
+type IrrigationInvoiceRow = {
+  id: string;
+  invoice_number: string;
+  invoice_date: string;
+  company_id: string;
+  document_type: string | null;
+  tax_percentage?: number | null;
+};
+
+type IrrigationInvoiceItemRow = {
+  id: string;
+  total_price: number | null;
+  category: string | null;
+  products?: { name: string | null; category: string | null } | null;
+  invoices: IrrigationInvoiceRow;
+};
+
+export type IrrigationHistoryRow = {
+  id: string;
+  assigned_amount: number;
+  assigned_date: string;
+  sector_id: string | null;
+  invoice_item_id: string;
+  sectors: { name: string | null } | null;
+  invoice_items: {
+    products?: { name: string | null } | null;
+    invoices?: { invoice_number: string | null; company_id?: string | null } | null;
+  };
+};
+
+export type IrrigationAssignmentInsert = {
+  invoice_item_id: string;
+  sector_id: string;
+  assigned_amount: number;
+  assigned_date: string;
+  notes?: string | null;
+};
+
 export async function fetchIrrigationAssignmentsSummary(params: { companyId: string }) {
   const assignmentMap = new Map<string, number>();
 
   try {
     const { data: summary, error: rpcError } = await supabase.rpc('get_irrigation_assignments_summary', { p_company_id: params.companyId });
     if (rpcError) throw rpcError;
-    (summary || []).forEach((item: any) => {
-      assignmentMap.set(String(item.invoice_item_id), Number(item.total_assigned));
+    ((summary || []) as unknown as IrrigationSummaryRow[]).forEach((item) => {
+      assignmentMap.set(String(item.invoice_item_id), Number(item.total_assigned || 0));
     });
   } catch {
     const { data: fallbackData, error } = await supabase
@@ -26,10 +67,10 @@ export async function fetchIrrigationAssignmentsSummary(params: { companyId: str
       .select('invoice_item_id, assigned_amount, invoice_items!inner(invoices!inner(company_id))')
       .eq('invoice_items.invoices.company_id', params.companyId);
     if (error) throw error;
-    (fallbackData || []).forEach((item: any) => {
+    ((fallbackData || []) as unknown as IrrigationFallbackRow[]).forEach((item) => {
       const key = String(item.invoice_item_id);
       const current = assignmentMap.get(key) || 0;
-      assignmentMap.set(key, current + Number(item.assigned_amount));
+      assignmentMap.set(key, current + Number(item.assigned_amount || 0));
     });
   }
 
@@ -52,7 +93,7 @@ export async function fetchIrrigationPendingItems(params: { companyId: string })
   if (error) throw error;
 
   const targetCategories = ['riego', 'agua', 'electricidad'];
-  const filteredItems = (items || []).filter((item: any) => {
+  const filteredItems = ((items || []) as unknown as IrrigationInvoiceItemRow[]).filter((item) => {
     if (item.invoices?.company_id !== params.companyId) return false;
     const cat = String(item.category || item.products?.category || '').toLowerCase().trim();
     return targetCategories.some((c) => cat.includes(c));
@@ -61,7 +102,7 @@ export async function fetchIrrigationPendingItems(params: { companyId: string })
   const assignmentMap = await fetchIrrigationAssignmentsSummary({ companyId: params.companyId });
 
   const pending: IrrigationPendingItem[] = [];
-  filteredItems.forEach((item: any) => {
+  filteredItems.forEach((item) => {
     if (item.invoices?.company_id !== params.companyId) return;
 
     const docType = String(item.invoices.document_type || '').toLowerCase();
@@ -115,7 +156,7 @@ export async function fetchIrrigationHistory(params: { companyId: string }) {
     .limit(500);
 
   if (error) throw error;
-  return (data || []) as any[];
+  return (data || []) as unknown as IrrigationHistoryRow[];
 }
 
 export async function deleteIrrigationAssignment(params: { assignmentId: string }) {
@@ -159,7 +200,7 @@ export async function updateIrrigationAssignment(params: { id: string; sectorId:
   if (error) throw error;
 }
 
-export async function insertIrrigationAssignments(params: { rows: any[] }) {
+export async function insertIrrigationAssignments(params: { rows: IrrigationAssignmentInsert[] }) {
   if (!params.rows || params.rows.length === 0) return;
   const { error } = await supabase.from('irrigation_assignments').insert(params.rows);
   if (error) throw error;

@@ -45,6 +45,11 @@ export type InvoiceListRow = {
   }>;
 };
 
+type SupplierRow = { supplier: string | null };
+type MachineRow = { id: string; name: string; brand: string | null; model: string | null };
+type FieldRow = { id: string; name: string };
+type SectorRow = { id: string; name: string; field_id: string; hectares: number | null };
+
 export async function fetchInvoiceSuppliers(params: { companyId: string }) {
   const { data, error } = await supabase
     .from('invoices')
@@ -53,7 +58,7 @@ export async function fetchInvoiceSuppliers(params: { companyId: string }) {
     .not('supplier', 'is', null);
 
   if (error) throw error;
-  const suppliers = Array.from(new Set((data || []).map((i: any) => i.supplier).filter(Boolean)));
+  const suppliers = Array.from(new Set(((data || []) as SupplierRow[]).map((i) => i.supplier).filter(Boolean)));
   return suppliers as string[];
 }
 
@@ -99,7 +104,7 @@ export async function fetchInvoiceDestinations(params: { companyId: string; comp
 
   if (mError) throw mError;
 
-  const machines = (mData || []).map((m: any) => ({
+  const machines = ((mData || []) as MachineRow[]).map((m) => ({
     id: m.id,
     name: `${m.name} (${m.brand} ${m.model})`
   })) as InvoiceMachineOption[];
@@ -124,7 +129,8 @@ export async function fetchInvoiceDestinations(params: { companyId: string; comp
     };
   }
 
-  const fieldIds = fieldsData.map((f: any) => f.id);
+  const typedFields = fieldsData as FieldRow[];
+  const fieldIds = typedFields.map((f) => f.id);
 
   const { data: sectorsData, error: sError } = await supabase
     .from('sectors')
@@ -137,27 +143,28 @@ export async function fetchInvoiceDestinations(params: { companyId: string; comp
     { id: 'company_general', name: `🏢 [EMPRESA] ${params.companyName}`, type: 'company' }
   ];
 
-  fieldsData.forEach((f: any) => {
+  typedFields.forEach((f) => {
     destinations.push({ id: f.id, name: `🌱 [CAMPO] ${f.name}`, type: 'field' });
   });
 
-  const sectorsWithField = (sectorsData || []).map((s: any) => {
-    const field = fieldsData.find((f: any) => f.id === s.field_id);
+  const typedSectors = (sectorsData || []) as SectorRow[];
+  const sectorsWithField = typedSectors.map((s) => {
+    const field = typedFields.find((f) => f.id === s.field_id);
     return { ...s, fieldName: field?.name || '' };
   });
 
-  sectorsWithField.sort((a: any, b: any) => {
+  sectorsWithField.sort((a, b) => {
     const fieldCompare = String(a.fieldName).localeCompare(String(b.fieldName));
     if (fieldCompare !== 0) return fieldCompare;
     return String(a.name).localeCompare(String(b.name));
   });
 
-  sectorsWithField.forEach((s: any) => {
+  sectorsWithField.forEach((s) => {
     destinations.push({
       id: s.id,
       name: `└── ${s.name}`,
       type: 'sector',
-      hectares: s.hectares,
+      hectares: s.hectares ?? undefined,
       field_id: s.field_id
     });
   });

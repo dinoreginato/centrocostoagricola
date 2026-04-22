@@ -1,6 +1,23 @@
 import { supabase } from '../supabase/client';
 import { getSeasonFromDate } from '../lib/seasonUtils';
 
+type ReportFieldRow = {
+  id: string;
+  name: string;
+  sectors?: Array<{ id: string; name?: string; hectares?: number }>;
+};
+
+type ReportApplicationRow = {
+  field_id: string;
+  sector_id: string;
+  total_cost: number;
+  application_date: string;
+};
+
+type ReportInvoiceRow = {
+  invoice_date: string;
+};
+
 export async function loadReportsRawData(params: { companyId: string }) {
   const { data: fields, error: fieldsError } = await supabase
     .from('fields')
@@ -9,8 +26,9 @@ export async function loadReportsRawData(params: { companyId: string }) {
 
   if (fieldsError) throw fieldsError;
 
-  const fieldIds = (fields || []).map((f: any) => f.id);
-  const sectorIds = (fields || []).flatMap((f: any) => (f.sectors || []).map((s: any) => s.id));
+  const typedFields = (fields || []) as unknown as ReportFieldRow[];
+  const fieldIds = typedFields.map((f) => f.id);
+  const sectorIds = typedFields.flatMap((f) => (f.sectors || []).map((s) => s.id));
 
   const [
     applicationsRes,
@@ -63,24 +81,24 @@ export async function loadReportsRawData(params: { companyId: string }) {
 
   if (errors.length > 0) throw errors[0];
 
-  const applications = applicationsRes.data || [];
-  const invoices = invoicesRes.data || [];
+  const applications = (applicationsRes.data || []) as unknown as ReportApplicationRow[];
+  const invoices = (invoicesRes.data || []) as unknown as ReportInvoiceRow[];
 
   const seasonsSet = new Set<string>();
   seasonsSet.add(getSeasonFromDate(new Date()));
 
-  applications.forEach((app: any) => {
+  applications.forEach((app) => {
     if (app.application_date) seasonsSet.add(getSeasonFromDate(new Date(app.application_date)));
   });
 
-  invoices.forEach((inv: any) => {
+  invoices.forEach((inv) => {
     if (inv.invoice_date) seasonsSet.add(getSeasonFromDate(new Date(inv.invoice_date)));
   });
 
   const availableSeasons = Array.from(seasonsSet).sort().reverse();
 
   return {
-    fields: fields || [],
+    fields: typedFields,
     applications,
     labor: laborRes.data || [],
     workerCosts: workerCostsRes.data || [],
@@ -94,4 +112,3 @@ export async function loadReportsRawData(params: { companyId: string }) {
     availableSeasons
   };
 }
-

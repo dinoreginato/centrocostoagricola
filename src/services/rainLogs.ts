@@ -1,5 +1,21 @@
 import { supabase } from '../supabase/client';
 
+export type RainLog = {
+  id: string;
+  company_id: string;
+  date: string;
+  rain_mm: number;
+  notes?: string | null;
+  created_at?: string;
+  field_id?: string | null;
+  sector_id?: string | null;
+  source?: string | null;
+  station_id?: string | null;
+  station_name?: string | null;
+};
+
+export type RainLogInsert = Omit<RainLog, 'id'>;
+
 export async function fetchRainLogDates(params: {
   companyId: string;
   from: string;
@@ -16,7 +32,7 @@ export async function fetchRainLogDates(params: {
 
   const { data, error } = await query;
   if (error) throw error;
-  return (data || []).map((r: any) => r.date).filter(Boolean) as string[];
+  return ((data || []) as Array<{ date: string | null }>).map((r) => r.date).filter(Boolean) as string[];
 }
 
 export async function fetchRainLogsForYear(params: { companyId: string; year: number }) {
@@ -28,7 +44,7 @@ export async function fetchRainLogsForYear(params: { companyId: string; year: nu
     .order('date', { ascending: false });
 
   if (error) throw error;
-  return (data || []) as any[];
+  return (data || []) as unknown as RainLog[];
 }
 
 export async function fetchRainLogKeysForYear(params: { companyId: string; year: number }) {
@@ -42,9 +58,8 @@ export async function fetchRainLogKeysForYear(params: { companyId: string; year:
   return (data || []) as Array<{ date: string; field_id: string | null; sector_id: string | null }>;
 }
 
-export async function insertRainLogs(params: { rows: any[] }) {
+export async function insertRainLogs(params: { rows: RainLogInsert[] }) {
   if (!params.rows || params.rows.length === 0) return;
   const { error } = await supabase.from('rain_logs').insert(params.rows);
   if (error) throw error;
 }
-

@@ -134,24 +134,28 @@ export async function loadApplicationOrdersPageData(params: {
 
   if (ordersError) throw ordersError;
 
-  const mappedOrders = ((ordersData || []) as unknown as RawOrder[]).map((o) => ({
-    ...(o as any),
-    items: Array.isArray(o.items)
-      ? o.items.map((i) => ({
-          id: i.id,
-          product_id: i.product_id,
-          product_name: i.product?.name ?? '',
-          active_ingredient: i.product?.active_ingredient ?? null,
-          category: i.product?.category ?? null,
-          average_cost: i.product?.average_cost ?? 0,
-          unit: i.unit,
-          dose_per_hectare: i.dose_per_hectare,
-          dose_per_100l: i.dose_per_100l ?? null,
-          total_quantity: i.total_quantity,
-          objective: i.objective ?? null
-        }))
-      : []
-  })) as unknown as ApplicationOrder[];
+  const mappedOrders: ApplicationOrder[] = ((ordersData || []) as unknown as RawOrder[]).map((o) => {
+    const { items, ...rest } = o;
+    const base = rest as unknown as Omit<ApplicationOrder, 'items'>;
+    return {
+      ...base,
+      items: Array.isArray(items)
+        ? items.map((i) => ({
+            id: i.id,
+            product_id: i.product_id,
+            product_name: i.product?.name ?? '',
+            active_ingredient: i.product?.active_ingredient ?? null,
+            category: i.product?.category ?? null,
+            average_cost: i.product?.average_cost ?? 0,
+            unit: i.unit,
+            dose_per_hectare: i.dose_per_hectare,
+            dose_per_100l: i.dose_per_100l ?? null,
+            total_quantity: i.total_quantity,
+            objective: i.objective ?? null
+          }))
+        : []
+    } as ApplicationOrder;
+  });
 
   const [fieldsRes, productsRes, machinesRes, workersRes, progRes] = await Promise.all([
     supabase.from('fields').select('*, sectors(*)').eq('company_id', params.companyId),
@@ -172,9 +176,9 @@ export async function loadApplicationOrdersPageData(params: {
   if (workersRes.error) throw workersRes.error;
   if (progRes.error) throw progRes.error;
 
-  let programEvents: any[] = [];
+  let programEvents: ProgramEventForOrder[] = [];
 
-  const progData = progRes.data || [];
+  const progData = (progRes.data || []) as Array<{ id: string }>;
   if (progData.length > 0) {
     const { data: evData, error: evError } = await supabase
       .from('program_events')
@@ -189,11 +193,11 @@ export async function loadApplicationOrdersPageData(params: {
       )
       .in(
         'program_id',
-        progData.map((p: any) => p.id)
+        progData.map((p) => p.id)
       );
 
     if (evError) throw evError;
-    programEvents = evData || [];
+    programEvents = (evData || []) as unknown as ProgramEventForOrder[];
   }
 
   return {
@@ -202,7 +206,7 @@ export async function loadApplicationOrdersPageData(params: {
     products: (productsRes.data || []) as unknown as ProductRow[],
     machines: (machinesRes.data || []) as unknown as MachineRow[],
     workers: (workersRes.data || []) as unknown as WorkerRow[],
-    programEvents: (programEvents || []) as unknown as ProgramEventForOrder[]
+    programEvents
   };
 }
 

@@ -1,5 +1,77 @@
 import { supabase } from '../supabase/client';
 
+type GeneralCostInvoiceRow = {
+  id: string;
+  invoice_number: string;
+  invoice_date: string;
+  company_id: string;
+  document_type: string | null;
+  tax_percentage?: number | null;
+  exempt_amount?: number | null;
+  special_tax_amount?: number | null;
+  total_amount?: number | null;
+};
+
+type GeneralCostProductRow = { name: string | null; category: string | null } | null;
+
+type GeneralCostInvoiceItemRow = {
+  id: string;
+  total_price: number | null;
+  category: string | null;
+  products?: GeneralCostProductRow;
+  invoices: GeneralCostInvoiceRow;
+};
+
+type GeneralCostSummaryRow = { invoice_item_id: string; total_assigned: number | null };
+
+export type PendingGeneralCostItem = {
+  id: string;
+  invoice_id: string;
+  invoice_number: string;
+  date: string;
+  description: string;
+  category: string | null;
+  total_amount: number;
+  assigned_amount: number;
+  remaining_amount: number;
+};
+
+export type GeneralCostHistoryItem = {
+  id: string;
+  assigned_amount: number;
+  assigned_date: string;
+  sector_id?: string | null;
+  invoice_item_id: string;
+  category: string;
+  description: string;
+  sectors: { name?: string | null } | null;
+  invoice_items: {
+    products?: { name?: string | null } | null;
+    invoices?: { invoice_number?: string | null } | null;
+  } | null;
+};
+
+export type GeneralCostInsert = {
+  company_id: string;
+  invoice_item_id: string;
+  sector_id: string;
+  amount: number;
+  date: string;
+  category: string;
+  description: string;
+};
+
+type GeneralCostRaw = {
+  id: string;
+  amount: number;
+  date: string;
+  invoice_item_id: string;
+  category: string;
+  description: string;
+  sectors: { id?: string | null; name?: string | null } | null;
+  invoice_items: GeneralCostHistoryItem['invoice_items'];
+};
+
 export async function fetchPendingGeneralCosts(params: { companyId: string }) {
   const { data: items, error } = await supabase
     .from('invoice_items')
@@ -42,7 +114,7 @@ export async function fetchPendingGeneralCosts(params: { companyId: string }) {
     'plaguicida'
   ];
 
-  const filteredItems = (items || []).filter((item: any) => {
+  const filteredItems = ((items || []) as unknown as GeneralCostInvoiceItemRow[]).filter((item) => {
     const rawCat = item.category || item.products?.category || '';
     const cat = String(rawCat).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
     const isCore = CORE_EXCLUDED.some((ex) => cat.includes(ex));
@@ -53,20 +125,20 @@ export async function fetchPendingGeneralCosts(params: { companyId: string }) {
   if (assignmentError) throw assignmentError;
 
   const assignmentMap = new Map<string, number>();
-  (assignments || []).forEach((a: any) => {
-    assignmentMap.set(String(a.invoice_item_id), Number(a.total_assigned));
+  ((assignments || []) as unknown as GeneralCostSummaryRow[]).forEach((a) => {
+    assignmentMap.set(String(a.invoice_item_id), Number(a.total_assigned || 0));
   });
 
   const invoiceSubtotals = new Map<string, number>();
-  (items || []).forEach((item: any) => {
+  ((items || []) as unknown as GeneralCostInvoiceItemRow[]).forEach((item) => {
     const invId = String(item.invoices.id);
     const currentSum = invoiceSubtotals.get(invId) || 0;
     invoiceSubtotals.set(invId, currentSum + Number(item.total_price || 0));
   });
 
-  const pending: any[] = [];
+  const pending: PendingGeneralCostItem[] = [];
 
-  filteredItems.forEach((item: any) => {
+  filteredItems.forEach((item) => {
     const docType = String(item.invoices.document_type || '').toLowerCase();
     const isCreditNote = docType.includes('nota de cr') || docType.includes('nc');
 
@@ -128,7 +200,8 @@ export async function fetchGeneralCostsHistory(params: { companyId: string }) {
 
   if (error) throw error;
 
-  return (data || []).map((d: any) => ({
+  const rows = (data || []) as unknown as GeneralCostRaw[];
+  return rows.map((d) => ({
     id: d.id,
     assigned_amount: d.amount,
     assigned_date: d.date,
@@ -138,7 +211,7 @@ export async function fetchGeneralCostsHistory(params: { companyId: string }) {
     description: d.description,
     sectors: d.sectors,
     invoice_items: d.invoice_items
-  })) as any[];
+  })) as GeneralCostHistoryItem[];
 }
 
 export async function deleteGeneralCostAssignment(params: { id: string }) {
@@ -164,7 +237,7 @@ export async function updateGeneralCostAssignment(params: { id: string; sectorId
   if (error) throw error;
 }
 
-export async function insertGeneralCostAssignments(params: { rows: any[] }) {
+export async function insertGeneralCostAssignments(params: { rows: GeneralCostInsert[] }) {
   if (!params.rows || params.rows.length === 0) return;
   const { error } = await supabase.from('general_costs').insert(params.rows);
   if (error) throw error;

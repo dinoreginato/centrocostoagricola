@@ -13,6 +13,7 @@
     "preview": "vite preview",
     "check": "tsc -b --noEmit",
     "check:boundaries": "node scripts/check_supabase_boundaries.cjs",
+    "check:services-typing": "node scripts/check_services_typing.cjs",
     "deploy": "vercel --prod"
   },
   "dependencies": {

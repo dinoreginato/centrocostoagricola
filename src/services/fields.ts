@@ -17,6 +17,36 @@ export type FieldWithSectors = {
   }>;
 };
 
+type LaborAssignmentRow = { sector_id: string; assigned_amount: number | null };
+
+export type FieldSectorWithLabor = NonNullable<FieldWithSectors['sectors']>[number] & {
+  total_labor_cost: number;
+};
+
+export type FieldWithLaborCosts = Omit<FieldWithSectors, 'sectors'> & {
+  sectors: FieldSectorWithLabor[];
+};
+
+export type FieldInsert = {
+  name: string;
+  total_hectares: number;
+  fruit_type: string;
+  latitude?: number | null;
+  longitude?: number | null;
+};
+
+export type FieldUpdate = Partial<FieldInsert>;
+
+export type SectorInsert = {
+  name: string;
+  hectares: number;
+  budget?: number;
+  latitude?: number | null;
+  longitude?: number | null;
+};
+
+export type SectorUpdate = Partial<SectorInsert>;
+
 export async function fetchFieldsWithSectors(params: { companyId: string }) {
   const { data, error } = await supabase
     .from('fields')
@@ -39,7 +69,7 @@ export async function fetchLaborAssignmentsMap(params: { sectorIds: string[] }) 
   if (error) throw error;
 
   const laborMap: Record<string, number> = {};
-  (data || []).forEach((item: any) => {
+  (data as LaborAssignmentRow[] | null | undefined || []).forEach((item) => {
     const sectorId = String(item.sector_id);
     laborMap[sectorId] = (laborMap[sectorId] || 0) + Number(item.assigned_amount || 0);
   });
@@ -58,16 +88,16 @@ export async function fetchFieldsWithLaborCosts(params: { companyId: string }) {
       ...sector,
       total_labor_cost: laborMap[sector.id] || 0
     }))
-  })) as any[];
+  })) as FieldWithLaborCosts[];
 }
 
-export async function createField(params: { companyId: string; payload: any }) {
+export async function createField(params: { companyId: string; payload: FieldInsert }) {
   const { data, error } = await supabase.from('fields').insert([{ ...params.payload, company_id: params.companyId }]).select().single();
   if (error) throw error;
   return data;
 }
 
-export async function updateField(params: { fieldId: string; patch: any }) {
+export async function updateField(params: { fieldId: string; patch: FieldUpdate }) {
   const { data, error } = await supabase.from('fields').update(params.patch).eq('id', params.fieldId).select().single();
   if (error) throw error;
   return data;
@@ -78,13 +108,13 @@ export async function deleteField(params: { fieldId: string }) {
   if (error) throw error;
 }
 
-export async function createSector(params: { fieldId: string; payload: any }) {
+export async function createSector(params: { fieldId: string; payload: SectorInsert }) {
   const { data, error } = await supabase.from('sectors').insert([{ ...params.payload, field_id: params.fieldId }]).select().single();
   if (error) throw error;
   return data;
 }
 
-export async function updateSector(params: { sectorId: string; patch: any }) {
+export async function updateSector(params: { sectorId: string; patch: SectorUpdate }) {
   const { data, error } = await supabase.from('sectors').update(params.patch).eq('id', params.sectorId).select().single();
   if (error) throw error;
   return data;
