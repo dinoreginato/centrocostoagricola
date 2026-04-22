@@ -36,6 +36,22 @@ export default tseslint.config(
     },
   },
   {
+    files: ['src/pages/**/*.{ts,tsx}', 'src/components/**/*.{ts,tsx}', 'src/contexts/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../supabase/client', '../../supabase/client', '../../../supabase/client', '**/supabase/client'],
+              message: 'Importa supabase sólo en src/services/* (usa services en UI/contexts).',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['src/pages/Reports.tsx'],
     rules: {
       'react-hooks/exhaustive-deps': 'off',

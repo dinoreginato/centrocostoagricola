@@ -21,3 +21,17 @@ export async function updateUserPassword(params: { password: string }) {
   if (error) throw error;
 }
 
+export async function getSession() {
+  return supabase.auth.getSession();
+}
+
+export function onAuthStateChange(
+  handler: (event: string, session: any) => void
+) {
+  return supabase.auth.onAuthStateChange((event, session) => handler(event, session));
+}
+
+export async function signOut() {
+  const { error } = await supabase.auth.signOut();
+  if (error) throw error;
+}

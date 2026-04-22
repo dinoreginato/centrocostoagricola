@@ -32,3 +32,25 @@ export async function updateCompanyApplicationFuelRate(params: { companyId: stri
   const { error } = await supabase.from('companies').update({ application_fuel_rate: params.rate }).eq('id', params.companyId);
   if (error) throw error;
 }
+
+export async function fetchCompanies() {
+  const { data, error } = await supabase.from('companies').select('*').order('created_at', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function claimOrphanCompanies(params: { companyIds: string[]; ownerId: string }) {
+  if (params.companyIds.length === 0) return;
+  const { error } = await supabase
+    .from('companies')
+    .update({ owner_id: params.ownerId })
+    .in('id', params.companyIds)
+    .is('owner_id', null);
+  if (error) throw error;
+}
+
+export async function fetchCompanyMemberRole(params: { companyId: string; userId: string }) {
+  const { data, error } = await supabase.from('company_members').select('role').eq('company_id', params.companyId).eq('user_id', params.userId).single();
+  if (error) throw error;
+  return (data as any)?.role as string | null;
+}

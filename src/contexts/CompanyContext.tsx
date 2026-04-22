@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { supabase } from '../supabase/client';
 import { useAuth } from './AuthContext';
+import { claimOrphanCompanies, fetchCompanies, fetchCompanyMemberRole } from '../services/companies';
 
 export interface Company {
   id: string;
@@ -39,17 +39,9 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     try {
-      const { data, error } = await supabase
-        .from('company_members')
-        .select('role')
-        .eq('company_id', company.id)
-        .eq('user_id', userId)
-        .single();
-
-      if (error) throw error;
-      
-      if (data) {
-        setUserRole(data.role as UserRole);
+      const role = await fetchCompanyMemberRole({ companyId: company.id, userId });
+      if (role) {
+        setUserRole(role as UserRole);
       } else {
         setUserRole('viewer'); // Default fallback
       }
@@ -69,12 +61,7 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     try {
-      const { data, error } = await supabase
-        .from('companies')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
+      const data = await fetchCompanies();
 
       setCompanies(data || []);
 
@@ -82,18 +69,14 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (data && user) {
         const orphans = data.filter(c => !c.owner_id);
         if (orphans.length > 0) {
-          orphans.forEach(async (orphan) => {
-            try {
-              await supabase
-                .from('companies')
-                .update({ owner_id: user.id })
-                .eq('id', orphan.id);
-              // Optimistically update local state
+          try {
+            await claimOrphanCompanies({ companyIds: orphans.map(o => o.id), ownerId: user.id });
+            orphans.forEach(orphan => {
               orphan.owner_id = user.id;
-            } catch (err) {
-              console.error('Error claiming orphan company:', err);
-            }
-          });
+            });
+          } catch (err) {
+            console.error('Error claiming orphan company:', err);
+          }
         }
       }
 
