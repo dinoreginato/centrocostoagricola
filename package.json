@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "check": "tsc -b --noEmit",
+    "check:boundaries": "node scripts/check_supabase_boundaries.cjs",
     "deploy": "vercel --prod"
   },
   "dependencies": {
