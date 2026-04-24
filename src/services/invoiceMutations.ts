@@ -120,25 +120,6 @@ export async function searchOfficialProductsForInvoice(params: { query: string; 
   return data || [];
 }
 
-export async function invoiceExists(params: { companyId: string; invoiceNumber: string; supplier: string }) {
-  const { data, error } = await supabase
-    .from('invoices')
-    .select('id')
-    .eq('company_id', params.companyId)
-    .eq('invoice_number', params.invoiceNumber)
-    .eq('supplier', params.supplier)
-    .maybeSingle();
-
-  if (error) throw error;
-  return Boolean(data);
-}
-
-export async function createInvoice(params: { payload: InvoiceInsert }) {
-  const { data, error } = await supabase.from('invoices').insert([params.payload]).select().single();
-  if (error) throw error;
-  return data;
-}
-
 export async function upsertInvoiceHeader(params: { invoiceId?: string | null; payload: InvoiceInsert }) {
   const { data, error } = await supabase.rpc('upsert_invoice_header', {
     p_invoice_id: params.invoiceId ?? null,
@@ -237,25 +218,6 @@ export async function rpcUpdateInventoryWithAverageCost(params: {
     quantity_in: params.quantityIn,
     unit_cost: params.unitCost,
     invoice_item_id: params.invoiceItemId
-  });
-  if (error) throw error;
-}
-
-export async function rpcUpdateInvoiceItemWithInventory(params: {
-  invoiceItemId: string;
-  productId: string;
-  quantity: number;
-  unitPrice: number;
-  totalPrice: number;
-  category: string;
-}) {
-  const { error } = await supabase.rpc('update_invoice_item_with_inventory', {
-    p_invoice_item_id: params.invoiceItemId,
-    p_product_id: params.productId,
-    p_quantity: params.quantity,
-    p_unit_price: params.unitPrice,
-    p_total_price: params.totalPrice,
-    p_category: params.category
   });
   if (error) throw error;
 }
