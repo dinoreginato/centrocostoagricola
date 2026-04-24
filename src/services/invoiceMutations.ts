@@ -139,6 +139,29 @@ export async function createInvoice(params: { payload: InvoiceInsert }) {
   return data;
 }
 
+export async function upsertInvoiceHeader(params: { invoiceId?: string | null; payload: InvoiceInsert }) {
+  const { data, error } = await supabase.rpc('upsert_invoice_header', {
+    p_invoice_id: params.invoiceId ?? null,
+    p_company_id: params.payload.company_id,
+    p_invoice_number: params.payload.invoice_number,
+    p_supplier: params.payload.supplier,
+    p_supplier_rut: params.payload.supplier_rut ?? null,
+    p_invoice_date: params.payload.invoice_date,
+    p_due_date: params.payload.due_date ?? null,
+    p_status: params.payload.status,
+    p_notes: params.payload.notes ?? null,
+    p_document_type: params.payload.document_type ?? null,
+    p_tax_percentage: params.payload.tax_percentage ?? null,
+    p_discount_amount: params.payload.discount_amount ?? 0,
+    p_exempt_amount: params.payload.exempt_amount ?? 0,
+    p_special_tax_amount: params.payload.special_tax_amount ?? 0,
+    p_total_amount: params.payload.total_amount ?? 0,
+    p_payment_date: params.payload.payment_date ?? null
+  });
+  if (error) throw error;
+  return { id: data as string };
+}
+
 export async function updateInvoice(params: { invoiceId: string; patch: InvoiceUpdate }) {
   const { error } = await supabase.from('invoices').update(params.patch).eq('id', params.invoiceId);
   if (error) throw error;

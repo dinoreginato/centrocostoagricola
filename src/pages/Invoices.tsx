@@ -5,7 +5,7 @@ import { formatCLP } from '../lib/utils';
 import { Plus, FileText, Trash2, Save, Loader2, Check, Download, Upload, RefreshCw, Search, Printer, ChevronLeft, ChevronRight, MapPin, Database } from 'lucide-react';
 import { InvoicePrint } from '../components/InvoicePrint';
 import { fetchInvoiceDestinations, fetchInvoiceProducts, fetchInvoicesForCompany, fetchInvoiceSuppliers } from '../services/invoices';
-import { createInvoice, createInvoiceItemWithEffects, createOrFindProductByName, fetchInvoiceItems, fetchInvoicesBasic, findSupplierRut, invoiceExists, rpcDeleteInvoiceForce, rpcDeleteInvoiceItemsWithEffects, rpcUpdateInvoiceItemWithEffects, searchOfficialProductsForInvoice, updateInvoice } from '../services/invoiceMutations';
+import { createInvoiceItemWithEffects, createOrFindProductByName, fetchInvoiceItems, fetchInvoicesBasic, findSupplierRut, rpcDeleteInvoiceForce, rpcDeleteInvoiceItemsWithEffects, rpcUpdateInvoiceItemWithEffects, searchOfficialProductsForInvoice, updateInvoice, upsertInvoiceHeader } from '../services/invoiceMutations';
 
 interface InvoiceItem {
   id?: string;
@@ -766,37 +766,33 @@ export const Invoices: React.FC = () => {
               continue;
             }
 
-            // Check duplicate on import
-            const alreadyExists = await invoiceExists({
-              companyId: targetCompanyId,
-              invoiceNumber: invoiceDataMap.number,
-              supplier: invoiceDataMap.supplier
-            });
-
-            if (alreadyExists) {
-              console.warn(`Skipping duplicate invoice: ${invoiceDataMap.number} - ${invoiceDataMap.supplier}`);
-              // Optional: count as error or just skip silently? Let's skip.
-              continue;
-            }
-
-            // 1. Create Invoice
-            const invoiceData = await createInvoice({
-              payload: {
-                company_id: targetCompanyId,
-                invoice_number: invoiceDataMap.number,
-                supplier: invoiceDataMap.supplier,
-                invoice_date: invoiceDataMap.date,
-                due_date: invoiceDataMap.dueDate || null,
-                status: invoiceDataMap.status,
-                notes: invoiceDataMap.notes,
-                document_type: invoiceDataMap.type,
-                tax_percentage: invoiceDataMap.taxPct,
-                discount_amount: invoiceDataMap.discount,
-                exempt_amount: invoiceDataMap.exempt,
-                special_tax_amount: invoiceDataMap.specialTax,
-                total_amount: invoiceDataMap.total
+            let invoiceId: string;
+            try {
+              const invoiceData = await upsertInvoiceHeader({
+                payload: {
+                  company_id: targetCompanyId,
+                  invoice_number: invoiceDataMap.number,
+                  supplier: invoiceDataMap.supplier,
+                  invoice_date: invoiceDataMap.date,
+                  due_date: invoiceDataMap.dueDate || null,
+                  status: invoiceDataMap.status,
+                  notes: invoiceDataMap.notes,
+                  document_type: invoiceDataMap.type,
+                  tax_percentage: invoiceDataMap.taxPct,
+                  discount_amount: invoiceDataMap.discount,
+                  exempt_amount: invoiceDataMap.exempt,
+                  special_tax_amount: invoiceDataMap.specialTax,
+                  total_amount: invoiceDataMap.total
+                }
+              });
+              invoiceId = invoiceData.id;
+            } catch (e: any) {
+              if (String(e?.message || '').includes('DUPLICATE_INVOICE')) {
+                console.warn(`Skipping duplicate invoice: ${invoiceDataMap.number} - ${invoiceDataMap.supplier}`);
+                continue;
               }
-            });
+              throw e;
+            }
 
             // 2. Process Items
             for (const item of inv.items) {
@@ -817,7 +813,7 @@ export const Invoices: React.FC = () => {
               });
 
               await createInvoiceItemWithEffects({
-                invoiceId: invoiceData.id,
+                invoiceId,
                 productId,
                 quantity: itemMap.quantity,
                 unitPrice: itemMap.price,
@@ -1161,10 +1157,11 @@ export const Invoices: React.FC = () => {
 
       if (editingInvoiceId) {
         // --- UPDATE EXISTING INVOICE (DIFFING STRATEGY) ---
-        
-        await updateInvoice({
+
+        await upsertInvoiceHeader({
           invoiceId: editingInvoiceId,
-          patch: {
+          payload: {
+            company_id: selectedCompany.id,
             invoice_number: invoiceNumber,
             supplier: supplier,
             supplier_rut: supplierRut,
@@ -1280,39 +1277,34 @@ export const Invoices: React.FC = () => {
 
       } else {
         // --- CREATE NEW INVOICE ---
-        
-        // 0. Check for duplicates before creating
-        const alreadyExists = await invoiceExists({
-          companyId: selectedCompany.id,
-          invoiceNumber,
-          supplier
-        });
-
-        if (alreadyExists) {
-          toast(`¡Atención! Ya existe una factura con el número "${invoiceNumber}" para el proveedor "${supplier}".\n\nNo se puede crear un duplicado.`);
-          setLoading(false);
-          return;
-        }
-
-        const invoice = await createInvoice({
-          payload: {
-            company_id: selectedCompany.id,
-            invoice_number: invoiceNumber,
-            supplier: supplier,
-            supplier_rut: supplierRut,
-            invoice_date: invoiceDate,
-            due_date: dueDate || null,
-            status: status,
-            notes: notes,
-            document_type: documentType,
-            tax_percentage: taxPercentage,
-            discount_amount: discountAmount,
-            exempt_amount: exemptAmount,
-            special_tax_amount: specialTaxAmount,
-            total_amount: total
+        try {
+          const invoice = await upsertInvoiceHeader({
+            payload: {
+              company_id: selectedCompany.id,
+              invoice_number: invoiceNumber,
+              supplier: supplier,
+              supplier_rut: supplierRut,
+              invoice_date: invoiceDate,
+              due_date: dueDate || null,
+              status: status,
+              notes: notes,
+              document_type: documentType,
+              tax_percentage: taxPercentage,
+              discount_amount: discountAmount,
+              exempt_amount: exemptAmount,
+              special_tax_amount: specialTaxAmount,
+              total_amount: total
+            }
+          });
+          invoiceId = invoice.id;
+        } catch (e: any) {
+          if (String(e?.message || '').includes('DUPLICATE_INVOICE')) {
+            toast(`¡Atención! Ya existe una factura con el número "${invoiceNumber}" para el proveedor "${supplier}".\n\nNo se puede crear un duplicado.`);
+            setLoading(false);
+            return;
           }
-        });
-        invoiceId = invoice.id;
+          throw e;
+        }
 
         // Process Items for NEW Invoice
         for (const item of items) {
