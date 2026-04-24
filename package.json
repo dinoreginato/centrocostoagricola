@@ -52,5 +52,18 @@
     "vite": "^6.3.5",
     "vite-plugin-trae-solo-badge": "^1.0.0",
     "vite-tsconfig-paths": "^5.1.4"
+  },
+  "overrides": {
+    "@tootallnate/once": "3.0.1",
+    "@vercel/static-config": {
+      "ajv": "8.20.0"
+    },
+    "minimatch": "10.2.5",
+    "path-to-regexp": "8.4.2",
+    "serialize-javascript": "7.0.5",
+    "smol-toml": "1.6.1",
+    "srvx": "0.11.15",
+    "tar": "7.5.13",
+    "undici": "6.25.0"
   }
 }

@@ -95,6 +95,11 @@ export const Inventory: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > 10 * 1024 * 1024) {
+      toast('Archivo demasiado grande (máx 10MB).');
+      return;
+    }
+
     setLoading(true);
     try {
         const buffer = await file.arrayBuffer();
@@ -102,14 +107,21 @@ export const Inventory: React.FC = () => {
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         const jsonData: any[] = utils.sheet_to_json(worksheet);
+        if (jsonData.length > 5000) {
+          toast('El archivo tiene demasiadas filas (máx 5000).');
+          return;
+        }
 
         // Normalize headers (to lowercase, trim, remove accents)
         const normalizeKey = (key: string) => key.toLowerCase().trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const isUnsafeKey = (key: string) => key === '__proto__' || key === 'constructor' || key === 'prototype';
 
         const normalizedData = jsonData.map(row => {
-            const newRow: any = {};
+            const newRow: any = Object.create(null);
             Object.keys(row).forEach(key => {
-                newRow[normalizeKey(key)] = row[key];
+                const nk = normalizeKey(key);
+                if (isUnsafeKey(nk)) return;
+                newRow[nk] = row[key];
             });
             return newRow;
         });
