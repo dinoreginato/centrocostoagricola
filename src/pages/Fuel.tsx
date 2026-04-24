@@ -102,7 +102,9 @@ export const Fuel: React.FC = () => {
 
   // Auto-calculate liters for Applications
   useEffect(() => {
-    if (activity === 'Aplicacion') {
+    if (editingLogId) return;
+    const activityNormalized = String(activity || '').toLowerCase();
+    if (activityNormalized.startsWith('aplicación') || activityNormalized.startsWith('aplicacion')) {
       let hectares = 0;
       
       if (distributeBy === 'sector' && selectedSectorId) {
@@ -119,7 +121,7 @@ export const Fuel: React.FC = () => {
         setLiters(Number((hectares * applicationRate).toFixed(1)));
       }
     }
-  }, [activity, distributeBy, selectedSectorId, selectedFieldId, applicationRate, sectors, fields]);
+  }, [activity, distributeBy, selectedSectorId, selectedFieldId, applicationRate, sectors, fields, editingLogId]);
 
   useEffect(() => {
     if (selectedCompany) {
@@ -219,6 +221,14 @@ export const Fuel: React.FC = () => {
     try {
         const totalLiters = Number(liters);
         
+        const isGasolineActivity = (value: string) => /gasolina|bencina/i.test(value);
+
+        const activityBase = (() => {
+            const raw = String(activity || '');
+            if (raw && !isGasolineActivity(raw) && activeTab === 'gasoline') return `${raw} (Gasolina)`;
+            return raw;
+        })();
+
         // If editing, we update the existing record
         if (editingLogId) {
             // Recalculate cost based on current average price (or keep old price? Usually update cost if liters change)
@@ -228,7 +238,7 @@ export const Fuel: React.FC = () => {
                 id: editingLogId,
                 patch: {
                     date,
-                    activity,
+                    activity: activityBase,
                     liters: totalLiters,
                     estimated_price: cost,
                     sector_id: selectedSectorId
@@ -241,9 +251,7 @@ export const Fuel: React.FC = () => {
         } else {
             // CREATE NEW LOGIC (Existing code)
             // Prefix/Suffix for Gasoline to distinguish
-            const activitySuffix = activeTab === 'gasoline' ? ' (Gasolina)' : '';
-            // Only add suffix if not already present (to avoid double suffix if user selected one that has it)
-            const finalActivity = activity.includes('Gasolina') ? activity : `${activity}${activitySuffix}`;
+            const finalActivity = activityBase;
             
             if (distributeBy === 'company') {
                 // Distribute by Company (All Fields)
@@ -572,8 +580,18 @@ export const Fuel: React.FC = () => {
                             className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                         >
                             <option value="">Seleccione...</option>
+                            {activity &&
+                              ![
+                                'Cosecha',
+                                'Aplicación',
+                                'Aplicación (Automática)',
+                                'Riego',
+                                'Transporte',
+                                'Mantencion',
+                                'Otros'
+                              ].includes(activity) && <option value={activity}>{activity}</option>}
                             <option value="Cosecha">Cosecha</option>
-                            <option value="Aplicacion">Aplicación</option>
+                            <option value="Aplicación">Aplicación</option>
                             <option value="Aplicación (Automática)">Aplicación (Automática)</option>
                             <option value="Riego">Riego</option>
                             <option value="Transporte">Transporte</option>
@@ -661,7 +679,7 @@ export const Fuel: React.FC = () => {
                     </div>
                 )}
                 
-                {activity === 'Aplicacion' && (
+                {(String(activity || '').toLowerCase().startsWith('aplicación') || String(activity || '').toLowerCase().startsWith('aplicacion')) && (
                     <div className="bg-blue-50 p-3 rounded-md border border-blue-200 mb-4">
                         <label className="block text-xs font-medium text-blue-700 mb-1">Tasa de Aplicación (L/ha)</label>
                         <div className="flex items-center gap-2">
