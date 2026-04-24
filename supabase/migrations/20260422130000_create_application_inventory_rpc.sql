@@ -14,6 +14,7 @@ CREATE OR REPLACE FUNCTION create_application_inventory(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
     new_item jsonb;
@@ -21,6 +22,15 @@ DECLARE
     v_app_item_id uuid;
     v_company_id uuid;
 BEGIN
+    SELECT company_id INTO v_company_id FROM fields WHERE id = p_field_id;
+    IF v_company_id IS NULL THEN
+        RAISE EXCEPTION 'Campo no encontrado';
+    END IF;
+
+    IF NOT public.is_admin_or_editor(v_company_id) THEN
+        RAISE EXCEPTION 'No autorizado';
+    END IF;
+
     INSERT INTO applications (
         field_id,
         sector_id,
@@ -76,9 +86,6 @@ BEGIN
     END LOOP;
 
     IF p_create_fuel AND p_fuel_liters IS NOT NULL AND p_fuel_cost IS NOT NULL THEN
-        SELECT company_id INTO v_company_id FROM fields WHERE id = p_field_id;
-
-        IF v_company_id IS NOT NULL THEN
             INSERT INTO fuel_consumption (
                 company_id,
                 date,
@@ -96,10 +103,8 @@ BEGIN
                 p_sector_id,
                 v_app_id
             );
-        END IF;
     END IF;
 
     RETURN v_app_id;
 END;
 $$;
-

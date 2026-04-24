@@ -23,6 +23,7 @@ CREATE OR REPLACE FUNCTION apply_manual_inventory_movement(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
   v_company_id uuid;
@@ -117,6 +118,7 @@ CREATE OR REPLACE FUNCTION revert_manual_inventory_movement(
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
   v_company_id uuid;
@@ -162,4 +164,3 @@ BEGIN
   DELETE FROM public.inventory_movements WHERE id = p_movement_id;
 END;
 $$;
-

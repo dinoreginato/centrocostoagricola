@@ -13,12 +13,22 @@ CREATE OR REPLACE FUNCTION create_invoice_item_with_effects(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
   v_invoice_item_id uuid;
   v_company_id uuid;
   a jsonb;
 BEGIN
+  SELECT company_id INTO v_company_id FROM invoices WHERE id = p_invoice_id;
+  IF v_company_id IS NULL THEN
+    RAISE EXCEPTION 'Factura no encontrada';
+  END IF;
+
+  IF NOT public.is_admin_or_editor(v_company_id) THEN
+    RAISE EXCEPTION 'No autorizado';
+  END IF;
+
   INSERT INTO invoice_items (
     invoice_id,
     product_id,
@@ -91,10 +101,6 @@ BEGIN
     );
   END LOOP;
 
-  IF jsonb_array_length(p_general_costs) > 0 THEN
-    SELECT company_id INTO v_company_id FROM invoices WHERE id = p_invoice_id;
-  END IF;
-
   IF v_company_id IS NOT NULL THEN
     FOR a IN SELECT * FROM jsonb_array_elements(p_general_costs) LOOP
       INSERT INTO general_costs (
@@ -120,4 +126,3 @@ BEGIN
   RETURN v_invoice_item_id;
 END;
 $$;
-

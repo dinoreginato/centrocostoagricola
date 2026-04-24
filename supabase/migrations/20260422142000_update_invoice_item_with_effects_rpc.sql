@@ -15,6 +15,7 @@ CREATE OR REPLACE FUNCTION update_invoice_item_with_effects(
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
   v_old_product_id uuid;
@@ -22,6 +23,20 @@ DECLARE
   v_company_id uuid;
   a jsonb;
 BEGIN
+  SELECT i.company_id
+  INTO v_company_id
+  FROM invoice_items ii
+  JOIN invoices i ON ii.invoice_id = i.id
+  WHERE ii.id = p_invoice_item_id;
+
+  IF v_company_id IS NULL THEN
+    RAISE EXCEPTION 'Ítem no encontrado';
+  END IF;
+
+  IF NOT public.is_admin_or_editor(v_company_id) THEN
+    RAISE EXCEPTION 'No autorizado';
+  END IF;
+
   IF p_recalc_inventory THEN
     SELECT product_id, quantity INTO v_old_product_id, v_old_quantity
     FROM invoice_items
@@ -105,14 +120,6 @@ BEGIN
       );
     END LOOP;
 
-    IF jsonb_array_length(p_general_costs) > 0 THEN
-      SELECT i.company_id
-      INTO v_company_id
-      FROM invoice_items ii
-      JOIN invoices i ON ii.invoice_id = i.id
-      WHERE ii.id = p_invoice_item_id;
-    END IF;
-
     IF v_company_id IS NOT NULL THEN
       FOR a IN SELECT * FROM jsonb_array_elements(p_general_costs) LOOP
         INSERT INTO general_costs (
@@ -137,4 +144,3 @@ BEGIN
   END IF;
 END;
 $$;
-

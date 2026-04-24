@@ -17,6 +17,7 @@ CREATE OR REPLACE FUNCTION update_application_inventory(
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
     old_item RECORD;
@@ -25,6 +26,28 @@ DECLARE
     v_company_id uuid;
     v_fuel_id uuid;
 BEGIN
+    SELECT f.company_id INTO v_company_id
+    FROM applications a
+    JOIN fields f ON a.field_id = f.id
+    WHERE a.id = p_application_id;
+
+    IF v_company_id IS NULL THEN
+        RAISE EXCEPTION 'Aplicación no encontrada';
+    END IF;
+
+    IF NOT public.is_admin_or_editor(v_company_id) THEN
+        RAISE EXCEPTION 'No autorizado';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM fields f2
+        WHERE f2.id = p_field_id
+        AND f2.company_id <> v_company_id
+    ) THEN
+        RAISE EXCEPTION 'Campo no pertenece a la misma empresa';
+    END IF;
+
     FOR old_item IN SELECT id, product_id, quantity_used FROM application_items WHERE application_id = p_application_id LOOP
         UPDATE products
         SET current_stock = current_stock + old_item.quantity_used
@@ -84,9 +107,6 @@ BEGIN
     END LOOP;
 
     IF p_create_fuel AND p_fuel_liters IS NOT NULL AND p_fuel_cost IS NOT NULL THEN
-        SELECT company_id INTO v_company_id FROM fields WHERE id = p_field_id;
-
-        IF v_company_id IS NOT NULL THEN
             SELECT id INTO v_fuel_id FROM fuel_consumption WHERE application_id = p_application_id LIMIT 1;
 
             IF v_fuel_id IS NOT NULL THEN
@@ -118,10 +138,8 @@ BEGIN
                     p_application_id
                 );
             END IF;
-        END IF;
     ELSE
         DELETE FROM fuel_consumption WHERE application_id = p_application_id;
     END IF;
 END;
 $$;
-

@@ -9,11 +9,27 @@ CREATE OR REPLACE FUNCTION update_invoice_item_with_inventory(
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
   v_old_product_id uuid;
   v_old_quantity numeric;
+  v_company_id uuid;
 BEGIN
+  SELECT i.company_id
+  INTO v_company_id
+  FROM invoice_items ii
+  JOIN invoices i ON ii.invoice_id = i.id
+  WHERE ii.id = p_invoice_item_id;
+
+  IF v_company_id IS NULL THEN
+    RAISE EXCEPTION 'Ítem no encontrado';
+  END IF;
+
+  IF NOT public.is_admin_or_editor(v_company_id) THEN
+    RAISE EXCEPTION 'No autorizado';
+  END IF;
+
   SELECT product_id, quantity INTO v_old_product_id, v_old_quantity
   FROM invoice_items
   WHERE id = p_invoice_item_id;
@@ -34,4 +50,3 @@ BEGIN
   PERFORM update_inventory_with_average_cost(p_product_id, p_quantity, p_unit_price, p_invoice_item_id);
 END;
 $$;
-

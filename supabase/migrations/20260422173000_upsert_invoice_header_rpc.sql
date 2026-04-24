@@ -19,6 +19,7 @@ CREATE OR REPLACE FUNCTION upsert_invoice_header(
 RETURNS uuid
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
   v_invoice_id uuid;
@@ -131,4 +132,3 @@ BEGIN
   RETURN p_invoice_id;
 END;
 $$;
-
