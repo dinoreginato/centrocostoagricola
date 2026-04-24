@@ -8,10 +8,20 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig({
   build: {
     sourcemap: 'hidden',
+    chunkSizeWarningLimit: 650,
     rollupOptions: {
       output: {
         manualChunks: (id) => {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) return 'react';
+          if (id.includes('node_modules/react-router') || id.includes('node_modules/react-router-dom'))
+            return 'react-router';
+          if (id.includes('node_modules/@supabase')) return 'supabase';
+          if (id.includes('node_modules/lucide-react')) return 'icons';
+          if (id.includes('node_modules/sonner')) return 'sonner';
           if (id.includes('node_modules/recharts')) return 'recharts';
+          if (id.includes('node_modules/jspdf') || id.includes('node_modules/jspdf-autotable')) return 'pdf';
+          if (id.includes('node_modules/xlsx')) return 'xlsx';
           return undefined;
         }
       }
