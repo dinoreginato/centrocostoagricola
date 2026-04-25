@@ -236,7 +236,6 @@ export const Invoices: React.FC = () => {
       const currentYear = new Date().getFullYear().toString();
       const finalYears = years.length > 0 ? years : [currentYear];
       
-      console.log('Processed Years:', finalYears); // Debug
       setAvailableYears(finalYears);
 
       // Ensure selected year is valid

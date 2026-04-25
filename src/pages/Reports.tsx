@@ -1,4 +1,4 @@
-
+import { toast } from 'sonner';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
@@ -261,14 +261,14 @@ export const Reports: React.FC = () => {
     setCurrentSlide(0);
     const elem = document.documentElement;
     if (elem.requestFullscreen) {
-      elem.requestFullscreen().catch(err => console.log('Error attempting to enable fullscreen:', err));
+      elem.requestFullscreen().catch(() => toast.error('No se pudo activar pantalla completa.'));
     }
   };
 
   const exitPresentation = () => {
     setPresentationMode(false);
     if (document.fullscreenElement && document.exitFullscreen) {
-      document.exitFullscreen().catch(err => console.log('Error attempting to exit fullscreen:', err));
+      document.exitFullscreen().catch(() => toast.error('No se pudo salir de pantalla completa.'));
     }
   };
 
@@ -321,8 +321,8 @@ export const Reports: React.FC = () => {
         setSelectedSeason(res.availableSeasons[0]);
       }
 
-    } catch (error) {
-      console.error('Error loading raw data:', error);
+    } catch {
+      toast.error('Error al cargar datos de reportes.');
     } finally {
       setLoading(false);
     }

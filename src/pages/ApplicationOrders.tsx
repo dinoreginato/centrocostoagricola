@@ -167,7 +167,6 @@ export const ApplicationOrders: React.FC = () => {
         setWorkers(res.workers || []);
         setProgramEvents(res.programEvents || []);
     } catch (error: any) {
-        console.error('Error loading data:', error);
         toast.error('Error cargando datos: ' + error.message);
     } finally {
         setLoading(false);
@@ -385,7 +384,6 @@ export const ApplicationOrders: React.FC = () => {
           loadData();
 
       } catch (error: any) {
-          console.error('Error saving order:', error);
           toast.error('Error al guardar: ' + error.message);
       } finally {
           setLoading(false);
@@ -430,7 +428,6 @@ export const ApplicationOrders: React.FC = () => {
           
           loadData();
       } catch (error: any) {
-          console.error('Error deleting order:', error);
           toast.error('Error al eliminar: ' + error.message);
       } finally {
           setLoading(false);
@@ -447,7 +444,6 @@ export const ApplicationOrders: React.FC = () => {
           toast.success(`Orden #${order.order_number} revertida a PENDIENTE.`);
           loadData();
       } catch (error: any) {
-          console.error('Error reverting order:', error);
           toast.error('Error al revertir: ' + error.message);
       } finally {
           setLoading(false);
