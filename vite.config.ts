@@ -8,7 +8,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig({
   build: {
     sourcemap: 'hidden',
-    chunkSizeWarningLimit: 650,
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
         manualChunks: (id) => {
@@ -21,7 +21,16 @@ export default defineConfig({
           if (id.includes('node_modules/sonner')) return 'sonner';
           if (id.includes('node_modules/recharts')) return 'recharts';
           if (id.includes('node_modules/jspdf') || id.includes('node_modules/jspdf-autotable')) return 'pdf';
-          if (id.includes('node_modules/exceljs')) return 'excel';
+          if (id.includes('node_modules/jszip')) return 'excel-jszip';
+          if (id.includes('node_modules/pako')) return 'excel-jszip';
+          if (id.includes('node_modules/archiver')) return 'excel-archiver';
+          if (id.includes('node_modules/unzipper')) return 'excel-archiver';
+          if (id.includes('node_modules/fast-csv')) return 'excel-csv';
+          if (id.includes('node_modules/saxes')) return 'excel-xml';
+          if (id.includes('node_modules/tmp')) return 'excel-utils';
+          if (id.includes('node_modules/dayjs')) return 'excel-utils';
+          if (id.includes('node_modules/readable-stream')) return 'excel-stream';
+          if (id.includes('node_modules/exceljs')) return 'exceljs';
           return undefined;
         }
       }
