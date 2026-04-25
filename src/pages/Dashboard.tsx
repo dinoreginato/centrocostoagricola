@@ -231,8 +231,8 @@ export const Dashboard: React.FC = () => {
       const rainData = await fetchRainLogsForYear({ companyId: selectedCompany.id, year });
       setRainLogs(rainData || []);
       toast.success('Lluvia del año actualizada', { id: loadingToast });
-    } catch (e: any) {
-      console.error('Error backfill rain:', e);
+    } catch (_e: any) {
+      toast.error('Error al completar datos de lluvia.');
       toast.error('No se pudo rellenar la lluvia. Intenta nuevamente.', { id: loadingToast });
     } finally {
       setRainSyncing(false);
@@ -341,7 +341,7 @@ export const Dashboard: React.FC = () => {
       const rainData = await fetchRainLogsForYear({ companyId: selectedCompany.id, year: activeYear });
       setRainLogs(rainData || []);
     } catch (_e) {
-      console.error('Error syncing agromet rain:', _e);
+      toast.error('Error al sincronizar lluvia Agromet.');
       toast.error('No se pudo sincronizar lluvia desde Agrometeorología');
     } finally {
       setRainSyncing(false);
@@ -379,14 +379,14 @@ export const Dashboard: React.FC = () => {
     setCurrentSlide(0);
     const elem = document.documentElement;
     if (elem.requestFullscreen) {
-      elem.requestFullscreen().catch(err => console.log('Error attempting to enable fullscreen:', err));
+      elem.requestFullscreen().catch(() => toast.error('No se pudo activar pantalla completa.'));
     }
   };
 
   const exitPresentation = () => {
     setPresentationMode(false);
     if (document.fullscreenElement && document.exitFullscreen) {
-      document.exitFullscreen().catch(err => console.log('Error attempting to exit fullscreen:', err));
+      document.exitFullscreen().catch(() => toast.error('No se pudo salir de pantalla completa.'));
     }
   };
 
@@ -700,8 +700,8 @@ export const Dashboard: React.FC = () => {
           setMachineAlerts(alerts);
       }
 
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
+    } catch {
+      toast.error('Error al cargar datos del dashboard.');
     }
   }, [selectedCompany]);
 
@@ -751,7 +751,6 @@ export const Dashboard: React.FC = () => {
         await refreshCompanies();
         
     } catch (err: any) {
-        console.error('Error deleting company:', err);
         toast.error('Error al eliminar: ' + err.message);
     } finally {
         setIsDeleting(false);
@@ -776,7 +775,6 @@ export const Dashboard: React.FC = () => {
         setShowNewCompanyModal(false);
       }
     } catch (error: any) {
-      console.error('Error creating company:', error);
       toast.error('Error al crear la empresa: ' + (error.message || 'Error desconocido'));
     } finally {
       setIsCreating(false);

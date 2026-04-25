@@ -36,8 +36,8 @@ export const Users: React.FC = () => {
       try {
         const data = await fetchAllCompaniesAdmin();
         setAllCompanies(data);
-      } catch (error) {
-        console.error('Error loading admin companies:', error);
+      } catch (_error) {
+        toast.error('Error al cargar empresas (super admin).');
       } finally {
         setLoadingAllCompanies(false);
       }
@@ -72,8 +72,8 @@ export const Users: React.FC = () => {
     try {
       const data = await fetchCompanyMembers({ companyId: selectedCompany.id });
       setMembers(data || []);
-    } catch (error) {
-      console.error('Error loading members:', error);
+    } catch (_error) {
+      toast.error('Error al cargar miembros.');
     } finally {
       setLoading(false);
     }
@@ -111,7 +111,6 @@ export const Users: React.FC = () => {
       setNewUserEmail('');
       loadMembers();
     } catch (error: any) {
-      console.error('Error adding member:', error);
       setMessage({ type: 'error', text: error.message || 'Error al agregar usuario.' });
     } finally {
       setAdding(false);
@@ -124,8 +123,7 @@ export const Users: React.FC = () => {
     try {
       await removeCompanyMember({ memberId });
       setMembers(members.filter(m => m.member_id !== memberId));
-    } catch (error) {
-      console.error('Error removing member:', error);
+    } catch (_error) {
       toast.error('Error al eliminar usuario.');
     }
   };
