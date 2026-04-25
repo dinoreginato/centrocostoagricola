@@ -21,7 +21,7 @@ import { loadDashboardRaw } from '../services/dashboard';
 import { createCompanyForCurrentUser, deleteCompany } from '../services/companies';
 import { fetchRainLogDates, fetchRainLogKeysForYear, fetchRainLogsForYear, insertRainLogs } from '../services/rainLogs';
 import { markInvoiceAsPaid } from '../services/invoices';
-import { fetchIsSystemAdmin } from '../services/users';
+import { deleteCompanyAdmin, fetchIsSystemAdmin } from '../services/users';
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
   const toRad = (v: number) => (v * Math.PI) / 180;
@@ -741,7 +741,11 @@ export const Dashboard: React.FC = () => {
 
     setIsDeleting(true);
     try {
-        await deleteCompany({ companyId: selectedCompany.id });
+        if (isSystemAdmin && !isOwner) {
+          await deleteCompanyAdmin({ targetCompanyId: selectedCompany.id });
+        } else {
+          await deleteCompany({ companyId: selectedCompany.id });
+        }
         
         toast('Empresa eliminada exitosamente.');
         await refreshCompanies();
