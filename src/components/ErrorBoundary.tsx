@@ -37,7 +37,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
               Ha ocurrido un error inesperado en la aplicación. Nuestro equipo técnico ha sido notificado.
             </p>
-            {this.state.error && (
+            {import.meta.env.DEV && this.state.error && (
               <div className="bg-gray-100 dark:bg-gray-900 rounded p-3 mb-6 overflow-auto text-left">
                 <p className="text-xs text-red-800 font-mono break-all">
                   {this.state.error.toString()}
