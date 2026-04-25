@@ -138,8 +138,8 @@ export const Machinery: React.FC = () => {
             loadHistory(),
             loadMachines()
         ]);
-    } catch (error) {
-        console.error('Error loading data:', error);
+    } catch {
+        toast.error('Error al cargar datos de maquinaria.');
     } finally {
         setLoading(false);
     }
@@ -167,8 +167,8 @@ export const Machinery: React.FC = () => {
     try {
       const pending = await fetchPendingMachineryItems({ companyId: selectedCompany.id });
       setPendingItems(pending as any);
-    } catch (error) {
-      console.error('Error fetching items:', error);
+    } catch {
+      toast.error('Error al cargar ítems de maquinaria.');
       setPendingItems([]);
     }
   };
@@ -178,8 +178,8 @@ export const Machinery: React.FC = () => {
     try {
       const data = await fetchMachineryHistory({ companyId: selectedCompany.id });
       setHistory((data as unknown as HistoryItem[]) || []);
-    } catch (error) {
-      console.error(error);
+    } catch {
+      toast.error('Error al cargar historial de maquinaria.');
       setHistory([]);
     }
   };
@@ -199,8 +199,8 @@ export const Machinery: React.FC = () => {
           }));
 
           setMachineExpenses(mappedExpenses);
-      } catch (error) {
-          console.error("Error loading machine expenses:", error);
+      } catch {
+          toast.error('Error al cargar gastos de la máquina.');
       } finally {
           setLoading(false);
       }
@@ -278,7 +278,6 @@ export const Machinery: React.FC = () => {
           }]);
 
       } catch (error: any) {
-          console.error('Error loading item for clone:', error);
           toast.error('Error al clonar: ' + error.message);
       } finally {
           setLoading(false);
@@ -341,7 +340,6 @@ export const Machinery: React.FC = () => {
           }]);
 
       } catch (error: any) {
-          console.error('Error loading item for edit:', error);
           toast.error('Error al cargar el item para editar: ' + error.message);
       } finally {
           setLoading(false);
@@ -356,7 +354,6 @@ export const Machinery: React.FC = () => {
           await deleteMachineryAssignment({ assignmentId: id });
           loadData();
       } catch (error: any) {
-          console.error('Error deleting:', error);
           toast.error('Error: ' + error.message);
       } finally {
           setLoading(false);
@@ -380,7 +377,6 @@ export const Machinery: React.FC = () => {
           setEditingItem(null);
 
       } catch (error: any) {
-          console.error('Error redistributing:', error);
           toast.error('Error al redistribuir: ' + error.message);
       } finally {
           setLoading(false);
@@ -397,7 +393,6 @@ export const Machinery: React.FC = () => {
         toast('Todas las asignaciones han sido eliminadas.');
         loadData();
     } catch (manualError: any) {
-        console.error('Error deleting all:', manualError);
         toast.error('Error al eliminar: ' + manualError.message);
     } finally {
         setLoading(false);
@@ -429,7 +424,6 @@ export const Machinery: React.FC = () => {
         setEditingMachine(null);
         loadMachines();
     } catch (error: any) {
-        console.error('Error saving machine:', error);
         toast.error('Error: ' + error.message);
     } finally {
         setLoading(false);
@@ -444,7 +438,6 @@ export const Machinery: React.FC = () => {
           await deactivateMachine({ machineId: id });
           loadMachines();
       } catch (error: any) {
-          console.error('Error deleting machine:', error);
           toast.error('Error: ' + error.message);
       } finally {
           setLoading(false);
@@ -627,7 +620,6 @@ export const Machinery: React.FC = () => {
         loadData();
 
     } catch (error: any) {
-        console.error('Error saving:', error);
         toast.error('Error: ' + error.message);
     } finally {
         setLoading(false);
@@ -810,8 +802,7 @@ export const Machinery: React.FC = () => {
         setPdfPreviewTitle('Reporte General de Maquinaria');
         setPdfPreviewOpen(true);
 
-    } catch (error) {
-        console.error('Error generating general report:', error);
+    } catch (_error) {
         toast.error('Error al generar el reporte general.');
     } finally {
         setLoading(false);

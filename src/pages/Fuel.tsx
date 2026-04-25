@@ -93,7 +93,6 @@ export const Fuel: React.FC = () => {
         await refreshCompanies(); // Refresh context to propagate changes
         toast('Tasa de consumo global actualizada correctamente.');
     } catch (error: any) {
-        console.error('Error updating rate:', error);
         toast.error('Error al actualizar: ' + error.message);
     } finally {
         setConfigLoading(false);
@@ -136,8 +135,8 @@ export const Fuel: React.FC = () => {
             loadSectorsAndFields(),
             loadStockAndLogs()
         ]);
-    } catch (error) {
-        console.error('Error loading data:', error);
+    } catch {
+        toast.error('Error al cargar datos de combustible.');
     } finally {
         setLoading(false);
     }
@@ -334,7 +333,6 @@ export const Fuel: React.FC = () => {
         await loadStockAndLogs();
 
     } catch (error: any) {
-        console.error('Error saving log:', error);
         toast.error('Error: ' + error.message);
     } finally {
         setLoading(false);
@@ -377,7 +375,6 @@ export const Fuel: React.FC = () => {
           toast('Registros eliminados exitosamente.');
           await loadStockAndLogs();
       } catch (error: any) {
-          console.error('Error deleting all logs:', error);
           toast.error('Error al eliminar registros: ' + error.message);
       } finally {
           setLoading(false);

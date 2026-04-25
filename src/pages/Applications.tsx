@@ -231,7 +231,6 @@ export const Applications: React.FC = () => {
       setApplications(res.applications || []);
       if (res.avgFuelPrice !== null) setAvgFuelPrice(res.avgFuelPrice);
     } catch (err: any) {
-      console.error('Error loading applications:', err);
       toast.error('Error cargando datos: ' + (err.message || 'Error desconocido'));
     }
   }, [selectedCompany]);
@@ -309,7 +308,6 @@ export const Applications: React.FC = () => {
         toast('Aplicación eliminada y stock restaurado exitosamente.');
         loadData();
     } catch (error: any) {
-        console.error('Error deleting application:', error);
         toast.error('Error al eliminar: ' + error.message);
     }
   };
@@ -626,7 +624,6 @@ export const Applications: React.FC = () => {
         toast('Todas las aplicaciones han sido eliminadas y el stock restaurado.');
         loadData();
     } catch (error: any) {
-        console.error('Error deleting all applications:', error);
         toast.error('Error al eliminar todo: ' + error.message);
     } finally {
         setLoading(false);
@@ -761,7 +758,6 @@ export const Applications: React.FC = () => {
       loadData(); 
 
     } catch (error: any) {
-      console.error('Error saving application:', error);
       toast.error('Error al guardar: ' + error.message);
     } finally {
       setLoading(false);

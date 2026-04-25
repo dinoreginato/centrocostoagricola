@@ -89,8 +89,8 @@ export const Irrigation: React.FC = () => {
             loadPendingItems(),
             loadHistory()
         ]);
-    } catch (error) {
-        console.error('Error loading data:', error);
+    } catch {
+        toast.error('Error al cargar datos de riego.');
     } finally {
         setLoading(false);
     }
@@ -112,8 +112,8 @@ export const Irrigation: React.FC = () => {
     try {
       const pending = await fetchIrrigationPendingItems({ companyId: selectedCompany.id });
       setPendingItems(pending as any);
-    } catch (error) {
-      console.error('Error fetching items:', error);
+    } catch {
+      toast.error('Error al cargar ítems de riego.');
       setPendingItems([]);
     }
   };
@@ -123,8 +123,8 @@ export const Irrigation: React.FC = () => {
     try {
       const data = await fetchIrrigationHistory({ companyId: selectedCompany.id });
       setHistory((data as unknown as HistoryItem[]) || []);
-    } catch (error) {
-      console.error(error);
+    } catch {
+      toast.error('Error al cargar historial de riego.');
       setHistory([]);
     }
   };
@@ -167,7 +167,6 @@ export const Irrigation: React.FC = () => {
           await deleteIrrigationAssignment({ assignmentId: id });
           loadData();
       } catch (error: any) {
-          console.error('Error deleting:', error);
           toast.error('Error: ' + error.message);
       } finally {
           setLoading(false);
@@ -184,7 +183,6 @@ export const Irrigation: React.FC = () => {
         toast('Todas las asignaciones han sido eliminadas.');
         loadData();
     } catch (manualError: any) {
-        console.error('Error deleting all:', manualError);
         toast.error('Error al eliminar: ' + manualError.message);
     } finally {
         setLoading(false);
@@ -346,7 +344,6 @@ export const Irrigation: React.FC = () => {
         loadData();
 
     } catch (error: any) {
-        console.error('Error saving:', error);
         toast.error('Error: ' + error.message);
     } finally {
         setLoading(false);

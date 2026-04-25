@@ -38,8 +38,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = async () => {
     try {
       await authSignOut();
-    } catch (error) {
-      console.error('Error signing out:', error);
+    } catch (_error) {
+      void _error;
     } finally {
       // Force clear state and critical local storage
       setSession(null);

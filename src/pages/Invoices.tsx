@@ -177,7 +177,7 @@ export const Invoices: React.FC = () => {
         setMachines(m);
         setSectors(destinations);
     } catch (err: any) {
-        console.error('Critical error loading destinations:', err);
+        toast.error('Error al cargar destinos: ' + err.message);
     } finally {
         setDestinationsLoading(false);
     }
@@ -273,8 +273,8 @@ export const Invoices: React.FC = () => {
         count: filteredByYear.length,
         topCategories
       });
-    } catch (err) {
-      console.error('Error processing stats:', err);
+    } catch {
+      toast.error('Error al procesar estadísticas.');
     }
   };
 
@@ -646,8 +646,7 @@ export const Invoices: React.FC = () => {
                 // The form is always visible in this layout, so no need for setIsFormOpen
                 toast("Factura cargada exitosamente desde el XML. Revise los ítems y las asignaciones.");
 
-            } catch (error) {
-                console.error("Error parsing XML:", error);
+            } catch {
                 toast("Hubo un error al procesar el archivo XML.");
             } finally {
                 if (xmlInputRef.current) xmlInputRef.current.value = '';
@@ -706,7 +705,6 @@ export const Invoices: React.FC = () => {
         try {
           json = parseFlexibleJSON(jsonContent);
         } catch (e: any) {
-          console.error('JSON Parse Error:', e);
           toast.error(`Error crítico al leer el archivo: ${e.message}\n\nPor favor verifica que sea un archivo de texto con formato JSON válido.`);
           return;
         }
@@ -754,13 +752,10 @@ export const Invoices: React.FC = () => {
 
                if (foundCompany) {
                  targetCompanyId = foundCompany.id;
-               } else {
-                 console.warn(`Company '${invoiceDataMap.companyName}' not found. Using default: ${selectedCompany.name}`);
                }
             }
 
             if (!invoiceDataMap.number || !invoiceDataMap.supplier || !invoiceDataMap.date || !inv.items) {
-              console.warn('Skipping invalid invoice:', inv);
               errorCount++;
               continue;
             }
@@ -787,7 +782,6 @@ export const Invoices: React.FC = () => {
               invoiceId = invoiceData.id;
             } catch (e: any) {
               if (String(e?.message || '').includes('DUPLICATE_INVOICE')) {
-                console.warn(`Skipping duplicate invoice: ${invoiceDataMap.number} - ${invoiceDataMap.supplier}`);
                 continue;
               }
               throw e;
@@ -821,8 +815,7 @@ export const Invoices: React.FC = () => {
               });
             }
             successCount++;
-          } catch (err) {
-            console.error('Error importing invoice:', inv, err);
+          } catch (_err) {
             errorCount++;
           }
         }
@@ -832,8 +825,7 @@ export const Invoices: React.FC = () => {
         loadProducts();
         loadSuppliers();
 
-      } catch (error) {
-        console.error('Error parsing JSON:', error);
+      } catch {
         toast.error('Error al leer el archivo JSON. Asegúrate de que el formato sea correcto.');
       } finally {
         setLoading(false);
@@ -913,7 +905,6 @@ export const Invoices: React.FC = () => {
       loadStats();
       if (editingInvoiceId === id) handleCancelEdit();
     } catch (error: any) {
-      console.error('Error deleting:', error);
       toast.error('Error al eliminar: ' + error.message);
     } finally {
       setLoading(false);
@@ -962,7 +953,6 @@ export const Invoices: React.FC = () => {
       }
 
     } catch (err: any) {
-      console.error('Error cleaning duplicates:', err);
       toast.error('Error: ' + err.message);
     } finally {
       setLoading(false);
@@ -998,7 +988,6 @@ export const Invoices: React.FC = () => {
         }
 
     } catch (error: any) {
-        console.error('Error toggling status:', error);
         toast.error('Error al cambiar estado: ' + error.message);
     }
   };
@@ -1352,7 +1341,6 @@ export const Invoices: React.FC = () => {
       loadSuppliers();
 
     } catch (error: any) {
-      console.error('Error saving invoice:', error);
       toast.error('Error al guardar la factura: ' + error.message);
     } finally {
       setLoading(false);

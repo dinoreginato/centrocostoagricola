@@ -72,7 +72,6 @@ export const PhytosanitaryPrograms: React.FC = () => {
       setInventory(res.inventory || []);
 
     } catch (err: any) {
-      console.error(err);
       toast.error('Error cargando programas: ' + err.message);
     } finally {
       setLoading(false);
@@ -275,8 +274,6 @@ export const PhytosanitaryPrograms: React.FC = () => {
                           dose_unit: String(unidad || 'L/ha')
                         }
                       });
-                  } else {
-                      console.warn(`Producto no encontrado en bodega: ${prodName}`);
                   }
               }
           }
@@ -285,7 +282,6 @@ export const PhytosanitaryPrograms: React.FC = () => {
           loadData();
 
       } catch (err: any) {
-          console.error(err);
           toast.error('Error importando archivo: ' + err.message);
       } finally {
           setLoading(false);

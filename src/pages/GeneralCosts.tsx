@@ -90,8 +90,8 @@ export const GeneralCosts: React.FC = () => {
             loadPendingCosts(),
             loadHistory()
         ]);
-    } catch (error) {
-        console.error('Error loading data:', error);
+    } catch {
+        toast.error('Error al cargar distribución de costos.');
     } finally {
         setLoading(false);
     }
@@ -113,8 +113,8 @@ export const GeneralCosts: React.FC = () => {
     try {
       const pending = await fetchPendingGeneralCosts({ companyId: selectedCompany.id });
       setPendingCosts(pending as any);
-    } catch (error) {
-      console.error('Error fetching items:', error);
+    } catch {
+      toast.error('Error al cargar ítems pendientes.');
       setPendingCosts([]);
     }
   };
@@ -124,8 +124,8 @@ export const GeneralCosts: React.FC = () => {
     try {
       const mapped = await fetchGeneralCostsHistory({ companyId: selectedCompany.id });
       setHistory(mapped as any);
-    } catch (error) {
-      console.error(error);
+    } catch {
+      toast.error('Error al cargar historial.');
       setHistory([]);
     }
   };
@@ -172,7 +172,6 @@ export const GeneralCosts: React.FC = () => {
         toast('Historial eliminado correctamente. Todos los costos volverán a estar pendientes.');
         loadData();
     } catch (error: any) {
-        console.error('Error deleting all history:', error);
         toast.error('Error al eliminar historial: ' + error.message);
     } finally {
         setLoading(false);

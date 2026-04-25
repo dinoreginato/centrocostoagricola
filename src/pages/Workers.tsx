@@ -101,8 +101,8 @@ export const Workers: React.FC = () => {
     setLoading(true);
     try {
       await Promise.all([loadWorkers(), loadSectorsAndFields(), loadCosts()]);
-    } catch (error) {
-      console.error('Error loading data:', error);
+    } catch {
+      toast.error('Error al cargar trabajadores.');
     } finally {
       setLoading(false);
     }
@@ -261,7 +261,6 @@ export const Workers: React.FC = () => {
         toast('Costo registrado exitosamente');
 
     } catch (error: any) {
-        console.error('Error saving cost:', error);
         toast.error('Error: ' + error.message);
     } finally {
         setLoading(false);

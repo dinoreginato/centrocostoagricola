@@ -135,8 +135,8 @@ export const Labors: React.FC = () => {
             loadPendingLabors(),
             loadHistory()
         ]);
-    } catch (error) {
-        console.error('Error loading data:', error);
+    } catch {
+        toast.error('Error al cargar datos de labores.');
     } finally {
         setLoading(false);
     }
@@ -158,8 +158,8 @@ export const Labors: React.FC = () => {
     try {
       const pending = await fetchPendingLaborItems({ companyId: selectedCompany.id });
       setPendingLabors(pending as any);
-    } catch (error) {
-      console.error('Error fetching items:', error);
+    } catch {
+      toast.error('Error al cargar ítems de labores.');
       setPendingLabors([]);
     }
   };
@@ -169,8 +169,8 @@ export const Labors: React.FC = () => {
     try {
       const data = await fetchLaborHistory({ companyId: selectedCompany.id });
       setHistory((data as unknown as HistoryItem[]) || []);
-    } catch (error) {
-      console.error(error);
+    } catch {
+      toast.error('Error al cargar historial de labores.');
       setHistory([]);
     }
   };
@@ -254,7 +254,6 @@ export const Labors: React.FC = () => {
           await deleteLaborAssignment({ assignmentId: id });
           loadData(); // Reload to update lists
       } catch (error: any) {
-          console.error('Error deleting:', error);
           toast.error('Error: ' + error.message);
       } finally {
           setLoading(false);
@@ -272,7 +271,6 @@ export const Labors: React.FC = () => {
           setHistory(prev => prev.map(h => h.id === id ? { ...h, labor_type: newLaborType } : h));
           toast.success('Tipo de labor actualizado', { id: loadingToast });
       } catch (error: any) {
-          console.error('Error updating labor type:', error);
           toast.error('Error: ' + error.message, { id: loadingToast });
           loadData(); // Revert back by loading from server
       }
@@ -288,7 +286,6 @@ export const Labors: React.FC = () => {
         toast('Todas las asignaciones han sido eliminadas.');
         loadData();
     } catch (manualError: any) {
-        console.error('Error deleting all:', manualError);
         toast.error('Error al eliminar: ' + manualError.message);
     } finally {
         setLoading(false);
@@ -419,7 +416,6 @@ export const Labors: React.FC = () => {
         loadData();
 
     } catch (error: any) {
-        console.error('Error saving:', error);
         toast.error('Error: ' + error.message);
     } finally {
         setLoading(false);
@@ -474,7 +470,6 @@ export const Labors: React.FC = () => {
           loadData();
 
       } catch (error: any) {
-          console.error('Error auto-classifying:', error);
           toast.error('Error al clasificar: ' + error.message);
       } finally {
           setLoading(false);

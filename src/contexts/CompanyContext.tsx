@@ -45,8 +45,7 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
       } else {
         setUserRole('viewer'); // Default fallback
       }
-    } catch (error) {
-      console.error('Error fetching role:', error);
+    } catch (_error) {
       setUserRole('viewer');
     }
   }, []);
@@ -74,8 +73,8 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
             orphans.forEach(orphan => {
               orphan.owner_id = user.id;
             });
-          } catch (err) {
-            console.error('Error claiming orphan company:', err);
+          } catch (_err) {
+            void _err;
           }
         }
       }
@@ -100,8 +99,10 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setSelectedCompany(null);
         setUserRole(null);
       }
-    } catch (error) {
-      console.error('Error loading companies:', error);
+    } catch {
+      setCompanies([]);
+      setSelectedCompany(null);
+      setUserRole(null);
     } finally {
       setLoading(false);
     }

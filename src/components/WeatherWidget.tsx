@@ -44,8 +44,8 @@ export const WeatherWidget: React.FC = () => {
           windSpeed: Math.round(current.windSpeedKmh),
           location: 'Rengo, Chile' // Default location based on coordinates
         });
-      } catch (error) {
-        console.error('Error fetching weather:', error);
+      } catch (_error) {
+        void _error;
       } finally {
         setLoading(false);
       }

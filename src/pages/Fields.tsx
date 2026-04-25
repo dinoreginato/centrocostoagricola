@@ -68,8 +68,8 @@ export const Fields: React.FC = () => {
     try {
       const fieldsWithCosts = await fetchFieldsWithLaborCosts({ companyId: selectedCompany.id });
       setFields(fieldsWithCosts || []);
-    } catch (error) {
-      console.error('Error loading fields:', error);
+    } catch {
+      toast.error('Error al cargar campos.');
     } finally {
       setLoading(false);
     }
@@ -104,8 +104,8 @@ export const Fields: React.FC = () => {
       setNewFieldFruit('');
       setNewFieldLatitude('');
       setNewFieldLongitude('');
-    } catch (error) {
-      console.error('Error creating field:', error);
+    } catch {
+      toast.error('Error al crear campo.');
     }
   };
 
@@ -143,8 +143,8 @@ export const Fields: React.FC = () => {
 
       setFields(fields.map(f => f.id === fieldId ? { ...f, ...data, sectors: f.sectors } : f));
       cancelEditingField();
-    } catch (error) {
-      console.error('Error updating field:', error);
+    } catch {
+      toast.error('Error al actualizar campo.');
     }
   };
 
@@ -155,8 +155,7 @@ export const Fields: React.FC = () => {
       await deleteField({ fieldId });
 
       setFields(fields.filter(f => f.id !== fieldId));
-    } catch (error) {
-      console.error('Error deleting field:', error);
+    } catch {
       toast.error('Error al eliminar el campo. Asegúrate de no tener registros asociados importantes.');
     }
   };
@@ -193,8 +192,8 @@ export const Fields: React.FC = () => {
       setNewSectorBudget('');
       setNewSectorLatitude('');
       setNewSectorLongitude('');
-    } catch (error) {
-      console.error('Error creating sector:', error);
+    } catch {
+      toast.error('Error al crear sector.');
     }
   };
 
@@ -240,8 +239,8 @@ export const Fields: React.FC = () => {
         return f;
       }));
       cancelEditingSector();
-    } catch (error) {
-      console.error('Error updating sector:', error);
+    } catch {
+      toast.error('Error al actualizar sector.');
     }
   };
 
@@ -260,8 +259,8 @@ export const Fields: React.FC = () => {
         }
         return f;
       }));
-    } catch (error) {
-      console.error('Error deleting sector:', error);
+    } catch {
+      toast.error('Error al eliminar sector.');
     }
   };
 

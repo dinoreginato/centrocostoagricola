@@ -1,4 +1,4 @@
-
+import { toast } from 'sonner';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
@@ -92,8 +92,8 @@ export const ChemicalCosts: React.FC = () => {
       processedItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setItems(processedItems);
 
-    } catch (error) {
-      console.error('Error loading chemical data:', error);
+    } catch {
+      toast.error('Error al cargar datos de químicos.');
     } finally {
       setLoading(false);
     }

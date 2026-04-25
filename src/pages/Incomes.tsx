@@ -53,7 +53,7 @@ export function Incomes() {
       }
 
     } catch (err: any) {
-      console.error('Error loading data:', err);
+      toast.error('Error al cargar ingresos: ' + err.message);
       setError(err.message);
     } finally {
       setLoading(false);
