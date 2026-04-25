@@ -84,7 +84,7 @@ export const Users: React.FC = () => {
 
     try {
       // 1. Get User ID by Email
-      const userId = await getUserIdByEmail({ email: newUserEmail });
+      const userId = await getUserIdByEmail({ companyId: selectedCompany.id, email: newUserEmail });
       if (!userId) {
         throw new Error('Usuario no encontrado. Asegúrate de que esté registrado en la plataforma.');
       }

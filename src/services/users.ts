@@ -17,8 +17,8 @@ export async function fetchCompanyMembers(params: { companyId: string }) {
   return data || [];
 }
 
-export async function getUserIdByEmail(params: { email: string }) {
-  const { data, error } = await supabase.rpc('get_user_id_by_email', { email_input: params.email });
+export async function getUserIdByEmail(params: { companyId: string; email: string }) {
+  const { data, error } = await supabase.rpc('get_user_id_by_email_for_company', { p_company_id: params.companyId, email_input: params.email });
   if (error) throw error;
   return data as string | null;
 }
