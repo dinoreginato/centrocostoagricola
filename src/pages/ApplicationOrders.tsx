@@ -573,7 +573,6 @@ export const ApplicationOrders: React.FC = () => {
           toast.success('Orden completada exitosamente. Se ha registrado la aplicación y descontado el inventario.');
           loadData();
       } catch (error: any) {
-          console.error('Error completing order:', error);
           toast.error('Error al completar la orden: ' + error.message);
       } finally {
           setLoading(false);
