@@ -207,21 +207,6 @@ export async function updateInvoiceItem(params: { invoiceItemId: string; patch: 
   if (error) throw error;
 }
 
-export async function rpcUpdateInventoryWithAverageCost(params: {
-  productId: string;
-  quantityIn: number;
-  unitCost: number;
-  invoiceItemId: string;
-}) {
-  const { error } = await supabase.rpc('update_inventory_with_average_cost', {
-    product_id: params.productId,
-    quantity_in: params.quantityIn,
-    unit_cost: params.unitCost,
-    invoice_item_id: params.invoiceItemId
-  });
-  if (error) throw error;
-}
-
 export async function rpcUpdateInvoiceItemWithEffects(params: {
   invoiceItemId: string;
   productId: string;
@@ -252,11 +237,6 @@ export async function rpcUpdateInvoiceItemWithEffects(params: {
     p_general_costs: params.generalCosts || [],
     p_fuel_assignments: params.fuelAssignments || []
   });
-  if (error) throw error;
-}
-
-export async function rpcReverseInventoryMovement(params: { payload: ReverseInventoryMovementParams }) {
-  const { error } = await supabase.rpc('reverse_inventory_movement', params.payload);
   if (error) throw error;
 }
 
