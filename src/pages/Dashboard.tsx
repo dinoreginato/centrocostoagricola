@@ -21,6 +21,7 @@ import { loadDashboardRaw } from '../services/dashboard';
 import { createCompanyForCurrentUser, deleteCompany } from '../services/companies';
 import { fetchRainLogDates, fetchRainLogKeysForYear, fetchRainLogsForYear, insertRainLogs } from '../services/rainLogs';
 import { markInvoiceAsPaid } from '../services/invoices';
+import { fetchIsSystemAdmin } from '../services/users';
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
   const toRad = (v: number) => (v * Math.PI) / 180;
@@ -38,6 +39,7 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
 export const Dashboard: React.FC = () => {
   const { companies, selectedCompany, loading, selectCompany, addCompany, refreshCompanies } = useCompany();
   const { user } = useAuth();
+  const [isSystemAdmin, setIsSystemAdmin] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newCompanyRut, setNewCompanyRut] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -709,11 +711,20 @@ export const Dashboard: React.FC = () => {
     }
   }, [selectedCompany, loadDashboardData]);
 
+  useEffect(() => {
+    if (!user) {
+      setIsSystemAdmin(false);
+      return;
+    }
+    fetchIsSystemAdmin()
+      .then((ok) => setIsSystemAdmin(ok))
+      .catch(() => setIsSystemAdmin(false));
+  }, [user]);
+
   const handleDeleteCompany = async () => {
     if (!selectedCompany || !user) return;
     
     const isOwner = selectedCompany.owner_id === user.id;
-    const isSystemAdmin = user.email === 'dino.reginato@gmail.com';
     
     if (!isOwner && !isSystemAdmin) {
         toast('Solo el dueño de la empresa puede eliminarla.');
@@ -886,24 +897,24 @@ export const Dashboard: React.FC = () => {
               <button
                  type="button"
                  onClick={() => {
-                    if (user?.email !== 'dino.reginato@gmail.com') {
+                    if (!isSystemAdmin) {
                         toast('Solo el administrador del sistema puede crear nuevas empresas.');
                         return;
                     }
                     setShowNewCompanyModal(true);
                  }}
                  className={`inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 shadow-sm ${
-                    user?.email === 'dino.reginato@gmail.com' 
+                    isSystemAdmin
                     ? 'text-white bg-green-600 hover:bg-green-700' 
                     : 'text-gray-400 bg-gray-100 cursor-not-allowed'
                  }`}
-                 title={user?.email === 'dino.reginato@gmail.com' ? 'Crear nueva empresa' : 'Solo el administrador puede crear empresas'}
+                 title={isSystemAdmin ? 'Crear nueva empresa' : 'Solo el administrador puede crear empresas'}
               >
                 <Plus className="h-4 w-4 mr-1" />
                 <span className="hidden sm:inline">Nueva Empresa</span>
               </button>
               
-              {selectedCompany && user && (selectedCompany.owner_id === user.id || user.email === 'dino.reginato@gmail.com') && (
+              {selectedCompany && user && (selectedCompany.owner_id === user.id || isSystemAdmin) && (
                 <button
                   onClick={handleDeleteCompany}
                   disabled={isDeleting}

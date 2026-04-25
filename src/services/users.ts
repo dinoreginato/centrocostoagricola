@@ -6,6 +6,12 @@ export async function fetchAllCompaniesAdmin() {
   return data || [];
 }
 
+export async function fetchIsSystemAdmin() {
+  const { data, error } = await supabase.rpc('is_system_admin');
+  if (error) throw error;
+  return Boolean(data);
+}
+
 export async function deleteCompanyAdmin(params: { targetCompanyId: string }) {
   const { error } = await supabase.rpc('delete_company_admin', { target_company_id: params.targetCompanyId });
   if (error) throw error;

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany, UserRole } from '../contexts/CompanyContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Plus, Trash2, Mail, Shield, Loader2 } from 'lucide-react';
-import { addCompanyMember, deleteCompanyAdmin, fetchAllCompaniesAdmin, fetchCompanyMembers, getUserIdByEmail, removeCompanyMember } from '../services/users';
+import { addCompanyMember, deleteCompanyAdmin, fetchAllCompaniesAdmin, fetchCompanyMembers, fetchIsSystemAdmin, getUserIdByEmail, removeCompanyMember } from '../services/users';
 
 interface Member {
   member_id: string;
@@ -20,6 +20,7 @@ export const Users: React.FC = () => {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [isSystemAdmin, setIsSystemAdmin] = useState(false);
   
   // Admin Company Management
   const [allCompanies, setAllCompanies] = useState<any[]>([]);
@@ -39,10 +40,15 @@ export const Users: React.FC = () => {
   }, []);
 
   const checkSystemAdmin = useCallback(async () => {
-    if (user?.email === 'dino.reginato@gmail.com') {
-      await loadAllCompaniesAdmin();
+    if (!user) return;
+    try {
+      const ok = await fetchIsSystemAdmin();
+      setIsSystemAdmin(ok);
+      if (ok) await loadAllCompaniesAdmin();
+    } catch {
+      setIsSystemAdmin(false);
     }
-  }, [loadAllCompaniesAdmin, user?.email]);
+  }, [loadAllCompaniesAdmin, user]);
 
   const handleDeleteCompanyAdmin = async (id: string, name: string) => {
       if (!window.confirm(`PELIGRO: ¿Estás seguro de eliminar la empresa "${name}" y TODOS sus datos? Esta acción es irreversible.`)) return;
@@ -127,7 +133,7 @@ export const Users: React.FC = () => {
     <div className="max-w-4xl mx-auto space-y-6">
       
       {/* SUPER ADMIN PANEL - Only for Dino */}
-      {user?.email === 'dino.reginato@gmail.com' && (
+      {isSystemAdmin && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-6 mb-8">
           <h2 className="text-xl font-bold text-red-800 mb-4 flex items-center">
             <Shield className="h-6 w-6 mr-2" /> Panel de Super Admin (Gestión de Empresas)
