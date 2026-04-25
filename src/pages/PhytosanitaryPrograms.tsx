@@ -2,7 +2,6 @@ import { toast } from 'sonner';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { Plus, Trash2, Edit, ChevronDown, ChevronRight, X, Upload } from 'lucide-react';
-import { read, utils } from 'xlsx';
 import {
   deletePhytosanitaryProgram,
   deleteProgramEvent,
@@ -208,6 +207,7 @@ export const PhytosanitaryPrograms: React.FC = () => {
               return;
           }
           const data = await file.arrayBuffer();
+          const { read, utils } = await import('xlsx');
           const workbook = read(data);
           const worksheet = workbook.Sheets[workbook.SheetNames[0]];
           const rawRows = utils.sheet_to_json(worksheet) as any[];

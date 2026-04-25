@@ -3,7 +3,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Save, Loader2, AlertCircle, Trash2, Edit2, Download } from 'lucide-react';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
-import { utils, writeFile } from 'xlsx';
 import { getSeasonFromDate } from '../lib/seasonUtils';
 import { deleteIncomeEntry, loadIncomesPageData, upsertIncomeEntry } from '../services/incomes';
 
@@ -109,7 +108,8 @@ export function Incomes() {
       }
   };
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
+      const { utils, writeFile } = await import('xlsx');
       const exportData = incomes.map(h => ({
           'Fecha': h.date,
           'Categoría': h.category,

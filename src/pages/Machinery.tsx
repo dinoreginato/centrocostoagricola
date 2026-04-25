@@ -5,7 +5,6 @@ import { formatCLP } from '../lib/utils';
 import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Layers, Settings, X, Printer, FileText, RefreshCw, AlertTriangle, Copy, Download } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { utils, writeFile } from 'xlsx';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
 import { deactivateMachine, deleteAllMachineryAssignments, deleteMachineryAssignment, deleteMachineryAssignmentsByInvoiceItem, fetchActiveMachines, fetchInvoiceItemForMachinery, fetchMachineExpenses, fetchMachineryAssignmentsWithMachine, fetchMachineryHistory, fetchPendingMachineryItems, insertMachineryAssignments, syncMachineryAssignmentsForItem, updateMachineryAssignment, upsertMachine } from '../services/machinery';
@@ -656,7 +655,8 @@ export const Machinery: React.FC = () => {
     );
   }, [machineExpenses]);
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
+      const { utils, writeFile } = await import('xlsx');
       const exportData = filteredHistory.map(h => {
           const invoiceDate = h.invoice_items?.invoices?.invoice_date || '-';
           const documentType = h.invoice_items?.invoices?.document_type || 'Factura';

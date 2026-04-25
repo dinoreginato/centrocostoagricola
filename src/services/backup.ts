@@ -1,4 +1,3 @@
-import { utils, writeFile } from 'xlsx';
 import { supabase } from '../supabase/client';
 
 type CompanyRef = {
@@ -15,6 +14,7 @@ function getErrorMessage(error: unknown) {
 }
 
 export async function downloadCompanyBackup(company: CompanyRef) {
+  const { utils, writeFile } = await import('xlsx');
   const wb = utils.book_new();
 
   const { data: products, error: productsError } = await supabase

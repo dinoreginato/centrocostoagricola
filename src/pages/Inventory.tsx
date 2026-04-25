@@ -3,7 +3,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { Package, Search, AlertTriangle, Edit, Trash2, X, Save, History, ArrowDownLeft, ArrowUpRight, Upload, ShoppingCart } from 'lucide-react';
-import { read, utils } from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { applyManualInventoryMovement, deleteOrArchiveInventoryProduct, fetchInventoryHistory, fetchInventoryProducts, fetchPhytosanitaryPrograms, fetchProgramEventsForProjection, mergeDuplicateInventoryProducts, searchOfficialProducts, updateInventoryProduct, upsertOfficialProducts } from '../services/inventory';
@@ -103,6 +102,7 @@ export const Inventory: React.FC = () => {
     setLoading(true);
     try {
         const buffer = await file.arrayBuffer();
+        const { read, utils } = await import('xlsx');
         const workbook = read(buffer);
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];

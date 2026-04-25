@@ -5,7 +5,6 @@ import { formatCLP } from '../lib/utils';
 import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, FileText, RefreshCw, Copy, Download } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { utils, writeFile } from 'xlsx';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
 import { deleteAllLaborAssignments, deleteLaborAssignment, fetchLaborAssignmentsForAutoClassify, fetchLaborHistory, fetchPendingLaborItems, insertLaborAssignments, updateLaborAssignment, updateLaborType } from '../services/labors';
@@ -585,7 +584,8 @@ export const Labors: React.FC = () => {
       setPdfPreviewOpen(true);
   };
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
+        const { utils, writeFile } = await import('xlsx');
         const exportData = filteredHistory.map(h => {
             const invoiceDate = h.invoice_items?.invoices?.invoice_date || '-';
             const documentType = h.invoice_items?.invoices?.document_type || 'Factura';
