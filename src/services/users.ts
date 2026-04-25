@@ -1,9 +1,16 @@
 import { supabase } from '../supabase/client';
 
-export async function fetchAllCompaniesAdmin() {
+export type AdminCompanyRow = {
+  id: string;
+  name: string;
+  owner_email: string | null;
+  created_at: string;
+};
+
+export async function fetchAllCompaniesAdmin(): Promise<AdminCompanyRow[]> {
   const { data, error } = await supabase.rpc('get_all_companies_admin');
   if (error) throw error;
-  return data || [];
+  return (data || []) as unknown as AdminCompanyRow[];
 }
 
 export async function fetchIsSystemAdmin() {

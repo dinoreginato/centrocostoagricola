@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany, UserRole } from '../contexts/CompanyContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Plus, Trash2, Mail, Shield, Loader2 } from 'lucide-react';
-import { addCompanyMember, deleteCompanyAdmin, fetchAllCompaniesAdmin, fetchCompanyMembers, fetchIsSystemAdmin, getUserIdByEmail, removeCompanyMember } from '../services/users';
+import { addCompanyMember, AdminCompanyRow, deleteCompanyAdmin, fetchAllCompaniesAdmin, fetchCompanyMembers, fetchIsSystemAdmin, getUserIdByEmail, removeCompanyMember } from '../services/users';
 
 interface Member {
   member_id: string;
@@ -23,7 +23,8 @@ export const Users: React.FC = () => {
   const [isSystemAdmin, setIsSystemAdmin] = useState(false);
   
   // Admin Company Management
-  const [allCompanies, setAllCompanies] = useState<any[]>([]);
+  const [allCompanies, setAllCompanies] = useState<AdminCompanyRow[]>([]);
+  const [loadingAllCompanies, setLoadingAllCompanies] = useState(false);
   
   // Form
   const [newUserEmail, setNewUserEmail] = useState('');
@@ -31,11 +32,14 @@ export const Users: React.FC = () => {
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   const loadAllCompaniesAdmin = useCallback(async () => {
+      setLoadingAllCompanies(true);
       try {
         const data = await fetchAllCompaniesAdmin();
         setAllCompanies(data);
       } catch (error) {
         console.error('Error loading admin companies:', error);
+      } finally {
+        setLoadingAllCompanies(false);
       }
   }, []);
 
@@ -156,7 +160,7 @@ export const Users: React.FC = () => {
                 {allCompanies.map((company) => (
                   <tr key={company.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">{company.name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{company.owner_email}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{company.owner_email || '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       {new Date(company.created_at).toLocaleDateString()}
                     </td>
@@ -172,7 +176,9 @@ export const Users: React.FC = () => {
                 ))}
                 {allCompanies.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">Cargando empresas...</td>
+                    <td colSpan={4} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                      {loadingAllCompanies ? 'Cargando empresas...' : 'No hay empresas.'}
+                    </td>
                   </tr>
                 )}
               </tbody>
