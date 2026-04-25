@@ -78,6 +78,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        globIgnores: ['**/assets/exceljs-*.js'],
         maximumFileSizeToCacheInBytes: 5000000, // Increased to 5MB to handle larger chunks like index-xxx.js
         runtimeCaching: [
           {
