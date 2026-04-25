@@ -21,16 +21,19 @@ export default defineConfig({
           if (id.includes('node_modules/sonner')) return 'sonner';
           if (id.includes('node_modules/recharts')) return 'recharts';
           if (id.includes('node_modules/jspdf') || id.includes('node_modules/jspdf-autotable')) return 'pdf';
-          if (id.includes('node_modules/jszip')) return 'excel-jszip';
-          if (id.includes('node_modules/pako')) return 'excel-jszip';
-          if (id.includes('node_modules/archiver')) return 'excel-archiver';
-          if (id.includes('node_modules/unzipper')) return 'excel-archiver';
-          if (id.includes('node_modules/fast-csv')) return 'excel-csv';
-          if (id.includes('node_modules/saxes')) return 'excel-xml';
-          if (id.includes('node_modules/tmp')) return 'excel-utils';
-          if (id.includes('node_modules/dayjs')) return 'excel-utils';
-          if (id.includes('node_modules/readable-stream')) return 'excel-stream';
-          if (id.includes('node_modules/exceljs')) return 'exceljs';
+          if (
+            id.includes('node_modules/exceljs') ||
+            id.includes('node_modules/jszip') ||
+            id.includes('node_modules/pako') ||
+            id.includes('node_modules/archiver') ||
+            id.includes('node_modules/unzipper') ||
+            id.includes('node_modules/fast-csv') ||
+            id.includes('node_modules/saxes') ||
+            id.includes('node_modules/tmp') ||
+            id.includes('node_modules/dayjs') ||
+            id.includes('node_modules/readable-stream')
+          )
+            return 'exceljs';
           return undefined;
         }
       }

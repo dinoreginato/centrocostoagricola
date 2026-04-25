@@ -1,4 +1,7 @@
-import ExcelJS from 'exceljs';
+import ExcelJSImport from 'exceljs/dist/exceljs.bare.min.js';
+import type * as ExcelJSTypes from 'exceljs';
+
+const ExcelJS = ExcelJSImport as unknown as { Workbook: new () => ExcelJSTypes.Workbook };
 
 export async function exportJsonToXlsx(params: { filename: string; sheetName: string; rows: Array<Record<string, unknown>> }) {
   const wb = new ExcelJS.Workbook();
