@@ -13,18 +13,22 @@ function getErrorMessage(error: unknown) {
   return String(error);
 }
 
-export async function downloadCompanyBackup(company: CompanyRef) {
-  const { utils, writeFile } = await import('xlsx');
-  const wb = utils.book_new();
+function coerceRows(rows: unknown[] | null | undefined): Array<Record<string, unknown>> {
+  return (rows ?? []).map((r) => {
+    if (r && typeof r === 'object') return r as Record<string, unknown>;
+    return { value: r } as Record<string, unknown>;
+  });
+}
 
+export async function downloadCompanyBackup(company: CompanyRef) {
+  const { exportWorkbookToXlsx } = await import('../lib/excel');
   const { data: products, error: productsError } = await supabase
     .from('products')
     .select('*')
     .eq('company_id', company.id);
   if (productsError) throw new Error(getErrorMessage(productsError));
-  if (products && products.length > 0) {
-    utils.book_append_sheet(wb, utils.json_to_sheet(products), 'Bodega_Inventario');
-  }
+  const sheets: Array<{ name: string; rows: Array<Record<string, unknown>> }> = [];
+  if (products && products.length > 0) sheets.push({ name: 'Bodega_Inventario', rows: coerceRows(products) });
 
   const { data: fields, error: fieldsError } = await supabase
     .from('fields')
@@ -39,7 +43,7 @@ export async function downloadCompanyBackup(company: CompanyRef) {
         Hectareas: s.hectares
       }))
     );
-    utils.book_append_sheet(wb, utils.json_to_sheet(flatSectors), 'Campos_Sectores');
+    sheets.push({ name: 'Campos_Sectores', rows: coerceRows(flatSectors) });
   }
 
   const { data: invoices, error: invoicesError } = await supabase
@@ -56,7 +60,7 @@ export async function downloadCompanyBackup(company: CompanyRef) {
       Estado: inv.status,
       Items: inv.invoice_items?.length || 0
     }));
-    utils.book_append_sheet(wb, utils.json_to_sheet(flatInvoices), 'Facturas_Resumen');
+    sheets.push({ name: 'Facturas_Resumen', rows: coerceRows(flatInvoices) });
   }
 
   if (fields && fields.length > 0) {
@@ -67,7 +71,7 @@ export async function downloadCompanyBackup(company: CompanyRef) {
       .in('field_id', fieldIds);
     if (appsError) throw new Error(getErrorMessage(appsError));
     if (apps && apps.length > 0) {
-      utils.book_append_sheet(wb, utils.json_to_sheet(apps), 'Aplicaciones');
+      sheets.push({ name: 'Aplicaciones', rows: coerceRows(apps) });
     }
   }
 
@@ -77,7 +81,7 @@ export async function downloadCompanyBackup(company: CompanyRef) {
     .eq('company_id', company.id);
   if (incomesError) throw new Error(getErrorMessage(incomesError));
   if (incomes && incomes.length > 0) {
-    utils.book_append_sheet(wb, utils.json_to_sheet(incomes), 'Liquidaciones');
+    sheets.push({ name: 'Liquidaciones', rows: coerceRows(incomes) });
   }
 
   const { data: machines, error: machinesError } = await supabase
@@ -86,7 +90,7 @@ export async function downloadCompanyBackup(company: CompanyRef) {
     .eq('company_id', company.id);
   if (machinesError) throw new Error(getErrorMessage(machinesError));
   if (machines && machines.length > 0) {
-    utils.book_append_sheet(wb, utils.json_to_sheet(machines), 'Maquinaria');
+    sheets.push({ name: 'Maquinaria', rows: coerceRows(machines) });
   }
 
   const { data: workers, error: workersError } = await supabase
@@ -95,9 +99,12 @@ export async function downloadCompanyBackup(company: CompanyRef) {
     .eq('company_id', company.id);
   if (workersError) throw new Error(getErrorMessage(workersError));
   if (workers && workers.length > 0) {
-    utils.book_append_sheet(wb, utils.json_to_sheet(workers), 'Trabajadores');
+    sheets.push({ name: 'Trabajadores', rows: coerceRows(workers) });
   }
 
   const dateStr = new Date().toISOString().split('T')[0];
-  writeFile(wb, `Respaldo_AgroCostos_${company.name.replace(/\s+/g, '_')}_${dateStr}.xlsx`);
+  await exportWorkbookToXlsx({
+    filename: `Respaldo_AgroCostos_${company.name.replace(/\s+/g, '_')}_${dateStr}.xlsx`,
+    sheets
+  });
 }

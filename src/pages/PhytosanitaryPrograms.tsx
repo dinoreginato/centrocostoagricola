@@ -206,24 +206,12 @@ export const PhytosanitaryPrograms: React.FC = () => {
               toast("Archivo demasiado grande (máx 10MB).");
               return;
           }
-          const data = await file.arrayBuffer();
-          const { read, utils } = await import('xlsx');
-          const workbook = read(data);
-          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-          const rawRows = utils.sheet_to_json(worksheet) as any[];
-          if (rawRows.length > 5000) {
+          const { importXlsxToJson } = await import('../lib/excel');
+          const jsonData = await importXlsxToJson({ file, maxRows: 5000 });
+          if (jsonData.length > 5000) {
               toast("El archivo tiene demasiadas filas (máx 5000).");
               return;
           }
-          const isUnsafeKey = (key: string) => key === '__proto__' || key === 'constructor' || key === 'prototype';
-          const jsonData = rawRows.map((row) => {
-              const safe = Object.create(null) as any;
-              for (const k of Object.keys(row || {})) {
-                  if (isUnsafeKey(k)) continue;
-                  safe[k] = row[k];
-              }
-              return safe;
-          });
 
           if (jsonData.length === 0) {
               toast("El archivo está vacío.");
@@ -315,7 +303,7 @@ export const PhytosanitaryPrograms: React.FC = () => {
         <div className="flex gap-2">
           <input
               type="file"
-              accept=".xlsx,.xls,.csv"
+              accept=".xlsx"
               ref={fileInputRef}
               onChange={handleFileUpload}
               className="hidden"

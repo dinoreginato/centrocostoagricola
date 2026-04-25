@@ -585,7 +585,7 @@ export const Labors: React.FC = () => {
   };
 
   const handleExportExcel = async () => {
-        const { utils, writeFile } = await import('xlsx');
+        const { exportJsonToXlsx } = await import('../lib/excel');
         const exportData = filteredHistory.map(h => {
             const invoiceDate = h.invoice_items?.invoices?.invoice_date || '-';
             const documentType = h.invoice_items?.invoices?.document_type || 'Factura';
@@ -608,11 +608,11 @@ export const Labors: React.FC = () => {
                 'Monto Asignado': h.assigned_amount
             };
         });
-
-        const ws = utils.json_to_sheet(exportData);
-        const wb = utils.book_new();
-        utils.book_append_sheet(wb, ws, "Labores");
-        writeFile(wb, `Historial_Labores_${new Date().toLocaleDateString('en-CA')}.xlsx`);
+        await exportJsonToXlsx({
+            filename: `Historial_Labores_${new Date().toLocaleDateString('en-CA')}.xlsx`,
+            sheetName: 'Labores',
+            rows: exportData as any
+        });
     };
 
     return (

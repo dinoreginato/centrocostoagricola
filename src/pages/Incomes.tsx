@@ -109,7 +109,7 @@ export function Incomes() {
   };
 
   const handleExportExcel = async () => {
-      const { utils, writeFile } = await import('xlsx');
+      const { exportJsonToXlsx } = await import('../lib/excel');
       const exportData = incomes.map(h => ({
           'Fecha': h.date,
           'Categoría': h.category,
@@ -121,11 +121,11 @@ export function Incomes() {
           'Total (USD)': h.amount_usd || 0,
           'Total (CLP)': h.amount
       }));
-
-      const ws = utils.json_to_sheet(exportData);
-      const wb = utils.book_new();
-      utils.book_append_sheet(wb, ws, "Liquidaciones");
-      writeFile(wb, `Liquidaciones_${new Date().toLocaleDateString('en-CA')}.xlsx`);
+      await exportJsonToXlsx({
+          filename: `Liquidaciones_${new Date().toLocaleDateString('en-CA')}.xlsx`,
+          sheetName: 'Liquidaciones',
+          rows: exportData as any
+      });
   };
 
   if (loading && incomes.length === 0) {

@@ -21,7 +21,7 @@ export default defineConfig({
           if (id.includes('node_modules/sonner')) return 'sonner';
           if (id.includes('node_modules/recharts')) return 'recharts';
           if (id.includes('node_modules/jspdf') || id.includes('node_modules/jspdf-autotable')) return 'pdf';
-          if (id.includes('node_modules/xlsx')) return 'xlsx';
+          if (id.includes('node_modules/exceljs')) return 'excel';
           return undefined;
         }
       }
