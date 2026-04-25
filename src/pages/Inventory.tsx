@@ -7,6 +7,8 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { applyManualInventoryMovement, deleteOrArchiveInventoryProduct, fetchInventoryHistory, fetchInventoryProducts, fetchPhytosanitaryPrograms, fetchProgramEventsForProjection, mergeDuplicateInventoryProducts, searchOfficialProducts, updateInventoryProduct, upsertOfficialProducts } from '../services/inventory';
 
+import { fetchIsSystemAdmin } from '../services/users';
+
 interface Product {
   id: string;
   name: string;
@@ -49,6 +51,7 @@ export const Inventory: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isSystemAdmin, setIsSystemAdmin] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
@@ -70,6 +73,12 @@ export const Inventory: React.FC = () => {
   // SAG Import
   const sagFileInputRef = React.useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    fetchIsSystemAdmin()
+      .then((ok) => setIsSystemAdmin(ok))
+      .catch(() => setIsSystemAdmin(false));
+  }, []);
+
   const handleMergeDuplicates = async () => {
     if (!window.confirm('¿Desea buscar y fusionar productos duplicados? (Se unificará el stock bajo el producto más reciente y se borrarán los repetidos)')) return;
     setLoading(true);
@@ -83,7 +92,6 @@ export const Inventory: React.FC = () => {
         toast('No se encontraron productos duplicados.');
       }
     } catch (err: any) {
-      console.error(err);
       toast.error('Error al fusionar: ' + err.message);
     } finally {
       setLoading(false);
@@ -93,6 +101,12 @@ export const Inventory: React.FC = () => {
   const handleImportSAG = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (!isSystemAdmin) {
+      toast.error('Solo el administrador del sistema puede importar el listado SAG.');
+      if (sagFileInputRef.current) sagFileInputRef.current.value = '';
+      return;
+    }
 
     if (file.size > 10 * 1024 * 1024) {
       toast('Archivo demasiado grande (máx 10MB).');
@@ -117,9 +131,7 @@ export const Inventory: React.FC = () => {
             return newRow;
         });
 
-        // Debug: Show found columns in alert if mapping fails
         const firstRowKeys = Object.keys(normalizedData[0] || {});
-        console.log('Columnas encontradas:', firstRowKeys);
 
         const mappedData = normalizedData.map(row => {
             const commercialName = row['nombre comercial'] || row['nombre'] || row['producto'] || row['plaguicida'] || '';
@@ -159,7 +171,6 @@ export const Inventory: React.FC = () => {
                 await upsertOfficialProducts({ rows: chunk });
                 insertedCount += chunk.length;
             } catch (error: any) {
-                console.error('Error importing chunk:', error);
                 lastError = error.message;
             }
         }
@@ -171,7 +182,6 @@ export const Inventory: React.FC = () => {
         }
 
     } catch (error: any) {
-        console.error('Error importing SAG file:', error);
         toast.error('Error al importar: ' + error.message);
     } finally {
         setLoading(false);
@@ -193,8 +203,8 @@ export const Inventory: React.FC = () => {
       } else {
         setAvailableCategories([]);
       }
-    } catch (error) {
-      console.error('Error loading inventory:', error);
+    } catch (_error) {
+      toast.error('Error al cargar bodega.');
     } finally {
       setLoading(false);
     }
@@ -212,8 +222,7 @@ export const Inventory: React.FC = () => {
     try {
         const data = await fetchInventoryHistory({ productId: product.id });
         setHistoryData(data as any);
-    } catch (error) {
-        console.error('Error loading history:', error);
+    } catch (_error) {
         toast.error('Error al cargar historial');
     } finally {
         setLoadingHistory(false);
@@ -237,7 +246,6 @@ export const Inventory: React.FC = () => {
       toast('Producto eliminado correctamente');
 
     } catch (error: any) {
-      console.error('Error checking/deleting product:', error);
       toast.error('Error: ' + error.message);
     }
   };
@@ -275,8 +283,7 @@ export const Inventory: React.FC = () => {
       try {
         const data = await searchOfficialProducts({ query, limit: 5 });
         setEditSuggestions(data || []);
-      } catch (error) {
-        console.error(error);
+      } catch {
         setEditSuggestions([]);
       }
   };
@@ -318,7 +325,6 @@ export const Inventory: React.FC = () => {
       cancelEdit();
       toast('Producto actualizado');
     } catch (error: any) {
-      console.error('Error updating product:', error);
       toast.error('Error al actualizar: ' + error.message);
     }
   };
@@ -363,7 +369,6 @@ export const Inventory: React.FC = () => {
       setAdjustNotes('');
       toast('Ajuste aplicado');
     } catch (error: any) {
-      console.error('Error applying adjustment:', error);
       toast.error('Error al ajustar: ' + error.message);
     } finally {
       setLoading(false);
@@ -473,8 +478,7 @@ export const Inventory: React.FC = () => {
         });
 
         doc.save(`Lista_Compras_${companyName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
-    } catch(err) {
-        console.error(err);
+    } catch(_err) {
         toast.error('Error al generar la lista de compras.');
     }
   };
@@ -525,8 +529,11 @@ export const Inventory: React.FC = () => {
           />
           <button
               onClick={() => sagFileInputRef.current?.click()}
-              className="text-sm font-medium text-green-700 hover:text-green-800 flex items-center"
-              title="Importar Listado Oficial SAG (Excel)"
+              disabled={!isSystemAdmin}
+              className={`text-sm font-medium flex items-center ${
+                isSystemAdmin ? 'text-green-700 hover:text-green-800' : 'text-gray-400 cursor-not-allowed'
+              }`}
+              title={isSystemAdmin ? 'Importar Listado Oficial SAG (Excel)' : 'Solo el administrador del sistema puede importar SAG'}
           >
               <Upload className="h-4 w-4 mr-1" />
               Importar SAG
