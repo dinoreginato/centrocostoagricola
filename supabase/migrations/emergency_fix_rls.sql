@@ -7,11 +7,22 @@ DROP POLICY IF EXISTS "Users can view production records for their company" ON p
 DROP POLICY IF EXISTS "Users can insert production records for their company" ON production_records;
 DROP POLICY IF EXISTS "Users can update production records for their company" ON production_records;
 DROP POLICY IF EXISTS "Users can delete production records for their company" ON production_records;
+DROP POLICY IF EXISTS "policy_read_production_records" ON production_records;
+DROP POLICY IF EXISTS "policy_write_production_records" ON production_records;
+DROP POLICY IF EXISTS "production_records_open_access" ON production_records;
 
--- Allow Authenticated users to do everything on this table for now
--- This unblocks the user immediately. We can refine later if needed, but given the tight deadline and persistent RLS errors, this is the pragmatic fix.
-CREATE POLICY "production_records_open_access" ON production_records
-  FOR ALL
-  TO authenticated
-  USING (true)
-  WITH CHECK (true);
+ALTER TABLE production_records ADD COLUMN IF NOT EXISTS company_id uuid REFERENCES companies(id);
+
+UPDATE production_records pr
+SET company_id = f.company_id
+FROM sectors s
+JOIN fields f ON s.field_id = f.id
+WHERE pr.sector_id = s.id
+AND pr.company_id IS NULL;
+
+CREATE POLICY "policy_read_production_records" ON production_records FOR SELECT
+USING (public.is_company_member(company_id));
+
+CREATE POLICY "policy_write_production_records" ON production_records FOR ALL
+USING (public.is_admin_or_editor(company_id))
+WITH CHECK (public.is_admin_or_editor(company_id));

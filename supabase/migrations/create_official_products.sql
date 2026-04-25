@@ -29,13 +29,16 @@ CREATE POLICY "Allow read access to all authenticated users"
 ON public.official_products FOR SELECT TO authenticated USING (true);
 
 DROP POLICY IF EXISTS "Allow insert access to all authenticated users" ON public.official_products;
-CREATE POLICY "Allow insert access to all authenticated users"
-ON public.official_products FOR INSERT TO authenticated WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow system admin insert" ON public.official_products;
+CREATE POLICY "Allow system admin insert"
+ON public.official_products FOR INSERT TO authenticated WITH CHECK (public.is_system_admin());
 
 DROP POLICY IF EXISTS "Allow update access to all authenticated users" ON public.official_products;
-CREATE POLICY "Allow update access to all authenticated users"
-ON public.official_products FOR UPDATE TO authenticated USING (true);
+DROP POLICY IF EXISTS "Allow system admin update" ON public.official_products;
+CREATE POLICY "Allow system admin update"
+ON public.official_products FOR UPDATE TO authenticated USING (public.is_system_admin()) WITH CHECK (public.is_system_admin());
 
 DROP POLICY IF EXISTS "Allow delete access to all authenticated users" ON public.official_products;
-CREATE POLICY "Allow delete access to all authenticated users"
-ON public.official_products FOR DELETE TO authenticated USING (true);
+DROP POLICY IF EXISTS "Allow system admin delete" ON public.official_products;
+CREATE POLICY "Allow system admin delete"
+ON public.official_products FOR DELETE TO authenticated USING (public.is_system_admin());
