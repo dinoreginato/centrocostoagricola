@@ -5,8 +5,9 @@ export async function exportJsonToXlsx(params: { filename: string; sheetName: st
   const ws = wb.addWorksheet(params.sheetName);
 
   const rows = params.rows || [];
-  const first = rows[0] || {};
-  const keys = Object.keys(first);
+  const keySet = new Set<string>();
+  rows.forEach((r) => Object.keys(r || {}).forEach((k) => keySet.add(k)));
+  const keys = Array.from(keySet);
 
   ws.columns = keys.map((k) => ({
     header: k,
@@ -14,10 +15,7 @@ export async function exportJsonToXlsx(params: { filename: string; sheetName: st
     width: Math.min(Math.max(k.length + 2, 12), 40)
   }));
 
-  rows.forEach((r) => {
-    const obj = r || {};
-    ws.addRow(keys.map((k) => obj[k] ?? ''));
-  });
+  rows.forEach((r) => ws.addRow(r || {}));
 
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -38,8 +36,9 @@ export async function exportWorkbookToXlsx(params: {
   params.sheets.forEach((s) => {
     const ws = wb.addWorksheet(s.name);
     const rows = s.rows || [];
-    const first = rows[0] || {};
-    const keys = Object.keys(first);
+    const keySet = new Set<string>();
+    rows.forEach((r) => Object.keys(r || {}).forEach((k) => keySet.add(k)));
+    const keys = Array.from(keySet);
 
     ws.columns = keys.map((k) => ({
       header: k,
@@ -47,10 +46,7 @@ export async function exportWorkbookToXlsx(params: {
       width: Math.min(Math.max(k.length + 2, 12), 40)
     }));
 
-    rows.forEach((r) => {
-      const obj = r || {};
-      ws.addRow(keys.map((k) => obj[k] ?? ''));
-    });
+    rows.forEach((r) => ws.addRow(r || {}));
   });
 
   const buffer = await wb.xlsx.writeBuffer();
