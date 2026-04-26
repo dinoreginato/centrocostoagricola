@@ -1,2 +1,2 @@
 -- Grant permissions for machines table
-GRANT ALL ON machines TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON machines TO authenticated;

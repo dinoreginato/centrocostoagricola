@@ -104,6 +104,6 @@ WITH CHECK (
 );
 
 -- Grant permissions
-GRANT ALL ON public.fuel_assignments TO authenticated;
-GRANT ALL ON public.machinery_assignments TO authenticated;
-GRANT ALL ON public.irrigation_assignments TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.fuel_assignments TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.machinery_assignments TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.irrigation_assignments TO authenticated;
