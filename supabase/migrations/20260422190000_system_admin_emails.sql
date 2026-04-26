@@ -32,3 +32,5 @@ BEGIN
 END;
 $$;
 
+REVOKE ALL ON FUNCTION public.is_system_admin() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_system_admin() TO authenticated;

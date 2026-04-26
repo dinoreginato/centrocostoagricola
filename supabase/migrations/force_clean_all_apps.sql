@@ -1,15 +1,19 @@
 -- Function to delete ABSOLUTELY ALL applications and restore stock
 -- Use with caution!
 
-CREATE OR REPLACE FUNCTION force_clean_all_applications()
+CREATE OR REPLACE FUNCTION public.force_clean_all_applications()
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
     app_record RECORD;
     item_record RECORD;
 BEGIN
+    IF NOT public.is_system_admin() THEN
+        RAISE EXCEPTION 'Access denied';
+    END IF;
     -- 1. Loop through ALL applications
     FOR app_record IN SELECT id FROM applications LOOP
         
@@ -32,3 +36,6 @@ BEGIN
 
 END;
 $$;
+
+REVOKE ALL ON FUNCTION public.force_clean_all_applications() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.force_clean_all_applications() TO authenticated;

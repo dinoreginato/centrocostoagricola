@@ -7,6 +7,9 @@ DROP POLICY IF EXISTS "Allow read access to all authenticated users" ON public.o
 DROP POLICY IF EXISTS "Allow insert access to all authenticated users" ON public.official_products;
 DROP POLICY IF EXISTS "Allow update access to all authenticated users" ON public.official_products;
 DROP POLICY IF EXISTS "Allow delete access to all authenticated users" ON public.official_products;
+DROP POLICY IF EXISTS "Allow system admin insert" ON public.official_products;
+DROP POLICY IF EXISTS "Allow system admin update" ON public.official_products;
+DROP POLICY IF EXISTS "Allow system admin delete" ON public.official_products;
 
 CREATE POLICY "Allow read access to all authenticated users"
 ON public.official_products FOR SELECT
@@ -28,4 +31,3 @@ CREATE POLICY "Allow system admin delete"
 ON public.official_products FOR DELETE
 TO authenticated
 USING (public.is_system_admin());
-

@@ -3,15 +3,19 @@
 -- But here we assume we want to delete all visible applications for simplicity or filtered by company logic if needed.
 -- For now, let's make it accept a company_id to be safe.
 
-CREATE OR REPLACE FUNCTION delete_all_applications_restore_stock(target_company_id uuid)
+CREATE OR REPLACE FUNCTION public.delete_all_applications_restore_stock(target_company_id uuid)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
     app_record RECORD;
     item_record RECORD;
 BEGIN
+    IF NOT public.is_admin_or_editor(target_company_id) THEN
+        RAISE EXCEPTION 'No autorizado';
+    END IF;
     -- 1. Loop through all applications for the target company (via fields)
     FOR app_record IN 
         SELECT a.id 
@@ -48,3 +52,6 @@ BEGIN
 
 END;
 $$;
+
+REVOKE ALL ON FUNCTION public.delete_all_applications_restore_stock(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.delete_all_applications_restore_stock(uuid) TO authenticated;
