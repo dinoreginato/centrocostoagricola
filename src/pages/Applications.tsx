@@ -1,5 +1,6 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { Plus, Loader2, Save, Trash2, Calendar, Droplets, MapPin, RefreshCw, Edit, Filter, Download, Eye, FileText } from 'lucide-react';
@@ -112,11 +113,9 @@ const getConversionFactor = (fromUnit: string, toUnit: string): number => {
 
 export const Applications: React.FC = () => {
   const { selectedCompany, userRole } = useCompany();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
-  const [fields, setFields] = useState<Field[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [applications, setApplications] = useState<ApplicationHistory[]>([]);
-  const [avgFuelPrice, setAvgFuelPrice] = useState<number>(0);
+  const companyId = selectedCompany?.id ?? null;
   
   // PDF Preview State
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
@@ -131,9 +130,11 @@ export const Applications: React.FC = () => {
   const [applicationType, setApplicationType] = useState('fertilizacion');
   const [waterVolumePerHectare, setWaterVolumePerHectare] = useState<number>(0); 
   const [items, setItems] = useState<ApplicationItem[]>([]);
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
 
   // Filter State
   const [filterSectorId, setFilterSectorId] = useState<string>('all');
+  const [selectedApplicationIds, setSelectedApplicationIds] = useState<string[]>([]);
 
 
   // Item Form State
@@ -152,6 +153,21 @@ export const Applications: React.FC = () => {
     dose_unit: '',
     objective: ''
   });
+
+  const pageQuery = useQuery({
+    queryKey: ['applicationsPage', companyId],
+    queryFn: async () => {
+      if (!companyId) return null;
+      return await loadApplicationsPageData({ companyId, agrochemicalCategories: AGROCHEMICAL_CATEGORIES });
+    },
+    enabled: Boolean(companyId),
+    staleTime: 30_000,
+  });
+
+  const fields = useMemo(() => (pageQuery.data?.fields || []) as Field[], [pageQuery.data?.fields]);
+  const products = useMemo(() => (pageQuery.data?.products || []) as Product[], [pageQuery.data?.products]);
+  const applications = useMemo(() => (pageQuery.data?.applications || []) as ApplicationHistory[], [pageQuery.data?.applications]);
+  const avgFuelPrice = useMemo(() => Number(pageQuery.data?.avgFuelPrice || 0), [pageQuery.data?.avgFuelPrice]);
 
   // Update dose unit and suggest objective when product changes
   useEffect(() => {
@@ -222,24 +238,42 @@ export const Applications: React.FC = () => {
     products
   ]);
 
-  const loadData = useCallback(async () => {
-    if (!selectedCompany) return;
-    try {
-      const res = await loadApplicationsPageData({ companyId: selectedCompany.id, agrochemicalCategories: AGROCHEMICAL_CATEGORIES });
-      setFields(res.fields || []);
-      setProducts(res.products || []);
-      setApplications(res.applications || []);
-      if (res.avgFuelPrice !== null) setAvgFuelPrice(res.avgFuelPrice);
-    } catch (err: any) {
-      toast.error('Error cargando datos: ' + (err.message || 'Error desconocido'));
-    }
-  }, [selectedCompany]);
+  const reloadData = async () => {
+    if (!companyId) return;
+    await queryClient.invalidateQueries({ queryKey: ['applicationsPage', companyId] });
+  };
 
   useEffect(() => {
-    if (selectedCompany) {
-      void loadData();
+    if (!companyId) return;
+    const key = `applicationsFilters:${companyId}`;
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { filterSectorId?: string };
+      setFilterSectorId(parsed.filterSectorId ?? 'all');
+    } catch (_e) {
+      void _e;
     }
-  }, [selectedCompany, loadData]);
+  }, [companyId]);
+
+  useEffect(() => {
+    if (!companyId) return;
+    const key = `applicationsFilters:${companyId}`;
+    try {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          filterSectorId,
+        }),
+      );
+    } catch (_e) {
+      void _e;
+    }
+  }, [companyId, filterSectorId]);
+
+  useEffect(() => {
+    setSelectedApplicationIds([]);
+  }, [companyId, filterSectorId]);
 
   const handleAddItem = () => {
     const product = products.find(p => p.id === currentItem.product_id);
@@ -300,16 +334,51 @@ export const Applications: React.FC = () => {
     removeItem(index);
   };
 
+  const deleteApplicationMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await deleteApplicationAndRestoreStock({ applicationId: id });
+    },
+    onSuccess: async () => {
+      toast('Aplicación eliminada y stock restaurado exitosamente.');
+      await reloadData();
+    },
+    onError: (error: any) => {
+      toast.error('Error al eliminar: ' + (error?.message || 'Error desconocido'));
+    },
+  });
+
+  const deleteAllApplicationsMutation = useMutation({
+    mutationFn: async () => {
+      if (!companyId) return;
+      await deleteAllApplicationsRestoreStock({ companyId });
+    },
+    onSuccess: async () => {
+      toast('Todas las aplicaciones han sido eliminadas y el stock restaurado.');
+      setSelectedApplicationIds([]);
+      await reloadData();
+    },
+    onError: (error: any) => {
+      toast.error('Error al eliminar todo: ' + (error?.message || 'Error desconocido'));
+    },
+  });
+
+  const bulkDeleteApplicationsMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await Promise.all(ids.map((id) => deleteApplicationAndRestoreStock({ applicationId: id })));
+    },
+    onSuccess: async () => {
+      toast('Aplicaciones eliminadas y stock restaurado.');
+      setSelectedApplicationIds([]);
+      await reloadData();
+    },
+    onError: (error: any) => {
+      toast.error('Error al eliminar: ' + (error?.message || 'Error desconocido'));
+    },
+  });
+
   const handleDeleteApplication = async (id: string) => {
     if (!window.confirm('¿Estás seguro de eliminar esta aplicación?\n\n¡Cuidado! El stock descontado será RESTAURADO a la bodega.')) return;
-    
-    try {
-        await deleteApplicationAndRestoreStock({ applicationId: id });
-        toast('Aplicación eliminada y stock restaurado exitosamente.');
-        loadData();
-    } catch (error: any) {
-        toast.error('Error al eliminar: ' + error.message);
-    }
+    deleteApplicationMutation.mutate(id);
   };
 
   const handleDownloadPDF = (action: 'save' | 'preview' = 'save') => {
@@ -620,9 +689,7 @@ export const Applications: React.FC = () => {
     
     setLoading(true);
     try {
-        await deleteAllApplicationsRestoreStock({ companyId: selectedCompany.id });
-        toast('Todas las aplicaciones han sido eliminadas y el stock restaurado.');
-        loadData();
+        await deleteAllApplicationsMutation.mutateAsync();
     } catch (error: any) {
         toast.error('Error al eliminar todo: ' + error.message);
     } finally {
@@ -664,6 +731,7 @@ export const Applications: React.FC = () => {
     });
     
     setItems(mappedItems);
+    setWizardStep(2);
     
     // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -677,6 +745,8 @@ export const Applications: React.FC = () => {
     setApplicationType('fertilizacion');
     setWaterVolumePerHectare(0);
     setItems([]);
+    setCurrentItem({ product_id: '', quantity: 0, dose_input_value: 0, dose_input_type: 'ha', dose_unit: '', objective: '' });
+    setWizardStep(1);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -691,7 +761,7 @@ export const Applications: React.FC = () => {
         // UPDATE MODE
         const sector = fields.find(f => f.id === selectedFieldId)?.sectors.find(s => s.id === selectedSectorId);
         
-        const shouldCreateFuel = Boolean(sector && sector.hectares > 0 && avgFuelPrice !== null);
+        const shouldCreateFuel = Boolean(sector && sector.hectares > 0 && avgFuelPrice > 0);
         const rate = selectedCompany.application_fuel_rate || 12;
         const fuelLiters = shouldCreateFuel ? Math.max(rate * sector!.hectares, 0.01) : null;
         const fuelCost = shouldCreateFuel ? Number(fuelLiters) * avgFuelPrice : null;
@@ -725,7 +795,7 @@ export const Applications: React.FC = () => {
         // CREATE MODE
         const sector = fields.find(f => f.id === selectedFieldId)?.sectors.find(s => s.id === selectedSectorId);
 
-        const shouldCreateFuel = Boolean(sector && sector.hectares > 0 && avgFuelPrice !== null);
+        const shouldCreateFuel = Boolean(sector && sector.hectares > 0 && avgFuelPrice > 0);
         const rate = selectedCompany.application_fuel_rate || 12;
         const fuelLiters = shouldCreateFuel ? Math.max(rate * sector!.hectares, 0.01) : null;
         const fuelCost = shouldCreateFuel ? Number(fuelLiters) * avgFuelPrice : null;
@@ -755,7 +825,7 @@ export const Applications: React.FC = () => {
         handleCancelEdit(); // Reset form
       }
 
-      loadData(); 
+      await reloadData();
 
     } catch (error: any) {
       toast.error('Error al guardar: ' + error.message);
@@ -776,7 +846,7 @@ export const Applications: React.FC = () => {
   };
 
   // Calculate stats by objective
-  const objectiveStats = React.useMemo(() => {
+  const objectiveStats = useMemo(() => {
     const stats: Record<string, number> = {};
     applications.forEach(app => {
       if (filterSectorId === 'all' || app.sector_id === filterSectorId) {
@@ -793,7 +863,7 @@ export const Applications: React.FC = () => {
   }, [applications, filterSectorId]);
 
   // Derive unique objectives for autocomplete
-  const uniqueObjectives = React.useMemo(() => {
+  const uniqueObjectives = useMemo(() => {
     const objectives = new Set<string>();
     applications.forEach(app => {
         app.items.forEach(item => {
@@ -806,6 +876,7 @@ export const Applications: React.FC = () => {
   }, [applications]);
 
   if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
+  if (pageQuery.isLoading) return <div className="p-8">Cargando...</div>;
 
   return (
     <div className="space-y-6">
@@ -813,11 +884,12 @@ export const Applications: React.FC = () => {
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Libro de Aplicaciones</h1>
         <div className="flex space-x-2">
             <button
-                onClick={loadData}
+                onClick={reloadData}
+                disabled={pageQuery.isFetching}
                 className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
                 title="Recargar datos"
             >
-                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`h-4 w-4 ${pageQuery.isFetching ? 'animate-spin' : ''}`} />
             </button>
             <button
                 onClick={handleDeleteAllApplications}
@@ -844,7 +916,38 @@ export const Applications: React.FC = () => {
             )}
         </div>
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Application Header */}
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-gray-600 dark:text-gray-300">
+              Paso {wizardStep} de 3
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setWizardStep(1)}
+                className={`px-3 py-1.5 rounded text-xs border ${wizardStep === 1 ? 'bg-green-600 text-white border-green-600' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600'}`}
+              >
+                Datos
+              </button>
+              <button
+                type="button"
+                onClick={() => setWizardStep(2)}
+                className={`px-3 py-1.5 rounded text-xs border ${wizardStep === 2 ? 'bg-green-600 text-white border-green-600' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600'}`}
+                disabled={!selectedFieldId || !selectedSectorId}
+              >
+                Productos
+              </button>
+              <button
+                type="button"
+                onClick={() => setWizardStep(3)}
+                className={`px-3 py-1.5 rounded text-xs border ${wizardStep === 3 ? 'bg-green-600 text-white border-green-600' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600'}`}
+                disabled={items.length === 0 || !selectedFieldId || !selectedSectorId}
+              >
+                Revisar
+              </button>
+            </div>
+          </div>
+
+          {wizardStep === 1 && (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Campo</label>
@@ -928,7 +1031,9 @@ export const Applications: React.FC = () => {
               )}
             </div>
           </div>
+          )}
 
+          {wizardStep === 2 && (
           <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
             <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-4">Productos a Aplicar</h3>
             
@@ -1108,34 +1213,117 @@ export const Applications: React.FC = () => {
               )}
             </div>
           </div>
+          )}
 
-          <div className="flex justify-end pt-4">
-            {editingId && (
-                <button
-                    type="button"
-                    onClick={handleCancelEdit}
-                    className="mr-3 inline-flex justify-center py-2 px-4 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 focus:outline-none"
-                >
-                    Cancelar
-                </button>
-            )}
+          {wizardStep === 3 && (
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-6 space-y-4">
+              <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">Revisión</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+                <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded">
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Campo</div>
+                  <div className="font-medium text-gray-900 dark:text-gray-100">{selectedField?.name || '-'}</div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded">
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Sector</div>
+                  <div className="font-medium text-gray-900 dark:text-gray-100">{selectedSector?.name || '-'}</div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded">
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Fecha</div>
+                  <div className="font-medium text-gray-900 dark:text-gray-100">{applicationDate}</div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded">
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Mojamiento</div>
+                  <div className="font-medium text-gray-900 dark:text-gray-100">{waterVolumePerHectare || 0} L/ha</div>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-900">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Producto</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Objetivo</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Cantidad</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Costo</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {items.map((it, idx) => (
+                      <tr key={idx}>
+                        <td className="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{it.product_name}</td>
+                        <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">{it.objective || '-'}</td>
+                        <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400 text-right">
+                          {it.quantity_used} {it.unit}
+                        </td>
+                        <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400 text-right">{formatCLP(it.total_cost)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-gray-50 dark:bg-gray-900">
+                      <td colSpan={3} className="px-4 py-2 text-right text-sm font-bold text-gray-900 dark:text-gray-100">Total</td>
+                      <td className="px-4 py-2 text-right text-sm font-bold text-gray-900 dark:text-gray-100">
+                        {formatCLP(items.reduce((sum, it) => sum + it.total_cost, 0))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-4">
             <button
-              type="submit"
-              disabled={loading || items.length === 0 || !selectedFieldId || !selectedSectorId}
-              className={`ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white focus:outline-none focus:ring-2 focus:ring-offset-2 ${editingId ? 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500' : 'bg-green-600 hover:bg-green-700 focus:ring-green-500'} disabled:opacity-50`}
+              type="button"
+              onClick={() => setWizardStep((s) => (s === 1 ? 1 : ((s - 1) as 1 | 2 | 3)))}
+              disabled={wizardStep === 1}
+              className="inline-flex justify-center py-2 px-4 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-50"
             >
-              {loading ? (
-                <>
-                  <Loader2 className="animate-spin -ml-1 mr-2 h-5 w-5" />
-                  {editingId ? 'Actualizando...' : 'Guardando...'}
-                </>
-              ) : (
-                <>
-                  <Save className="-ml-1 mr-2 h-5 w-5" />
-                  {editingId ? 'Actualizar Aplicación' : 'Registrar Aplicación'}
-                </>
-              )}
+              Atrás
             </button>
+
+            <div className="flex items-center">
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  className="mr-3 inline-flex justify-center py-2 px-4 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 focus:outline-none"
+                >
+                  Cancelar
+                </button>
+              )}
+
+              {wizardStep !== 3 && (
+                <button
+                  type="button"
+                  onClick={() => setWizardStep((s) => (s === 1 ? 2 : 3))}
+                  disabled={(wizardStep === 1 && (!selectedFieldId || !selectedSectorId)) || (wizardStep === 2 && items.length === 0)}
+                  className="ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                >
+                  Siguiente
+                </button>
+              )}
+
+              {wizardStep === 3 && (
+                <button
+                  type="submit"
+                  disabled={loading || items.length === 0 || !selectedFieldId || !selectedSectorId}
+                  className={`ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white focus:outline-none focus:ring-2 focus:ring-offset-2 ${editingId ? 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500' : 'bg-green-600 hover:bg-green-700 focus:ring-green-500'} disabled:opacity-50`}
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="animate-spin -ml-1 mr-2 h-5 w-5" />
+                      {editingId ? 'Actualizando...' : 'Guardando...'}
+                    </>
+                  ) : (
+                    <>
+                      <Save className="-ml-1 mr-2 h-5 w-5" />
+                      {editingId ? 'Actualizar Aplicación' : 'Registrar Aplicación'}
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
           </div>
         </form>
       </div>
@@ -1163,6 +1351,48 @@ export const Applications: React.FC = () => {
             
             {/* Sector Filter & Download */}
             <div className="flex items-center space-x-4">
+                {userRole !== 'viewer' && (
+                  <div className="flex items-center space-x-2">
+                    {selectedApplicationIds.length > 0 ? (
+                      <>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">{selectedApplicationIds.length} seleccionadas</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedApplicationIds([])}
+                          disabled={bulkDeleteApplicationsMutation.isPending}
+                          className="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-50"
+                        >
+                          Limpiar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!window.confirm(`¿Eliminar ${selectedApplicationIds.length} aplicaciones? El stock será restaurado.`)) return;
+                            bulkDeleteApplicationsMutation.mutate(selectedApplicationIds);
+                          }}
+                          disabled={bulkDeleteApplicationsMutation.isPending}
+                          className="inline-flex items-center px-3 py-1.5 border border-red-300 text-xs font-medium rounded-md text-red-700 bg-white dark:bg-gray-800 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          Eliminar
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelectedApplicationIds(
+                            applications.filter(app => filterSectorId === 'all' || app.sector_id === filterSectorId).map((a) => a.id),
+                          )
+                        }
+                        disabled={applications.length === 0}
+                        className="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-50"
+                      >
+                        Seleccionar todo
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex shadow-sm rounded-md">
                     <button
                         onClick={() => handleDownloadFieldPDF('preview')}
@@ -1244,6 +1474,9 @@ export const Applications: React.FC = () => {
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                     <thead className="bg-gray-50 dark:bg-gray-900">
                         <tr>
+                            {userRole !== 'viewer' && (
+                              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase"></th>
+                            )}
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fecha</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Lugar</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Tipo</th>
@@ -1257,6 +1490,20 @@ export const Applications: React.FC = () => {
                             .filter(app => filterSectorId === 'all' || app.sector_id === filterSectorId)
                             .map((app) => (
                             <tr key={app.id} className={editingId === app.id ? 'bg-blue-50' : ''}>
+                                {userRole !== 'viewer' && (
+                                  <td className="px-3 py-4 whitespace-nowrap">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedApplicationIds.includes(app.id)}
+                                      onChange={() =>
+                                        setSelectedApplicationIds((prev) =>
+                                          prev.includes(app.id) ? prev.filter((x) => x !== app.id) : [...prev, app.id],
+                                        )
+                                      }
+                                      className="h-4 w-4 accent-green-600"
+                                    />
+                                  </td>
+                                )}
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                                     <div className="flex items-center">
                                         <Calendar className="h-4 w-4 mr-2 text-gray-400" />
