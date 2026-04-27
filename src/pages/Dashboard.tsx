@@ -51,6 +51,7 @@ export const Dashboard: React.FC = () => {
   const [currentSlide, setCurrentSlide] = useState(0);
   const canWrite = userRole !== 'viewer';
   const [invoiceMonthWindowOffset, setInvoiceMonthWindowOffset] = useState(0);
+  const [invoiceMonthsExpanded, setInvoiceMonthsExpanded] = useState(false);
   const [selectedInvoiceMonth, setSelectedInvoiceMonth] = useState<string>(() => {
     const d = new Date();
     const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -1026,7 +1027,9 @@ export const Dashboard: React.FC = () => {
                           </div>
                           <div>
                             <h3 className="text-lg font-bold text-red-900">Facturas por Vencer</h3>
-                            <p className="text-xs text-red-600 font-medium">{selectedMonthLabel} · {selectedMonthCount} pendientes</p>
+                            <p className="text-xs text-red-600 font-medium">
+                              {invoiceMonthsExpanded ? `${selectedMonthLabel} · ${selectedMonthCount} pendientes` : 'Selecciona un mes para ver el detalle'}
+                            </p>
                           </div>
                         </div>
 
@@ -1047,6 +1050,19 @@ export const Dashboard: React.FC = () => {
                           >
                             <ChevronRight className="h-4 w-4" />
                           </button>
+                          {invoiceMonthsExpanded && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setInvoiceMonthsExpanded(false);
+                                setSelectedInvoiceIds([]);
+                              }}
+                              className="inline-flex items-center justify-center px-3 h-9 rounded-lg bg-white border border-red-100 text-red-700 hover:bg-red-100 text-xs font-bold"
+                              title="Ocultar detalle"
+                            >
+                              Ocultar
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -1061,8 +1077,14 @@ export const Dashboard: React.FC = () => {
                               key={key}
                               type="button"
                               onClick={() => {
+                                if (key === selectedInvoiceMonth && invoiceMonthsExpanded) {
+                                  setInvoiceMonthsExpanded(false);
+                                  setSelectedInvoiceIds([]);
+                                  return;
+                                }
                                 setSelectedInvoiceMonth(key);
                                 setSelectedInvoiceIds([]);
+                                setInvoiceMonthsExpanded(true);
                               }}
                               className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-left ${
                                 active ? 'bg-white border-red-300' : 'bg-white/60 border-red-100 hover:bg-white'
@@ -1077,7 +1099,7 @@ export const Dashboard: React.FC = () => {
                         })}
                       </div>
 
-                      {canWrite && (
+                      {invoiceMonthsExpanded && canWrite && (
                         <div className="flex flex-wrap items-center justify-between gap-3 bg-white/60 border border-red-100 rounded-lg px-3 py-2">
                           <div className="text-xs font-semibold text-gray-700">
                             Seleccionadas: {selectedInvoiceIds.length}
@@ -1104,57 +1126,61 @@ export const Dashboard: React.FC = () => {
                       )}
                     </div>
 
-                    {monthInvoices.length === 0 ? (
-                      <div className="bg-white rounded-xl shadow-sm border border-red-100 p-6 text-center text-sm text-red-700 font-semibold">
-                        No hay facturas pendientes para este mes.
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {monthInvoices.map((inv: any) => (
-                          <div
-                            key={inv.id}
-                            onClick={() => openInvoiceDetail(inv.id)}
-                            className="bg-white p-4 rounded-xl shadow-sm border border-red-100 flex flex-col justify-between h-full hover:shadow-md transition-all duration-200 cursor-pointer hover:-translate-y-1 relative overflow-hidden group"
-                          >
-                            <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
-                            <div className="flex justify-between items-start mb-3 pl-2 gap-2">
-                              <div className="font-bold text-gray-800 text-sm truncate pr-2 flex-1" title={inv.supplier || ''}>{inv.supplier || 'Proveedor desconocido'}</div>
-                              {canWrite && (
-                                <input
-                                  type="checkbox"
-                                  checked={selectedInvoiceIds.includes(inv.id)}
-                                  onChange={(e) => {
-                                    e.stopPropagation();
-                                    toggleInvoiceSelected(inv.id);
-                                  }}
-                                  className="h-4 w-4 accent-green-600 mt-0.5"
-                                />
-                              )}
-                            </div>
-                            <div className="flex items-center justify-between pl-2">
-                              <div className="text-xs font-medium text-gray-500 truncate max-w-[55%]" title={inv.invoice_number || ''}>
-                                Doc N° {inv.invoice_number || '-'}
-                              </div>
-                              <div className="text-[10px] text-red-700 font-bold bg-red-50 px-2.5 py-1.5 rounded-md">
-                                Vence: {inv.due_date ? new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' }) : 'N/A'}
-                              </div>
-                            </div>
-                            <div className="flex justify-between items-end pl-2 mt-3">
-                              <div className="text-xs font-semibold text-gray-600">
-                                Total
-                              </div>
-                              <div className="text-lg font-black text-red-600">
-                                {inv.total_amount ? formatCLP(Number(inv.total_amount)) : '$0'}
-                              </div>
-                            </div>
-                            {inv.notes && (
-                              <div className="mt-3 text-xs text-gray-500 italic border-t border-gray-100 pt-2 pl-2 truncate" title={inv.notes}>
-                                {inv.notes}
-                              </div>
-                            )}
+                    {invoiceMonthsExpanded && (
+                      <>
+                        {monthInvoices.length === 0 ? (
+                          <div className="bg-white rounded-xl shadow-sm border border-red-100 p-6 text-center text-sm text-red-700 font-semibold">
+                            No hay facturas pendientes para este mes.
                           </div>
-                        ))}
-                      </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                            {monthInvoices.map((inv: any) => (
+                              <div
+                                key={inv.id}
+                                onClick={() => openInvoiceDetail(inv.id)}
+                                className="bg-white p-4 rounded-xl shadow-sm border border-red-100 flex flex-col justify-between h-full hover:shadow-md transition-all duration-200 cursor-pointer hover:-translate-y-1 relative overflow-hidden group"
+                              >
+                                <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
+                                <div className="flex justify-between items-start mb-3 pl-2 gap-2">
+                                  <div className="font-bold text-gray-800 text-sm truncate pr-2 flex-1" title={inv.supplier || ''}>{inv.supplier || 'Proveedor desconocido'}</div>
+                                  {canWrite && (
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedInvoiceIds.includes(inv.id)}
+                                      onChange={(e) => {
+                                        e.stopPropagation();
+                                        toggleInvoiceSelected(inv.id);
+                                      }}
+                                      className="h-4 w-4 accent-green-600 mt-0.5"
+                                    />
+                                  )}
+                                </div>
+                                <div className="flex items-center justify-between pl-2">
+                                  <div className="text-xs font-medium text-gray-500 truncate max-w-[55%]" title={inv.invoice_number || ''}>
+                                    Doc N° {inv.invoice_number || '-'}
+                                  </div>
+                                  <div className="text-[10px] text-red-700 font-bold bg-red-50 px-2.5 py-1.5 rounded-md">
+                                    Vence: {inv.due_date ? new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' }) : 'N/A'}
+                                  </div>
+                                </div>
+                                <div className="flex justify-between items-end pl-2 mt-3">
+                                  <div className="text-xs font-semibold text-gray-600">
+                                    Total
+                                  </div>
+                                  <div className="text-lg font-black text-red-600">
+                                    {inv.total_amount ? formatCLP(Number(inv.total_amount)) : '$0'}
+                                  </div>
+                                </div>
+                                {inv.notes && (
+                                  <div className="mt-3 text-xs text-gray-500 italic border-t border-gray-100 pt-2 pl-2 truncate" title={inv.notes}>
+                                    {inv.notes}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </>
                     )}
                   </>
                 );
