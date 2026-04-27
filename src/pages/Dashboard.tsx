@@ -20,7 +20,7 @@ import { fetchAgrometItemsResumen, fetchAgrometPpDay } from '../services/agromet
 import { loadDashboardRaw } from '../services/dashboard';
 import { createCompanyForCurrentUser, deleteCompany } from '../services/companies';
 import { fetchRainLogDates, fetchRainLogKeysForYear, fetchRainLogsForYear, insertRainLogs } from '../services/rainLogs';
-import { markInvoiceAsPaid } from '../services/invoices';
+import { fetchInvoiceById, markInvoiceAsPaid } from '../services/invoices';
 import { deleteCompanyAdmin, fetchIsSystemAdmin } from '../services/users';
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -37,7 +37,7 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
 }
 
 export const Dashboard: React.FC = () => {
-  const { companies, selectedCompany, loading, selectCompany, addCompany, refreshCompanies } = useCompany();
+  const { companies, selectedCompany, loading, selectCompany, addCompany, refreshCompanies, userRole } = useCompany();
   const { user } = useAuth();
   const [isSystemAdmin, setIsSystemAdmin] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
@@ -49,6 +49,15 @@ export const Dashboard: React.FC = () => {
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null); // For invoice modal
   const [presentationMode, setPresentationMode] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
+  const canWrite = userRole !== 'viewer';
+  const [invoiceMonthWindowOffset, setInvoiceMonthWindowOffset] = useState(0);
+  const [selectedInvoiceMonth, setSelectedInvoiceMonth] = useState<string>(() => {
+    const d = new Date();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    return `${d.getFullYear()}-${m}`;
+  });
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
+  const [invoiceDetailLoading, setInvoiceDetailLoading] = useState(false);
 
   const [dashboardStats, setDashboardStats] = useState({
     totalFields: 0,
@@ -73,6 +82,19 @@ export const Dashboard: React.FC = () => {
   const [rainSyncing, setRainSyncing] = useState(false);
   const [rainStation, setRainStation] = useState<{ id: string; name: string } | null>(null);
   const rainSyncedRef = useRef<string | null>(null);
+
+  const addMonths = (date: Date, months: number) => {
+    const d = new Date(date);
+    d.setMonth(d.getMonth() + months);
+    return d;
+  };
+
+  const monthKeyFromDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+  const monthLabel = (date: Date) => {
+    const label = date.toLocaleDateString('es-CL', { month: 'short' });
+    return `${label.charAt(0).toUpperCase()}${label.slice(1)} ${date.getFullYear()}`;
+  };
 
   const getNearestStation = useCallback((lat: number, lon: number, stations: any[]) => {
     const candidatesInia = stations.filter((s: any) => (s.api || '').toUpperCase() === 'INIA');
@@ -781,6 +803,49 @@ export const Dashboard: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    const base = new Date();
+    base.setDate(1);
+    const start = addMonths(base, invoiceMonthWindowOffset);
+    const keys = Array.from({ length: 6 }, (_, idx) => monthKeyFromDate(addMonths(start, idx)));
+    if (!keys.includes(selectedInvoiceMonth)) {
+      setSelectedInvoiceMonth(keys[0]);
+    }
+  }, [invoiceMonthWindowOffset, selectedInvoiceMonth]);
+
+  const openInvoiceDetail = async (invoiceId: string) => {
+    setInvoiceDetailLoading(true);
+    setSelectedInvoice({ id: invoiceId });
+    try {
+      const full = await fetchInvoiceById({ invoiceId });
+      setSelectedInvoice(full);
+    } catch {
+      toast.error('No se pudo cargar el detalle de la factura');
+      setSelectedInvoice(null);
+    } finally {
+      setInvoiceDetailLoading(false);
+    }
+  };
+
+  const toggleInvoiceSelected = (invoiceId: string) => {
+    setSelectedInvoiceIds((prev) => (prev.includes(invoiceId) ? prev.filter((id) => id !== invoiceId) : [...prev, invoiceId]));
+  };
+
+  const markSelectedInvoicesAsPaid = async () => {
+    if (selectedInvoiceIds.length === 0) return;
+    const userInputDate = prompt('Marcar como Pagadas.\nIngrese la fecha de pago (YYYY-MM-DD):', new Date().toLocaleDateString('en-CA'));
+    if (!userInputDate) return;
+    const loadingToast = toast.loading('Marcando facturas como pagadas...');
+    try {
+      await Promise.all(selectedInvoiceIds.map((id) => markInvoiceAsPaid({ invoiceId: id, paymentDate: userInputDate })));
+      toast.success('Facturas marcadas como pagadas', { id: loadingToast });
+      setSelectedInvoiceIds([]);
+      loadDashboardData();
+    } catch {
+      toast.error('Error al actualizar facturas', { id: loadingToast });
+    }
+  };
+
   if (loading) {
     return <div className="flex justify-center p-8">Cargando...</div>;
   }
@@ -933,65 +998,168 @@ export const Dashboard: React.FC = () => {
       {simpleMode ? (
         // SIMPLE MODE UI
         <div className="space-y-8 mt-8 print:mt-4">
-            {upcomingInvoices.length > 0 && (
-                <div className="bg-red-50/80 border border-red-200 p-6 rounded-2xl shadow-sm print:hidden">
-                    <div className="flex items-center mb-5">
-                        <div className="bg-red-100 p-2 rounded-lg mr-3">
+            <div className="bg-red-50/80 border border-red-200 p-6 rounded-2xl shadow-sm print:hidden">
+              {(() => {
+                const base = new Date();
+                base.setDate(1);
+                const start = addMonths(base, invoiceMonthWindowOffset);
+                const months = Array.from({ length: 6 }, (_, idx) => addMonths(start, idx));
+                const counts = upcomingInvoices.reduce((acc: Record<string, number>, inv: any) => {
+                  const key = inv?.due_date ? String(inv.due_date).slice(0, 7) : '';
+                  if (!key) return acc;
+                  acc[key] = (acc[key] || 0) + 1;
+                  return acc;
+                }, {});
+                const monthInvoices = upcomingInvoices
+                  .filter((inv: any) => inv?.due_date && String(inv.due_date).slice(0, 7) === selectedInvoiceMonth)
+                  .sort((a: any, b: any) => String(a.due_date).localeCompare(String(b.due_date)));
+                const selectedMonthLabel = monthLabel(new Date(`${selectedInvoiceMonth}-01T12:00:00`));
+                const selectedMonthCount = counts[selectedInvoiceMonth] || 0;
+
+                return (
+                  <>
+                    <div className="flex flex-col gap-4 mb-5">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center">
+                          <div className="bg-red-100 p-2 rounded-lg mr-3">
                             <AlertCircle className="h-6 w-6 text-red-600" />
-                        </div>
-                        <div>
+                          </div>
+                          <div>
                             <h3 className="text-lg font-bold text-red-900">Facturas por Vencer</h3>
-                            <p className="text-xs text-red-600 font-medium">Prioridad de pago ({new Date().getDate() <= 15 ? 'Quincena 1' : 'Quincena 2'})</p>
+                            <p className="text-xs text-red-600 font-medium">{selectedMonthLabel} · {selectedMonthCount} pendientes</p>
+                          </div>
                         </div>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {upcomingInvoices.map((inv, idx) => (
-                            <div 
-                              key={idx} 
-                              onClick={() => setSelectedInvoice(inv)}
-                              className="bg-white p-4 rounded-xl shadow-sm border border-red-100 flex flex-col justify-between h-full hover:shadow-md transition-all duration-200 cursor-pointer hover:-translate-y-1 relative overflow-hidden group"
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setInvoiceMonthWindowOffset((v) => Math.max(-3, v - 1))}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-white border border-red-100 text-red-700 hover:bg-red-100"
+                            title="Meses anteriores"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setInvoiceMonthWindowOffset((v) => Math.min(12, v + 1))}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-white border border-red-100 text-red-700 hover:bg-red-100"
+                            title="Meses siguientes"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                        {months.map((m) => {
+                          const key = monthKeyFromDate(m);
+                          const label = monthLabel(m);
+                          const count = counts[key] || 0;
+                          const active = key === selectedInvoiceMonth;
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => {
+                                setSelectedInvoiceMonth(key);
+                                setSelectedInvoiceIds([]);
+                              }}
+                              className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-left ${
+                                active ? 'bg-white border-red-300' : 'bg-white/60 border-red-100 hover:bg-white'
+                              }`}
                             >
-                                <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
-                                <div className="flex justify-between items-start mb-3 pl-2">
-                                    <div className="font-bold text-gray-800 text-sm truncate pr-2 flex-1" title={inv.supplier || ''}>{inv.supplier || 'Proveedor desconocido'}</div>
-                                    <button 
-                                        onClick={async (e) => {
-                                            e.stopPropagation();
-                                            const userInputDate = prompt('Marcar como Pagada.\nIngrese la fecha de pago (YYYY-MM-DD):', new Date().toLocaleDateString('en-CA'));
-                                            if (userInputDate) {
-                                                try {
-                                                            await markInvoiceAsPaid({ invoiceId: inv.id, paymentDate: userInputDate });
-                                                    toast('Factura marcada como pagada');
-                                                    loadDashboardData(); // Reload
-                                                } catch {
-                                                    toast.error('Error al actualizar factura');
-                                                }
-                                            }
-                                        }}
-                                        className="text-[10px] text-red-700 font-bold bg-red-50 group-hover:bg-green-500 group-hover:text-white px-2.5 py-1.5 rounded-md transition-colors"
-                                        title="Click para marcar como Pagada"
-                                    >
-                                        Vence: {inv.due_date ? new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' }) : 'N/A'}
-                                    </button>
-                                </div>
-                                <div className="flex justify-between items-end pl-2">
-                                    <div className="text-xs font-medium text-gray-500 truncate max-w-[50%]" title={inv.invoice_number || ''}>
-                                        Doc N° {inv.invoice_number || '-'}
-                                    </div>
-                                    <div className="text-lg font-black text-red-600">
-                                        {inv.total_amount ? formatCLP(Number(inv.total_amount)) : '$0'}
-                                    </div>
-                                </div>
-                                {inv.notes && (
-                                    <div className="mt-3 text-xs text-gray-500 italic border-t border-gray-100 pt-2 pl-2 truncate" title={inv.notes}>
-                                        {inv.notes}
-                                    </div>
-                                )}
-                            </div>
-                        ))}
+                              <span className="text-xs font-semibold text-red-900 truncate">{label}</span>
+                              <span className={`text-xs font-black px-2 py-0.5 rounded-md ${count > 0 ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700'}`}>
+                                {count}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {canWrite && (
+                        <div className="flex flex-wrap items-center justify-between gap-3 bg-white/60 border border-red-100 rounded-lg px-3 py-2">
+                          <div className="text-xs font-semibold text-gray-700">
+                            Seleccionadas: {selectedInvoiceIds.length}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedInvoiceIds([])}
+                              disabled={selectedInvoiceIds.length === 0}
+                              className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                            >
+                              Limpiar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={markSelectedInvoicesAsPaid}
+                              disabled={selectedInvoiceIds.length === 0}
+                              className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-bold bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                            >
+                              Marcar Pagadas
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                </div>
-            )}
+
+                    {monthInvoices.length === 0 ? (
+                      <div className="bg-white rounded-xl shadow-sm border border-red-100 p-6 text-center text-sm text-red-700 font-semibold">
+                        No hay facturas pendientes para este mes.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {monthInvoices.map((inv: any) => (
+                          <div
+                            key={inv.id}
+                            onClick={() => openInvoiceDetail(inv.id)}
+                            className="bg-white p-4 rounded-xl shadow-sm border border-red-100 flex flex-col justify-between h-full hover:shadow-md transition-all duration-200 cursor-pointer hover:-translate-y-1 relative overflow-hidden group"
+                          >
+                            <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
+                            <div className="flex justify-between items-start mb-3 pl-2 gap-2">
+                              <div className="font-bold text-gray-800 text-sm truncate pr-2 flex-1" title={inv.supplier || ''}>{inv.supplier || 'Proveedor desconocido'}</div>
+                              {canWrite && (
+                                <input
+                                  type="checkbox"
+                                  checked={selectedInvoiceIds.includes(inv.id)}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    toggleInvoiceSelected(inv.id);
+                                  }}
+                                  className="h-4 w-4 accent-green-600 mt-0.5"
+                                />
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between pl-2">
+                              <div className="text-xs font-medium text-gray-500 truncate max-w-[55%]" title={inv.invoice_number || ''}>
+                                Doc N° {inv.invoice_number || '-'}
+                              </div>
+                              <div className="text-[10px] text-red-700 font-bold bg-red-50 px-2.5 py-1.5 rounded-md">
+                                Vence: {inv.due_date ? new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' }) : 'N/A'}
+                              </div>
+                            </div>
+                            <div className="flex justify-between items-end pl-2 mt-3">
+                              <div className="text-xs font-semibold text-gray-600">
+                                Total
+                              </div>
+                              <div className="text-lg font-black text-red-600">
+                                {inv.total_amount ? formatCLP(Number(inv.total_amount)) : '$0'}
+                              </div>
+                            </div>
+                            {inv.notes && (
+                              <div className="mt-3 text-xs text-gray-500 italic border-t border-gray-100 pt-2 pl-2 truncate" title={inv.notes}>
+                                {inv.notes}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-8 gap-4 lg:gap-6 print:grid-cols-4 print:gap-4 mb-8">
                 <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-sm p-4 lg:p-6 text-white transform transition hover:scale-[1.02] print:transform-none print:shadow-none print:border print:border-gray-200 print:text-black print:bg-none print:bg-white flex flex-col justify-center relative overflow-hidden col-span-1 lg:col-span-2">
@@ -1541,67 +1709,73 @@ export const Dashboard: React.FC = () => {
 
             {/* Modal Body */}
             <div className="p-4 md:p-5 space-y-4 overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <p className="text-sm text-gray-500 font-medium">Proveedor</p>
-                  <p className="text-base font-semibold text-gray-900">{selectedInvoice.supplier || 'Desconocido'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500 font-medium">Fecha de Vencimiento</p>
-                  <p className="text-base font-semibold text-red-600">
-                    {selectedInvoice.due_date ? new Date(selectedInvoice.due_date + 'T12:00:00').toLocaleDateString('es-CL') : 'N/A'}
-                  </p>
-                </div>
-              </div>
-
-              {selectedInvoice.notes && (
-                <div className="mb-4 bg-yellow-50 p-3 rounded-md border border-yellow-100">
-                  <p className="text-sm text-yellow-800"><span className="font-semibold">Notas:</span> {selectedInvoice.notes}</p>
-                </div>
-              )}
-
-              <div>
-                <h4 className="text-md font-semibold text-gray-800 mb-3 border-b pb-2">Ítems de la Factura</h4>
-                {selectedInvoice.invoice_items && selectedInvoice.invoice_items.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left text-gray-500">
-                      <thead className="text-xs text-gray-700 uppercase bg-gray-100">
-                        <tr>
-                          <th className="px-4 py-2">Categoría / Producto</th>
-                          <th className="px-4 py-2 text-right">Cant.</th>
-                          <th className="px-4 py-2 text-right">Precio Unit.</th>
-                          <th className="px-4 py-2 text-right">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedInvoice.invoice_items.map((item: any, idx: number) => (
-                          <tr key={idx} className="bg-white border-b">
-                            <td className="px-4 py-2">
-                              <div className="font-medium text-gray-900">{item.products?.name || item.category || 'Ítem'}</div>
-                              {item.category && item.products?.name && (
-                                <div className="text-xs text-gray-500">{item.category}</div>
-                              )}
-                            </td>
-                            <td className="px-4 py-2 text-right">
-                              {item.quantity} {item.products?.unit || ''}
-                            </td>
-                            <td className="px-4 py-2 text-right">{formatCLP(item.unit_price)}</td>
-                            <td className="px-4 py-2 text-right font-medium text-gray-900">{formatCLP(item.total_price)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="font-semibold text-gray-900 bg-gray-50">
-                          <td colSpan={3} className="px-4 py-3 text-right">Total Factura:</td>
-                          <td className="px-4 py-3 text-right text-lg text-blue-600">{formatCLP(selectedInvoice.total_amount)}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
+              {invoiceDetailLoading ? (
+                <div className="py-10 text-center text-gray-500 font-medium">Cargando detalle...</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <p className="text-sm text-gray-500 font-medium">Proveedor</p>
+                      <p className="text-base font-semibold text-gray-900">{selectedInvoice.supplier || 'Desconocido'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500 font-medium">Fecha de Vencimiento</p>
+                      <p className="text-base font-semibold text-red-600">
+                        {selectedInvoice.due_date ? new Date(selectedInvoice.due_date + 'T12:00:00').toLocaleDateString('es-CL') : 'N/A'}
+                      </p>
+                    </div>
                   </div>
-                ) : (
-                  <p className="text-gray-500 italic text-sm text-center py-4">No hay ítems registrados en esta factura.</p>
-                )}
-              </div>
+
+                  {selectedInvoice.notes && (
+                    <div className="mb-4 bg-yellow-50 p-3 rounded-md border border-yellow-100">
+                      <p className="text-sm text-yellow-800"><span className="font-semibold">Notas:</span> {selectedInvoice.notes}</p>
+                    </div>
+                  )}
+
+                  <div>
+                    <h4 className="text-md font-semibold text-gray-800 mb-3 border-b pb-2">Ítems de la Factura</h4>
+                    {selectedInvoice.invoice_items && selectedInvoice.invoice_items.length > 0 ? (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left text-gray-500">
+                          <thead className="text-xs text-gray-700 uppercase bg-gray-100">
+                            <tr>
+                              <th className="px-4 py-2">Categoría / Producto</th>
+                              <th className="px-4 py-2 text-right">Cant.</th>
+                              <th className="px-4 py-2 text-right">Precio Unit.</th>
+                              <th className="px-4 py-2 text-right">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedInvoice.invoice_items.map((item: any, idx: number) => (
+                              <tr key={idx} className="bg-white border-b">
+                                <td className="px-4 py-2">
+                                  <div className="font-medium text-gray-900">{item.products?.name || item.category || 'Ítem'}</div>
+                                  {item.category && item.products?.name && (
+                                    <div className="text-xs text-gray-500">{item.category}</div>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2 text-right">
+                                  {item.quantity} {item.products?.unit || ''}
+                                </td>
+                                <td className="px-4 py-2 text-right">{formatCLP(item.unit_price)}</td>
+                                <td className="px-4 py-2 text-right font-medium text-gray-900">{formatCLP(item.total_price)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="font-semibold text-gray-900 bg-gray-50">
+                              <td colSpan={3} className="px-4 py-3 text-right">Total Factura:</td>
+                              <td className="px-4 py-3 text-right text-lg text-blue-600">{formatCLP(selectedInvoice.total_amount)}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="text-gray-500 italic text-sm text-center py-4">No hay ítems registrados en esta factura.</p>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
             
             {/* Modal Footer */}

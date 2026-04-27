@@ -180,3 +180,23 @@ export async function markInvoiceAsPaid(params: { invoiceId: string; paymentDate
 
   if (error) throw error;
 }
+
+export async function fetchInvoiceById(params: { invoiceId: string }) {
+  const { data, error } = await supabase
+    .from('invoices')
+    .select(
+      `
+      id, invoice_number, supplier, supplier_rut, invoice_date, payment_date, total_amount, status, due_date, notes, document_type,
+      tax_percentage, discount_amount, exempt_amount, special_tax_amount,
+      invoice_items (
+        id, quantity, unit_price, total_price, category, product_id,
+        products (id, name, unit)
+      )
+    `
+    )
+    .eq('id', params.invoiceId)
+    .single();
+
+  if (error) throw error;
+  return data as unknown as InvoiceListRow;
+}

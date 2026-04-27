@@ -21,13 +21,6 @@ type InvoiceUpcomingRow = {
   total_amount: number;
   due_date: string;
   notes?: string | null;
-  invoice_items?: Array<{
-    quantity: number;
-    unit_price: number;
-    total_price: number;
-    category: string;
-    products?: { name: string; unit: string } | { name: string; unit: string }[] | null;
-  }>;
 };
 type StockRow = { name: string; current_stock: number; minimum_stock: number; unit: string; expiration_date?: string | null };
 type OrderRow = {
@@ -110,20 +103,11 @@ export async function loadDashboardRaw(params: { companyId: string }) {
       : emptyResult<AssignmentRow>(),
     (async () => {
       const today = new Date();
-      const currentDay = today.getDate();
-      const currentMonth = today.getMonth();
-      const currentYear = today.getFullYear();
-
-      let startDate: Date;
-      let endDate: Date;
-
-      if (currentDay <= 15) {
-        startDate = new Date(currentYear, currentMonth, 1);
-        endDate = new Date(currentYear, currentMonth, 15);
-      } else {
-        startDate = new Date(currentYear, currentMonth, 16);
-        endDate = new Date(currentYear, currentMonth + 1, 0);
-      }
+      const startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+      startDate.setMonth(startDate.getMonth() - 3);
+      const endDate = new Date(today.getFullYear(), today.getMonth(), 1);
+      endDate.setMonth(endDate.getMonth() + 13);
+      endDate.setDate(0);
 
       return supabase
         .from('invoices')
@@ -134,18 +118,12 @@ export async function loadDashboardRaw(params: { companyId: string }) {
           supplier, 
           total_amount, 
           due_date, 
-          notes,
-          invoice_items (
-            quantity,
-            unit_price,
-            total_price,
-            category,
-            products (name, unit)
-          )
+          notes
         `
         )
         .eq('company_id', params.companyId)
         .eq('status', 'Pendiente')
+        .not('due_date', 'is', null)
         .gte('due_date', startDate.toISOString().split('T')[0])
         .lte('due_date', endDate.toISOString().split('T')[0])
         .order('due_date', { ascending: true });
