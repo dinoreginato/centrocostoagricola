@@ -35,6 +35,8 @@ Qué valida:
   - `supabase/migrations/20260422216000_consolidate_rls_policies.sql`
 - Consolidación canónica de viewer role (rol permitido + hardening de columna supplier_rut):
   - `supabase/migrations/20260422217000_consolidate_viewer_role.sql`
+- Consolidación canónica de price_per_kg (income_entries + production_records):
+  - `supabase/migrations/20260422218000_consolidate_price_per_kg.sql`
 
 ## Cómo resolver timestamps duplicados (sin romper prod)
 
