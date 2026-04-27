@@ -154,7 +154,8 @@ export async function loadDashboardRaw(params: { companyId: string }) {
     supabase
       .from('products')
       .select('name, current_stock, minimum_stock, unit, expiration_date')
-      .eq('company_id', params.companyId) as unknown as Promise<QueryResult<StockRow>>,
+      .eq('company_id', params.companyId)
+      .neq('category', 'Archivado') as unknown as Promise<QueryResult<StockRow>>,
     supabase
       .from('application_orders')
       .select('sector_id, scheduled_date, safety_period_hours, grace_period_days, protection_days, application_type, objective, sector:sectors(name)')

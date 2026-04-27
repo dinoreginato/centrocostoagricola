@@ -1,5 +1,6 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { Package, Search, AlertTriangle, Edit, Trash2, X, Save, History, ArrowDownLeft, ArrowUpRight, Upload, ShoppingCart } from 'lucide-react';
@@ -49,12 +50,12 @@ interface InventoryMovement {
 
 export const Inventory: React.FC = () => {
   const { selectedCompany } = useCompany();
-  const [products, setProducts] = useState<Product[]>([]);
+  const queryClient = useQueryClient();
+  const companyId = selectedCompany?.id ?? null;
   const [loading, setLoading] = useState(false);
-  const [isSystemAdmin, setIsSystemAdmin] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
-  const [availableCategories, setAvailableCategories] = useState<string[]>([]);
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
 
   // Edit State
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -67,17 +68,78 @@ export const Inventory: React.FC = () => {
 
   // History State
   const [viewingHistory, setViewingHistory] = useState<Product | null>(null);
-  const [historyData, setHistoryData] = useState<InventoryMovement[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
 
   // SAG Import
   const sagFileInputRef = React.useRef<HTMLInputElement>(null);
 
+  const isSystemAdminQuery = useQuery({
+    queryKey: ['isSystemAdmin'],
+    queryFn: fetchIsSystemAdmin,
+    staleTime: 5 * 60_000,
+  });
+
+  const inventoryQuery = useQuery({
+    queryKey: ['inventoryProducts', companyId],
+    queryFn: async () => {
+      if (!companyId) return [];
+      return (await fetchInventoryProducts({ companyId })) as unknown as Product[];
+    },
+    enabled: Boolean(companyId),
+    staleTime: 30_000,
+  });
+
+  const products = useMemo(() => (inventoryQuery.data || []) as Product[], [inventoryQuery.data]);
+
+  const availableCategories = useMemo(() => {
+    if (products.length === 0) return [];
+    return Array.from(new Set(products.map((p) => p.category))).filter(Boolean).sort();
+  }, [products]);
+
+  const historyQuery = useQuery({
+    queryKey: ['inventoryHistory', viewingHistory?.id ?? null],
+    queryFn: async () => {
+      if (!viewingHistory) return [];
+      return (await fetchInventoryHistory({ productId: viewingHistory.id })) as unknown as InventoryMovement[];
+    },
+    enabled: Boolean(viewingHistory),
+    staleTime: 0,
+  });
+
+  const historyData = (historyQuery.data || []) as InventoryMovement[];
+
   useEffect(() => {
-    fetchIsSystemAdmin()
-      .then((ok) => setIsSystemAdmin(ok))
-      .catch(() => setIsSystemAdmin(false));
-  }, []);
+    if (!companyId) return;
+    const key = `inventoryFilters:${companyId}`;
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { searchTerm?: string; filterCategory?: string };
+      setSearchTerm(parsed.searchTerm ?? '');
+      setFilterCategory(parsed.filterCategory ?? 'all');
+    } catch (_e) {
+      void _e;
+    }
+  }, [companyId]);
+
+  useEffect(() => {
+    if (!companyId) return;
+    const key = `inventoryFilters:${companyId}`;
+    try {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          searchTerm,
+          filterCategory,
+        }),
+      );
+    } catch (_e) {
+      void _e;
+    }
+  }, [companyId, filterCategory, searchTerm]);
+
+  useEffect(() => {
+    setSelectedProductIds([]);
+  }, [companyId, filterCategory, searchTerm]);
 
   const handleMergeDuplicates = async () => {
     if (!window.confirm('¿Desea buscar y fusionar productos duplicados? (Se unificará el stock bajo el producto más reciente y se borrarán los repetidos)')) return;
@@ -87,7 +149,7 @@ export const Inventory: React.FC = () => {
 
       if (mergedCount > 0) {
         toast.success(`Se fusionaron ${mergedCount} productos duplicados exitosamente.`);
-        loadInventory();
+        await queryClient.invalidateQueries({ queryKey: ['inventoryProducts', companyId] });
       } else {
         toast('No se encontraron productos duplicados.');
       }
@@ -102,7 +164,7 @@ export const Inventory: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!isSystemAdmin) {
+    if (!isSystemAdminQuery.data) {
       toast.error('Solo el administrador del sistema puede importar el listado SAG.');
       if (sagFileInputRef.current) sagFileInputRef.current.value = '';
       return;
@@ -188,66 +250,53 @@ export const Inventory: React.FC = () => {
         if (sagFileInputRef.current) sagFileInputRef.current.value = '';
     }
   };
-
-
-  const loadInventory = useCallback(async () => {
-    if (!selectedCompany) return;
-    setLoading(true);
-    try {
-      const chemicalProducts = await fetchInventoryProducts({ companyId: selectedCompany.id });
-      setProducts(chemicalProducts as any);
-
-      if (chemicalProducts.length > 0) {
-        const cats = Array.from(new Set(chemicalProducts.map((p: any) => p.category))).filter(Boolean).sort();
-        setAvailableCategories(cats);
-      } else {
-        setAvailableCategories([]);
-      }
-    } catch (_error) {
-      toast.error('Error al cargar bodega.');
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedCompany]);
-
-  useEffect(() => {
-    if (selectedCompany) {
-      void loadInventory();
-    }
-  }, [selectedCompany, loadInventory]);
-
-  const loadHistory = async (product: Product) => {
+  const loadHistory = (product: Product) => {
     setViewingHistory(product);
-    setLoadingHistory(true);
-    try {
-        const data = await fetchInventoryHistory({ productId: product.id });
-        setHistoryData(data as any);
-    } catch (_error) {
-        toast.error('Error al cargar historial');
-    } finally {
-        setLoadingHistory(false);
-    }
   };
 
   const closeHistory = () => {
       setViewingHistory(null);
-      setHistoryData([]);
   };
 
-  const handleDeleteProduct = async (id: string, name: string) => {
-    try {
-      if (!window.confirm(`¿Estás seguro de eliminar el producto "${name}" de tu bodega local?\n\n(Esto NO borrará las facturas históricas donde se haya comprado, solo lo ocultará de esta vista).`)) return;
-
-      const res = await deleteOrArchiveInventoryProduct({ productId: id });
+  const deleteProductMutation = useMutation({
+    mutationFn: async (product: { id: string; name: string }) => {
+      const res = await deleteOrArchiveInventoryProduct({ productId: product.id });
+      return { ...res, id: product.id, name: product.name };
+    },
+    onSuccess: (res) => {
       if (res.mode === 'archived') {
-        toast(`Este producto tiene historial contable y no puede ser borrado físicamente de la base de datos para no romper la contabilidad.\n\nEn su lugar, ajustaremos su stock a 0 y lo quitaremos de tu vista principal.`);
+        toast(
+          `Este producto tiene historial contable y no puede ser borrado físicamente de la base de datos para no romper la contabilidad.\n\nEn su lugar, ajustaremos su stock a 0 y lo quitaremos de tu vista principal.`,
+        );
+      } else {
+        toast('Producto eliminado correctamente');
       }
-      setProducts(products.filter(p => p.id !== id));
-      toast('Producto eliminado correctamente');
+      queryClient.setQueryData<Product[]>(['inventoryProducts', companyId], (prev) => (prev || []).filter((p) => p.id !== res.id));
+      setSelectedProductIds((prev) => prev.filter((x) => x !== res.id));
+    },
+    onError: (error: any) => {
+      toast.error('Error: ' + (error?.message || 'Error desconocido'));
+    },
+  });
 
-    } catch (error: any) {
-      toast.error('Error: ' + error.message);
-    }
+  const bulkDeleteProductsMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await Promise.all(ids.map((id) => deleteOrArchiveInventoryProduct({ productId: id })));
+      return ids;
+    },
+    onSuccess: (ids) => {
+      queryClient.setQueryData<Product[]>(['inventoryProducts', companyId], (prev) => (prev || []).filter((p) => !ids.includes(p.id)));
+      setSelectedProductIds([]);
+      toast('Productos eliminados/archivados.');
+    },
+    onError: (error: any) => {
+      toast.error('Error: ' + (error?.message || 'Error desconocido'));
+    },
+  });
+
+  const handleDeleteProduct = async (id: string, name: string) => {
+    if (!window.confirm(`¿Estás seguro de eliminar el producto "${name}" de tu bodega local?\n\n(Esto NO borrará las facturas históricas donde se haya comprado, solo lo ocultará de esta vista).`)) return;
+    deleteProductMutation.mutate({ id, name });
   };
 
   const startEdit = (product: Product) => {
@@ -320,7 +369,9 @@ export const Inventory: React.FC = () => {
       });
 
       const { current_stock: _current_stock, average_cost: _average_cost, ...rest } = editForm;
-      setProducts(products.map(p => (p.id === editingProduct.id ? ({ ...p, ...rest } as Product) : p)));
+      queryClient.setQueryData<Product[]>(['inventoryProducts', companyId], (prev) =>
+        (prev || []).map((p) => (p.id === editingProduct.id ? ({ ...p, ...rest } as Product) : p)),
+      );
       
       cancelEdit();
       toast('Producto actualizado');
@@ -350,19 +401,16 @@ export const Inventory: React.FC = () => {
         notes: adjustNotes || null
       });
 
-      const chemicalProducts = await fetchInventoryProducts({ companyId: selectedCompany.id });
-      setProducts(chemicalProducts as any);
-      const cats = Array.from(new Set(chemicalProducts.map((p) => p.category))).filter(Boolean).sort();
-      setAvailableCategories(cats);
+      const updatedProducts = (await fetchInventoryProducts({ companyId: selectedCompany.id })) as unknown as Product[];
+      queryClient.setQueryData<Product[]>(['inventoryProducts', companyId], updatedProducts);
 
-      const updated = chemicalProducts.find((p) => p.id === editingProduct.id);
+      const updated = updatedProducts.find((p) => p.id === editingProduct.id);
       if (updated) {
         setEditForm((prev) => ({ ...prev, current_stock: updated.current_stock, average_cost: updated.average_cost }));
       }
 
       if (viewingHistory && viewingHistory.id === editingProduct.id) {
-        const data = await fetchInventoryHistory({ productId: editingProduct.id });
-        setHistoryData(data as any);
+        await queryClient.invalidateQueries({ queryKey: ['inventoryHistory', viewingHistory.id] });
       }
 
       setAdjustQty(0);
@@ -529,11 +577,11 @@ export const Inventory: React.FC = () => {
           />
           <button
               onClick={() => sagFileInputRef.current?.click()}
-              disabled={!isSystemAdmin}
+              disabled={!isSystemAdminQuery.data}
               className={`text-sm font-medium flex items-center ${
-                isSystemAdmin ? 'text-green-700 hover:text-green-800' : 'text-gray-400 cursor-not-allowed'
+                isSystemAdminQuery.data ? 'text-green-700 hover:text-green-800' : 'text-gray-400 cursor-not-allowed'
               }`}
-              title={isSystemAdmin ? 'Importar Listado Oficial SAG (Excel)' : 'Solo el administrador del sistema puede importar SAG'}
+              title={isSystemAdminQuery.data ? 'Importar Listado Oficial SAG (Excel)' : 'Solo el administrador del sistema puede importar SAG'}
           >
               <Upload className="h-4 w-4 mr-1" />
               Importar SAG
@@ -570,6 +618,41 @@ export const Inventory: React.FC = () => {
             ))}
           </select>
         </div>
+        <div className="flex items-center gap-2">
+          {selectedProductIds.length > 0 ? (
+            <>
+              <span className="text-xs text-gray-500 dark:text-gray-400">{selectedProductIds.length} seleccionados</span>
+              <button
+                type="button"
+                onClick={() => setSelectedProductIds([])}
+                disabled={bulkDeleteProductsMutation.isPending}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-50"
+              >
+                Limpiar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!window.confirm(`¿Eliminar/archivar ${selectedProductIds.length} productos?`)) return;
+                  bulkDeleteProductsMutation.mutate(selectedProductIds);
+                }}
+                disabled={bulkDeleteProductsMutation.isPending}
+                className="inline-flex items-center px-3 py-2 border border-red-300 shadow-sm text-xs font-medium rounded-md text-red-700 bg-white dark:bg-gray-800 hover:bg-red-50 disabled:opacity-50"
+              >
+                Eliminar
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSelectedProductIds(filteredProducts.map((p) => p.id))}
+              disabled={filteredProducts.length === 0}
+              className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-50"
+            >
+              Seleccionar todo
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Inventory Table */}
@@ -578,6 +661,7 @@ export const Inventory: React.FC = () => {
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-900">
               <tr>
+                <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"></th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Producto
                 </th>
@@ -602,19 +686,31 @@ export const Inventory: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-              {loading ? (
+              {inventoryQuery.isLoading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-4 text-center">Cargando inventario...</td>
+                  <td colSpan={8} className="px-6 py-4 text-center">Cargando inventario...</td>
                 </tr>
               ) : filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={8} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
                     No se encontraron productos.
                   </td>
                 </tr>
               ) : (
                 filteredProducts.map((product) => (
                   <tr key={product.id}>
+                    <td className="px-3 py-4 whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={selectedProductIds.includes(product.id)}
+                        onChange={() =>
+                          setSelectedProductIds((prev) =>
+                            prev.includes(product.id) ? prev.filter((x) => x !== product.id) : [...prev, product.id],
+                          )
+                        }
+                        className="h-4 w-4 accent-green-600"
+                      />
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <div className="flex-shrink-0 h-10 w-10 bg-green-100 rounded-full flex items-center justify-center">
@@ -723,7 +819,7 @@ export const Inventory: React.FC = () => {
                       </button>
                   </div>
 
-                  {loadingHistory ? (
+                  {historyQuery.isLoading ? (
                       <div className="text-center py-8">Cargando movimientos...</div>
                   ) : historyData.length === 0 ? (
                       <div className="text-center py-8 text-gray-500 dark:text-gray-400">No hay movimientos registrados.</div>
