@@ -26,6 +26,40 @@ function getTimestamp(name) {
 const all = listSqlFiles(MIGRATIONS_DIR);
 const timestamped = all.filter(isTimestamped).sort((a, b) => a.localeCompare(b));
 const legacy = all.filter((f) => !isTimestamped(f)).sort((a, b) => a.localeCompare(b));
+const timestampedSet = new Set(timestamped);
+
+const legacyReplacements = {
+  'create_application_orders.sql': '20260322000000_create_application_orders.sql',
+  '20260327_phytosanitary_programs.sql': '20260327000000_create_phytosanitary_programs.sql',
+  'create_official_products.sql': '20260422190500_create_official_products.sql',
+  'create_production_records.sql': '20260226090000_create_production_records.sql',
+  'create_new_sections.sql': '20260317050000_create_assignment_tables.sql',
+  'create_labor_assignments.sql': '20260317050000_create_assignment_tables.sql',
+  'add_labor_type_to_assignments.sql': '20260317050000_create_assignment_tables.sql',
+  'allow_negative_assignments.sql': '20260317050000_create_assignment_tables.sql',
+  'update_application_orders_header.sql': '20260322000000_create_application_orders.sql',
+  '20260323_add_completed_date_to_app_orders.sql': '20260322000000_create_application_orders.sql',
+  '20240327_add_protection_days.sql': '20260322000000_create_application_orders.sql',
+  'add_unique_constraint_official_products.sql': '20260422190500_create_official_products.sql',
+};
+
+function hasTimestampedReplacement(legacyName) {
+  const direct = legacyReplacements[legacyName];
+  if (direct && timestampedSet.has(direct)) return true;
+
+  const m = legacyName.match(/^(\d{8})_(.+\.sql)$/);
+  if (m) {
+    const date8 = m[1];
+    const rest = m[2];
+    const candidate = timestamped.find((f) => f.startsWith(date8) && f.slice(8, 14).match(/^\d{6}$/) && f.endsWith(`_${rest}`));
+    return Boolean(candidate);
+  }
+
+  return false;
+}
+
+const legacyWithReplacement = legacy.filter(hasTimestampedReplacement);
+const legacyRemaining = legacy.filter((f) => !hasTimestampedReplacement(f));
 
 const byTs = new Map();
 for (const f of timestamped) {
@@ -60,12 +94,17 @@ if (outOfOrder) {
   console.log('\n[migrations] WARNING: timestamped file list is not lexicographically sorted.');
 }
 
-if (legacy.length > 0) {
+if (legacyRemaining.length > 0) {
   console.log('\n[migrations] Legacy (non-timestamp) files (Supabase CLI will not apply these automatically):');
-  for (const f of legacy) console.log(`- ${f}`);
+  for (const f of legacyRemaining) console.log(`- ${f}`);
 }
 
-const hasIssues = duplicates.length > 0 || outOfOrder || legacy.length > 0;
+if (legacyWithReplacement.length > 0) {
+  console.log('\n[migrations] Legacy files that appear to be superseded by timestamped migrations:');
+  for (const f of legacyWithReplacement) console.log(`- ${f}`);
+}
+
+const hasIssues = duplicates.length > 0 || outOfOrder || legacyRemaining.length > 0;
 if (strict && hasIssues) {
   process.exitCode = 1;
 }
