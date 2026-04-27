@@ -1,12 +1,25 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
-import { formatCLP } from '../lib/utils';
-import { Plus, Loader2, Save, Trash2, Calendar, FileText, Printer, CheckCircle, XCircle, Search, Edit, Copy, ClipboardList } from 'lucide-react';
+import { Plus, Loader2, Save, Trash2, Printer, Edit, Copy, ClipboardList } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
+import {
+  createApplication,
+  createApplicationItem,
+  createFuelConsumption,
+  createInventoryMovement,
+  deleteApplicationOrderCascade,
+  findCompletedOrderApplicationId,
+  getFuelStats,
+  loadApplicationOrdersPageData,
+  markApplicationOrderCompleted,
+  revertApplicationOrderToPending,
+  updateProductStock,
+  upsertApplicationOrder
+} from '../services/applicationOrders';
 
 // Interfaces based on DB Schema
 interface ApplicationOrder {
@@ -68,11 +81,6 @@ interface Product { id: string; name: string; unit: string; current_stock: numbe
 interface Machine { id: string; name: string; type: string }
 interface Worker { id: string; name: string; role: string }
 
-const AGROCHEMICAL_CATEGORIES = [
-  'Quimicos', 'Plaguicida', 'Insecticida', 'Fungicida', 'Herbicida', 'Fertilizantes', 
-  'fertilizante', 'pesticida', 'herbicida', 'fungicida'
-];
-
 const normalizeUnit = (u: string) => {
   const lower = (u || '').toLowerCase().trim();
   if (['l', 'lt', 'litro', 'litros'].includes(lower)) return 'l';
@@ -94,15 +102,11 @@ const getConversionFactor = (fromUnit: string, toUnit: string): number => {
 };
 
 export const ApplicationOrders: React.FC = () => {
-  const { selectedCompany } = useCompany();
+  const { selectedCompany, userRole } = useCompany();
+  const queryClient = useQueryClient();
+  const companyId = selectedCompany?.id ?? null;
   const [loading, setLoading] = useState(false);
-  
-  // Data State
-  const [orders, setOrders] = useState<ApplicationOrder[]>([]);
-  const [fields, setFields] = useState<Field[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [machines, setMachines] = useState<Machine[]>([]);
-  const [workers, setWorkers] = useState<Worker[]>([]);
+  const canWrite = userRole !== 'viewer';
   
   // PDF Preview State
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
@@ -111,6 +115,7 @@ export const ApplicationOrders: React.FC = () => {
 
   // Form State
   const [isEditing, setIsEditing] = useState(false);
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
   const [currentOrder, setCurrentOrder] = useState<Partial<ApplicationOrder>>({
     scheduled_date: new Date().toLocaleDateString('en-CA'),
     status: 'pendiente',
@@ -137,93 +142,66 @@ export const ApplicationOrders: React.FC = () => {
     unit_override: ''
   });
 
-  // Programs state
-  const [programs, setPrograms] = useState<any[]>([]);
-  const [programEvents, setProgramEvents] = useState<any[]>([]);
+  const pageQuery = useQuery({
+    queryKey: ['applicationOrdersPage', companyId],
+    queryFn: async () => {
+      if (!companyId) return null;
+      return await loadApplicationOrdersPageData({ companyId });
+    },
+    enabled: Boolean(companyId),
+    staleTime: 30_000,
+  });
+
+  const orders = useMemo(() => (pageQuery.data?.orders || []) as ApplicationOrder[], [pageQuery.data?.orders]);
+  const fields = useMemo(() => (pageQuery.data?.fields || []) as Field[], [pageQuery.data?.fields]);
+  const products = useMemo(() => (pageQuery.data?.products || []) as Product[], [pageQuery.data?.products]);
+  const machines = useMemo(() => (pageQuery.data?.machines || []) as Machine[], [pageQuery.data?.machines]);
+  const workers = useMemo(() => (pageQuery.data?.workers || []) as Worker[], [pageQuery.data?.workers]);
+  const programEvents = useMemo(() => (pageQuery.data?.programEvents || []) as any[], [pageQuery.data?.programEvents]);
+
+  const reloadData = async () => {
+    if (!companyId) return;
+    await queryClient.invalidateQueries({ queryKey: ['applicationOrdersPage', companyId] });
+  };
+
+  const prefsKey = useMemo(() => (companyId ? `applicationOrdersPrefs:${companyId}` : null), [companyId]);
 
   useEffect(() => {
-    if (selectedCompany) {
-      loadData();
-    }
-  }, [selectedCompany]);
-
-  const loadData = async () => {
-    setLoading(true);
+    if (!prefsKey) return;
+    if (!isEditing) return;
     try {
-        // 1. Load Orders
-        const { data: ordersData, error: ordersError } = await supabase
-            .from('application_orders')
-            .select(`
-                *,
-                field:fields(name),
-                sector:sectors(name, hectares),
-                tractor:machines!application_orders_tractor_id_fkey(name),
-                sprayer:machines!application_orders_sprayer_id_fkey(name),
-                driver:workers(name),
-                items:application_order_items(
-                    *,
-                    product:products(name, unit, active_ingredient, category, average_cost)
-                )
-            `)
-            .eq('company_id', selectedCompany.id)
-            .order('created_at', { ascending: false });
-
-        if (ordersError) throw ordersError;
-        
-        // Map items to flatten structure
-        const mappedOrders = ordersData?.map(o => ({
-            ...o,
-            items: Array.isArray(o.items) ? o.items.map((i: any) => ({
-                id: i.id,
-                product_id: i.product_id,
-                product_name: i.product?.name,
-                active_ingredient: i.product?.active_ingredient,
-                category: i.product?.category,
-                average_cost: i.product?.average_cost || 0,
-                unit: i.unit,
-                dose_per_hectare: i.dose_per_hectare,
-                dose_per_100l: i.dose_per_100l,
-                total_quantity: i.total_quantity,
-                objective: i.objective
-            })) : []
-        }));
-        
-        setOrders(mappedOrders || []);
-
-        // 2. Load Metadata (Fields, Products, Machines, Workers)
-        const [fieldsRes, productsRes, machinesRes, workersRes] = await Promise.all([
-            supabase.from('fields').select('*, sectors(*)').eq('company_id', selectedCompany.id),
-            supabase.from('products').select('*').eq('company_id', selectedCompany.id).in('category', AGROCHEMICAL_CATEGORIES).gt('current_stock', 0),
-            supabase.from('machines').select('id, name, type').eq('company_id', selectedCompany.id).eq('is_active', true),
-            supabase.from('workers').select('id, name, role').eq('company_id', selectedCompany.id).eq('is_active', true)
-        ]);
-
-        setFields(fieldsRes.data || []);
-        setProducts(productsRes.data || []);
-        setMachines(machinesRes.data || []);
-        setWorkers(workersRes.data || []);
-
-        // Load Phytosanitary Programs
-        const { data: progData } = await supabase.from('phytosanitary_programs').select('*').eq('company_id', selectedCompany.id).order('created_at', { ascending: false });
-        if (progData) {
-            setPrograms(progData);
-            const { data: evData } = await supabase.from('program_events').select(`
-                *,
-                products:program_event_products(
-                    *,
-                    product:products(*)
-                )
-            `).in('program_id', progData.map(p => p.id));
-            if (evData) setProgramEvents(evData);
-        }
-
-    } catch (error: any) {
-        console.error('Error loading data:', error);
-        toast.error('Error cargando datos: ' + error.message);
-    } finally {
-        setLoading(false);
+      localStorage.setItem(
+        prefsKey,
+        JSON.stringify({
+          field_id: currentOrder.field_id ?? '',
+          sector_id: currentOrder.sector_id ?? '',
+          application_type: currentOrder.application_type ?? 'fitosanitario',
+          water_liters_per_hectare: currentOrder.water_liters_per_hectare ?? 1000,
+          tank_capacity: currentOrder.tank_capacity ?? 2000,
+        }),
+      );
+    } catch (_e) {
+      void _e;
     }
-  };
+  }, [
+    currentOrder.application_type,
+    currentOrder.field_id,
+    currentOrder.sector_id,
+    currentOrder.tank_capacity,
+    currentOrder.water_liters_per_hectare,
+    isEditing,
+    prefsKey,
+  ]);
+
+  useEffect(() => {
+    if (!isEditing) return;
+    if (!currentOrder.field_id) return;
+    if (currentOrder.sector_id) return;
+    const field = fields.find((f) => f.id === currentOrder.field_id);
+    const firstSector = field?.sectors?.[0];
+    if (!firstSector) return;
+    setCurrentOrder((prev) => ({ ...prev, sector_id: firstSector.id }));
+  }, [currentOrder.field_id, currentOrder.sector_id, fields, isEditing]);
 
   const handleLoadFromProgramEvent = (eventId: string) => {
     if (!eventId) return;
@@ -382,6 +360,10 @@ export const ApplicationOrders: React.FC = () => {
   };
 
   const handleSaveOrder = async () => {
+      if (!canWrite) {
+          toast.error('No tienes permisos para guardar órdenes.');
+          return;
+      }
       if (!currentOrder.field_id || !currentOrder.sector_id || !currentOrder.items?.length) {
           toast('Complete los campos obligatorios (Campo, Sector, Items)');
           return;
@@ -389,7 +371,6 @@ export const ApplicationOrders: React.FC = () => {
 
       setLoading(true);
       try {
-          // 1. Insert/Update Order Header
           const orderData = {
               company_id: selectedCompany.id,
               field_id: currentOrder.field_id,
@@ -415,23 +396,7 @@ export const ApplicationOrders: React.FC = () => {
               variety: currentOrder.variety, // New field
               objective: currentOrder.objective // New field
           };
-
-          let orderId = currentOrder.id;
-
-          if (orderId) {
-              const { error } = await supabase.from('application_orders').update(orderData).eq('id', orderId);
-              if (error) throw error;
-              // Delete old items to rewrite
-              await supabase.from('application_order_items').delete().eq('order_id', orderId);
-          } else {
-              const { data, error } = await supabase.from('application_orders').insert([orderData]).select().single();
-              if (error) throw error;
-              orderId = data.id;
-          }
-
-          // 2. Insert Items
           const itemsData = currentOrder.items.map(item => ({
-              order_id: orderId,
               product_id: item.product_id,
               dose_per_hectare: item.dose_per_hectare,
               dose_per_100l: item.dose_per_100l,
@@ -439,16 +404,14 @@ export const ApplicationOrders: React.FC = () => {
               unit: item.unit,
               objective: item.objective
           }));
-
-          const { error: itemsError } = await supabase.from('application_order_items').insert(itemsData);
-          if (itemsError) throw itemsError;
+          
+          await upsertApplicationOrder({ orderId: currentOrder.id, orderData, itemsData });
 
           toast('Orden guardada correctamente');
           setIsEditing(false);
-          loadData();
+          await reloadData();
 
       } catch (error: any) {
-          console.error('Error saving order:', error);
           toast.error('Error al guardar: ' + error.message);
       } finally {
           setLoading(false);
@@ -456,65 +419,57 @@ export const ApplicationOrders: React.FC = () => {
   };
 
   const handleCloneOrder = (order: ApplicationOrder) => {
+      if (!canWrite) {
+          toast.error('No tienes permisos para duplicar órdenes.');
+          return;
+      }
+      const userInputDate = prompt('Duplicar orden.\nIngrese la nueva fecha programada (YYYY-MM-DD):', new Date().toLocaleDateString('en-CA'));
+      if (!userInputDate) return;
+
       const clonedOrder = { ...order };
       delete clonedOrder.id; // Remove the ID so it's treated as new
+      delete clonedOrder.order_number;
+      delete clonedOrder.completed_date;
       clonedOrder.status = 'pendiente';
-      clonedOrder.scheduled_date = new Date().toLocaleDateString('en-CA'); // Set to today
+      clonedOrder.scheduled_date = userInputDate;
       // Generate new items without IDs
       clonedOrder.items = (order.items || []).map(item => {
           const newItem = { ...item };
           delete newItem.id;
-          // @ts-ignore - Ignore the TypeScript error for removing an internal/untyped property
+          // @ts-expect-error - Ignore the TypeScript error for removing an internal/untyped property
           delete newItem.application_order_id;
           return newItem;
       });
       setCurrentOrder(clonedOrder);
       setIsEditing(true);
+      setWizardStep(2);
   };
 
   const handleDeleteOrder = async (id: string) => {
+      if (!canWrite) {
+          toast.error('No tienes permisos para eliminar órdenes.');
+          return;
+      }
       if (!window.confirm('¿Está seguro de eliminar esta orden de aplicación? Esta acción no se puede deshacer.')) {
           return;
       }
 
       setLoading(true);
       try {
-          // Find if this order has an associated application (if it was completed)
           const order = orders.find(o => o.id === id);
-          if (order && order.status === 'completada' && order.completed_date) {
-              // We need to find the corresponding application. We match by date, sector, and type.
-              // Note: A more robust way would be storing the order_id in the applications table, 
-              // but we'll use heuristic matching for now.
-              const { data: apps } = await supabase
-                  .from('applications')
-                  .select('id')
-                  .eq('sector_id', order.sector_id)
-                  .eq('application_date', order.completed_date)
-                  .eq('application_type', order.application_type);
+          const completedApplicationId =
+            order && order.status === 'completada' && order.completed_date
+              ? await findCompletedOrderApplicationId({
+                  sectorId: order.sector_id,
+                  completedDate: order.completed_date,
+                  applicationType: order.application_type
+                })
+              : null;
 
-              if (apps && apps.length > 0) {
-                  const appId = apps[0].id;
-                  
-                  // Before deleting the application, we should ideally revert stock and delete items
-                  // But to keep it simple and safe for now, we'll just delete the items and the application itself.
-                  // (Depending on your DB schema, ON DELETE CASCADE might handle this)
-                  
-                  await supabase.from('application_items').delete().eq('application_id', appId);
-                  await supabase.from('fuel_consumption').delete().eq('application_id', appId);
-                  await supabase.from('applications').delete().eq('id', appId);
-              }
-          }
-
-          // First delete items to avoid foreign key constraints
-          await supabase.from('application_order_items').delete().eq('order_id', id);
+          await deleteApplicationOrderCascade({ orderId: id, completedApplicationId });
           
-          // Then delete the order
-          const { error } = await supabase.from('application_orders').delete().eq('id', id);
-          if (error) throw error;
-          
-          loadData();
+          await reloadData();
       } catch (error: any) {
-          console.error('Error deleting order:', error);
           toast.error('Error al eliminar: ' + error.message);
       } finally {
           setLoading(false);
@@ -522,24 +477,19 @@ export const ApplicationOrders: React.FC = () => {
   };
 
   const handleRevertToPending = async (order: ApplicationOrder) => {
+      if (!canWrite) {
+          toast.error('No tienes permisos para modificar órdenes.');
+          return;
+      }
       if (!window.confirm(`¿Está seguro de revertir la orden #${order.order_number} a PENDIENTE? Si esta orden generó un registro en "Aplicaciones", ese registro no se eliminará automáticamente, deberá borrarlo manualmente allá.`)) {
           return;
       }
       setLoading(true);
       try {
-          const { error } = await supabase
-              .from('application_orders')
-              .update({ 
-                  status: 'pendiente',
-                  completed_date: null
-              })
-              .eq('id', order.id);
-          
-          if (error) throw error;
+          await revertApplicationOrderToPending({ orderId: order.id });
           toast.success(`Orden #${order.order_number} revertida a PENDIENTE.`);
-          loadData();
+          await reloadData();
       } catch (error: any) {
-          console.error('Error reverting order:', error);
           toast.error('Error al revertir: ' + error.message);
       } finally {
           setLoading(false);
@@ -547,6 +497,10 @@ export const ApplicationOrders: React.FC = () => {
   };
 
   const handleMarkAsCompleted = async (order: ApplicationOrder, completedDate: string) => {
+      if (!canWrite) {
+          toast.error('No tienes permisos para completar órdenes.');
+          return;
+      }
       setLoading(true);
       try {
           // 1. Calculate Total Cost from items - STRICT NUMBER CASTING & CONVERSION
@@ -579,21 +533,16 @@ export const ApplicationOrders: React.FC = () => {
           const waterLiters = Number(order.water_liters_per_hectare) || 0;
           const safeWaterLiters = isNaN(waterLiters) ? 0 : Number(waterLiters.toFixed(2));
 
-          // 2. Insert into Applications (Actual Execution)
-          const { data: application, error: appError } = await supabase
-              .from('applications')
-              .insert([{
-                  field_id: order.field_id,
-                  sector_id: order.sector_id,
-                  application_date: completedDate,
-                  application_type: order.application_type,
-                  total_cost: safeTotalCost,
-                  water_liters_per_hectare: safeWaterLiters
-              }])
-              .select()
-              .single();
-
-          if (appError) throw appError;
+          const application = await createApplication({
+            payload: {
+              field_id: order.field_id,
+              sector_id: order.sector_id,
+              application_date: completedDate,
+              application_type: order.application_type,
+              total_cost: safeTotalCost,
+              water_liters_per_hectare: safeWaterLiters
+            }
+          });
 
           // 3. Insert Application Items & Deduct Stock
           for (const itemData of itemsData) {
@@ -602,21 +551,17 @@ export const ApplicationOrders: React.FC = () => {
               const safeUnitCost = isNaN(itemData.unit_cost) ? 0 : Number(itemData.unit_cost.toFixed(2));
               const safeItemTotal = isNaN(itemData.total_cost) ? 0 : Number(itemData.total_cost.toFixed(2));
 
-              const { data: savedItem, error: itemError } = await supabase
-                  .from('application_items')
-                  .insert([{
-                      application_id: application.id,
-                      product_id: itemData.product_id,
-                      quantity_used: safeQty,
-                      dose_per_hectare: safeDose,
-                      unit_cost: safeUnitCost,
-                      total_cost: safeItemTotal,
-                      objective: itemData.objective
-                  }])
-                  .select()
-                  .single();
-
-              if (itemError) throw itemError;
+              const savedItem = await createApplicationItem({
+                payload: {
+                  application_id: application.id,
+                  product_id: itemData.product_id,
+                  quantity_used: safeQty,
+                  dose_per_hectare: safeDose,
+                  unit_cost: safeUnitCost,
+                  total_cost: safeItemTotal,
+                  objective: itemData.objective
+                }
+              });
 
               // Deduct stock and create movement
               const product = products.find(p => p.id === itemData.product_id);
@@ -625,20 +570,16 @@ export const ApplicationOrders: React.FC = () => {
                   const newStock = currentStock - safeQty;
                   const safeNewStock = isNaN(newStock) ? 0 : Number(newStock.toFixed(2));
 
-                  await supabase
-                      .from('products')
-                      .update({ current_stock: safeNewStock })
-                      .eq('id', itemData.product_id);
-
-                  await supabase
-                      .from('inventory_movements')
-                      .insert([{
-                          product_id: itemData.product_id,
-                          movement_type: 'salida',
-                          quantity: safeQty,
-                          unit_cost: safeUnitCost,
-                          application_item_id: savedItem.id
-                      }]);
+                  await updateProductStock({ productId: itemData.product_id, currentStock: safeNewStock });
+                  await createInventoryMovement({
+                    payload: {
+                      product_id: itemData.product_id,
+                      movement_type: 'salida',
+                      quantity: safeQty,
+                      unit_cost: safeUnitCost,
+                      application_item_id: savedItem.id
+                    }
+                  });
               }
           }
 
@@ -651,43 +592,34 @@ export const ApplicationOrders: React.FC = () => {
                   const rate = Number(selectedCompany.application_fuel_rate) || 12;
                   const fuelLiters = Math.max(rate * hectares, 0.01);
                   
-                  const { data: fuelStats } = await supabase.rpc('get_fuel_stats', { p_company_id: selectedCompany.id, p_type: 'diesel' });
-                  const avgFuelPrice = Number(fuelStats?.[0]?.avg_price) || 1050;
+                  const fuelStats = await getFuelStats({ companyId: selectedCompany.id, type: 'diesel' });
+                  const avgFuelPrice = Number((fuelStats as any)?.[0]?.avg_price) || 1050;
                   
                   const fuelCost = fuelLiters * avgFuelPrice;
                   
                   const safeFuelLiters = isNaN(fuelLiters) ? 0 : Number(fuelLiters.toFixed(2));
                   const safeFuelCost = isNaN(fuelCost) ? 0 : Number(fuelCost.toFixed(2));
 
-                  await supabase
-                      .from('fuel_consumption')
-                      .insert([{
-                          company_id: selectedCompany.id,
-                          date: completedDate,
-                          activity: `Aplicación Orden #${order.order_number}`,
-                          liters: safeFuelLiters,
-                          estimated_price: safeFuelCost,
-                          sector_id: order.sector_id,
-                          application_id: application.id
-                      }]);
+                  await createFuelConsumption({
+                    payload: {
+                      company_id: selectedCompany.id,
+                      date: completedDate,
+                      activity: `Aplicación Orden #${order.order_number}`,
+                      liters: safeFuelLiters,
+                      estimated_price: safeFuelCost,
+                      sector_id: order.sector_id,
+                      machine_id: order.tractor_id || order.sprayer_id || null,
+                      application_id: application.id
+                    }
+                  });
               }
           }
 
-          // 5. Update Order Status (Moved to end to ensure atomic-like success)
-          const { error: orderError } = await supabase
-              .from('application_orders')
-              .update({ 
-                  status: 'completada',
-                  completed_date: completedDate
-              })
-              .eq('id', order.id);
-          
-          if (orderError) throw orderError;
+          await markApplicationOrderCompleted({ orderId: order.id, completedDate });
 
           toast.success('Orden completada exitosamente. Se ha registrado la aplicación y descontado el inventario.');
-          loadData();
+          await reloadData();
       } catch (error: any) {
-          console.error('Error completing order:', error);
           toast.error('Error al completar la orden: ' + error.message);
       } finally {
           setLoading(false);
@@ -863,6 +795,9 @@ export const ApplicationOrders: React.FC = () => {
       }
   };
 
+  if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
+  if (pageQuery.isLoading) return <div className="p-8">Cargando...</div>;
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -870,18 +805,31 @@ export const ApplicationOrders: React.FC = () => {
         {!isEditing && (
             <button
                 onClick={() => {
+                    let prefs: any = null;
+                    if (prefsKey) {
+                      try {
+                        const raw = localStorage.getItem(prefsKey);
+                        prefs = raw ? JSON.parse(raw) : null;
+                      } catch (_e) {
+                        void _e;
+                      }
+                    }
                     setCurrentOrder({
                         scheduled_date: new Date().toLocaleDateString('en-CA'),
                         status: 'pendiente',
-                        application_type: 'fitosanitario',
-                        water_liters_per_hectare: 1000,
-                        tank_capacity: 2000,
+                        application_type: prefs?.application_type || 'fitosanitario',
+                        water_liters_per_hectare: Number(prefs?.water_liters_per_hectare ?? 1000),
+                        tank_capacity: Number(prefs?.tank_capacity ?? 2000),
+                        field_id: prefs?.field_id || '',
+                        sector_id: prefs?.sector_id || '',
                         items: [],
                         variety: '',
                         objective: ''
                     });
                     setIsEditing(true);
+                    setWizardStep(1);
                 }}
+                disabled={!canWrite}
                 className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center"
             >
                 <Plus className="h-5 w-5 mr-2" /> Nueva Orden
@@ -893,10 +841,47 @@ export const ApplicationOrders: React.FC = () => {
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
               <div className="flex justify-between mb-6">
                   <h2 className="text-lg font-bold">Crear/Editar Orden</h2>
-                  <button onClick={() => setIsEditing(false)} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300">Cancelar</button>
+                  <button
+                    onClick={() => {
+                      setIsEditing(false);
+                      setWizardStep(1);
+                    }}
+                    className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300"
+                  >
+                    Cancelar
+                  </button>
               </div>
 
-              {/* Form Header Fields */}
+              <div className="flex items-center justify-between mb-6">
+                <div className="text-sm text-gray-600 dark:text-gray-300">Paso {wizardStep} de 3</div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setWizardStep(1)}
+                    className={`px-3 py-1.5 rounded text-xs border ${wizardStep === 1 ? 'bg-green-600 text-white border-green-600' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600'}`}
+                  >
+                    Datos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWizardStep(2)}
+                    disabled={!currentOrder.field_id || !currentOrder.sector_id}
+                    className={`px-3 py-1.5 rounded text-xs border ${wizardStep === 2 ? 'bg-green-600 text-white border-green-600' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600'} disabled:opacity-50`}
+                  >
+                    Productos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWizardStep(3)}
+                    disabled={!currentOrder.items?.length || !currentOrder.field_id || !currentOrder.sector_id}
+                    className={`px-3 py-1.5 rounded text-xs border ${wizardStep === 3 ? 'bg-green-600 text-white border-green-600' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600'} disabled:opacity-50`}
+                  >
+                    Revisión
+                  </button>
+                </div>
+              </div>
+
+              {wizardStep === 1 && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                   <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha Planificada</label>
@@ -939,7 +924,15 @@ export const ApplicationOrders: React.FC = () => {
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Campo</label>
                       <select 
                           value={currentOrder.field_id || ''}
-                          onChange={e => setCurrentOrder({...currentOrder, field_id: e.target.value, sector_id: ''})}
+                          onChange={e => {
+                            const fieldId = e.target.value;
+                            const firstSector = fields.find((f) => f.id === fieldId)?.sectors?.[0];
+                            setCurrentOrder({
+                              ...currentOrder,
+                              field_id: fieldId,
+                              sector_id: firstSector?.id || '',
+                            });
+                          }}
                           className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                       >
                           <option value="">Seleccione...</option>
@@ -954,7 +947,6 @@ export const ApplicationOrders: React.FC = () => {
                               const newSectorId = e.target.value;
                               
                               // Find old and new sector hectares
-                              const oldSector = fields.find(f => f.id === currentOrder.field_id)?.sectors?.find(s => s.id === currentOrder.sector_id);
                               const newSector = fields.find(f => f.id === currentOrder.field_id)?.sectors?.find(s => s.id === newSectorId);
                               
                               let updatedItems = currentOrder.items;
@@ -1033,8 +1025,10 @@ export const ApplicationOrders: React.FC = () => {
                       </select>
                   </div>
               </div>
+              )}
 
               {/* Items Section */}
+              {wizardStep === 2 && (
               <div className="border rounded-md p-4 mb-6">
                   <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Productos y Dosis</h3>
                   
@@ -1134,6 +1128,7 @@ export const ApplicationOrders: React.FC = () => {
                       </tbody>
                   </table>
               </div>
+              )}
 
               {/* Machinery & Tech Specs (Collapsed/Secondary) */}
               {currentOrder.application_type !== 'fertirriego' && (
@@ -1203,7 +1198,8 @@ export const ApplicationOrders: React.FC = () => {
               </div>
               )}
 
-              {/* Footer Notes */}
+              {wizardStep === 3 && (
+              <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                   <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Observaciones</label>
@@ -1248,14 +1244,37 @@ export const ApplicationOrders: React.FC = () => {
               </div>
 
               <div className="flex justify-end gap-3">
-                  <button 
-                      onClick={handleSaveOrder}
-                      disabled={loading}
-                      className="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 flex items-center"
+                <button
+                  onClick={handleSaveOrder}
+                  disabled={loading || !canWrite}
+                  className="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 flex items-center disabled:opacity-50"
+                >
+                  {loading ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <Save className="h-5 w-5 mr-2" />}
+                  Guardar Orden
+                </button>
+              </div>
+              </>
+              )}
+
+              <div className="flex justify-between mt-6">
+                <button
+                  type="button"
+                  onClick={() => setWizardStep((s) => (s === 1 ? 1 : ((s - 1) as 1 | 2 | 3)))}
+                  disabled={wizardStep === 1}
+                  className="px-4 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-50"
+                >
+                  Atrás
+                </button>
+                {wizardStep !== 3 && (
+                  <button
+                    type="button"
+                    onClick={() => setWizardStep((s) => (s === 1 ? 2 : 3))}
+                    disabled={(wizardStep === 1 && (!currentOrder.field_id || !currentOrder.sector_id)) || (wizardStep === 2 && !currentOrder.items?.length)}
+                    className="px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
                   >
-                      {loading ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <Save className="h-5 w-5 mr-2" />}
-                      Guardar Orden
+                    Siguiente
                   </button>
+                )}
               </div>
           </div>
       ) : (
@@ -1287,7 +1306,7 @@ export const ApplicationOrders: React.FC = () => {
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{order.objective || '-'}</td>
                               <td className="px-6 py-4 whitespace-nowrap">
-                                  {order.status === 'pendiente' ? (
+                                  {canWrite && order.status === 'pendiente' ? (
                                       <button
                                           onClick={async (e) => {
                                               e.stopPropagation();
@@ -1301,7 +1320,7 @@ export const ApplicationOrders: React.FC = () => {
                                       >
                                           {order.status.toUpperCase()}
                                       </button>
-                                  ) : (
+                                  ) : canWrite ? (
                                       <button 
                                           onClick={(e) => {
                                               e.stopPropagation();
@@ -1312,6 +1331,10 @@ export const ApplicationOrders: React.FC = () => {
                                       >
                                           {order.status.toUpperCase()} (Deshacer)
                                       </button>
+                                  ) : (
+                                      <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)}`}>
+                                          {order.status.toUpperCase()}
+                                      </span>
                                   )}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end gap-2">
@@ -1322,30 +1345,35 @@ export const ApplicationOrders: React.FC = () => {
                                   >
                                       <Printer className="h-5 w-5" />
                                   </button>
-                                  <button 
-                                      onClick={() => handleCloneOrder(order)}
-                                      className="text-green-600 hover:text-green-900"
-                                      title="Duplicar/Clonar"
-                                  >
-                                      <Copy className="h-5 w-5" />
-                                  </button>
-                                  <button 
-                                      onClick={() => {
-                                          setCurrentOrder(order);
-                                          setIsEditing(true);
-                                      }}
-                                      className="text-blue-600 hover:text-blue-900"
-                                      title="Editar"
-                                  >
-                                      <Edit className="h-5 w-5" />
-                                  </button>
-                                  <button 
-                                      onClick={() => handleDeleteOrder(order.id)}
-                                      className="text-red-600 hover:text-red-900 ml-2"
-                                      title="Eliminar"
-                                  >
-                                      <Trash2 className="h-5 w-5" />
-                                  </button>
+                                  {canWrite && (
+                                    <>
+                                      <button 
+                                          onClick={() => handleCloneOrder(order)}
+                                          className="text-green-600 hover:text-green-900"
+                                          title="Duplicar/Clonar"
+                                      >
+                                          <Copy className="h-5 w-5" />
+                                      </button>
+                                      <button 
+                                          onClick={() => {
+                                              setCurrentOrder(order);
+                                              setIsEditing(true);
+                                              setWizardStep(2);
+                                          }}
+                                          className="text-blue-600 hover:text-blue-900"
+                                          title="Editar"
+                                      >
+                                          <Edit className="h-5 w-5" />
+                                      </button>
+                                      <button 
+                                          onClick={() => handleDeleteOrder(order.id)}
+                                          className="text-red-600 hover:text-red-900 ml-2"
+                                          title="Eliminar"
+                                      >
+                                          <Trash2 className="h-5 w-5" />
+                                      </button>
+                                    </>
+                                  )}
                               </td>
                           </tr>
                       ))}

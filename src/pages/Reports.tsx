@@ -1,14 +1,14 @@
-
-import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { getSeasonFromDate, getSeasonRange, isDateInSeason } from '../lib/seasonUtils';
+import { getSeasonFromDate, isDateInSeason } from '../lib/seasonUtils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { FileDown, Loader2, Calendar, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer, Settings, DollarSign, Scale, Play, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
+import { Loader2, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer, Settings, DollarSign, Scale, Play, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
+import { loadReportsRawData } from '../services/reports';
 
 interface ReportData {
   field_name: string;
@@ -121,7 +121,7 @@ const CHEMICAL_CATEGORIES = [
 export const Reports: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'labors' | 'applications' | 'monthly' | 'categories' | 'pending' | 'paid_payments' | 'chemicals' | 'detailed' | 'budget' | 'comparative'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'costs_ha' | 'margin' | 'labors' | 'applications' | 'monthly' | 'categories' | 'pending' | 'paid_payments' | 'fuel_machines' | 'chemicals' | 'stock_breaks' | 'detailed' | 'budget' | 'comparative'>('general');
   const [activeGroup, setActiveGroup] = useState<'general' | 'financial' | 'inventory' | 'comparative'>('general');
   
   // Pending Invoices Filter State
@@ -146,6 +146,7 @@ export const Reports: React.FC = () => {
   const [rawIrrigation, setRawIrrigation] = useState<any[]>([]); 
   const [rawGeneralCosts, setRawGeneralCosts] = useState<any[]>([]); // New state
   const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([]);
+  const [rawProducts, setRawProducts] = useState<any[]>([]);
 
   // Comparative State
   const [comparativeData, setComparativeData] = useState<any[]>([]);
@@ -156,9 +157,6 @@ export const Reports: React.FC = () => {
 
   // Settings State (USD, etc)
   const [usdExchangeRate, setUsdExchangeRate] = useState<number>(950);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [showIncomeModal, setShowIncomeModal] = useState(false);
-  const [editingIncome, setEditingIncome] = useState<Partial<IncomeEntry>>({});
   const [distributeGeneralCosts, setDistributeGeneralCosts] = useState(false);
   const [pdfOrientation, setPdfOrientation] = useState<'portrait' | 'landscape'>('landscape'); // Default landscape
 
@@ -183,7 +181,7 @@ export const Reports: React.FC = () => {
 
   // Update orientation when tab changes
   useEffect(() => {
-    if (activeTab === 'general' || activeTab === 'detailed' || activeTab === 'cashflow' || activeTab === 'labors') {
+    if (activeTab === 'general' || activeTab === 'detailed' || activeTab === 'labors' || activeTab === 'costs_ha' || activeTab === 'margin' || activeTab === 'fuel_machines') {
       setPdfOrientation('landscape');
     } else {
       setPdfOrientation('portrait');
@@ -193,11 +191,6 @@ export const Reports: React.FC = () => {
   // Presentation State
   const [presentationMode, setPresentationMode] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
-
-  // Production Record Input State
-  const [editingProdSectorId, setEditingProdSectorId] = useState<string | null>(null);
-  const [editingProdKg, setEditingProdKg] = useState<string>('');
-  const [editingProdPrice, setEditingProdPrice] = useState<string>('');
 
   // Filtered Pending Invoices
   const filteredPendingInvoices = pendingInvoices.filter(invoice => {
@@ -232,11 +225,16 @@ export const Reports: React.FC = () => {
     return true;
   });
 
+  const loadRawData = useCallback(() => {
+    if (!selectedCompany) return;
+    void loadRawDataImpl();
+  }, [selectedCompany]);
+
   useEffect(() => {
     if (selectedCompany) {
       loadRawData();
     }
-  }, [selectedCompany]);
+  }, [selectedCompany, loadRawData]);
 
   // Update presentation logic to support 4 slides for General tab
   useEffect(() => {
@@ -264,153 +262,80 @@ export const Reports: React.FC = () => {
     setCurrentSlide(0);
     const elem = document.documentElement;
     if (elem.requestFullscreen) {
-      elem.requestFullscreen().catch(err => console.log('Error attempting to enable fullscreen:', err));
+      elem.requestFullscreen().catch(() => toast.error('No se pudo activar pantalla completa.'));
     }
   };
 
   const exitPresentation = () => {
     setPresentationMode(false);
     if (document.fullscreenElement && document.exitFullscreen) {
-      document.exitFullscreen().catch(err => console.log('Error attempting to exit fullscreen:', err));
+      document.exitFullscreen().catch(() => toast.error('No se pudo salir de pantalla completa.'));
     }
   };
 
   // Process data whenever raw data or selected season changes
+  const processReports = useCallback(() => {
+    processReportsImpl();
+  }, [
+    rawFields,
+    rawApplications,
+    rawInvoices,
+    rawLabor,
+    rawWorkerCosts,
+    rawFuel,
+    rawFuelConsumption,
+    rawMachinery,
+    rawIrrigation,
+    rawGeneralCosts,
+    rawProducts,
+    incomeEntries,
+    selectedSeason,
+    usdExchangeRate,
+    distributeGeneralCosts
+  ]);
+
   useEffect(() => {
     // Only process if we have sectors/fields loaded, otherwise wait
     if (rawFields.length > 0) {
         processReports();
     }
-  }, [rawFields, rawApplications, rawInvoices, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawMachinery, rawIrrigation, rawGeneralCosts, incomeEntries, selectedSeason]);
+  }, [rawFields, rawApplications, rawInvoices, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawMachinery, rawIrrigation, rawGeneralCosts, rawProducts, incomeEntries, selectedSeason, processReports]);
 
-  const loadRawData = async () => {
+  async function loadRawDataImpl() {
     if (!selectedCompany) return;
     setLoading(true);
     try {
-      // 1. Fetch Fields
-      const { data: fields } = await supabase
-        .from('fields')
-        .select('id, name, sectors(id, name, hectares)')
-        .eq('company_id', selectedCompany.id);
-      
-      setRawFields(fields || []);
-      const fieldIds = (fields || []).map(f => f.id);
-      const sectorIds = (fields || []).flatMap(f => f.sectors.map((s:any) => s.id));
+      const res = await loadReportsRawData({ companyId: selectedCompany.id });
+      setRawFields(res.fields || []);
+      setRawApplications(res.applications || []);
+      setRawLabor(res.labor || []);
+      setRawWorkerCosts(res.workerCosts || []);
+      setRawFuel(res.fuel || []);
+      setRawFuelConsumption(res.fuelConsumption || []);
+      setRawMachinery(res.machinery || []);
+      setRawIrrigation(res.irrigation || []);
+      setRawGeneralCosts(res.generalCosts || []);
+      setIncomeEntries(res.incomeEntries || []);
+      setRawInvoices(res.invoices || []);
+      setRawProducts((res as any).products || []);
 
-      // 2. Fetch Applications
-      const { data: applications } = await supabase
-        .from('applications')
-        .select('field_id, sector_id, total_cost, application_date')
-        .in('field_id', fieldIds);
-      
-      setRawApplications(applications || []);
-
-      // 2b. Fetch Labor Assignments
-      const { data: labor } = await supabase
-        .from('labor_assignments')
-        .select('sector_id, assigned_amount, assigned_date, labor_type')
-        .in('sector_id', sectorIds);
-      setRawLabor(labor || []);
-
-      // 2b2. Fetch Worker Costs (Plant Staff)
-      const { data: workers } = await supabase
-        .from('worker_costs')
-        .select('sector_id, amount, date')
-        .in('sector_id', sectorIds);
-      setRawWorkerCosts(workers || []);
-
-      // 2c. Fetch Fuel Assignments (Direct)
-      const { data: fuel } = await supabase
-        .from('fuel_assignments')
-        .select('sector_id, assigned_amount, assigned_date')
-        .in('sector_id', sectorIds);
-      setRawFuel(fuel || []);
-
-      // 2d. Fetch Fuel Consumption (Stock System)
-      const { data: fuelCons } = await supabase
-        .from('fuel_consumption')
-        .select('sector_id, estimated_price, date, activity, liters') 
-        .in('sector_id', sectorIds);
-      setRawFuelConsumption(fuelCons || []);
-
-      // 2e. Fetch Machinery
-      const { data: machinery } = await supabase
-        .from('machinery_assignments')
-        .select('sector_id, assigned_amount, assigned_date')
-        .in('sector_id', sectorIds);
-      setRawMachinery(machinery || []);
-
-      // 2f. Fetch Irrigation
-      const { data: irrigation } = await supabase
-        .from('irrigation_assignments')
-        .select('sector_id, assigned_amount, assigned_date')
-        .in('sector_id', sectorIds);
-      setRawIrrigation(irrigation || []);
-
-      // 2g. Fetch General Costs (Distributed)
-      const { data: general } = await supabase
-        .from('general_costs')
-        .select('sector_id, amount, date')
-        .in('sector_id', sectorIds);
-      setRawGeneralCosts(general || []);
-
-      // 2h. Fetch Income Entries
-      const { data: income } = await supabase
-        .from('income_entries')
-        .select('*, fields(name), sectors(name)')
-        .eq('company_id', selectedCompany.id);
-      setIncomeEntries(income || []);
-
-      // 3. Fetch Invoices
-      const { data: invoicesData } = await supabase
-        .from('invoices')
-        .select(`
-          id, invoice_number, invoice_date, total_amount, supplier, status, due_date, document_type, notes,
-          tax_percentage, discount_amount, exempt_amount, special_tax_amount,
-          invoice_items (
-            id, category, total_price, quantity,
-            products (name, unit, category)
-          )
-        `)
-        .eq('company_id', selectedCompany.id);
-      
-      setRawInvoices(invoicesData || []);
-
-      // 4. Extract Seasons
-      const seasonsSet = new Set<string>();
-      seasonsSet.add(getSeasonFromDate(new Date()));
-
-      applications?.forEach(app => {
-        if (app.application_date) {
-          seasonsSet.add(getSeasonFromDate(new Date(app.application_date)));
-        }
-      });
-
-      invoicesData?.forEach(inv => {
-        if (inv.invoice_date) {
-            seasonsSet.add(getSeasonFromDate(new Date(inv.invoice_date)));
-        }
-      });
-
-      const sortedSeasons = Array.from(seasonsSet).sort().reverse();
-      setAvailableSeasons(sortedSeasons);
-      
-      if (!sortedSeasons.includes(selectedSeason)) {
-        setSelectedSeason(sortedSeasons[0]);
+      setAvailableSeasons(res.availableSeasons || []);
+      if (res.availableSeasons && res.availableSeasons.length > 0 && !res.availableSeasons.includes(selectedSeason)) {
+        setSelectedSeason(res.availableSeasons[0]);
       }
 
-    } catch (error) {
-      console.error('Error loading raw data:', error);
+    } catch {
+      toast.error('Error al cargar datos de reportes.');
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const processReports = () => {
+  function processReportsImpl() {
     processApplicationReports(); // This is effectively the "General Cost Report" now
     processFinancialReports();
     processDetailedReport();
-  };
+  }
 
   const processDetailedReport = () => {
     // Filter invoices by selected season
@@ -787,7 +712,7 @@ export const Reports: React.FC = () => {
             compData.get(mKey)!.current += amount;
           }
         }
-      } catch (e) {}
+      } catch (_e) { void _e; }
     });
 
     filteredWorkerCostsCurrent.forEach(w => {
@@ -809,7 +734,7 @@ export const Reports: React.FC = () => {
             compData.get(mKey)!.current += amount;
           }
         }
-      } catch (e) {}
+      } catch (_e) { void _e; }
     });
 
     prevInvoices.forEach(inv => {
@@ -829,7 +754,7 @@ export const Reports: React.FC = () => {
             compData.get(mKey)!.prev += amount;
           }
         }
-      } catch (e) {}
+      } catch (_e) { void _e; }
     });
 
     filteredWorkerCostsPrev.forEach(w => {
@@ -847,7 +772,7 @@ export const Reports: React.FC = () => {
             compData.get(mKey)!.prev += amount;
           }
         }
-      } catch (e) {}
+      } catch (_e) { void _e; }
     });
 
     setMonthlyExpenses(Array.from(monthlyData.entries()).map(([month, total]) => ({ month, total })));
@@ -932,7 +857,7 @@ export const Reports: React.FC = () => {
             notes: inv.notes || '',
             categories
           };
-        } catch (e) { return null; }
+        } catch { return null; }
       })
       .filter(Boolean) as PendingInvoice[];
       
@@ -964,7 +889,7 @@ export const Reports: React.FC = () => {
             subHeader += `| Categoría: ${filterCategory}`;
         }
         if (filterMonth === 'all' && filterCategory === 'all') subHeader += 'Todos';
-    } else if (activeTab === 'general') {
+    } else if (activeTab === 'general' || activeTab === 'costs_ha') {
         subHeader = `Tipo de Cambio: ${formatCLP(usdExchangeRate)} CLP/USD`;
     }
 
@@ -1027,6 +952,130 @@ export const Reports: React.FC = () => {
                 12: { halign: 'right' },
                 13: { halign: 'right', fontStyle: 'bold' },
                 14: { halign: 'right', fontStyle: 'bold' }
+            }
+        });
+
+    } else if (activeTab === 'costs_ha') {
+        const tableBody = reportData.map((row) => {
+            const ha = row.hectares || 1;
+            return [
+                `${row.sector_name}\n(${row.field_name})`,
+                row.hectares.toString(),
+                formatCLP(row.app_cost_only / ha),
+                formatCLP(row.labor_cost / ha),
+                formatCLP(row.worker_cost / ha),
+                formatCLP(row.machinery_cost / ha),
+                formatCLP(row.irrigation_cost / ha),
+                formatCLP(row.fuel_cost_diesel / ha),
+                formatCLP(row.fuel_cost_gasoline / ha),
+                formatCLP(row.general_cost / ha),
+                formatCLP(row.cost_per_ha),
+                formatCLP(row.total_cost)
+            ];
+        });
+
+        const totalHas = reportData.reduce((sum, r) => sum + r.hectares, 0);
+        if (reportData.length > 0 && totalHas > 0) {
+            const totalApps = reportData.reduce((sum, r) => sum + r.app_cost_only, 0);
+            const totalLabor = reportData.reduce((sum, r) => sum + r.labor_cost, 0);
+            const totalWorker = reportData.reduce((sum, r) => sum + r.worker_cost, 0);
+            const totalMachinery = reportData.reduce((sum, r) => sum + r.machinery_cost, 0);
+            const totalIrrigation = reportData.reduce((sum, r) => sum + r.irrigation_cost, 0);
+            const totalDiesel = reportData.reduce((sum, r) => sum + r.fuel_cost_diesel, 0);
+            const totalGasoline = reportData.reduce((sum, r) => sum + r.fuel_cost_gasoline, 0);
+            const totalGeneral = reportData.reduce((sum, r) => sum + r.general_cost, 0);
+            const totalCost = reportData.reduce((sum, r) => sum + r.total_cost, 0);
+
+            tableBody.push([
+                'TOTAL GENERAL',
+                totalHas.toString(),
+                formatCLP(totalApps / totalHas),
+                formatCLP(totalLabor / totalHas),
+                formatCLP(totalWorker / totalHas),
+                formatCLP(totalMachinery / totalHas),
+                formatCLP(totalIrrigation / totalHas),
+                formatCLP(totalDiesel / totalHas),
+                formatCLP(totalGasoline / totalHas),
+                formatCLP(totalGeneral / totalHas),
+                formatCLP(totalCost / totalHas),
+                formatCLP(totalCost)
+            ]);
+        }
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Sector/Campo', 'Has', 'Aplic/Ha', 'Mano Obra/Ha', 'Personal/Ha', 'Maq/Ha', 'Riego/Ha', 'Diésel/Ha', 'Bencina/Ha', 'Otros/Ha', 'Total/Ha', 'Total (CLP)']],
+            body: tableBody,
+            theme: 'grid',
+            headStyles: { fillColor: [46, 125, 50], fontSize: 8 },
+            styles: { fontSize: 8, cellPadding: 2 },
+            columnStyles: {
+                0: { cellWidth: 26 },
+                1: { halign: 'right', cellWidth: 12 },
+                2: { halign: 'right' },
+                3: { halign: 'right' },
+                4: { halign: 'right' },
+                5: { halign: 'right' },
+                6: { halign: 'right' },
+                7: { halign: 'right' },
+                8: { halign: 'right' },
+                9: { halign: 'right' },
+                10: { halign: 'right', fontStyle: 'bold' },
+                11: { halign: 'right', fontStyle: 'bold' }
+            },
+            didParseCell: function(data) {
+                if (reportData.length > 0 && data.row.index === reportData.length) {
+                    data.cell.styles.fontStyle = 'bold';
+                    data.cell.styles.fillColor = [230, 230, 230];
+                }
+            }
+        });
+
+    } else if (activeTab === 'margin') {
+        const { rows, totals } = getMarginRows();
+        const tableBody = rows.map((r) => [
+            `${r.sector_name}\n(${r.field_name})`,
+            r.hectares.toString(),
+            formatCLP(r.income),
+            formatCLP(r.cost),
+            formatCLP(r.profit),
+            formatCLP(r.profit_per_ha),
+            `${r.margin_pct.toFixed(1)}%`
+        ]);
+
+        if (rows.length > 0) {
+            tableBody.push([
+                'TOTAL GENERAL',
+                totals.totalHa.toString(),
+                formatCLP(totals.totalIncome),
+                formatCLP(totals.totalCost),
+                formatCLP(totals.totalProfit),
+                formatCLP(totals.totalProfitPerHa),
+                `${totals.totalMarginPct.toFixed(1)}%`
+            ]);
+        }
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Sector/Campo', 'Has', 'Ingresos (CLP)', 'Costos (CLP)', 'Utilidad (CLP)', 'Utilidad/Ha', 'Margen %']],
+            body: tableBody,
+            theme: 'grid',
+            headStyles: { fillColor: [46, 125, 50], fontSize: 9 },
+            styles: { fontSize: 9, cellPadding: 2 },
+            columnStyles: {
+                0: { cellWidth: 26 },
+                1: { halign: 'right', cellWidth: 12 },
+                2: { halign: 'right' },
+                3: { halign: 'right' },
+                4: { halign: 'right', fontStyle: 'bold' },
+                5: { halign: 'right' },
+                6: { halign: 'right', fontStyle: 'bold' }
+            },
+            didParseCell: function(data) {
+                if (rows.length > 0 && data.row.index === rows.length) {
+                    data.cell.styles.fontStyle = 'bold';
+                    data.cell.styles.fillColor = [230, 230, 230];
+                }
             }
         });
 
@@ -1207,6 +1256,49 @@ export const Reports: React.FC = () => {
             columnStyles: { 1: { halign: 'right', fontStyle: 'bold' } }
         });
 
+    } else if (activeTab === 'fuel_machines') {
+        const { rows, totals } = getFuelMachinesRows();
+        const tableBody = rows.map((r) => [
+            r.machine_name,
+            r.liters_diesel.toFixed(1),
+            r.liters_gasoline.toFixed(1),
+            r.liters_total.toFixed(1),
+            formatCLP(r.cost_total),
+            formatCLP(r.avg_price)
+        ]);
+
+        if (rows.length > 0) {
+            tableBody.push([
+                'TOTAL GENERAL',
+                totals.liters_diesel.toFixed(1),
+                totals.liters_gasoline.toFixed(1),
+                totals.liters_total.toFixed(1),
+                formatCLP(totals.cost_total),
+                formatCLP(totals.avg_price)
+            ]);
+        }
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Máquina', 'L Diésel', 'L Bencina', 'L Total', 'Costo Total', 'CLP/L']],
+            body: tableBody,
+            theme: 'grid',
+            headStyles: { fillColor: [136, 132, 216] },
+            columnStyles: {
+                1: { halign: 'right' },
+                2: { halign: 'right' },
+                3: { halign: 'right' },
+                4: { halign: 'right', fontStyle: 'bold' },
+                5: { halign: 'right' }
+            },
+            didParseCell: function(data) {
+                if (rows.length > 0 && data.row.index === rows.length) {
+                    data.cell.styles.fontStyle = 'bold';
+                    data.cell.styles.fillColor = [230, 230, 230];
+                }
+            }
+        });
+
     } else if (activeTab === 'chemicals') {
         // CHEMICALS REPORT
         const filteredChems = chemicalProducts.filter(p => filterChemicalCategory === 'all' || p.category === filterChemicalCategory);
@@ -1234,6 +1326,44 @@ export const Reports: React.FC = () => {
                 2: { halign: 'right' },
                 3: { halign: 'right' },
                 4: { halign: 'right', fontStyle: 'bold' }
+            }
+        });
+
+    } else if (activeTab === 'stock_breaks') {
+        const { rows, totals } = getStockBreakRows();
+        const tableBody = rows.map((r) => [
+            r.name,
+            r.category,
+            r.unit,
+            r.current_stock.toFixed(2),
+            r.minimum_stock.toFixed(2),
+            r.deficit.toFixed(2),
+            formatCLP(r.average_cost),
+            formatCLP(r.value)
+        ]);
+
+        if (rows.length > 0) {
+            tableBody.push(['TOTAL', '', '', '', '', totals.deficit.toFixed(2), '', formatCLP(totals.value)]);
+        }
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Producto', 'Categoría', 'Unidad', 'Stock', 'Mínimo', 'Faltante', 'Costo Prom.', 'Costo Reposición']],
+            body: tableBody,
+            theme: 'grid',
+            headStyles: { fillColor: [0, 136, 254] },
+            columnStyles: {
+                3: { halign: 'right' },
+                4: { halign: 'right' },
+                5: { halign: 'right', fontStyle: 'bold' },
+                6: { halign: 'right' },
+                7: { halign: 'right', fontStyle: 'bold' }
+            },
+            didParseCell: function(data) {
+                if (rows.length > 0 && data.row.index === rows.length) {
+                    data.cell.styles.fontStyle = 'bold';
+                    data.cell.styles.fillColor = [230, 230, 230];
+                }
             }
         });
 
@@ -1354,16 +1484,140 @@ export const Reports: React.FC = () => {
   const getReportTitle = () => {
     switch(activeTab) {
       case 'applications': return 'Costos de Aplicación';
+      case 'costs_ha': return 'Costos por Hectárea';
+      case 'margin': return 'Rentabilidad Neta';
       case 'labors': return 'Detalle de Labores por Sector';
       case 'monthly': return 'Gastos Mensuales';
-      case 'cashflow': return 'Flujo de Caja';
       case 'categories': return 'Gastos por Clasificación';
       case 'chemicals': return 'Insumos Químicos';
+      case 'stock_breaks': return 'Quiebres de Stock';
       case 'pending': return 'Facturas Pendientes';
       case 'paid_payments': return 'Pagos Realizados por Categoría';
+      case 'fuel_machines': return 'Petróleo por Máquina';
       case 'detailed': return 'Informe Detallado';
       default: return 'Reporte';
     }
+  };
+
+  const getMarginRows = () => {
+    const rows = reportData.map((row) => {
+      const income = Number(row.income_estimated || 0);
+      const cost = Number(row.total_cost || 0);
+      const profit = income - cost;
+      const ha = Number(row.hectares || 0);
+      const profitPerHa = ha > 0 ? profit / ha : 0;
+      const marginPct = income > 0 ? (profit / income) * 100 : 0;
+      return {
+        field_name: row.field_name,
+        sector_name: row.sector_name,
+        hectares: ha,
+        kg_produced: Number(row.kg_produced || 0),
+        price_per_kg: Number(row.price_per_kg || 0),
+        income,
+        cost,
+        profit,
+        profit_per_ha: profitPerHa,
+        margin_pct: marginPct
+      };
+    });
+
+    const totalIncome = rows.reduce((sum, r) => sum + r.income, 0);
+    const totalCost = rows.reduce((sum, r) => sum + r.cost, 0);
+    const totalProfit = totalIncome - totalCost;
+    const totalHa = rows.reduce((sum, r) => sum + r.hectares, 0);
+    const totalProfitPerHa = totalHa > 0 ? totalProfit / totalHa : 0;
+    const totalMarginPct = totalIncome > 0 ? (totalProfit / totalIncome) * 100 : 0;
+
+    return { rows, totals: { totalIncome, totalCost, totalProfit, totalHa, totalProfitPerHa, totalMarginPct } };
+  };
+
+  const getFuelMachinesRows = () => {
+    const items = (rawFuelConsumption || []).filter((it) => {
+      try {
+        if (!it?.date) return false;
+        return isDateInSeason(it.date, selectedSeason);
+      } catch {
+        return false;
+      }
+    });
+
+    const map = new Map<string, { machine_id: string | null; machine_name: string; liters_diesel: number; liters_gasoline: number; cost_diesel: number; cost_gasoline: number }>();
+
+    items.forEach((it) => {
+      const activity = String(it.activity || '').toLowerCase();
+      const isGasoline = activity.includes('bencina');
+      const machineId = it.machine_id ? String(it.machine_id) : null;
+      const machineName = it.machine?.name ? String(it.machine.name) : 'Sin máquina';
+      const key = machineId || 'none';
+      const liters = Number(it.liters || 0);
+      const cost = Number(it.estimated_price || 0);
+
+      const row = map.get(key) || { machine_id: machineId, machine_name: machineName, liters_diesel: 0, liters_gasoline: 0, cost_diesel: 0, cost_gasoline: 0 };
+
+      if (isGasoline) {
+        row.liters_gasoline += liters;
+        row.cost_gasoline += cost;
+      } else {
+        row.liters_diesel += liters;
+        row.cost_diesel += cost;
+      }
+
+      map.set(key, row);
+    });
+
+    const rows = Array.from(map.values()).map((r) => {
+      const liters_total = r.liters_diesel + r.liters_gasoline;
+      const cost_total = r.cost_diesel + r.cost_gasoline;
+      const avg_price = liters_total > 0 ? cost_total / liters_total : 0;
+      return { ...r, liters_total, cost_total, avg_price };
+    }).sort((a, b) => b.cost_total - a.cost_total);
+
+    const totals = rows.reduce(
+      (acc, r) => ({
+        liters_diesel: acc.liters_diesel + r.liters_diesel,
+        liters_gasoline: acc.liters_gasoline + r.liters_gasoline,
+        liters_total: acc.liters_total + r.liters_total,
+        cost_total: acc.cost_total + r.cost_total
+      }),
+      { liters_diesel: 0, liters_gasoline: 0, liters_total: 0, cost_total: 0 }
+    );
+
+    return { rows, totals: { ...totals, avg_price: totals.liters_total > 0 ? totals.cost_total / totals.liters_total : 0 } };
+  };
+
+  const getStockBreakRows = () => {
+    const products = (rawProducts || []) as Array<any>;
+    const rows = products
+      .map((p) => {
+        const current = Number(p.current_stock || 0);
+        const min = Number(p.minimum_stock || 0);
+        const deficit = Math.max(min - current, 0);
+        const avgCost = Number(p.average_cost || 0);
+        const value = deficit * avgCost;
+        return {
+          id: String(p.id),
+          name: String(p.name || ''),
+          category: String(p.category || ''),
+          unit: String(p.unit || ''),
+          current_stock: current,
+          minimum_stock: min,
+          deficit,
+          average_cost: avgCost,
+          value
+        };
+      })
+      .filter((r) => r.minimum_stock > 0 && r.deficit > 0)
+      .sort((a, b) => b.value - a.value);
+
+    const totals = rows.reduce(
+      (acc, r) => ({
+        deficit: acc.deficit + r.deficit,
+        value: acc.value + r.value
+      }),
+      { deficit: 0, value: 0 }
+    );
+
+    return { rows, totals };
   };
 
   return (
@@ -1469,6 +1723,22 @@ export const Reports: React.FC = () => {
                 Costos Generales (USD/Kg)
               </button>
               <button
+                onClick={() => setActiveTab('costs_ha')}
+                className={`${
+                  activeTab === 'costs_ha' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Costos por Ha
+              </button>
+              <button
+                onClick={() => setActiveTab('margin')}
+                className={`${
+                  activeTab === 'margin' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Rentabilidad
+              </button>
+              <button
                 onClick={() => setActiveTab('labors')}
                 className={`${
                   activeTab === 'labors' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
@@ -1521,6 +1791,14 @@ export const Reports: React.FC = () => {
               >
                 Pagos Realizados
               </button>
+              <button
+                onClick={() => setActiveTab('fuel_machines')}
+                className={`${
+                  activeTab === 'fuel_machines' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Petróleo por Máquina
+              </button>
             </nav>
         )}
 
@@ -1533,6 +1811,14 @@ export const Reports: React.FC = () => {
                 } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
               >
                 Insumos Químicos
+              </button>
+              <button
+                onClick={() => setActiveTab('stock_breaks')}
+                className={`${
+                  activeTab === 'stock_breaks' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Quiebres de Stock
               </button>
               <button
                 onClick={() => setActiveTab('applications')}
@@ -2066,6 +2352,221 @@ export const Reports: React.FC = () => {
         </div>
       )}
 
+      {activeTab === 'costs_ha' && (
+        <div className="space-y-6">
+          <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+            <div className="flex justify-between items-center px-4 py-5 sm:px-6 border-b border-gray-200">
+              <div>
+                <h3 className="text-lg leading-6 font-medium text-gray-900">Costos por Hectárea ({selectedSeason})</h3>
+                <p className="mt-1 text-sm text-gray-500">Desglose por rubro (CLP/ha) y total por sector</p>
+              </div>
+              <button
+                onClick={() => {
+                  const rows = [['Campo', 'Sector', 'Has', 'Aplic/Ha', 'Mano Obra/Ha', 'Personal/Ha', 'Maq/Ha', 'Riego/Ha', 'Diésel/Ha', 'Bencina/Ha', 'Otros/Ha', 'Total/Ha', 'Total (CLP)']];
+                  reportData.forEach((row) => {
+                    const ha = row.hectares || 1;
+                    rows.push([
+                      row.field_name,
+                      row.sector_name,
+                      row.hectares.toString(),
+                      (row.app_cost_only / ha).toFixed(2),
+                      (row.labor_cost / ha).toFixed(2),
+                      (row.worker_cost / ha).toFixed(2),
+                      (row.machinery_cost / ha).toFixed(2),
+                      (row.irrigation_cost / ha).toFixed(2),
+                      (row.fuel_cost_diesel / ha).toFixed(2),
+                      (row.fuel_cost_gasoline / ha).toFixed(2),
+                      (row.general_cost / ha).toFixed(2),
+                      row.cost_per_ha.toFixed(2),
+                      row.total_cost.toFixed(2),
+                    ]);
+                  });
+                  const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
+                  const encodedUri = encodeURI(csvContent);
+                  const link = document.createElement("a");
+                  link.setAttribute("href", encodedUri);
+                  link.setAttribute("download", `Costos_por_Ha_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.csv`);
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+                className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-green-700 bg-green-100 hover:bg-green-200"
+              >
+                <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sector/Campo</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Has</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Aplic/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Mano Obra/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Personal/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Maq/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Riego/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Diésel/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Bencina/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Otros/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-blue-50">Total/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total (CLP)</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {reportData.map((row, index) => {
+                    const ha = row.hectares || 1;
+                    return (
+                      <tr key={index} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">{row.sector_name}</div>
+                          <div className="text-xs text-gray-500">{row.field_name}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">{row.hectares}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.app_cost_only / ha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.labor_cost / ha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.worker_cost / ha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.machinery_cost / ha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.irrigation_cost / ha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.fuel_cost_diesel / ha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.fuel_cost_gasoline / ha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.general_cost / ha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-700 bg-blue-50">{formatCLP(row.cost_per_ha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(row.total_cost)}</td>
+                      </tr>
+                    );
+                  })}
+                  {reportData.length > 0 && (
+                    (() => {
+                      const totalHas = reportData.reduce((sum, r) => sum + r.hectares, 0);
+                      const totalApps = reportData.reduce((sum, r) => sum + r.app_cost_only, 0);
+                      const totalLabor = reportData.reduce((sum, r) => sum + r.labor_cost, 0);
+                      const totalWorker = reportData.reduce((sum, r) => sum + r.worker_cost, 0);
+                      const totalMachinery = reportData.reduce((sum, r) => sum + r.machinery_cost, 0);
+                      const totalIrrigation = reportData.reduce((sum, r) => sum + r.irrigation_cost, 0);
+                      const totalDiesel = reportData.reduce((sum, r) => sum + r.fuel_cost_diesel, 0);
+                      const totalGasoline = reportData.reduce((sum, r) => sum + r.fuel_cost_gasoline, 0);
+                      const totalGeneral = reportData.reduce((sum, r) => sum + r.general_cost, 0);
+                      const totalCost = reportData.reduce((sum, r) => sum + r.total_cost, 0);
+                      const ha = totalHas || 1;
+
+                      return (
+                        <tr className="bg-gray-100 font-bold border-t-2 border-gray-300">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">TOTAL GENERAL</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{totalHas}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalApps / ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalLabor / ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalWorker / ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalMachinery / ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalIrrigation / ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalDiesel / ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalGasoline / ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalGeneral / ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-blue-800 bg-blue-100">{formatCLP(totalCost / ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalCost)}</td>
+                        </tr>
+                      );
+                    })()
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'margin' && (
+        <div className="space-y-6">
+          <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+            <div className="flex justify-between items-center px-4 py-5 sm:px-6 border-b border-gray-200">
+              <div>
+                <h3 className="text-lg leading-6 font-medium text-gray-900">Rentabilidad Neta ({selectedSeason})</h3>
+                <p className="mt-1 text-sm text-gray-500">Ingresos estimados vs costos por sector</p>
+              </div>
+              <button
+                onClick={() => {
+                  const { rows, totals } = getMarginRows();
+                  const csvRows = [['Campo', 'Sector', 'Has', 'Ingresos (CLP)', 'Costos (CLP)', 'Utilidad (CLP)', 'Utilidad/Ha', 'Margen %']];
+                  rows.forEach((r) => {
+                    csvRows.push([
+                      r.field_name,
+                      r.sector_name,
+                      r.hectares.toString(),
+                      r.income.toFixed(2),
+                      r.cost.toFixed(2),
+                      r.profit.toFixed(2),
+                      r.profit_per_ha.toFixed(2),
+                      r.margin_pct.toFixed(2)
+                    ]);
+                  });
+                  csvRows.push(['TOTAL', '', totals.totalHa.toString(), totals.totalIncome.toFixed(2), totals.totalCost.toFixed(2), totals.totalProfit.toFixed(2), totals.totalProfitPerHa.toFixed(2), totals.totalMarginPct.toFixed(2)]);
+                  const csvContent = "data:text/csv;charset=utf-8," + csvRows.map(e => e.join(",")).join("\n");
+                  const encodedUri = encodeURI(csvContent);
+                  const link = document.createElement("a");
+                  link.setAttribute("href", encodedUri);
+                  link.setAttribute("download", `Rentabilidad_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.csv`);
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+                className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-green-700 bg-green-100 hover:bg-green-200"
+              >
+                <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sector/Campo</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Has</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ingresos</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costos</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-blue-50">Utilidad</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Utilidad/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Margen %</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {(() => {
+                    const { rows, totals } = getMarginRows();
+                    return (
+                      <>
+                        {rows.map((r) => (
+                          <tr key={`${r.field_name}-${r.sector_name}`} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">{r.sector_name}</div>
+                              <div className="text-xs text-gray-500">{r.field_name}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">{r.hectares}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{formatCLP(r.income)}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{formatCLP(r.cost)}</td>
+                            <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold bg-blue-50 ${r.profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatCLP(r.profit)}</td>
+                            <td className={`px-6 py-4 whitespace-nowrap text-sm text-right ${r.profit_per_ha >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatCLP(r.profit_per_ha)}</td>
+                            <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-medium ${r.margin_pct >= 0 ? 'text-green-700' : 'text-red-700'}`}>{r.margin_pct.toFixed(1)}%</td>
+                          </tr>
+                        ))}
+                        {rows.length > 0 && (
+                          <tr className="bg-gray-100 font-bold border-t-2 border-gray-300">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">TOTAL GENERAL</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{totals.totalHa}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totals.totalIncome)}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totals.totalCost)}</td>
+                            <td className={`px-6 py-4 whitespace-nowrap text-sm text-right bg-blue-100 ${totals.totalProfit >= 0 ? 'text-green-800' : 'text-red-800'}`}>{formatCLP(totals.totalProfit)}</td>
+                            <td className={`px-6 py-4 whitespace-nowrap text-sm text-right ${totals.totalProfitPerHa >= 0 ? 'text-green-800' : 'text-red-800'}`}>{formatCLP(totals.totalProfitPerHa)}</td>
+                            <td className={`px-6 py-4 whitespace-nowrap text-sm text-right ${totals.totalMarginPct >= 0 ? 'text-green-800' : 'text-red-800'}`}>{totals.totalMarginPct.toFixed(1)}%</td>
+                          </tr>
+                        )}
+                      </>
+                    );
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* LABORS REPORT (NEW) */}
       {activeTab === 'labors' && (
         <div className="space-y-6">
@@ -2281,6 +2782,190 @@ export const Reports: React.FC = () => {
                     </tbody>
                   </table>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'fuel_machines' && (
+            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+              <div className="flex justify-between items-center px-4 py-5 sm:px-6 border-b border-gray-200">
+                <div>
+                  <h3 className="text-lg leading-6 font-medium text-gray-900">Petróleo por Máquina ({selectedSeason})</h3>
+                  <p className="mt-1 text-sm text-gray-500">Consumo registrado en bitácora (fuel_consumption)</p>
+                </div>
+                <button
+                  onClick={() => {
+                    const { rows, totals } = getFuelMachinesRows();
+                    const csvRows = [['Máquina', 'L Diésel', 'L Bencina', 'L Total', 'Costo Total', 'CLP/L']];
+                    rows.forEach((r) => {
+                      csvRows.push([
+                        r.machine_name,
+                        r.liters_diesel.toFixed(1),
+                        r.liters_gasoline.toFixed(1),
+                        r.liters_total.toFixed(1),
+                        r.cost_total.toFixed(2),
+                        r.avg_price.toFixed(2)
+                      ]);
+                    });
+                    csvRows.push(['TOTAL', totals.liters_diesel.toFixed(1), totals.liters_gasoline.toFixed(1), totals.liters_total.toFixed(1), totals.cost_total.toFixed(2), totals.avg_price.toFixed(2)]);
+                    const csvContent = "data:text/csv;charset=utf-8," + csvRows.map(e => e.join(",")).join("\n");
+                    const encodedUri = encodeURI(csvContent);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", encodedUri);
+                    link.setAttribute("download", `Petroleo_por_Maquina_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                  className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-green-700 bg-green-100 hover:bg-green-200"
+                >
+                  <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Máquina</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">L Diésel</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">L Bencina</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">L Total</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo Total</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">CLP/L</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {(() => {
+                      const { rows, totals } = getFuelMachinesRows();
+                      return (
+                        <>
+                          {rows.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="px-6 py-4 text-center text-gray-500">No hay consumos registrados en {selectedSeason}</td>
+                            </tr>
+                          ) : (
+                            rows.map((r) => (
+                              <tr key={r.machine_id || r.machine_name}>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{r.machine_name}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{r.liters_diesel.toFixed(1)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{r.liters_gasoline.toFixed(1)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{r.liters_total.toFixed(1)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-900">{formatCLP(r.cost_total)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{formatCLP(r.avg_price)}</td>
+                              </tr>
+                            ))
+                          )}
+                          {rows.length > 0 && (
+                            <tr className="bg-gray-100 font-bold border-t-2 border-gray-300">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">TOTAL GENERAL</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{totals.liters_diesel.toFixed(1)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{totals.liters_gasoline.toFixed(1)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{totals.liters_total.toFixed(1)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totals.cost_total)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totals.avg_price)}</td>
+                            </tr>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'stock_breaks' && (
+            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+              <div className="flex justify-between items-center px-4 py-5 sm:px-6 border-b border-gray-200">
+                <div>
+                  <h3 className="text-lg leading-6 font-medium text-gray-900">Quiebres de Stock</h3>
+                  <p className="mt-1 text-sm text-gray-500">Productos bajo stock mínimo (bodega local)</p>
+                </div>
+                <button
+                  onClick={() => {
+                    const { rows, totals } = getStockBreakRows();
+                    const csvRows = [['Producto', 'Categoría', 'Unidad', 'Stock', 'Mínimo', 'Faltante', 'Costo Prom.', 'Costo Reposición']];
+                    rows.forEach((r) => {
+                      csvRows.push([
+                        r.name,
+                        r.category,
+                        r.unit,
+                        r.current_stock.toFixed(2),
+                        r.minimum_stock.toFixed(2),
+                        r.deficit.toFixed(2),
+                        r.average_cost.toFixed(2),
+                        r.value.toFixed(2)
+                      ]);
+                    });
+                    csvRows.push(['TOTAL', '', '', '', '', totals.deficit.toFixed(2), '', totals.value.toFixed(2)]);
+                    const csvContent = "data:text/csv;charset=utf-8," + csvRows.map(e => e.join(",")).join("\n");
+                    const encodedUri = encodeURI(csvContent);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", encodedUri);
+                    link.setAttribute("download", `Quiebres_Stock_${selectedCompany.name.replace(/\s+/g, '_')}.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                  className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-green-700 bg-green-100 hover:bg-green-200"
+                >
+                  <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unidad</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Mínimo</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-red-50">Faltante</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo Prom.</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-blue-50">Costo Reposición</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {(() => {
+                      const { rows, totals } = getStockBreakRows();
+                      return (
+                        <>
+                          {rows.length === 0 ? (
+                            <tr>
+                              <td colSpan={8} className="px-6 py-4 text-center text-gray-500">No hay quiebres de stock</td>
+                            </tr>
+                          ) : (
+                            rows.map((r) => (
+                              <tr key={r.id}>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{r.name}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.category}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.unit}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{r.current_stock.toFixed(2)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{r.minimum_stock.toFixed(2)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-red-700 bg-red-50">{r.deficit.toFixed(2)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{formatCLP(r.average_cost)}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-700 bg-blue-50">{formatCLP(r.value)}</td>
+                              </tr>
+                            ))
+                          )}
+                          {rows.length > 0 && (
+                            <tr className="bg-gray-100 font-bold border-t-2 border-gray-300">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">TOTAL</td>
+                              <td className="px-6 py-4 whitespace-nowrap" />
+                              <td className="px-6 py-4 whitespace-nowrap" />
+                              <td className="px-6 py-4 whitespace-nowrap" />
+                              <td className="px-6 py-4 whitespace-nowrap" />
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-800 bg-red-100">{totals.deficit.toFixed(2)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap" />
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-blue-800 bg-blue-100">{formatCLP(totals.value)}</td>
+                            </tr>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

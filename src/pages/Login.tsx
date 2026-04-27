@@ -1,8 +1,8 @@
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../supabase/client';
 import { Mail, Lock, Loader2 } from 'lucide-react';
+import { resetPasswordForEmail, signInWithEmail, signUpWithEmail } from '../services/auth';
 
 export const Login: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -22,32 +22,20 @@ export const Login: React.FC = () => {
 
     try {
       if (isResetPassword) {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: window.location.origin,
-        });
-        if (error) throw error;
+        await resetPasswordForEmail({ email, redirectTo: window.location.origin });
         setMessage('Revisa tu correo para el enlace de recuperación.');
       } else if (isSignUp) {
-        const { error, data } = await supabase.auth.signUp({
-          email,
-          password,
-        });
-        if (error) throw error;
+        const data = await signUpWithEmail({ email, password });
         if (data.user && data.session) {
             navigate('/');
         } else {
             setMessage('Registro exitoso. Por favor revisa tu correo para confirmar tu cuenta.');
         }
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (error) throw error;
+        await signInWithEmail({ email, password });
         navigate('/');
       }
     } catch (err: any) {
-      console.error('Auth error:', err);
       if (err.message === 'Failed to fetch') {
         setError('Error de conexión con el servidor. Posible bloqueo de red o configuración de dominio (CORS) en Supabase.');
       } else if (err.message.includes('Invalid login credentials')) {

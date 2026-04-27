@@ -20,7 +20,7 @@ BEGIN
     AND owner_id = auth.uid()
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- Create a helper function to check if user is a member (for SELECT)
 CREATE OR REPLACE FUNCTION public.is_company_member(_company_id uuid)
@@ -38,7 +38,7 @@ BEGIN
     AND owner_id = auth.uid()
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- Group A: Tables with company_id
 DO $$

@@ -1,6 +1,6 @@
 -- Grant necessary permissions to authenticated users for the function and table
 GRANT EXECUTE ON FUNCTION check_sector_access(uuid) TO authenticated;
-GRANT ALL ON TABLE production_records TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE production_records TO authenticated;
 
 -- Ensure RLS is enabled
 ALTER TABLE production_records ENABLE ROW LEVEL SECURITY;

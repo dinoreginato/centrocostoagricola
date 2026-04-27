@@ -56,5 +56,24 @@ ALTER TABLE public.application_orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.application_order_items ENABLE ROW LEVEL SECURITY;
 
 -- Policies
-CREATE POLICY "Allow access to all authenticated users" ON public.application_orders FOR ALL TO authenticated USING (true);
-CREATE POLICY "Allow access to all authenticated users" ON public.application_order_items FOR ALL TO authenticated USING (true);
+DROP POLICY IF EXISTS "Allow access to all authenticated users" ON public.application_orders;
+DROP POLICY IF EXISTS "policy_read_application_orders" ON public.application_orders;
+DROP POLICY IF EXISTS "policy_write_application_orders" ON public.application_orders;
+
+CREATE POLICY "policy_read_application_orders" ON public.application_orders FOR SELECT
+USING (public.is_company_member(company_id));
+
+CREATE POLICY "policy_write_application_orders" ON public.application_orders FOR ALL
+USING (public.is_admin_or_editor(company_id))
+WITH CHECK (public.is_admin_or_editor(company_id));
+
+DROP POLICY IF EXISTS "Allow access to all authenticated users" ON public.application_order_items;
+DROP POLICY IF EXISTS "policy_read_application_order_items" ON public.application_order_items;
+DROP POLICY IF EXISTS "policy_write_application_order_items" ON public.application_order_items;
+
+CREATE POLICY "policy_read_application_order_items" ON public.application_order_items FOR SELECT
+USING (EXISTS (SELECT 1 FROM public.application_orders o WHERE o.id = order_id AND public.is_company_member(o.company_id)));
+
+CREATE POLICY "policy_write_application_order_items" ON public.application_order_items FOR ALL
+USING (EXISTS (SELECT 1 FROM public.application_orders o WHERE o.id = order_id AND public.is_admin_or_editor(o.company_id)))
+WITH CHECK (EXISTS (SELECT 1 FROM public.application_orders o WHERE o.id = order_id AND public.is_admin_or_editor(o.company_id)));

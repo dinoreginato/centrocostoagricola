@@ -1,9 +1,8 @@
 import { toast } from 'sonner';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
 import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X, Trash2, Layout, AlertCircle, Play, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, ShieldAlert } from 'lucide-react';
 import { 
@@ -17,10 +16,30 @@ import {
   Legend
 } from 'recharts';
 import { WeatherWidget } from '../components/WeatherWidget';
+import { fetchAgrometItemsResumen, fetchAgrometPpDay } from '../services/agromet';
+import { loadDashboardRaw } from '../services/dashboard';
+import { createCompanyForCurrentUser, deleteCompany } from '../services/companies';
+import { fetchRainLogDates, fetchRainLogKeysForYear, fetchRainLogsForYear, insertRainLogs } from '../services/rainLogs';
+import { fetchInvoiceById, markInvoiceAsPaid } from '../services/invoices';
+import { deleteCompanyAdmin, fetchIsSystemAdmin } from '../services/users';
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const toRad = (v: number) => (v * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 export const Dashboard: React.FC = () => {
-  const { companies, selectedCompany, loading, selectCompany, addCompany, refreshCompanies } = useCompany();
+  const { companies, selectedCompany, loading, selectCompany, addCompany, refreshCompanies, userRole } = useCompany();
   const { user } = useAuth();
+  const [isSystemAdmin, setIsSystemAdmin] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newCompanyRut, setNewCompanyRut] = useState('');
   const [isCreating, setIsCreating] = useState(false);
@@ -30,6 +49,15 @@ export const Dashboard: React.FC = () => {
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null); // For invoice modal
   const [presentationMode, setPresentationMode] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
+  const canWrite = userRole !== 'viewer';
+  const [invoiceMonthWindowOffset, setInvoiceMonthWindowOffset] = useState(0);
+  const [selectedInvoiceMonth, setSelectedInvoiceMonth] = useState<string>(() => {
+    const d = new Date();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    return `${d.getFullYear()}-${m}`;
+  });
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
+  const [invoiceDetailLoading, setInvoiceDetailLoading] = useState(false);
 
   const [dashboardStats, setDashboardStats] = useState({
     totalFields: 0,
@@ -55,33 +83,38 @@ export const Dashboard: React.FC = () => {
   const [rainStation, setRainStation] = useState<{ id: string; name: string } | null>(null);
   const rainSyncedRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    if (selectedCompany) {
-      loadDashboardData();
+  const addMonths = (date: Date, months: number) => {
+    const d = new Date(date);
+    d.setMonth(d.getMonth() + months);
+    return d;
+  };
+
+  const monthKeyFromDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+  const monthLabel = (date: Date) => {
+    const label = date.toLocaleDateString('es-CL', { month: 'short' });
+    return `${label.charAt(0).toUpperCase()}${label.slice(1)} ${date.getFullYear()}`;
+  };
+
+  const getNearestStation = useCallback((lat: number, lon: number, stations: any[]) => {
+    const candidatesInia = stations.filter((s: any) => (s.api || '').toUpperCase() === 'INIA');
+    const list = candidatesInia.length > 0 ? candidatesInia : stations;
+
+    let best: any = null;
+    let bestD = Infinity;
+    for (const st of list) {
+      const d = haversineKm(lat, lon, st.lat, st.lon);
+      if (d < bestD) {
+        bestD = d;
+        best = st;
+      }
     }
-  }, [selectedCompany]);
+    if (!best) return null;
 
-  const haversineKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const toRad = (v: number) => (v * Math.PI) / 180;
-    const R = 6371;
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  };
-
-  const fetchAgrometItemsResumen = async () => {
-    const resp = await fetch('/api/agromet/items-resumen.js', { headers: { accept: 'application/json' } });
-    if (!resp.ok) throw new Error('No se pudo obtener Agrometeorología');
-    const ct = resp.headers.get('content-type') || '';
-    if (!ct.includes('application/json')) throw new Error('Respuesta no válida desde Agrometeorología');
-    const json = await resp.json();
-    return json?.data || [];
-  };
+    const source = String(best.source || '').toUpperCase();
+    const stationCode = `${source || 'EXT'}-${best.id}`;
+    return { best, stationCode };
+  }, []);
 
   useEffect(() => {
     const loadNearestStation = async () => {
@@ -128,33 +161,13 @@ export const Dashboard: React.FC = () => {
         }
 
         setRainStation({ id: nearest.best.id, name: nearest.best.nombre });
-      } catch (e) {
+      } catch {
         setRainStation(null);
       }
     };
 
     loadNearestStation();
-  }, [selectedCompany, rainScope, rainFieldId, rainSectorId, companyFields]);
-
-  const getNearestStation = (lat: number, lon: number, stations: any[]) => {
-    const candidatesInia = stations.filter((s: any) => (s.api || '').toUpperCase() === 'INIA');
-    const list = candidatesInia.length > 0 ? candidatesInia : stations;
-
-    let best: any = null;
-    let bestD = Infinity;
-    for (const st of list) {
-      const d = haversineKm(lat, lon, st.lat, st.lon);
-      if (d < bestD) {
-        bestD = d;
-        best = st;
-      }
-    }
-    if (!best) return null;
-
-    const source = String(best.source || '').toUpperCase();
-    const stationCode = `${source || 'EXT'}-${best.id}`;
-    return { best, stationCode };
-  };
+  }, [selectedCompany, rainScope, rainFieldId, rainSectorId, companyFields, getNearestStation]);
 
   const backfillAgrometRainSelected = async () => {
     if (!selectedCompany) return;
@@ -165,7 +178,7 @@ export const Dashboard: React.FC = () => {
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    const year = today.slice(0, 4);
+    const year = Number(today.slice(0, 4));
     const from = `${year}-01-01`;
 
     const field = companyFields.find((f: any) => f.id === rainFieldId) || null;
@@ -212,21 +225,16 @@ export const Dashboard: React.FC = () => {
         ? { field_id: rainFieldId, sector_id: null }
         : { field_id: null, sector_id: rainSectorId };
 
-      const { data: existingLogs } = await supabase
-        .from('rain_logs')
-        .select('date')
-        .eq('company_id', selectedCompany.id)
-        .gte('date', from)
-        .match(scopeFilter);
+      const existingDates = new Set(
+        await fetchRainLogDates({
+          companyId: selectedCompany.id,
+          from,
+          fieldId: scopeFilter.field_id,
+          sectorId: scopeFilter.sector_id
+        })
+      );
 
-      const existingDates = new Set((existingLogs || []).map((r: any) => r.date));
-
-      const resp = await fetch(`/api/agromet/pp-day.js?station=${encodeURIComponent(nearest.stationCode)}&from=${from}&to=${today}`);
-      if (!resp.ok) throw new Error('No se pudo obtener histórico de precipitación');
-      const ct = resp.headers.get('content-type') || '';
-      if (!ct.includes('application/json')) throw new Error('Respuesta no válida desde Agrometeorología');
-      const json = await resp.json();
-      const series = json?.data || [];
+      const series = await fetchAgrometPpDay({ station: nearest.stationCode, from, to: today });
 
       const rows = series
         .filter((r: any) => r?.date && r?.mm != null && !existingDates.has(r.date))
@@ -241,29 +249,19 @@ export const Dashboard: React.FC = () => {
           sector_id: scopeFilter.sector_id
         }));
 
-      if (rows.length > 0) {
-        const { error } = await supabase.from('rain_logs').insert(rows);
-        if (error) throw error;
-      }
-
-      const { data: rainData } = await supabase
-        .from('rain_logs')
-        .select('*')
-        .eq('company_id', selectedCompany.id)
-        .gte('date', `${year}-01-01`)
-        .order('date', { ascending: false });
-
+      await insertRainLogs({ rows });
+      const rainData = await fetchRainLogsForYear({ companyId: selectedCompany.id, year });
       setRainLogs(rainData || []);
       toast.success('Lluvia del año actualizada', { id: loadingToast });
-    } catch (e: any) {
-      console.error('Error backfill rain:', e);
+    } catch (_e: any) {
+      toast.error('Error al completar datos de lluvia.');
       toast.error('No se pudo rellenar la lluvia. Intenta nuevamente.', { id: loadingToast });
     } finally {
       setRainSyncing(false);
     }
-  };
+  }
 
-  const syncAgrometRain = async () => {
+  const syncAgrometRain = useCallback(async () => {
     if (!selectedCompany) return;
     if (!companyFields || companyFields.length === 0) return;
 
@@ -300,11 +298,7 @@ export const Dashboard: React.FC = () => {
 
     setRainSyncing(true);
     try {
-      const { data: existingLogs } = await supabase
-        .from('rain_logs')
-        .select('date, field_id, sector_id')
-        .eq('company_id', selectedCompany.id)
-        .gte('date', `${activeYear}-01-01`);
+      const existingLogs = await fetchRainLogKeysForYear({ companyId: selectedCompany.id, year: activeYear });
 
       (existingLogs || []).forEach((l: any) => {
         const date = l.date;
@@ -365,32 +359,22 @@ export const Dashboard: React.FC = () => {
         });
       });
 
-      if (rowsToInsert.length > 0) {
-        const { error } = await supabase.from('rain_logs').insert(rowsToInsert);
-        if (error) throw error;
-      }
-
-      const { data: rainData } = await supabase
-        .from('rain_logs')
-        .select('*')
-        .eq('company_id', selectedCompany.id)
-        .gte('date', `${activeYear}-01-01`)
-        .order('date', { ascending: false });
-
+      await insertRainLogs({ rows: rowsToInsert });
+      const rainData = await fetchRainLogsForYear({ companyId: selectedCompany.id, year: activeYear });
       setRainLogs(rainData || []);
-    } catch (e) {
-      console.error('Error syncing agromet rain:', e);
+    } catch (_e) {
+      toast.error('Error al sincronizar lluvia Agromet.');
       toast.error('No se pudo sincronizar lluvia desde Agrometeorología');
     } finally {
       setRainSyncing(false);
     }
-  };
+  }, [companyFields, getNearestStation, selectedCompany]);
 
   useEffect(() => {
     if (selectedCompany) {
-      syncAgrometRain();
+      void syncAgrometRain();
     }
-  }, [selectedCompany, companyFields]);
+  }, [selectedCompany, companyFields, syncAgrometRain]);
 
   // Keyboard navigation for presentation mode
   useEffect(() => {
@@ -417,143 +401,49 @@ export const Dashboard: React.FC = () => {
     setCurrentSlide(0);
     const elem = document.documentElement;
     if (elem.requestFullscreen) {
-      elem.requestFullscreen().catch(err => console.log('Error attempting to enable fullscreen:', err));
+      elem.requestFullscreen().catch(() => toast.error('No se pudo activar pantalla completa.'));
     }
   };
 
   const exitPresentation = () => {
     setPresentationMode(false);
     if (document.fullscreenElement && document.exitFullscreen) {
-      document.exitFullscreen().catch(err => console.log('Error attempting to exit fullscreen:', err));
+      document.exitFullscreen().catch(() => toast.error('No se pudo salir de pantalla completa.'));
     }
   };
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
     if (!selectedCompany) return;
 
     try {
-      // 1. Load fields and their sectors
-      const { data: fields } = await supabase
-        .from('fields')
-        .select('*, sectors(*)')
-        .eq('company_id', selectedCompany.id);
+      const {
+        fields,
+        allSectors,
+        applications,
+        laborAssignments,
+        fuelAssignments,
+        fuelConsumption,
+        machineryAssignments,
+        irrigationAssignments,
+        upcomingInvoices,
+        incomeEntries,
+        stockData,
+        ordersData,
+        rainLogs,
+        machines
+      } = await loadDashboardRaw({ companyId: selectedCompany.id });
 
       setCompanyFields(fields || []);
-      if (!rainFieldId && fields && fields.length > 0) {
-        setRainFieldId(fields[0].id);
-      }
-      if (!rainSectorId && fields && fields.length > 0 && fields[0].sectors && fields[0].sectors.length > 0) {
-        setRainSectorId(fields[0].sectors[0].id);
-      }
+      setUpcomingInvoices(upcomingInvoices || []);
+      setRainLogs(rainLogs || []);
+
+      setRainFieldId((prev) => prev || (fields && fields.length > 0 ? fields[0].id : prev));
+      setRainSectorId((prev) =>
+        prev || (fields && fields.length > 0 && (fields as any)[0].sectors && (fields as any)[0].sectors.length > 0 ? (fields as any)[0].sectors[0].id : prev)
+      );
 
       const totalFields = fields?.length || 0;
-      const totalHectares = fields?.reduce((sum, field) => sum + Number(field.total_hectares), 0) || 0;
-
-      // Flatten sectors
-      const allSectors = fields?.flatMap(f => f.sectors || []) || [];
-      const sectorIds = allSectors.map(s => s.id);
-
-      // 2. Load Costs
-      // A. Applications
-      const { data: applications, error: appError } = await supabase
-        .from('applications')
-        .select('total_cost, field_id, sector_id')
-        .in('field_id', fields?.map(f => f.id) || []);
-
-      if (appError) throw appError;
-
-      // B. Labor Assignments
-      let laborAssignments: any[] = [];
-      if (sectorIds.length > 0) {
-          const { data: labors } = await supabase
-            .from('labor_assignments')
-            .select('assigned_amount, sector_id')
-            .in('sector_id', sectorIds);
-          laborAssignments = labors || [];
-      }
-
-      // C. Fuel Assignments (Legacy/Direct)
-      let fuelAssignments: any[] = [];
-      if (sectorIds.length > 0) {
-          const { data: fuels } = await supabase
-            .from('fuel_assignments')
-            .select('assigned_amount, sector_id')
-            .in('sector_id', sectorIds);
-          fuelAssignments = fuels || [];
-      }
-
-      // C2. Fuel Consumption (New Stock System)
-      let fuelConsumption: any[] = [];
-      if (sectorIds.length > 0) {
-          const { data: consumptions } = await supabase
-            .from('fuel_consumption')
-            .select('estimated_price, sector_id')
-            .in('sector_id', sectorIds);
-          fuelConsumption = consumptions || [];
-      }
-
-      // D. Machinery Assignments
-      let machineryAssignments: any[] = [];
-      if (sectorIds.length > 0) {
-          const { data: machineries } = await supabase
-            .from('machinery_assignments')
-            .select('assigned_amount, sector_id')
-            .in('sector_id', sectorIds);
-          machineryAssignments = machineries || [];
-      }
-
-      // E. Irrigation Assignments
-      let irrigationAssignments: any[] = [];
-      if (sectorIds.length > 0) {
-          const { data: irrigations } = await supabase
-            .from('irrigation_assignments')
-            .select('assigned_amount, sector_id')
-            .in('sector_id', sectorIds);
-          irrigationAssignments = irrigations || [];
-      }
-
-      // F. Upcoming Invoices for Zen Mode
-      const today = new Date();
-      const currentDay = today.getDate();
-      const currentMonth = today.getMonth();
-      const currentYear = today.getFullYear();
-      
-      let startDate, endDate;
-
-      if (currentDay <= 15) {
-          // Look for invoices due between 1st and 15th of current month
-          startDate = new Date(currentYear, currentMonth, 1);
-          endDate = new Date(currentYear, currentMonth, 15);
-      } else {
-          // Look for invoices due between 16th and end of current month
-          startDate = new Date(currentYear, currentMonth, 16);
-          endDate = new Date(currentYear, currentMonth + 1, 0); // Last day of month
-      }
-
-      const { data: invoices } = await supabase
-        .from('invoices')
-        .select(`
-          id,
-          invoice_number, 
-          supplier, 
-          total_amount, 
-          due_date, 
-          notes,
-          invoice_items (
-            quantity,
-            unit_price,
-            total_price,
-            category,
-            products (name, unit)
-          )
-        `)
-        .eq('company_id', selectedCompany.id)
-        .eq('status', 'Pendiente')
-        .gte('due_date', startDate.toISOString().split('T')[0])
-        .lte('due_date', endDate.toISOString().split('T')[0])
-        .order('due_date', { ascending: true });
-
-      setUpcomingInvoices(invoices || []);
+      const totalHectares = fields?.reduce((sum: number, field: any) => sum + Number(field.total_hectares), 0) || 0;
 
       // Calculate Totals
       const totalAppCost = applications?.reduce((sum, app) => sum + Number(app.total_cost), 0) || 0;
@@ -616,12 +506,7 @@ export const Dashboard: React.FC = () => {
       });
 
       setChartData(fieldCosts || []);
-
-      // Load Income Entries for Profitability
-      const { data: incomeEntries } = await supabase
-        .from('income_entries')
-        .select('*')
-        .eq('company_id', selectedCompany.id);
+      const incomeEntriesSafe = incomeEntries || [];
 
       // 4. Prepare Chart Data: Cost per Sector (Detailed)
       const sectorCosts = allSectors.map(sector => {
@@ -656,7 +541,7 @@ export const Dashboard: React.FC = () => {
           const totalSectorCost = sectorAppCost + sectorLaborCost + sectorFuelCost + sectorMachineryCost + sectorIrrigationCost;
           
           // Income
-          const sectorIncome = incomeEntries
+          const sectorIncome = incomeEntriesSafe
             ?.filter(inc => inc.sector_id === sector.id)
             .reduce((sum, inc) => sum + Number(inc.amount || 0), 0) || 0;
             
@@ -683,11 +568,6 @@ export const Dashboard: React.FC = () => {
       setSectorChartData(sectorCosts);
 
       // 5. Load Critical Stock & Expiring Products
-      const { data: stockData } = await supabase
-        .from('products')
-        .select('name, current_stock, minimum_stock, unit, expiration_date')
-        .eq('company_id', selectedCompany.id);
-
       if (stockData) {
           const critical = stockData.filter(p => p.minimum_stock > 0 && p.current_stock <= p.minimum_stock);
           
@@ -712,12 +592,6 @@ export const Dashboard: React.FC = () => {
       }
 
       // 6. Load Safety Status (Application Orders)
-      const { data: ordersData } = await supabase
-        .from('application_orders')
-        .select('sector_id, scheduled_date, safety_period_hours, grace_period_days, protection_days, application_type, objective, sector:sectors(name)')
-        .eq('company_id', selectedCompany.id)
-        .order('scheduled_date', { ascending: false });
-
       if (ordersData) {
           const now = new Date();
           const safetyStatus = allSectors.map(sector => {
@@ -824,24 +698,6 @@ export const Dashboard: React.FC = () => {
               
           setProtectionAlerts(sortedProtectionAlerts);
       }
-
-      // 7. Load Rain Logs
-      const activeYear = new Date().getFullYear();
-      const { data: rainData } = await supabase
-        .from('rain_logs')
-        .select('*')
-        .eq('company_id', selectedCompany.id)
-        .gte('date', `${activeYear}-01-01`)
-        .order('date', { ascending: false });
-        
-      setRainLogs(rainData || []);
-
-      // 8. Load Machines for Maintenance Alerts
-      const { data: machines } = await supabase
-        .from('machines')
-        .select('*')
-        .eq('company_id', selectedCompany.id);
-        
       if (machines) {
           const alerts = machines.filter(m => {
               if (!m.maintenance_interval_hours) return false;
@@ -866,16 +722,31 @@ export const Dashboard: React.FC = () => {
           setMachineAlerts(alerts);
       }
 
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
+    } catch {
+      toast.error('Error al cargar datos del dashboard.');
     }
-  };
+  }, [selectedCompany]);
+
+  useEffect(() => {
+    if (selectedCompany) {
+      void loadDashboardData();
+    }
+  }, [selectedCompany, loadDashboardData]);
+
+  useEffect(() => {
+    if (!user) {
+      setIsSystemAdmin(false);
+      return;
+    }
+    fetchIsSystemAdmin()
+      .then((ok) => setIsSystemAdmin(ok))
+      .catch(() => setIsSystemAdmin(false));
+  }, [user]);
 
   const handleDeleteCompany = async () => {
     if (!selectedCompany || !user) return;
     
     const isOwner = selectedCompany.owner_id === user.id;
-    const isSystemAdmin = user.email === 'dino.reginato@gmail.com';
     
     if (!isOwner && !isSystemAdmin) {
         toast('Solo el dueño de la empresa puede eliminarla.');
@@ -892,18 +763,16 @@ export const Dashboard: React.FC = () => {
 
     setIsDeleting(true);
     try {
-        const { error } = await supabase
-            .from('companies')
-            .delete()
-            .eq('id', selectedCompany.id);
-        
-        if (error) throw error;
+        if (isSystemAdmin && !isOwner) {
+          await deleteCompanyAdmin({ targetCompanyId: selectedCompany.id });
+        } else {
+          await deleteCompany({ companyId: selectedCompany.id });
+        }
         
         toast('Empresa eliminada exitosamente.');
         await refreshCompanies();
         
     } catch (err: any) {
-        console.error('Error deleting company:', err);
         toast.error('Error al eliminar: ' + err.message);
     } finally {
         setIsDeleting(false);
@@ -916,31 +785,64 @@ export const Dashboard: React.FC = () => {
 
     setIsCreating(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      const data = await createCompanyForCurrentUser({
+        name: newCompanyName,
+        rut: newCompanyRut.trim() || null
+      });
 
-      const { data, error } = await supabase
-        .from('companies')
-        .insert([{
-          name: newCompanyName,
-          rut: newCompanyRut.trim() || null,
-          owner_id: user.id
-        }])
-        .select()
-        .single();
-
-      if (error) throw error;
       if (data) {
-        addCompany(data);
+        addCompany(data as any);
         setNewCompanyName('');
         setNewCompanyRut('');
         setShowNewCompanyModal(false);
       }
     } catch (error: any) {
-      console.error('Error creating company:', error);
       toast.error('Error al crear la empresa: ' + (error.message || 'Error desconocido'));
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  useEffect(() => {
+    const base = new Date();
+    base.setDate(1);
+    const start = addMonths(base, invoiceMonthWindowOffset);
+    const keys = Array.from({ length: 6 }, (_, idx) => monthKeyFromDate(addMonths(start, idx)));
+    if (!keys.includes(selectedInvoiceMonth)) {
+      setSelectedInvoiceMonth(keys[0]);
+    }
+  }, [invoiceMonthWindowOffset, selectedInvoiceMonth]);
+
+  const openInvoiceDetail = async (invoiceId: string) => {
+    setInvoiceDetailLoading(true);
+    setSelectedInvoice({ id: invoiceId });
+    try {
+      const full = await fetchInvoiceById({ invoiceId });
+      setSelectedInvoice(full);
+    } catch {
+      toast.error('No se pudo cargar el detalle de la factura');
+      setSelectedInvoice(null);
+    } finally {
+      setInvoiceDetailLoading(false);
+    }
+  };
+
+  const toggleInvoiceSelected = (invoiceId: string) => {
+    setSelectedInvoiceIds((prev) => (prev.includes(invoiceId) ? prev.filter((id) => id !== invoiceId) : [...prev, invoiceId]));
+  };
+
+  const markSelectedInvoicesAsPaid = async () => {
+    if (selectedInvoiceIds.length === 0) return;
+    const userInputDate = prompt('Marcar como Pagadas.\nIngrese la fecha de pago (YYYY-MM-DD):', new Date().toLocaleDateString('en-CA'));
+    if (!userInputDate) return;
+    const loadingToast = toast.loading('Marcando facturas como pagadas...');
+    try {
+      await Promise.all(selectedInvoiceIds.map((id) => markInvoiceAsPaid({ invoiceId: id, paymentDate: userInputDate })));
+      toast.success('Facturas marcadas como pagadas', { id: loadingToast });
+      setSelectedInvoiceIds([]);
+      loadDashboardData();
+    } catch {
+      toast.error('Error al actualizar facturas', { id: loadingToast });
     }
   };
 
@@ -991,7 +893,6 @@ export const Dashboard: React.FC = () => {
   const rainActiveYear = new Date().getFullYear();
   const selectedField = companyFields.find((f: any) => f.id === rainFieldId) || null;
   const sectorOptions = (selectedField?.sectors || []) as any[];
-  const selectedSector = sectorOptions.find((s: any) => s.id === rainSectorId) || null;
 
   const scopedRainLogs = (rainLogs || []).filter((l: any) => {
     if (!l?.date) return false;
@@ -1063,24 +964,24 @@ export const Dashboard: React.FC = () => {
               <button
                  type="button"
                  onClick={() => {
-                    if (user?.email !== 'dino.reginato@gmail.com') {
+                    if (!isSystemAdmin) {
                         toast('Solo el administrador del sistema puede crear nuevas empresas.');
                         return;
                     }
                     setShowNewCompanyModal(true);
                  }}
                  className={`inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 shadow-sm ${
-                    user?.email === 'dino.reginato@gmail.com' 
+                    isSystemAdmin
                     ? 'text-white bg-green-600 hover:bg-green-700' 
                     : 'text-gray-400 bg-gray-100 cursor-not-allowed'
                  }`}
-                 title={user?.email === 'dino.reginato@gmail.com' ? 'Crear nueva empresa' : 'Solo el administrador puede crear empresas'}
+                 title={isSystemAdmin ? 'Crear nueva empresa' : 'Solo el administrador puede crear empresas'}
               >
                 <Plus className="h-4 w-4 mr-1" />
                 <span className="hidden sm:inline">Nueva Empresa</span>
               </button>
               
-              {selectedCompany && user && (selectedCompany.owner_id === user.id || user.email === 'dino.reginato@gmail.com') && (
+              {selectedCompany && user && (selectedCompany.owner_id === user.id || isSystemAdmin) && (
                 <button
                   onClick={handleDeleteCompany}
                   disabled={isDeleting}
@@ -1097,72 +998,168 @@ export const Dashboard: React.FC = () => {
       {simpleMode ? (
         // SIMPLE MODE UI
         <div className="space-y-8 mt-8 print:mt-4">
-            {upcomingInvoices.length > 0 && (
-                <div className="bg-red-50/80 border border-red-200 p-6 rounded-2xl shadow-sm print:hidden">
-                    <div className="flex items-center mb-5">
-                        <div className="bg-red-100 p-2 rounded-lg mr-3">
+            <div className="bg-red-50/80 border border-red-200 p-6 rounded-2xl shadow-sm print:hidden">
+              {(() => {
+                const base = new Date();
+                base.setDate(1);
+                const start = addMonths(base, invoiceMonthWindowOffset);
+                const months = Array.from({ length: 6 }, (_, idx) => addMonths(start, idx));
+                const counts = upcomingInvoices.reduce((acc: Record<string, number>, inv: any) => {
+                  const key = inv?.due_date ? String(inv.due_date).slice(0, 7) : '';
+                  if (!key) return acc;
+                  acc[key] = (acc[key] || 0) + 1;
+                  return acc;
+                }, {});
+                const monthInvoices = upcomingInvoices
+                  .filter((inv: any) => inv?.due_date && String(inv.due_date).slice(0, 7) === selectedInvoiceMonth)
+                  .sort((a: any, b: any) => String(a.due_date).localeCompare(String(b.due_date)));
+                const selectedMonthLabel = monthLabel(new Date(`${selectedInvoiceMonth}-01T12:00:00`));
+                const selectedMonthCount = counts[selectedInvoiceMonth] || 0;
+
+                return (
+                  <>
+                    <div className="flex flex-col gap-4 mb-5">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center">
+                          <div className="bg-red-100 p-2 rounded-lg mr-3">
                             <AlertCircle className="h-6 w-6 text-red-600" />
-                        </div>
-                        <div>
+                          </div>
+                          <div>
                             <h3 className="text-lg font-bold text-red-900">Facturas por Vencer</h3>
-                            <p className="text-xs text-red-600 font-medium">Prioridad de pago ({new Date().getDate() <= 15 ? 'Quincena 1' : 'Quincena 2'})</p>
+                            <p className="text-xs text-red-600 font-medium">{selectedMonthLabel} · {selectedMonthCount} pendientes</p>
+                          </div>
                         </div>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                        {upcomingInvoices.map((inv, idx) => (
-                            <div 
-                              key={idx} 
-                              onClick={() => setSelectedInvoice(inv)}
-                              className="bg-white p-4 rounded-xl shadow-sm border border-red-100 flex flex-col justify-between h-full hover:shadow-md transition-all duration-200 cursor-pointer hover:-translate-y-1 relative overflow-hidden group"
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setInvoiceMonthWindowOffset((v) => Math.max(-3, v - 1))}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-white border border-red-100 text-red-700 hover:bg-red-100"
+                            title="Meses anteriores"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setInvoiceMonthWindowOffset((v) => Math.min(12, v + 1))}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-white border border-red-100 text-red-700 hover:bg-red-100"
+                            title="Meses siguientes"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                        {months.map((m) => {
+                          const key = monthKeyFromDate(m);
+                          const label = monthLabel(m);
+                          const count = counts[key] || 0;
+                          const active = key === selectedInvoiceMonth;
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() => {
+                                setSelectedInvoiceMonth(key);
+                                setSelectedInvoiceIds([]);
+                              }}
+                              className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-left ${
+                                active ? 'bg-white border-red-300' : 'bg-white/60 border-red-100 hover:bg-white'
+                              }`}
                             >
-                                <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
-                                <div className="flex justify-between items-start mb-3 pl-2">
-                                    <div className="font-bold text-gray-800 text-sm truncate pr-2 flex-1" title={inv.supplier || ''}>{inv.supplier || 'Proveedor desconocido'}</div>
-                                    <button 
-                                        onClick={async (e) => {
-                                            e.stopPropagation();
-                                            const userInputDate = prompt('Marcar como Pagada.\nIngrese la fecha de pago (YYYY-MM-DD):', new Date().toLocaleDateString('en-CA'));
-                                            if (userInputDate) {
-                                                try {
-                                                    const { error } = await supabase
-                                                        .from('invoices')
-                                                        .update({ 
-                                                            status: 'Pagada',
-                                                            payment_date: userInputDate
-                                                        })
-                                                        .eq('id', inv.id);
-                                                    if (error) throw error;
-                                                    toast('Factura marcada como pagada');
-                                                    loadDashboardData(); // Reload
-                                                } catch (err) {
-                                                    toast.error('Error al actualizar factura');
-                                                }
-                                            }
-                                        }}
-                                        className="text-[10px] text-red-700 font-bold bg-red-50 group-hover:bg-green-500 group-hover:text-white px-2.5 py-1.5 rounded-md transition-colors"
-                                        title="Click para marcar como Pagada"
-                                    >
-                                        Vence: {inv.due_date ? new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' }) : 'N/A'}
-                                    </button>
-                                </div>
-                                <div className="flex justify-between items-end pl-2">
-                                    <div className="text-xs font-medium text-gray-500 truncate max-w-[50%]" title={inv.invoice_number || ''}>
-                                        Doc N° {inv.invoice_number || '-'}
-                                    </div>
-                                    <div className="text-lg font-black text-red-600">
-                                        {inv.total_amount ? formatCLP(Number(inv.total_amount)) : '$0'}
-                                    </div>
-                                </div>
-                                {inv.notes && (
-                                    <div className="mt-3 text-xs text-gray-500 italic border-t border-gray-100 pt-2 pl-2 truncate" title={inv.notes}>
-                                        {inv.notes}
-                                    </div>
-                                )}
-                            </div>
-                        ))}
+                              <span className="text-xs font-semibold text-red-900 truncate">{label}</span>
+                              <span className={`text-xs font-black px-2 py-0.5 rounded-md ${count > 0 ? 'bg-red-600 text-white' : 'bg-red-100 text-red-700'}`}>
+                                {count}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {canWrite && (
+                        <div className="flex flex-wrap items-center justify-between gap-3 bg-white/60 border border-red-100 rounded-lg px-3 py-2">
+                          <div className="text-xs font-semibold text-gray-700">
+                            Seleccionadas: {selectedInvoiceIds.length}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedInvoiceIds([])}
+                              disabled={selectedInvoiceIds.length === 0}
+                              className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
+                            >
+                              Limpiar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={markSelectedInvoicesAsPaid}
+                              disabled={selectedInvoiceIds.length === 0}
+                              className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-bold bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                            >
+                              Marcar Pagadas
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                </div>
-            )}
+
+                    {monthInvoices.length === 0 ? (
+                      <div className="bg-white rounded-xl shadow-sm border border-red-100 p-6 text-center text-sm text-red-700 font-semibold">
+                        No hay facturas pendientes para este mes.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {monthInvoices.map((inv: any) => (
+                          <div
+                            key={inv.id}
+                            onClick={() => openInvoiceDetail(inv.id)}
+                            className="bg-white p-4 rounded-xl shadow-sm border border-red-100 flex flex-col justify-between h-full hover:shadow-md transition-all duration-200 cursor-pointer hover:-translate-y-1 relative overflow-hidden group"
+                          >
+                            <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
+                            <div className="flex justify-between items-start mb-3 pl-2 gap-2">
+                              <div className="font-bold text-gray-800 text-sm truncate pr-2 flex-1" title={inv.supplier || ''}>{inv.supplier || 'Proveedor desconocido'}</div>
+                              {canWrite && (
+                                <input
+                                  type="checkbox"
+                                  checked={selectedInvoiceIds.includes(inv.id)}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    toggleInvoiceSelected(inv.id);
+                                  }}
+                                  className="h-4 w-4 accent-green-600 mt-0.5"
+                                />
+                              )}
+                            </div>
+                            <div className="flex items-center justify-between pl-2">
+                              <div className="text-xs font-medium text-gray-500 truncate max-w-[55%]" title={inv.invoice_number || ''}>
+                                Doc N° {inv.invoice_number || '-'}
+                              </div>
+                              <div className="text-[10px] text-red-700 font-bold bg-red-50 px-2.5 py-1.5 rounded-md">
+                                Vence: {inv.due_date ? new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' }) : 'N/A'}
+                              </div>
+                            </div>
+                            <div className="flex justify-between items-end pl-2 mt-3">
+                              <div className="text-xs font-semibold text-gray-600">
+                                Total
+                              </div>
+                              <div className="text-lg font-black text-red-600">
+                                {inv.total_amount ? formatCLP(Number(inv.total_amount)) : '$0'}
+                              </div>
+                            </div>
+                            {inv.notes && (
+                              <div className="mt-3 text-xs text-gray-500 italic border-t border-gray-100 pt-2 pl-2 truncate" title={inv.notes}>
+                                {inv.notes}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-8 gap-4 lg:gap-6 print:grid-cols-4 print:gap-4 mb-8">
                 <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-sm p-4 lg:p-6 text-white transform transition hover:scale-[1.02] print:transform-none print:shadow-none print:border print:border-gray-200 print:text-black print:bg-none print:bg-white flex flex-col justify-center relative overflow-hidden col-span-1 lg:col-span-2">
@@ -1712,67 +1709,73 @@ export const Dashboard: React.FC = () => {
 
             {/* Modal Body */}
             <div className="p-4 md:p-5 space-y-4 overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <p className="text-sm text-gray-500 font-medium">Proveedor</p>
-                  <p className="text-base font-semibold text-gray-900">{selectedInvoice.supplier || 'Desconocido'}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500 font-medium">Fecha de Vencimiento</p>
-                  <p className="text-base font-semibold text-red-600">
-                    {selectedInvoice.due_date ? new Date(selectedInvoice.due_date + 'T12:00:00').toLocaleDateString('es-CL') : 'N/A'}
-                  </p>
-                </div>
-              </div>
-
-              {selectedInvoice.notes && (
-                <div className="mb-4 bg-yellow-50 p-3 rounded-md border border-yellow-100">
-                  <p className="text-sm text-yellow-800"><span className="font-semibold">Notas:</span> {selectedInvoice.notes}</p>
-                </div>
-              )}
-
-              <div>
-                <h4 className="text-md font-semibold text-gray-800 mb-3 border-b pb-2">Ítems de la Factura</h4>
-                {selectedInvoice.invoice_items && selectedInvoice.invoice_items.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left text-gray-500">
-                      <thead className="text-xs text-gray-700 uppercase bg-gray-100">
-                        <tr>
-                          <th className="px-4 py-2">Categoría / Producto</th>
-                          <th className="px-4 py-2 text-right">Cant.</th>
-                          <th className="px-4 py-2 text-right">Precio Unit.</th>
-                          <th className="px-4 py-2 text-right">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedInvoice.invoice_items.map((item: any, idx: number) => (
-                          <tr key={idx} className="bg-white border-b">
-                            <td className="px-4 py-2">
-                              <div className="font-medium text-gray-900">{item.products?.name || item.category || 'Ítem'}</div>
-                              {item.category && item.products?.name && (
-                                <div className="text-xs text-gray-500">{item.category}</div>
-                              )}
-                            </td>
-                            <td className="px-4 py-2 text-right">
-                              {item.quantity} {item.products?.unit || ''}
-                            </td>
-                            <td className="px-4 py-2 text-right">{formatCLP(item.unit_price)}</td>
-                            <td className="px-4 py-2 text-right font-medium text-gray-900">{formatCLP(item.total_price)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="font-semibold text-gray-900 bg-gray-50">
-                          <td colSpan={3} className="px-4 py-3 text-right">Total Factura:</td>
-                          <td className="px-4 py-3 text-right text-lg text-blue-600">{formatCLP(selectedInvoice.total_amount)}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
+              {invoiceDetailLoading ? (
+                <div className="py-10 text-center text-gray-500 font-medium">Cargando detalle...</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <p className="text-sm text-gray-500 font-medium">Proveedor</p>
+                      <p className="text-base font-semibold text-gray-900">{selectedInvoice.supplier || 'Desconocido'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500 font-medium">Fecha de Vencimiento</p>
+                      <p className="text-base font-semibold text-red-600">
+                        {selectedInvoice.due_date ? new Date(selectedInvoice.due_date + 'T12:00:00').toLocaleDateString('es-CL') : 'N/A'}
+                      </p>
+                    </div>
                   </div>
-                ) : (
-                  <p className="text-gray-500 italic text-sm text-center py-4">No hay ítems registrados en esta factura.</p>
-                )}
-              </div>
+
+                  {selectedInvoice.notes && (
+                    <div className="mb-4 bg-yellow-50 p-3 rounded-md border border-yellow-100">
+                      <p className="text-sm text-yellow-800"><span className="font-semibold">Notas:</span> {selectedInvoice.notes}</p>
+                    </div>
+                  )}
+
+                  <div>
+                    <h4 className="text-md font-semibold text-gray-800 mb-3 border-b pb-2">Ítems de la Factura</h4>
+                    {selectedInvoice.invoice_items && selectedInvoice.invoice_items.length > 0 ? (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left text-gray-500">
+                          <thead className="text-xs text-gray-700 uppercase bg-gray-100">
+                            <tr>
+                              <th className="px-4 py-2">Categoría / Producto</th>
+                              <th className="px-4 py-2 text-right">Cant.</th>
+                              <th className="px-4 py-2 text-right">Precio Unit.</th>
+                              <th className="px-4 py-2 text-right">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedInvoice.invoice_items.map((item: any, idx: number) => (
+                              <tr key={idx} className="bg-white border-b">
+                                <td className="px-4 py-2">
+                                  <div className="font-medium text-gray-900">{item.products?.name || item.category || 'Ítem'}</div>
+                                  {item.category && item.products?.name && (
+                                    <div className="text-xs text-gray-500">{item.category}</div>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2 text-right">
+                                  {item.quantity} {item.products?.unit || ''}
+                                </td>
+                                <td className="px-4 py-2 text-right">{formatCLP(item.unit_price)}</td>
+                                <td className="px-4 py-2 text-right font-medium text-gray-900">{formatCLP(item.total_price)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="font-semibold text-gray-900 bg-gray-50">
+                              <td colSpan={3} className="px-4 py-3 text-right">Total Factura:</td>
+                              <td className="px-4 py-3 text-right text-lg text-blue-600">{formatCLP(selectedInvoice.total_amount)}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="text-gray-500 italic text-sm text-center py-4">No hay ítems registrados en esta factura.</p>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
             
             {/* Modal Footer */}

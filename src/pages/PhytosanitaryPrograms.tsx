@@ -1,9 +1,16 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../supabase/client';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
-import { Plus, Trash2, Edit, Save, Loader2, ChevronDown, ChevronRight, X, Upload } from 'lucide-react';
-import { read, utils } from 'xlsx';
+import { Plus, Trash2, Edit, ChevronDown, ChevronRight, X, Upload } from 'lucide-react';
+import {
+  deletePhytosanitaryProgram,
+  deleteProgramEvent,
+  deleteProgramEventProduct,
+  loadPhytosanitaryProgramsData,
+  upsertPhytosanitaryProgram,
+  upsertProgramEvent,
+  upsertProgramEventProduct
+} from '../services/phytosanitaryPrograms';
 
 interface Program {
   id: string;
@@ -54,61 +61,28 @@ export const PhytosanitaryPrograms: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (selectedCompany) {
-      loadData();
-    }
-  }, [selectedCompany]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      // Load Programs
-      const { data: programsData, error: progErr } = await supabase
-        .from('phytosanitary_programs')
-        .select('*')
-        .eq('company_id', selectedCompany?.id)
-        .order('created_at', { ascending: false });
-      if (progErr) throw progErr;
-      setPrograms(programsData || []);
-
-      // Load Events
-      const { data: eventsData, error: evErr } = await supabase
-        .from('program_events')
-        .select('*, phytosanitary_programs!inner(company_id)')
-        .eq('phytosanitary_programs.company_id', selectedCompany?.id);
-      if (evErr) throw evErr;
-      setEvents(eventsData || []);
-
-      // Load Products in Events
-      const { data: epData, error: epErr } = await supabase
-        .from('program_event_products')
-        .select(`
-          *,
-          product:products(name, unit),
-          program_events!inner(
-            phytosanitary_programs!inner(company_id)
-          )
-        `)
-        .eq('program_events.phytosanitary_programs.company_id', selectedCompany?.id);
-      if (epErr) throw epErr;
-      setEventProducts(epData || []);
-
-      // Load Inventory for dropdowns
-      const { data: invData } = await supabase
-        .from('products')
-        .select('id, name, unit')
-        .eq('company_id', selectedCompany?.id)
-        .order('name');
-      setInventory(invData || []);
+      if (!selectedCompany) return;
+      const res = await loadPhytosanitaryProgramsData({ companyId: selectedCompany.id });
+      setPrograms(res.programs || []);
+      setEvents(res.events || []);
+      setEventProducts(res.eventProducts || []);
+      setInventory(res.inventory || []);
 
     } catch (err: any) {
-      console.error(err);
       toast.error('Error cargando programas: ' + err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedCompany]);
+
+  useEffect(() => {
+    if (selectedCompany) {
+      void loadData();
+    }
+  }, [selectedCompany, loadData]);
 
   const toggleEventExpansion = (eventId: string) => {
     const newExpanded = new Set(expandedEvents);
@@ -126,20 +100,15 @@ export const PhytosanitaryPrograms: React.FC = () => {
     if (!selectedCompany) return;
     try {
       setLoading(true);
-      const payload = {
-        company_id: selectedCompany.id,
-        name: editingProgram.name,
-        season: editingProgram.season || '2025-2026',
-        description: editingProgram.description
-      };
-
-      if (editingProgram.id) {
-        const { error } = await supabase.from('phytosanitary_programs').update(payload).eq('id', editingProgram.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('phytosanitary_programs').insert([payload]);
-        if (error) throw error;
-      }
+      await upsertPhytosanitaryProgram({
+        companyId: selectedCompany.id,
+        programId: (editingProgram as any).id,
+        payload: {
+          name: String(editingProgram.name || ''),
+          season: String(editingProgram.season || '2025-2026'),
+          description: String(editingProgram.description || '')
+        }
+      });
       setShowProgramModal(false);
       loadData();
     } catch (err: any) {
@@ -151,9 +120,12 @@ export const PhytosanitaryPrograms: React.FC = () => {
 
   const handleDeleteProgram = async (id: string) => {
     if (!confirm('¿Eliminar programa y todos sus eventos?')) return;
-    const { error } = await supabase.from('phytosanitary_programs').delete().eq('id', id);
-    if (error) toast.error('Error: ' + error.message);
-    else loadData();
+    try {
+      await deletePhytosanitaryProgram({ programId: id });
+      loadData();
+    } catch (error: any) {
+      toast.error('Error: ' + error.message);
+    }
   };
 
   // --- SAVE EVENT ---
@@ -162,20 +134,15 @@ export const PhytosanitaryPrograms: React.FC = () => {
     if (!selectedProgram) return;
     try {
       setLoading(true);
-      const payload = {
-        program_id: selectedProgram.id,
-        stage_name: editingEvent.stage_name,
-        objective: editingEvent.objective,
-        water_per_ha: Number(editingEvent.water_per_ha) || 0
-      };
-
-      if (editingEvent.id) {
-        const { error } = await supabase.from('program_events').update(payload).eq('id', editingEvent.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('program_events').insert([payload]);
-        if (error) throw error;
-      }
+      await upsertProgramEvent({
+        programId: selectedProgram.id,
+        eventId: (editingEvent as any).id,
+        payload: {
+          stage_name: String(editingEvent.stage_name || ''),
+          objective: String(editingEvent.objective || ''),
+          water_per_ha: Number(editingEvent.water_per_ha) || 0
+        }
+      });
       setShowEventModal(false);
       loadData();
     } catch (err: any) {
@@ -187,9 +154,12 @@ export const PhytosanitaryPrograms: React.FC = () => {
 
   const handleDeleteEvent = async (id: string) => {
     if (!confirm('¿Eliminar esta etapa?')) return;
-    const { error } = await supabase.from('program_events').delete().eq('id', id);
-    if (error) toast.error('Error: ' + error.message);
-    else loadData();
+    try {
+      await deleteProgramEvent({ eventId: id });
+      loadData();
+    } catch (error: any) {
+      toast.error('Error: ' + error.message);
+    }
   };
 
   // --- SAVE PRODUCT ---
@@ -197,20 +167,15 @@ export const PhytosanitaryPrograms: React.FC = () => {
     e.preventDefault();
     try {
       setLoading(true);
-      const payload = {
-        event_id: activeEventIdForProduct,
-        product_id: editingProduct.product_id,
-        dose: Number(editingProduct.dose),
-        dose_unit: editingProduct.dose_unit || 'L/ha'
-      };
-
-      if (editingProduct.id) {
-        const { error } = await supabase.from('program_event_products').update(payload).eq('id', editingProduct.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('program_event_products').insert([payload]);
-        if (error) throw error;
-      }
+      await upsertProgramEventProduct({
+        eventId: activeEventIdForProduct,
+        eventProductId: (editingProduct as any).id,
+        payload: {
+          product_id: String(editingProduct.product_id || ''),
+          dose: Number(editingProduct.dose) || 0,
+          dose_unit: String(editingProduct.dose_unit || 'L/ha')
+        }
+      });
       setShowProductModal(false);
       loadData();
     } catch (err: any) {
@@ -222,9 +187,12 @@ export const PhytosanitaryPrograms: React.FC = () => {
 
   const handleDeleteProduct = async (id: string) => {
     if (!confirm('¿Eliminar producto de esta etapa?')) return;
-    const { error } = await supabase.from('program_event_products').delete().eq('id', id);
-    if (error) toast.error('Error: ' + error.message);
-    else loadData();
+    try {
+      await deleteProgramEventProduct({ eventProductId: id });
+      loadData();
+    } catch (error: any) {
+      toast.error('Error: ' + error.message);
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -233,10 +201,16 @@ export const PhytosanitaryPrograms: React.FC = () => {
 
       try {
           setLoading(true);
-          const data = await file.arrayBuffer();
-          const workbook = read(data);
-          const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-          const jsonData = utils.sheet_to_json(worksheet);
+          if (file.size > 10 * 1024 * 1024) {
+              toast("Archivo demasiado grande (máx 10MB).");
+              return;
+          }
+          const { importXlsxToJson } = await import('../lib/excel');
+          const jsonData = await importXlsxToJson({ file, maxRows: 5000 });
+          if (jsonData.length > 5000) {
+              toast("El archivo tiene demasiadas filas (máx 5000).");
+              return;
+          }
 
           if (jsonData.length === 0) {
               toast("El archivo está vacío.");
@@ -247,15 +221,15 @@ export const PhytosanitaryPrograms: React.FC = () => {
           const programName = prompt("Ingrese un nombre para el Programa a importar:", "Programa Importado " + new Date().toLocaleDateString());
           if (!programName) return;
 
-          const { data: progData, error: progErr } = await supabase.from('phytosanitary_programs').insert([{
-              company_id: selectedCompany.id,
+          const newProgramId = await upsertPhytosanitaryProgram({
+            companyId: selectedCompany.id,
+            programId: null,
+            payload: {
               name: programName,
               season: '2025-2026',
               description: 'Importado desde Excel'
-          }]).select().single();
-
-          if (progErr) throw progErr;
-          const newProgramId = progData.id;
+            }
+          });
 
           // 2. Process rows (assuming columns: Etapa, Objetivo, Mojamiento, Producto, Dosis, Unidad)
           // We group by 'Etapa'
@@ -272,15 +246,16 @@ export const PhytosanitaryPrograms: React.FC = () => {
 
               // Create Event if not exists
               if (!eventsMap.has(etapa)) {
-                  const { data: evData, error: evErr } = await supabase.from('program_events').insert([{
-                      program_id: newProgramId,
-                      stage_name: etapa,
-                      objective: objetivo,
+                  const eventId = await upsertProgramEvent({
+                    programId: newProgramId,
+                    eventId: null,
+                    payload: {
+                      stage_name: String(etapa),
+                      objective: String(objetivo),
                       water_per_ha: isNaN(mojamiento) ? 0 : mojamiento
-                  }]).select().single();
-
-                  if (evErr) throw evErr;
-                  eventsMap.set(etapa, { id: evData.id, items: [] });
+                    }
+                  });
+                  eventsMap.set(etapa, { id: eventId, items: [] });
               }
 
               const eventId = eventsMap.get(etapa)!.id;
@@ -290,14 +265,15 @@ export const PhytosanitaryPrograms: React.FC = () => {
                   const foundProd = inventory.find(p => p.name.toLowerCase().includes(String(prodName).toLowerCase()));
                   
                   if (foundProd) {
-                      await supabase.from('program_event_products').insert([{
-                          event_id: eventId,
+                      await upsertProgramEventProduct({
+                        eventId,
+                        eventProductId: null,
+                        payload: {
                           product_id: foundProd.id,
                           dose: isNaN(dosis) ? 0 : dosis,
-                          dose_unit: unidad
-                      }]);
-                  } else {
-                      console.warn(`Producto no encontrado en bodega: ${prodName}`);
+                          dose_unit: String(unidad || 'L/ha')
+                        }
+                      });
                   }
               }
           }
@@ -306,7 +282,6 @@ export const PhytosanitaryPrograms: React.FC = () => {
           loadData();
 
       } catch (err: any) {
-          console.error(err);
           toast.error('Error importando archivo: ' + err.message);
       } finally {
           setLoading(false);
@@ -324,7 +299,7 @@ export const PhytosanitaryPrograms: React.FC = () => {
         <div className="flex gap-2">
           <input
               type="file"
-              accept=".xlsx,.xls,.csv"
+              accept=".xlsx"
               ref={fileInputRef}
               onChange={handleFileUpload}
               className="hidden"

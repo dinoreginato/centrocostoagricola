@@ -1,13 +1,13 @@
 import { toast } from 'sonner';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Layers, Settings, Plus, X, Printer, FileText, RefreshCw, AlertTriangle, Copy, Download } from 'lucide-react';
+import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Layers, Settings, X, Printer, FileText, RefreshCw, AlertTriangle, Copy, Download } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { utils, writeFile } from 'xlsx';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
+import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
+import { deactivateMachine, deleteAllMachineryAssignments, deleteMachineryAssignment, deleteMachineryAssignmentsByInvoiceItem, fetchActiveMachines, fetchInvoiceItemForMachinery, fetchMachineExpenses, fetchMachineryAssignmentsWithMachine, fetchMachineryHistory, fetchPendingMachineryItems, insertMachineryAssignments, syncMachineryAssignmentsForItem, updateMachineryAssignment, upsertMachine } from '../services/machinery';
 
 interface MachineryItem {
   id: string; // invoice_item_id
@@ -138,8 +138,8 @@ export const Machinery: React.FC = () => {
             loadHistory(),
             loadMachines()
         ]);
-    } catch (error) {
-        console.error('Error loading data:', error);
+    } catch {
+        toast.error('Error al cargar datos de maquinaria.');
     } finally {
         setLoading(false);
     }
@@ -148,199 +148,47 @@ export const Machinery: React.FC = () => {
   const loadSectorsAndFields = async () => {
     if (!selectedCompany) return;
     
-    // Load Fields
-    const { data: fieldsData } = await supabase
-        .from('fields')
-        .select('id, name, total_hectares')
-        .eq('company_id', selectedCompany.id);
+    const [fieldsData, sectorsData] = await Promise.all([
+      fetchCompanyFieldsBasic({ companyId: selectedCompany.id }),
+      fetchCompanySectorsBasic({ companyId: selectedCompany.id })
+    ]);
     setFields(fieldsData || []);
-
-    // Load Sectors
-    const { data: sectorsData } = await supabase
-        .from('sectors')
-        .select(`
-            id, name, hectares, field_id,
-            fields!inner(company_id)
-        `)
-        .eq('fields.company_id', selectedCompany.id);
-    
     setSectors(sectorsData || []);
   };
 
   const loadMachines = async () => {
       if (!selectedCompany) return;
-      const { data } = await supabase
-          .from('machines')
-          .select('id, name, type, brand, model, plate, description, current_hours, maintenance_interval_hours, last_maintenance_hours')
-          .eq('company_id', selectedCompany.id)
-          .eq('is_active', true)
-          .order('name');
+      const data = await fetchActiveMachines({ companyId: selectedCompany.id });
       setMachines(data || []);
   };
 
   const loadPendingItems = async () => {
     if (!selectedCompany) return;
-
-    // Load Pending Items
-    // Increased limit and added sorting to ensure we get the latest items
-    const { data: items, error } = await supabase
-        .from('invoice_items')
-        .select(`
-            id, total_price, category,
-            products (name, category),
-            invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
-        `)
-        .eq('invoices.company_id', selectedCompany.id)
-        .order('id', { ascending: false }) // Show newest items first
-        .range(0, 19999); // Increased limit significantly
-
-    if (error) {
-        console.error('Error fetching items:', error);
-    }
-    
-    // Updated filtering logic to be strict on categories as per user request
-    const filteredItems = items?.filter((item: any) => {
-        // Double check company_id strictly
-        if (item.invoices?.company_id !== selectedCompany.id) return false;
-
-        // Normalize category: lower case, remove accents
-        // Fallback to product category if item category is missing
-        const rawCat = item.category || item.products?.category || '';
-        const rawName = item.products?.name || ''; // Also check product name for keywords
-        
-        const cat = rawCat.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-        const name = rawName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-        
-        // Combine text to search in both category and name
-        const textToCheck = `${cat} ${name}`;
-
-        // Keywords (normalized)
-        // User requested STRICTLY 'maquinaria' and 'repuestos'
-        const allowedKeywords = ['maquinaria', 'repuesto'];
-        
-        return allowedKeywords.some(keyword => textToCheck.includes(keyword));
-    });
-
-    // Optimización: Usar RPC para obtener el total asignado de manera eficiente y escalable
-    // Reemplaza la carga masiva de asignaciones individuales
-    let assignmentMap = new Map<string, number>();
-    
     try {
-        const { data: summary, error: rpcError } = await supabase
-            .rpc('get_machinery_assignments_summary', { p_company_id: selectedCompany.id });
-            
-        if (rpcError) throw rpcError;
-        
-        if (summary) {
-            summary.forEach((item: any) => {
-                assignmentMap.set(item.invoice_item_id, Number(item.total_assigned));
-            });
-        }
-    } catch (err) {
-        console.error('Error fetching assignment summary via RPC:', err);
-        // Fallback (aunque no debería ser necesario si el RPC existe)
-        const { data: fallbackData } = await supabase
-            .from('machinery_assignments')
-            .select('invoice_item_id, assigned_amount, invoice_items!inner(invoices!inner(company_id))')
-            .eq('invoice_items.invoices.company_id', selectedCompany.id);
-            
-        if (fallbackData) {
-            fallbackData.forEach((item: any) => {
-                const current = assignmentMap.get(item.invoice_item_id) || 0;
-                assignmentMap.set(item.invoice_item_id, current + Number(item.assigned_amount));
-            });
-        }
+      const pending = await fetchPendingMachineryItems({ companyId: selectedCompany.id });
+      setPendingItems(pending as any);
+    } catch {
+      toast.error('Error al cargar ítems de maquinaria.');
+      setPendingItems([]);
     }
-
-    const pending: MachineryItem[] = [];
-    filteredItems?.forEach((item: any) => {
-        // Double Check: Ensure item belongs to selected company
-        if (item.invoices?.company_id !== selectedCompany.id) return;
-
-        // Credit Note Logic (Robust)
-        const docType = (item.invoices.document_type || '').toLowerCase();
-        const isCreditNote = docType.includes('nota de cr') || 
-                             docType.includes('nota de cre') || 
-                             docType.includes('nota credito') ||
-                             docType.includes('credito') || 
-                             docType === 'nc';
-        
-        // Calculate Gross Amount (Bruto)
-        const taxPercent = item.invoices.tax_percentage !== undefined ? item.invoices.tax_percentage : 19;
-        const netAmount = Number(item.total_price);
-        const grossAmount = netAmount * (1 + (taxPercent / 100));
-
-        let total = grossAmount;
-        
-        // Force Negative for Credit Notes
-        if (isCreditNote) {
-            total = -Math.abs(total);
-        } else {
-            total = Math.abs(total);
-        }
-
-        const assigned = assignmentMap.get(item.id) || 0;
-        const remaining = total - assigned;
-
-        // Use a threshold of 500 to ignore small rounding errors or 
-        // to handle negative remaining amounts properly for credit notes
-        if (Math.abs(remaining) > 500) { 
-            pending.push({
-                id: item.id,
-                invoice_id: item.invoices.id,
-                invoice_number: item.invoices.invoice_number,
-                date: item.invoices.invoice_date,
-                description: `${item.products?.name || 'Sin descripción'} ${isCreditNote ? '(NC)' : ''} [${item.invoices.document_type}]`,
-                total_amount: total,
-                assigned_amount: assigned,
-                remaining_amount: remaining
-            });
-        }
-    });
-
-    setPendingItems(pending);
   };
 
   const loadHistory = async () => {
     if (!selectedCompany) return;
-
-    // Fetch more items to allow better client-side search (e.g. last 500)
-    const { data } = await supabase
-        .from('machinery_assignments')
-        .select(`
-            id, assigned_amount, assigned_date,
-            sector_id, invoice_item_id, machine_id,
-            sectors (name),
-            machines (name),
-            invoice_items!inner (
-                products (name),
-                invoices!inner (invoice_number, company_id, invoice_date, document_type)
-            )
-        `)
-        .eq('invoice_items.invoices.company_id', selectedCompany.id)
-        .order('assigned_date', { ascending: false })
-        .limit(500);
-    
-    setHistory(data as unknown as HistoryItem[] || []);
+    try {
+      const data = await fetchMachineryHistory({ companyId: selectedCompany.id });
+      setHistory((data as unknown as HistoryItem[]) || []);
+    } catch {
+      toast.error('Error al cargar historial de maquinaria.');
+      setHistory([]);
+    }
   };
 
   const loadMachineExpenses = async (machineId: string) => {
       if (!selectedCompany) return;
       setLoading(true);
       try {
-          const { data } = await supabase
-              .from('machinery_assignments')
-              .select(`
-                  id, assigned_amount, assigned_date,
-                  sectors (name),
-                  invoice_items!inner (
-                      products (name),
-                      invoices!inner (invoice_number)
-                  )
-              `)
-              .eq('machine_id', machineId)
-              .order('assigned_date', { ascending: false });
-          
+          const data = await fetchMachineExpenses({ machineId });
           const mappedExpenses: MachineExpense[] = (data || []).map((item: any) => ({
               id: item.id,
               date: item.assigned_date,
@@ -351,8 +199,8 @@ export const Machinery: React.FC = () => {
           }));
 
           setMachineExpenses(mappedExpenses);
-      } catch (error) {
-          console.error("Error loading machine expenses:", error);
+      } catch {
+          toast.error('Error al cargar gastos de la máquina.');
       } finally {
           setLoading(false);
       }
@@ -384,17 +232,7 @@ export const Machinery: React.FC = () => {
   const handleCloneAssignment = async (assignment: HistoryItem) => {
       setLoading(true);
       try {
-          const { data: itemData, error } = await supabase
-              .from('invoice_items')
-              .select(`
-                  id, total_price, category,
-                  products (name, category),
-                  invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
-              `)
-              .eq('id', assignment.invoice_item_id)
-              .single();
-
-          if (error) throw error;
+          const itemData = await fetchInvoiceItemForMachinery({ invoiceItemId: assignment.invoice_item_id });
 
           const invoice = (Array.isArray(itemData.invoices) ? itemData.invoices[0] : itemData.invoices) as any;
           const product = (Array.isArray(itemData.products) ? itemData.products[0] : itemData.products) as any;
@@ -440,7 +278,6 @@ export const Machinery: React.FC = () => {
           }]);
 
       } catch (error: any) {
-          console.error('Error loading item for clone:', error);
           toast.error('Error al clonar: ' + error.message);
       } finally {
           setLoading(false);
@@ -451,17 +288,7 @@ export const Machinery: React.FC = () => {
       setLoading(true);
       try {
           // 1. Fetch the full invoice item details because it might not be in the pending list
-          const { data: itemData, error } = await supabase
-              .from('invoice_items')
-              .select(`
-                  id, total_price, category,
-                  products (name, category),
-                  invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
-              `)
-              .eq('id', assignment.invoice_item_id)
-              .single();
-
-          if (error) throw error;
+          const itemData = await fetchInvoiceItemForMachinery({ invoiceItemId: assignment.invoice_item_id });
 
           // 2. Reconstruct the MachineryItem object for the form
           // Fix: Handle potential array response for joined tables
@@ -513,7 +340,6 @@ export const Machinery: React.FC = () => {
           }]);
 
       } catch (error: any) {
-          console.error('Error loading item for edit:', error);
           toast.error('Error al cargar el item para editar: ' + error.message);
       } finally {
           setLoading(false);
@@ -525,16 +351,9 @@ export const Machinery: React.FC = () => {
       
       setLoading(true);
       try {
-          const { error } = await supabase
-              .from('machinery_assignments')
-              .delete()
-              .eq('id', id);
-              
-          if (error) throw error;
-          
+          await deleteMachineryAssignment({ assignmentId: id });
           loadData();
       } catch (error: any) {
-          console.error('Error deleting:', error);
           toast.error('Error: ' + error.message);
       } finally {
           setLoading(false);
@@ -547,12 +366,7 @@ export const Machinery: React.FC = () => {
       setLoading(true);
       try {
           // 1. Delete ALL assignments for this invoice_item_id
-          const { error: deleteError } = await supabase
-              .from('machinery_assignments')
-              .delete()
-              .eq('invoice_item_id', assignment.invoice_item_id);
-
-          if (deleteError) throw deleteError;
+          await deleteMachineryAssignmentsByInvoiceItem({ invoiceItemId: assignment.invoice_item_id });
 
           toast('Item reseteado. Ahora aparecerá en la lista de pendientes para asignar nuevamente.');
           await loadData();
@@ -563,7 +377,6 @@ export const Machinery: React.FC = () => {
           setEditingItem(null);
 
       } catch (error: any) {
-          console.error('Error redistributing:', error);
           toast.error('Error al redistribuir: ' + error.message);
       } finally {
           setLoading(false);
@@ -575,62 +388,12 @@ export const Machinery: React.FC = () => {
     if (!confirm('¿ESTÁ SEGURO? Esto eliminará TODAS las asignaciones de maquinaria para esta empresa. Esta acción no se puede deshacer.')) return;
 
     setLoading(true);
-    // 1. Get all assignment IDs for this company via RPC to avoid query URL limits
-    // We fetch in chunks if necessary, but RPC is cleaner. 
-    // Let's stick to client-side fetch but minimal fields to keep payload small.
-    // The previous error "Bad Request" is likely due to the URL being too long when sending thousands of IDs in `.in('id', batch)`.
-    // OR the initial SELECT returned too many rows.
-    
-    // Better approach: Use a custom RPC to delete by company_id directly in the database.
-    // This avoids transferring IDs back and forth.
-    
     try {
-        const { error: rpcError } = await supabase.rpc('delete_machinery_assignments_by_company', {
-            p_company_id: selectedCompany.id
-        });
-        
-        if (rpcError) {
-             // If RPC doesn't exist yet, fall back to the batched method but with smaller batches and robust error handling
-             console.warn('RPC delete failed, falling back to manual batch delete', rpcError);
-             throw rpcError; 
-        }
-
+        await deleteAllMachineryAssignments({ companyId: selectedCompany.id });
         toast('Todas las asignaciones han sido eliminadas.');
         loadData();
-    } catch (error: any) {
-         // Fallback implementation if RPC is missing
-         try {
-            const { data: assignments, error: fetchError } = await supabase
-            .from('machinery_assignments')
-            .select('id, invoice_items!inner(invoices!inner(company_id))')
-            .eq('invoice_items.invoices.company_id', selectedCompany.id);
-
-            if (fetchError) throw fetchError;
-
-            if (!assignments || assignments.length === 0) {
-                toast('No hay asignaciones para eliminar.');
-                return;
-            }
-
-            const ids = assignments.map(a => a.id);
-            // Smaller batch size to avoid Request-URI Too Long
-            const BATCH_SIZE = 100; 
-            for (let i = 0; i < ids.length; i += BATCH_SIZE) {
-                const batch = ids.slice(i, i + BATCH_SIZE);
-                const { error: deleteError } = await supabase
-                    .from('machinery_assignments')
-                    .delete()
-                    .in('id', batch);
-                
-                if (deleteError) throw deleteError;
-            }
-             toast('Todas las asignaciones han sido eliminadas (Método Manual).');
-             loadData();
-             
-         } catch (manualError: any) {
-            console.error('Error deleting all:', manualError);
-            toast.error('Error al eliminar: ' + manualError.message);
-         }
+    } catch (manualError: any) {
+        toast.error('Error al eliminar: ' + manualError.message);
     } finally {
         setLoading(false);
     }
@@ -655,26 +418,12 @@ export const Machinery: React.FC = () => {
             company_id: selectedCompany.id
         };
 
-        if (editingMachine.id) {
-            // Update
-            const { error } = await supabase
-                .from('machines')
-                .update(machineData)
-                .eq('id', editingMachine.id);
-            if (error) throw error;
-        } else {
-            // Create
-            const { error } = await supabase
-                .from('machines')
-                .insert([machineData]);
-            if (error) throw error;
-        }
+        await upsertMachine({ companyId: selectedCompany.id, machineId: editingMachine.id, payload: machineData });
 
         setShowMachineModal(false);
         setEditingMachine(null);
         loadMachines();
     } catch (error: any) {
-        console.error('Error saving machine:', error);
         toast.error('Error: ' + error.message);
     } finally {
         setLoading(false);
@@ -686,15 +435,9 @@ export const Machinery: React.FC = () => {
       
       setLoading(true);
       try {
-          const { error } = await supabase
-              .from('machines')
-              .update({ is_active: false }) // Soft delete
-              .eq('id', id);
-          
-          if (error) throw error;
+          await deactivateMachine({ machineId: id });
           loadMachines();
       } catch (error: any) {
-          console.error('Error deleting machine:', error);
           toast.error('Error: ' + error.message);
       } finally {
           setLoading(false);
@@ -843,38 +586,30 @@ export const Machinery: React.FC = () => {
             const alloc = payload[0]; 
 
             // 1. Update the specific assignment (Sector, Amount, Date, Machine)
-            const { error: specificError } = await supabase
-                .from('machinery_assignments')
-                .update({
+            await updateMachineryAssignment({
+                assignmentId: editingAssignmentId,
+                patch: {
                     sector_id: alloc.sector_id,
                     assigned_amount: alloc.assigned_amount,
                     assigned_date: assignedDate,
                     machine_id: selectedMachineId || null
-                })
-                .eq('id', editingAssignmentId);
-
-            if (specificError) throw specificError;
+                }
+            });
 
             // 2. Update Date and Machine for ALL other assignments of this item to keep them synced
-            const { error: syncError } = await supabase
-                .from('machinery_assignments')
-                .update({
+            await syncMachineryAssignmentsForItem({
+                invoiceItemId: selectedItemId,
+                excludeAssignmentId: editingAssignmentId,
+                patch: {
                     assigned_date: assignedDate,
                     machine_id: selectedMachineId || null
-                })
-                .eq('invoice_item_id', selectedItemId)
-                .neq('id', editingAssignmentId); // Don't update the one we just updated (redundant but safe)
-
-             if (syncError) throw syncError;
+                }
+            });
 
             toast('Asignación actualizada (Fecha y Máquina sincronizadas en todo el item)');
         } else {
             // Insert multiple
-            const { error } = await supabase
-                .from('machinery_assignments')
-                .insert(payload);
-
-            if (error) throw error;
+            await insertMachineryAssignments({ rows: payload });
             toast('Asignaciones guardadas exitosamente');
         }
 
@@ -885,7 +620,6 @@ export const Machinery: React.FC = () => {
         loadData();
 
     } catch (error: any) {
-        console.error('Error saving:', error);
         toast.error('Error: ' + error.message);
     } finally {
         setLoading(false);
@@ -913,7 +647,8 @@ export const Machinery: React.FC = () => {
     );
   }, [machineExpenses]);
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
+      const { exportJsonToXlsx } = await import('../lib/excel');
       const exportData = filteredHistory.map(h => {
           const invoiceDate = h.invoice_items?.invoices?.invoice_date || '-';
           const documentType = h.invoice_items?.invoices?.document_type || 'Factura';
@@ -932,11 +667,11 @@ export const Machinery: React.FC = () => {
               'Monto Asignado': h.assigned_amount
           };
       });
-
-      const ws = utils.json_to_sheet(exportData);
-      const wb = utils.book_new();
-      utils.book_append_sheet(wb, ws, "Maquinaria");
-      writeFile(wb, `Historial_Maquinaria_${new Date().toLocaleDateString('en-CA')}.xlsx`);
+      await exportJsonToXlsx({
+          filename: `Historial_Maquinaria_${new Date().toLocaleDateString('en-CA')}.xlsx`,
+          sheetName: 'Maquinaria',
+          rows: exportData as any
+      });
   };
 
   const handlePrintMachineReport = () => {
@@ -986,21 +721,7 @@ export const Machinery: React.FC = () => {
 
     try {
         // Fetch all assignments with machine info
-        const { data } = await supabase
-            .from('machinery_assignments')
-            .select(`
-                id, assigned_amount, assigned_date,
-                sectors (name),
-                machines (name, type, brand, model),
-                invoice_items!inner (
-                    products (name),
-                    invoices!inner (invoice_number)
-                )
-            `)
-            .eq('invoice_items.invoices.company_id', selectedCompany.id)
-            .not('machine_id', 'is', null) // Only items assigned to a machine
-            .order('machine_id', { ascending: true })
-            .order('assigned_date', { ascending: false });
+        const data = await fetchMachineryAssignmentsWithMachine({ companyId: selectedCompany.id });
 
         if (!data || data.length === 0) {
             toast('No hay gastos de maquinaria registrados para generar el reporte.');
@@ -1081,8 +802,7 @@ export const Machinery: React.FC = () => {
         setPdfPreviewTitle('Reporte General de Maquinaria');
         setPdfPreviewOpen(true);
 
-    } catch (error) {
-        console.error('Error generating general report:', error);
+    } catch (_error) {
         toast.error('Error al generar el reporte general.');
     } finally {
         setLoading(false);

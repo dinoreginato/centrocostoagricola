@@ -4,7 +4,7 @@ ALTER TABLE application_items
 ADD COLUMN IF NOT EXISTS objective TEXT;
 
 -- 2. Update the RPC function to handle the new objective field in UPDATE
-CREATE OR REPLACE FUNCTION update_application_inventory(
+CREATE OR REPLACE FUNCTION public.update_application_inventory(
     p_application_id uuid,
     p_field_id uuid,
     p_sector_id uuid,
@@ -17,12 +17,55 @@ CREATE OR REPLACE FUNCTION update_application_inventory(
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
     old_item RECORD;
     new_item jsonb;
     v_app_item_id uuid;
+    v_company_id uuid;
 BEGIN
+    SELECT f.company_id
+    INTO v_company_id
+    FROM public.applications a
+    JOIN public.fields f ON a.field_id = f.id
+    WHERE a.id = p_application_id;
+
+    IF v_company_id IS NULL THEN
+        RAISE EXCEPTION 'Aplicación no encontrada';
+    END IF;
+
+    IF NOT (
+        EXISTS (SELECT 1 FROM public.companies c WHERE c.id = v_company_id AND c.owner_id = auth.uid())
+        OR EXISTS (
+            SELECT 1 FROM public.company_members cm
+            WHERE cm.company_id = v_company_id
+              AND cm.user_id = auth.uid()
+              AND cm.role IN ('admin', 'editor')
+        )
+    ) THEN
+        RAISE EXCEPTION 'No autorizado';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM public.fields f2
+        WHERE f2.id = p_field_id
+          AND f2.company_id <> v_company_id
+    ) THEN
+        RAISE EXCEPTION 'Campo no pertenece a la misma empresa';
+    END IF;
+
+    IF p_sector_id IS NOT NULL AND EXISTS (
+        SELECT 1
+        FROM public.sectors s
+        JOIN public.fields f3 ON s.field_id = f3.id
+        WHERE s.id = p_sector_id
+          AND f3.company_id <> v_company_id
+    ) THEN
+        RAISE EXCEPTION 'Sector no pertenece a la misma empresa';
+    END IF;
+
     -- 1. Restore stock for ALL existing items of this application
     FOR old_item IN SELECT id, product_id, quantity_used FROM application_items WHERE application_id = p_application_id LOOP
         UPDATE products
@@ -91,6 +134,9 @@ BEGIN
     END LOOP;
 END;
 $$;
+
+REVOKE ALL ON FUNCTION public.update_application_inventory(uuid, uuid, uuid, date, text, numeric, numeric, jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.update_application_inventory(uuid, uuid, uuid, date, text, numeric, numeric, jsonb) TO authenticated;
 
 -- 3. Update get_company_applications_v2 to include objective in result
 CREATE OR REPLACE FUNCTION get_company_applications_v2(p_company_id uuid)

@@ -30,14 +30,3 @@ CREATE POLICY "Admins and Owners can manage members" ON company_members
       AND role = 'admin'
     )
   );
-
--- Function to get user ID by email (Security Definer - Use with caution)
-CREATE OR REPLACE FUNCTION get_user_id_by_email(email_input TEXT)
-RETURNS UUID AS $$
-DECLARE
-  found_id UUID;
-BEGIN
-  SELECT id INTO found_id FROM auth.users WHERE email = email_input;
-  RETURN found_id;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;

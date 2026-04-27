@@ -1,11 +1,10 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect } from 'react';
-import { DollarSign, Plus, Save, Loader2, AlertCircle, Trash2, Edit2, Download } from 'lucide-react';
-import { supabase } from '../supabase/client';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Plus, Save, Loader2, AlertCircle, Trash2, Edit2, Download } from 'lucide-react';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
-import { utils, writeFile } from 'xlsx';
 import { getSeasonFromDate } from '../lib/seasonUtils';
+import { deleteIncomeEntry, loadIncomesPageData, upsertIncomeEntry } from '../services/incomes';
 
 interface Income {
   id: string;
@@ -41,53 +40,31 @@ export function Incomes() {
   // Constants
   const [usdExchangeRate, setUsdExchangeRate] = useState<number>(950);
 
-  useEffect(() => {
-    if (selectedCompany) {
-      loadData();
-    }
-  }, [selectedCompany]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [incomesResponse, fieldsResponse, settingsResponse] = await Promise.all([
-        supabase
-          .from('income_entries')
-          .select(`
-            *,
-            fields (name),
-            sectors (name)
-          `)
-          .eq('company_id', selectedCompany?.id)
-          .order('date', { ascending: false }),
-        supabase
-          .from('fields')
-          .select('id, name, sectors(id, name)')
-          .eq('company_id', selectedCompany?.id),
-        supabase
-          .from('system_settings')
-          .select('*')
-          .eq('company_id', selectedCompany?.id)
-          .single()
-      ]);
+      if (!selectedCompany) return;
+      const { incomes, fields, settings } = await loadIncomesPageData({ companyId: selectedCompany.id });
+      setIncomes(incomes || []);
+      setFields(fields || []);
 
-      if (incomesResponse.error) throw incomesResponse.error;
-      if (fieldsResponse.error) throw fieldsResponse.error;
-
-      setIncomes(incomesResponse.data || []);
-      setFields(fieldsResponse.data || []);
-      
-      if (settingsResponse.data && settingsResponse.data.usd_exchange_rate) {
-          setUsdExchangeRate(settingsResponse.data.usd_exchange_rate);
+      if (settings && (settings as any).usd_exchange_rate) {
+        setUsdExchangeRate((settings as any).usd_exchange_rate);
       }
 
     } catch (err: any) {
-      console.error('Error loading data:', err);
+      toast.error('Error al cargar ingresos: ' + err.message);
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedCompany]);
+
+  useEffect(() => {
+    if (selectedCompany) {
+      void loadData();
+    }
+  }, [selectedCompany, loadData]);
 
   const handleSaveIncome = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -109,18 +86,7 @@ export function Incomes() {
             price_per_kg: Number(editingIncome.price_per_kg) || 0
         };
 
-        if (editingIncome.id) {
-            const { error } = await supabase
-                .from('income_entries')
-                .update(payload)
-                .eq('id', editingIncome.id);
-            if(error) throw error;
-        } else {
-            const { error } = await supabase
-                .from('income_entries')
-                .insert([payload]);
-            if(error) throw error;
-        }
+        await upsertIncomeEntry({ incomeId: (editingIncome as any).id, payload });
         
         setShowIncomeModal(false);
         setEditingIncome({});
@@ -135,15 +101,15 @@ export function Incomes() {
   const handleDelete = async (id: string) => {
       if (!window.confirm('¿Está seguro de eliminar este registro?')) return;
       try {
-          const { error } = await supabase.from('income_entries').delete().eq('id', id);
-          if (error) throw error;
+          await deleteIncomeEntry({ incomeId: id });
           loadData();
       } catch (err: any) {
           toast.error('Error al eliminar: ' + err.message);
       }
   };
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
+      const { exportJsonToXlsx } = await import('../lib/excel');
       const exportData = incomes.map(h => ({
           'Fecha': h.date,
           'Categoría': h.category,
@@ -155,11 +121,11 @@ export function Incomes() {
           'Total (USD)': h.amount_usd || 0,
           'Total (CLP)': h.amount
       }));
-
-      const ws = utils.json_to_sheet(exportData);
-      const wb = utils.book_new();
-      utils.book_append_sheet(wb, ws, "Liquidaciones");
-      writeFile(wb, `Liquidaciones_${new Date().toLocaleDateString('en-CA')}.xlsx`);
+      await exportJsonToXlsx({
+          filename: `Liquidaciones_${new Date().toLocaleDateString('en-CA')}.xlsx`,
+          sheetName: 'Liquidaciones',
+          rows: exportData as any
+      });
   };
 
   if (loading && incomes.length === 0) {

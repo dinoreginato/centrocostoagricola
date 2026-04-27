@@ -1,12 +1,13 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Plus, Loader2, Save, Trash2, Beaker, Calendar, Droplets, MapPin, RefreshCw, Edit, Filter, Download, Eye, FileText } from 'lucide-react';
+import { Plus, Loader2, Save, Trash2, Calendar, Droplets, MapPin, RefreshCw, Edit, Filter, Download, Eye, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
+import { createApplicationInventory, deleteAllApplicationsRestoreStock, deleteApplicationAndRestoreStock, loadApplicationsPageData, updateApplicationInventory } from '../services/applications';
 
 interface Field {
   id: string;
@@ -68,19 +69,6 @@ interface ApplicationHistory {
   }[];
 }
 
-const AGROCHEMICAL_CATEGORIES = [
-  'Quimicos', 
-  'Plaguicida', 
-  'Insecticida', 
-  'Fungicida', 
-  'Herbicida', 
-  'Fertilizantes', 
-  'fertilizante', 
-  'pesticida', 
-  'herbicida', 
-  'fungicida'
-];
-
 // Helper to normalize units for comparison
 const normalizeUnit = (u: string) => {
   const lower = u.toLowerCase().trim();
@@ -112,11 +100,9 @@ const getConversionFactor = (fromUnit: string, toUnit: string): number => {
 
 export const Applications: React.FC = () => {
   const { selectedCompany, userRole } = useCompany();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
-  const [fields, setFields] = useState<Field[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [applications, setApplications] = useState<ApplicationHistory[]>([]);
-  const [avgFuelPrice, setAvgFuelPrice] = useState<number>(0);
+  const companyId = selectedCompany?.id ?? null;
   
   // PDF Preview State
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
@@ -131,9 +117,11 @@ export const Applications: React.FC = () => {
   const [applicationType, setApplicationType] = useState('fertilizacion');
   const [waterVolumePerHectare, setWaterVolumePerHectare] = useState<number>(0); 
   const [items, setItems] = useState<ApplicationItem[]>([]);
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
 
   // Filter State
   const [filterSectorId, setFilterSectorId] = useState<string>('all');
+  const [selectedApplicationIds, setSelectedApplicationIds] = useState<string[]>([]);
 
 
   // Item Form State
@@ -153,11 +141,20 @@ export const Applications: React.FC = () => {
     objective: ''
   });
 
-  useEffect(() => {
-    if (selectedCompany) {
-      loadData();
-    }
-  }, [selectedCompany]);
+  const pageQuery = useQuery({
+    queryKey: ['applicationsPage', companyId],
+    queryFn: async () => {
+      if (!companyId) return null;
+      return await loadApplicationsPageData({ companyId });
+    },
+    enabled: Boolean(companyId),
+    staleTime: 30_000,
+  });
+
+  const fields = useMemo(() => (pageQuery.data?.fields || []) as Field[], [pageQuery.data?.fields]);
+  const products = useMemo(() => (pageQuery.data?.products || []) as Product[], [pageQuery.data?.products]);
+  const applications = useMemo(() => (pageQuery.data?.applications || []) as ApplicationHistory[], [pageQuery.data?.applications]);
+  const avgFuelPrice = useMemo(() => Number(pageQuery.data?.avgFuelPrice || 0), [pageQuery.data?.avgFuelPrice]);
 
   // Update dose unit and suggest objective when product changes
   useEffect(() => {
@@ -165,8 +162,6 @@ export const Applications: React.FC = () => {
       const product = products.find(p => p.id === currentItem.product_id);
       if (product) {
         // Default to product unit, but if it's L allow cc, if Kg allow gr
-        const base = normalizeUnit(product.unit);
-
         // Find last used objective for this product
         let lastObjective = '';
         for (const app of applications) {
@@ -222,6 +217,7 @@ export const Applications: React.FC = () => {
     currentItem.dose_input_type, 
     currentItem.dose_unit, 
     currentItem.product_id, 
+    currentItem.quantity,
     selectedSectorId, 
     selectedFieldId, 
     waterVolumePerHectare, 
@@ -229,77 +225,42 @@ export const Applications: React.FC = () => {
     products
   ]);
 
-  const loadData = async () => {
-    if (!selectedCompany) return;
-    
-    // Load fields with sectors
-    const { data: fieldsData } = await supabase
-      .from('fields')
-      .select('*, sectors(*)')
-      .eq('company_id', selectedCompany.id);
-    setFields(fieldsData || []);
-
-    // Load products - Filter for Agrochemicals
-    const { data: productsData } = await supabase
-      .from('products')
-      .select('*')
-      .eq('company_id', selectedCompany.id)
-      .in('category', AGROCHEMICAL_CATEGORIES) // Filter by category
-      .gt('current_stock', 0);
-    setProducts(productsData || []);
-
-    // Load Applications History
-    const { data: appsData, error: appsError } = await supabase
-        .rpc('get_company_applications_v2', { p_company_id: selectedCompany.id });
-    
-    if (appsError) {
-        console.error('Error loading applications:', appsError);
-        toast.error('Error cargando historial: ' + appsError.message);
-    } else {
-        setApplications(appsData || []);
-    }
-
-    // Calculate Average Fuel Price (Diesel)
-    try {
-        const { data: fuelItems } = await supabase
-            .from('invoice_items')
-            .select(`
-                quantity, total_price, category,
-                products (name),
-                invoices!inner (document_type)
-            `)
-            .eq('invoices.company_id', selectedCompany.id);
-
-        if (fuelItems) {
-            const targetCategories = ['petroleo', 'diesel'];
-            const filtered = fuelItems.filter((item: any) => {
-                const cat = (item.category || '').toLowerCase();
-                const name = (item.products?.name || '').toLowerCase();
-                return targetCategories.some(t => cat.includes(t) || name.includes(t)) && !cat.includes('bencina') && !name.includes('gasolina');
-            });
-
-            const totalLiters = filtered.reduce((sum, item: any) => {
-                 const docType = (item.invoices.document_type || '').toLowerCase();
-                 const isNC = docType.includes('nota de cr') || docType.includes('nc');
-                 const qty = Number(item.quantity || 0);
-                 return sum + (isNC ? -qty : qty);
-            }, 0);
-
-            const totalCost = filtered.reduce((sum, item: any) => {
-                 const docType = (item.invoices.document_type || '').toLowerCase();
-                 const isNC = docType.includes('nota de cr') || docType.includes('nc');
-                 const cost = Number(item.total_price || 0);
-                 return sum + (isNC ? -cost : cost);
-            }, 0);
-
-            if (totalLiters > 0) {
-                setAvgFuelPrice(totalCost / totalLiters);
-            }
-        }
-    } catch (err) {
-        console.error('Error calculating fuel price:', err);
-    }
+  const reloadData = async () => {
+    if (!companyId) return;
+    await queryClient.invalidateQueries({ queryKey: ['applicationsPage', companyId] });
   };
+
+  useEffect(() => {
+    if (!companyId) return;
+    const key = `applicationsFilters:${companyId}`;
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { filterSectorId?: string };
+      setFilterSectorId(parsed.filterSectorId ?? 'all');
+    } catch (_e) {
+      void _e;
+    }
+  }, [companyId]);
+
+  useEffect(() => {
+    if (!companyId) return;
+    const key = `applicationsFilters:${companyId}`;
+    try {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          filterSectorId,
+        }),
+      );
+    } catch (_e) {
+      void _e;
+    }
+  }, [companyId, filterSectorId]);
+
+  useEffect(() => {
+    setSelectedApplicationIds([]);
+  }, [companyId, filterSectorId]);
 
   const handleAddItem = () => {
     const product = products.find(p => p.id === currentItem.product_id);
@@ -360,18 +321,51 @@ export const Applications: React.FC = () => {
     removeItem(index);
   };
 
+  const deleteApplicationMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await deleteApplicationAndRestoreStock({ applicationId: id });
+    },
+    onSuccess: async () => {
+      toast('Aplicación eliminada y stock restaurado exitosamente.');
+      await reloadData();
+    },
+    onError: (error: any) => {
+      toast.error('Error al eliminar: ' + (error?.message || 'Error desconocido'));
+    },
+  });
+
+  const deleteAllApplicationsMutation = useMutation({
+    mutationFn: async () => {
+      if (!companyId) return;
+      await deleteAllApplicationsRestoreStock({ companyId });
+    },
+    onSuccess: async () => {
+      toast('Todas las aplicaciones han sido eliminadas y el stock restaurado.');
+      setSelectedApplicationIds([]);
+      await reloadData();
+    },
+    onError: (error: any) => {
+      toast.error('Error al eliminar todo: ' + (error?.message || 'Error desconocido'));
+    },
+  });
+
+  const bulkDeleteApplicationsMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      await Promise.all(ids.map((id) => deleteApplicationAndRestoreStock({ applicationId: id })));
+    },
+    onSuccess: async () => {
+      toast('Aplicaciones eliminadas y stock restaurado.');
+      setSelectedApplicationIds([]);
+      await reloadData();
+    },
+    onError: (error: any) => {
+      toast.error('Error al eliminar: ' + (error?.message || 'Error desconocido'));
+    },
+  });
+
   const handleDeleteApplication = async (id: string) => {
     if (!window.confirm('¿Estás seguro de eliminar esta aplicación?\n\n¡Cuidado! El stock descontado será RESTAURADO a la bodega.')) return;
-    
-    try {
-        const { error } = await supabase.rpc('delete_application_and_restore_stock', { target_application_id: id });
-        if (error) throw error;
-        toast('Aplicación eliminada y stock restaurado exitosamente.');
-        loadData();
-    } catch (error: any) {
-        console.error('Error deleting application:', error);
-        toast.error('Error al eliminar: ' + error.message);
-    }
+    deleteApplicationMutation.mutate(id);
   };
 
   const handleDownloadPDF = (action: 'save' | 'preview' = 'save') => {
@@ -682,12 +676,8 @@ export const Applications: React.FC = () => {
     
     setLoading(true);
     try {
-        const { error } = await supabase.rpc('delete_all_applications_restore_stock', { target_company_id: selectedCompany.id });
-        if (error) throw error;
-        toast('Todas las aplicaciones han sido eliminadas y el stock restaurado.');
-        loadData();
+        await deleteAllApplicationsMutation.mutateAsync();
     } catch (error: any) {
-        console.error('Error deleting all applications:', error);
         toast.error('Error al eliminar todo: ' + error.message);
     } finally {
         setLoading(false);
@@ -728,6 +718,7 @@ export const Applications: React.FC = () => {
     });
     
     setItems(mappedItems);
+    setWizardStep(2);
     
     // Scroll to top
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -741,6 +732,8 @@ export const Applications: React.FC = () => {
     setApplicationType('fertilizacion');
     setWaterVolumePerHectare(0);
     setItems([]);
+    setCurrentItem({ product_id: '', quantity: 0, dose_input_value: 0, dose_input_type: 'ha', dose_unit: '', objective: '' });
+    setWizardStep(1);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -753,7 +746,14 @@ export const Applications: React.FC = () => {
 
       if (editingId) {
         // UPDATE MODE
-        const { error } = await supabase.rpc('update_application_inventory', {
+        const sector = fields.find(f => f.id === selectedFieldId)?.sectors.find(s => s.id === selectedSectorId);
+        
+        const shouldCreateFuel = Boolean(sector && sector.hectares > 0 && avgFuelPrice > 0);
+        const rate = selectedCompany.application_fuel_rate || 12;
+        const fuelLiters = shouldCreateFuel ? Math.max(rate * sector!.hectares, 0.01) : null;
+        const fuelCost = shouldCreateFuel ? Number(fuelLiters) * avgFuelPrice : null;
+
+        await updateApplicationInventory({
             p_application_id: editingId,
             p_field_id: selectedFieldId,
             p_sector_id: selectedSectorId,
@@ -768,177 +768,58 @@ export const Applications: React.FC = () => {
                 unit_cost: item.unit_cost,
                 total_cost: item.total_cost,
                 objective: item.objective || '' // Include objective
-            }))
+            })),
+            p_create_fuel: shouldCreateFuel,
+            p_fuel_liters: fuelLiters,
+            p_fuel_cost: fuelCost,
+            p_fuel_activity: 'Aplicación (Automática)'
         });
-
-        if (error) throw error;
-        
-        // Update Fuel Record (Formula: 12L/ha)
-        // We do this separately. Ideally should be in the RPC but keeping it here for now.
-        // For Update, we check if record exists or create it.
-        const sector = fields.find(f => f.id === selectedFieldId)?.sectors.find(s => s.id === selectedSectorId);
-        
-        if (sector && sector.hectares > 0) {
-            // Use configured rate or default to 12
-            const rate = selectedCompany.application_fuel_rate || 12;
-            const fuelLiters = rate * sector.hectares;
-            const finalLiters = Math.max(fuelLiters, 0.01);
-            const fuelCost = finalLiters * avgFuelPrice;
-            
-            // Check if exists
-            const { data: existingFuel } = await supabase
-                .from('fuel_consumption')
-                .select('id')
-                .eq('application_id', editingId)
-                .maybeSingle();
-
-            if (existingFuel) {
-                const { error: updateError } = await supabase
-                    .from('fuel_consumption')
-                    .update({
-                        date: applicationDate,
-                        sector_id: selectedSectorId,
-                        liters: finalLiters,
-                        estimated_price: fuelCost
-                    })
-                    .eq('id', existingFuel.id);
-                
-                if (updateError) console.error('Error updating fuel record:', updateError);
-
-            } else {
-                // Create if missing
-                const { error: insertError } = await supabase
-                    .from('fuel_consumption')
-                    .insert([{
-                        company_id: selectedCompany.id,
-                        date: applicationDate,
-                        activity: 'Aplicación (Automática)',
-                        liters: finalLiters,
-                        estimated_price: fuelCost,
-                        sector_id: selectedSectorId,
-                        application_id: editingId
-                    }]);
-                
-                if (insertError) console.error('Error creating missing fuel record on update:', insertError);
-            }
-        }
 
         toast('Aplicación actualizada exitosamente');
         handleCancelEdit(); // Reset form
 
       } else {
         // CREATE MODE
-        // 1. Create Application
-        const { data: application, error: appError } = await supabase
-          .from('applications')
-          .insert([{
-            field_id: selectedFieldId,
-            sector_id: selectedSectorId,
-            application_date: applicationDate,
-            application_type: applicationType,
-            total_cost: totalCost,
-            water_liters_per_hectare: waterVolumePerHectare
-          }])
-          .select()
-          .single();
-
-        if (appError) throw appError;
-
-        // 2. Process Items and Deduct Stock
-        for (const item of items) {
-          // Create Application Item
-          const { data: savedItem, error: itemError } = await supabase
-            .from('application_items')
-            .insert([{
-              application_id: application.id,
-              product_id: item.product_id,
-              quantity_used: item.quantity_used,
-              dose_per_hectare: item.dose_per_hectare, 
-              unit_cost: item.unit_cost,
-              total_cost: item.total_cost,
-              objective: item.objective || '' // Include objective
-            }])
-            .select()
-            .single();
-
-          if (itemError) throw itemError;
-
-          // Deduct Stock
-          const product = products.find(p => p.id === item.product_id);
-          if (product) {
-              const newStock = product.current_stock - item.quantity_used;
-              await supabase
-                  .from('products')
-                  .update({ current_stock: newStock })
-                  .eq('id', item.product_id);
-              
-              // Record Inventory Movement (Salida) linked to Application Item
-              await supabase
-                  .from('inventory_movements')
-                  .insert([{
-                      product_id: item.product_id,
-                      movement_type: 'salida',
-                      quantity: item.quantity_used,
-                      unit_cost: item.unit_cost,
-                      application_item_id: savedItem.id // LINK TO APPLICATION
-                  }]);
-          }
-        }
-
-        // 3. Create Automatic Fuel Consumption Record
         const sector = fields.find(f => f.id === selectedFieldId)?.sectors.find(s => s.id === selectedSectorId);
-        
-        if (sector && sector.hectares > 0) {
-            // Use configured rate or default to 12
-            const rate = selectedCompany.application_fuel_rate || 12;
-            const fuelLiters = rate * sector.hectares;
-            // Ensure we have at least a small amount to pass check constraint > 0
-            const finalLiters = Math.max(fuelLiters, 0.01);
-            const fuelCost = finalLiters * avgFuelPrice;
-            
-            console.log('Attempting to create fuel record:', {
-                company_id: selectedCompany.id,
-                date: applicationDate,
-                liters: finalLiters,
-                sector_id: selectedSectorId,
-                application_id: application.id
-            });
 
-            const { error: fuelError } = await supabase
-                .from('fuel_consumption')
-                .insert([{
-                    company_id: selectedCompany.id,
-                    date: applicationDate,
-                    activity: 'Aplicación (Automática)',
-                    liters: finalLiters,
-                    estimated_price: fuelCost,
-                    sector_id: selectedSectorId,
-                    application_id: application.id
-                }]);
-            
-            if (fuelError) {
-                console.error('Error creating fuel record:', fuelError);
-                toast('La aplicación se guardó, pero hubo un error registrando el petróleo: ' + fuelError.message);
-            }
-        } else {
-            console.warn('Skipping fuel record: Sector not found or 0 hectares', sector);
-        }
+        const shouldCreateFuel = Boolean(sector && sector.hectares > 0 && avgFuelPrice > 0);
+        const rate = selectedCompany.application_fuel_rate || 12;
+        const fuelLiters = shouldCreateFuel ? Math.max(rate * sector!.hectares, 0.01) : null;
+        const fuelCost = shouldCreateFuel ? Number(fuelLiters) * avgFuelPrice : null;
+
+        await createApplicationInventory({
+          p_field_id: selectedFieldId,
+          p_sector_id: selectedSectorId,
+          p_date: applicationDate,
+          p_type: applicationType,
+          p_water_rate: waterVolumePerHectare,
+          p_total_cost: totalCost,
+          p_items: items.map((item) => ({
+            product_id: item.product_id,
+            quantity_used: item.quantity_used,
+            dose_per_hectare: item.dose_per_hectare,
+            unit_cost: item.unit_cost,
+            total_cost: item.total_cost,
+            objective: item.objective || ''
+          })),
+          p_create_fuel: shouldCreateFuel,
+          p_fuel_liters: fuelLiters,
+          p_fuel_cost: fuelCost,
+          p_fuel_activity: 'Aplicación (Automática)'
+        });
 
         toast('Aplicación registrada exitosamente');
         handleCancelEdit(); // Reset form
       }
 
-      loadData(); 
+      await reloadData();
 
     } catch (error: any) {
-      console.error('Error saving application:', error);
       toast.error('Error al guardar: ' + error.message);
     } finally {
       setLoading(false);
     }
   };
-
-  if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
 
   const selectedField = fields.find(f => f.id === selectedFieldId);
   const selectedSector = selectedField?.sectors.find(s => s.id === selectedSectorId);
@@ -952,7 +833,7 @@ export const Applications: React.FC = () => {
   };
 
   // Calculate stats by objective
-  const objectiveStats = React.useMemo(() => {
+  const objectiveStats = useMemo(() => {
     const stats: Record<string, number> = {};
     applications.forEach(app => {
       if (filterSectorId === 'all' || app.sector_id === filterSectorId) {
@@ -969,7 +850,7 @@ export const Applications: React.FC = () => {
   }, [applications, filterSectorId]);
 
   // Derive unique objectives for autocomplete
-  const uniqueObjectives = React.useMemo(() => {
+  const uniqueObjectives = useMemo(() => {
     const objectives = new Set<string>();
     applications.forEach(app => {
         app.items.forEach(item => {
@@ -981,17 +862,21 @@ export const Applications: React.FC = () => {
     return Array.from(objectives).sort();
   }, [applications]);
 
+  if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
+  if (pageQuery.isLoading) return <div className="p-8">Cargando...</div>;
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Libro de Aplicaciones</h1>
         <div className="flex space-x-2">
             <button
-                onClick={loadData}
+                onClick={reloadData}
+                disabled={pageQuery.isFetching}
                 className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
                 title="Recargar datos"
             >
-                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`h-4 w-4 ${pageQuery.isFetching ? 'animate-spin' : ''}`} />
             </button>
             <button
                 onClick={handleDeleteAllApplications}
@@ -1018,7 +903,38 @@ export const Applications: React.FC = () => {
             )}
         </div>
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Application Header */}
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-gray-600 dark:text-gray-300">
+              Paso {wizardStep} de 3
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setWizardStep(1)}
+                className={`px-3 py-1.5 rounded text-xs border ${wizardStep === 1 ? 'bg-green-600 text-white border-green-600' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600'}`}
+              >
+                Datos
+              </button>
+              <button
+                type="button"
+                onClick={() => setWizardStep(2)}
+                className={`px-3 py-1.5 rounded text-xs border ${wizardStep === 2 ? 'bg-green-600 text-white border-green-600' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600'}`}
+                disabled={!selectedFieldId || !selectedSectorId}
+              >
+                Productos
+              </button>
+              <button
+                type="button"
+                onClick={() => setWizardStep(3)}
+                className={`px-3 py-1.5 rounded text-xs border ${wizardStep === 3 ? 'bg-green-600 text-white border-green-600' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600'}`}
+                disabled={items.length === 0 || !selectedFieldId || !selectedSectorId}
+              >
+                Revisar
+              </button>
+            </div>
+          </div>
+
+          {wizardStep === 1 && (
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Campo</label>
@@ -1102,7 +1018,9 @@ export const Applications: React.FC = () => {
               )}
             </div>
           </div>
+          )}
 
+          {wizardStep === 2 && (
           <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
             <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-4">Productos a Aplicar</h3>
             
@@ -1282,34 +1200,117 @@ export const Applications: React.FC = () => {
               )}
             </div>
           </div>
+          )}
 
-          <div className="flex justify-end pt-4">
-            {editingId && (
-                <button
-                    type="button"
-                    onClick={handleCancelEdit}
-                    className="mr-3 inline-flex justify-center py-2 px-4 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 focus:outline-none"
-                >
-                    Cancelar
-                </button>
-            )}
+          {wizardStep === 3 && (
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-6 space-y-4">
+              <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">Revisión</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+                <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded">
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Campo</div>
+                  <div className="font-medium text-gray-900 dark:text-gray-100">{selectedField?.name || '-'}</div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded">
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Sector</div>
+                  <div className="font-medium text-gray-900 dark:text-gray-100">{selectedSector?.name || '-'}</div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded">
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Fecha</div>
+                  <div className="font-medium text-gray-900 dark:text-gray-100">{applicationDate}</div>
+                </div>
+                <div className="bg-gray-50 dark:bg-gray-900 p-3 rounded">
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Mojamiento</div>
+                  <div className="font-medium text-gray-900 dark:text-gray-100">{waterVolumePerHectare || 0} L/ha</div>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-900">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Producto</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Objetivo</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Cantidad</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Costo</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {items.map((it, idx) => (
+                      <tr key={idx}>
+                        <td className="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{it.product_name}</td>
+                        <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">{it.objective || '-'}</td>
+                        <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400 text-right">
+                          {it.quantity_used} {it.unit}
+                        </td>
+                        <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400 text-right">{formatCLP(it.total_cost)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-gray-50 dark:bg-gray-900">
+                      <td colSpan={3} className="px-4 py-2 text-right text-sm font-bold text-gray-900 dark:text-gray-100">Total</td>
+                      <td className="px-4 py-2 text-right text-sm font-bold text-gray-900 dark:text-gray-100">
+                        {formatCLP(items.reduce((sum, it) => sum + it.total_cost, 0))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-4">
             <button
-              type="submit"
-              disabled={loading || items.length === 0 || !selectedFieldId || !selectedSectorId}
-              className={`ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white focus:outline-none focus:ring-2 focus:ring-offset-2 ${editingId ? 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500' : 'bg-green-600 hover:bg-green-700 focus:ring-green-500'} disabled:opacity-50`}
+              type="button"
+              onClick={() => setWizardStep((s) => (s === 1 ? 1 : ((s - 1) as 1 | 2 | 3)))}
+              disabled={wizardStep === 1}
+              className="inline-flex justify-center py-2 px-4 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-50"
             >
-              {loading ? (
-                <>
-                  <Loader2 className="animate-spin -ml-1 mr-2 h-5 w-5" />
-                  {editingId ? 'Actualizando...' : 'Guardando...'}
-                </>
-              ) : (
-                <>
-                  <Save className="-ml-1 mr-2 h-5 w-5" />
-                  {editingId ? 'Actualizar Aplicación' : 'Registrar Aplicación'}
-                </>
-              )}
+              Atrás
             </button>
+
+            <div className="flex items-center">
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  className="mr-3 inline-flex justify-center py-2 px-4 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 focus:outline-none"
+                >
+                  Cancelar
+                </button>
+              )}
+
+              {wizardStep !== 3 && (
+                <button
+                  type="button"
+                  onClick={() => setWizardStep((s) => (s === 1 ? 2 : 3))}
+                  disabled={(wizardStep === 1 && (!selectedFieldId || !selectedSectorId)) || (wizardStep === 2 && items.length === 0)}
+                  className="ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                >
+                  Siguiente
+                </button>
+              )}
+
+              {wizardStep === 3 && (
+                <button
+                  type="submit"
+                  disabled={loading || items.length === 0 || !selectedFieldId || !selectedSectorId}
+                  className={`ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white focus:outline-none focus:ring-2 focus:ring-offset-2 ${editingId ? 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500' : 'bg-green-600 hover:bg-green-700 focus:ring-green-500'} disabled:opacity-50`}
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="animate-spin -ml-1 mr-2 h-5 w-5" />
+                      {editingId ? 'Actualizando...' : 'Guardando...'}
+                    </>
+                  ) : (
+                    <>
+                      <Save className="-ml-1 mr-2 h-5 w-5" />
+                      {editingId ? 'Actualizar Aplicación' : 'Registrar Aplicación'}
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
           </div>
         </form>
       </div>
@@ -1337,6 +1338,48 @@ export const Applications: React.FC = () => {
             
             {/* Sector Filter & Download */}
             <div className="flex items-center space-x-4">
+                {userRole !== 'viewer' && (
+                  <div className="flex items-center space-x-2">
+                    {selectedApplicationIds.length > 0 ? (
+                      <>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">{selectedApplicationIds.length} seleccionadas</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedApplicationIds([])}
+                          disabled={bulkDeleteApplicationsMutation.isPending}
+                          className="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-50"
+                        >
+                          Limpiar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!window.confirm(`¿Eliminar ${selectedApplicationIds.length} aplicaciones? El stock será restaurado.`)) return;
+                            bulkDeleteApplicationsMutation.mutate(selectedApplicationIds);
+                          }}
+                          disabled={bulkDeleteApplicationsMutation.isPending}
+                          className="inline-flex items-center px-3 py-1.5 border border-red-300 text-xs font-medium rounded-md text-red-700 bg-white dark:bg-gray-800 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          Eliminar
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelectedApplicationIds(
+                            applications.filter(app => filterSectorId === 'all' || app.sector_id === filterSectorId).map((a) => a.id),
+                          )
+                        }
+                        disabled={applications.length === 0}
+                        className="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-50"
+                      >
+                        Seleccionar todo
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex shadow-sm rounded-md">
                     <button
                         onClick={() => handleDownloadFieldPDF('preview')}
@@ -1418,6 +1461,9 @@ export const Applications: React.FC = () => {
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                     <thead className="bg-gray-50 dark:bg-gray-900">
                         <tr>
+                            {userRole !== 'viewer' && (
+                              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase"></th>
+                            )}
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fecha</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Lugar</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Tipo</th>
@@ -1431,6 +1477,20 @@ export const Applications: React.FC = () => {
                             .filter(app => filterSectorId === 'all' || app.sector_id === filterSectorId)
                             .map((app) => (
                             <tr key={app.id} className={editingId === app.id ? 'bg-blue-50' : ''}>
+                                {userRole !== 'viewer' && (
+                                  <td className="px-3 py-4 whitespace-nowrap">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedApplicationIds.includes(app.id)}
+                                      onChange={() =>
+                                        setSelectedApplicationIds((prev) =>
+                                          prev.includes(app.id) ? prev.filter((x) => x !== app.id) : [...prev, app.id],
+                                        )
+                                      }
+                                      className="h-4 w-4 accent-green-600"
+                                    />
+                                  </td>
+                                )}
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                                     <div className="flex items-center">
                                         <Calendar className="h-4 w-4 mr-2 text-gray-400" />

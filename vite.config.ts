@@ -8,6 +8,36 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig({
   build: {
     sourcemap: 'hidden',
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/')) return 'react';
+          if (id.includes('node_modules/react-router') || id.includes('node_modules/react-router-dom'))
+            return 'react-router';
+          if (id.includes('node_modules/@supabase')) return 'supabase';
+          if (id.includes('node_modules/lucide-react')) return 'icons';
+          if (id.includes('node_modules/sonner')) return 'sonner';
+          if (id.includes('node_modules/recharts')) return 'recharts';
+          if (id.includes('node_modules/jspdf') || id.includes('node_modules/jspdf-autotable')) return 'pdf';
+          if (
+            id.includes('node_modules/exceljs') ||
+            id.includes('node_modules/jszip') ||
+            id.includes('node_modules/pako') ||
+            id.includes('node_modules/archiver') ||
+            id.includes('node_modules/unzipper') ||
+            id.includes('node_modules/fast-csv') ||
+            id.includes('node_modules/saxes') ||
+            id.includes('node_modules/tmp') ||
+            id.includes('node_modules/dayjs') ||
+            id.includes('node_modules/readable-stream')
+          )
+            return 'exceljs';
+          return undefined;
+        }
+      }
+    }
   },
   plugins: [
     react({
@@ -48,6 +78,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        globIgnores: ['**/assets/exceljs-*.js'],
         maximumFileSizeToCacheInBytes: 5000000, // Increased to 5MB to handle larger chunks like index-xxx.js
         runtimeCaching: [
           {

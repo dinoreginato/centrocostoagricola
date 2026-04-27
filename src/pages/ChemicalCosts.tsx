@@ -1,9 +1,9 @@
-
-import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Loader2, Search, Filter, DollarSign, Calendar } from 'lucide-react';
+import { Loader2, Search, Calendar } from 'lucide-react';
+import { fetchChemicalInvoices, fetchYearlyExchangeRates, getExchangeRateForDate } from '../services/chemicalCosts';
 
 interface ChemicalItem {
   id: string;
@@ -21,10 +21,6 @@ interface ChemicalItem {
   supplier: string;
 }
 
-interface ExchangeRateCache {
-  [date: string]: number;
-}
-
 const CHEMICAL_CATEGORIES = [
   'Quimicos', 'Plaguicida', 'Insecticida', 'Fungicida', 'Herbicida', 
   'Fertilizantes', 'fertilizante', 'pesticida', 'herbicida', 'fungicida'
@@ -36,73 +32,18 @@ export const ChemicalCosts: React.FC = () => {
   const [items, setItems] = useState<ChemicalItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [exchangeRates, setExchangeRates] = useState<ExchangeRateCache>({});
 
   const [viewMode, setViewMode] = useState<'list' | 'summary'>('summary');
 
-  useEffect(() => {
-    if (selectedCompany) {
-      loadData();
-    }
-  }, [selectedCompany, selectedYear]);
-
-  const fetchYearlyExchangeRates = async (year: number) => {
-    try {
-      const response = await fetch(`https://mindicador.cl/api/dolar/${year}`);
-      if (!response.ok) throw new Error('Error fetching exchange rates');
-      const data = await response.json();
-      
-      const rates: ExchangeRateCache = {};
-      if (data.serie) {
-        data.serie.forEach((item: any) => {
-          // Format date as YYYY-MM-DD
-          const date = item.fecha.split('T')[0];
-          rates[date] = item.valor;
-        });
-      }
-      return rates;
-    } catch (error) {
-      console.error('Error fetching exchange rates:', error);
-      return {};
-    }
-  };
-
-  const getExchangeRateForDate = (dateStr: string, rates: ExchangeRateCache): number => {
-    // Direct match
-    if (rates[dateStr]) return rates[dateStr];
-    
-    // If weekend or holiday, find the closest previous date
-    const date = new Date(dateStr);
-    for (let i = 0; i < 5; i++) { // Look back up to 5 days
-        date.setDate(date.getDate() - 1);
-        const prevDateStr = date.toISOString().split('T')[0];
-        if (rates[prevDateStr]) return rates[prevDateStr];
-    }
-    
-    return 0; // Fallback if not found
-  };
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!selectedCompany) return;
     setLoading(true);
     try {
       // 1. Fetch Exchange Rates for the selected year
       const rates = await fetchYearlyExchangeRates(selectedYear);
-      setExchangeRates(prev => ({ ...prev, ...rates }));
 
       // 2. Fetch Invoices with items
-      const { data: invoices } = await supabase
-        .from('invoices')
-        .select(`
-          id, invoice_number, invoice_date, supplier,
-          invoice_items (
-            id, category, total_price, quantity, unit_price,
-            products (name, unit, category)
-          )
-        `)
-        .eq('company_id', selectedCompany.id)
-        .gte('invoice_date', `${selectedYear}-01-01`)
-        .lte('invoice_date', `${selectedYear}-12-31`);
+      const invoices = await fetchChemicalInvoices({ companyId: selectedCompany.id, year: selectedYear });
 
       if (!invoices) return;
 
@@ -151,12 +92,18 @@ export const ChemicalCosts: React.FC = () => {
       processedItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       setItems(processedItems);
 
-    } catch (error) {
-      console.error('Error loading chemical data:', error);
+    } catch {
+      toast.error('Error al cargar datos de químicos.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedCompany, selectedYear]);
+
+  useEffect(() => {
+    if (selectedCompany) {
+      void loadData();
+    }
+  }, [selectedCompany, selectedYear, loadData]);
 
   const filteredItems = items.filter(item => 
     item.product_name.toLowerCase().includes(searchTerm.toLowerCase()) ||

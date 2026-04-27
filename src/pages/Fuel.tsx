@@ -2,9 +2,11 @@ import { toast } from 'sonner';
 
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Fuel as FuelIcon, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, Plus, Droplet } from 'lucide-react';
+import { Fuel as FuelIcon, Save, Loader2, Trash2, Edit2, Droplet } from 'lucide-react';
+import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
+import { updateCompanyApplicationFuelRate } from '../services/companies';
+import { deleteFuelConsumptionLog, deleteFuelConsumptionLogs, insertFuelConsumptionLogs, loadFuelStockAndLogs, updateFuelConsumptionLog } from '../services/fuel';
 
 interface FuelLog {
   id: string;
@@ -86,17 +88,11 @@ export const Fuel: React.FC = () => {
     if (!selectedCompany) return;
     setConfigLoading(true);
     try {
-        const { error } = await supabase
-            .from('companies')
-            .update({ application_fuel_rate: applicationRate })
-            .eq('id', selectedCompany.id);
-
-        if (error) throw error;
+        await updateCompanyApplicationFuelRate({ companyId: selectedCompany.id, rate: applicationRate });
         
         await refreshCompanies(); // Refresh context to propagate changes
         toast('Tasa de consumo global actualizada correctamente.');
     } catch (error: any) {
-        console.error('Error updating rate:', error);
         toast.error('Error al actualizar: ' + error.message);
     } finally {
         setConfigLoading(false);
@@ -105,7 +101,9 @@ export const Fuel: React.FC = () => {
 
   // Auto-calculate liters for Applications
   useEffect(() => {
-    if (activity === 'Aplicacion') {
+    if (editingLogId) return;
+    const activityNormalized = String(activity || '').toLowerCase();
+    if (activityNormalized.startsWith('aplicación') || activityNormalized.startsWith('aplicacion')) {
       let hectares = 0;
       
       if (distributeBy === 'sector' && selectedSectorId) {
@@ -122,7 +120,7 @@ export const Fuel: React.FC = () => {
         setLiters(Number((hectares * applicationRate).toFixed(1)));
       }
     }
-  }, [activity, distributeBy, selectedSectorId, selectedFieldId, applicationRate, sectors, fields]);
+  }, [activity, distributeBy, selectedSectorId, selectedFieldId, applicationRate, sectors, fields, editingLogId]);
 
   useEffect(() => {
     if (selectedCompany) {
@@ -137,8 +135,8 @@ export const Fuel: React.FC = () => {
             loadSectorsAndFields(),
             loadStockAndLogs()
         ]);
-    } catch (error) {
-        console.error('Error loading data:', error);
+    } catch {
+        toast.error('Error al cargar datos de combustible.');
     } finally {
         setLoading(false);
     }
@@ -147,182 +145,23 @@ export const Fuel: React.FC = () => {
   const loadSectorsAndFields = async () => {
     if (!selectedCompany) return;
     
-    // Fetch Fields
-    const { data: fieldsData } = await supabase
-        .from('fields')
-        .select('*')
-        .eq('company_id', selectedCompany.id);
-    setFields(fieldsData || []);
+    const [fieldsData, sectorsData] = await Promise.all([
+      fetchCompanyFieldsBasic({ companyId: selectedCompany.id }),
+      fetchCompanySectorsBasic({ companyId: selectedCompany.id })
+    ]);
 
-    // Fetch Sectors
-    const { data: sectorsData } = await supabase
-        .from('sectors')
-        .select('id, name, hectares, field_id, fields!inner(company_id)')
-        .eq('fields.company_id', selectedCompany.id);
-    
+    setFields(fieldsData || []);
     setSectors(sectorsData || []);
   };
 
-  // Helper for rounding
-  const round2 = (num: number) => Math.round((num + Number.EPSILON) * 100) / 100;
-
   const loadStockAndLogs = async () => {
     if (!selectedCompany) return;
-
-    // 1. Get Invoices (Inflow)
-    const { data: items } = await supabase
-        .from('invoice_items')
-        .select(`
-            id, quantity, total_price, category,
-            products (name, unit, category),
-            invoices!inner (invoice_number, invoice_date, company_id, document_type, tax_percentage)
-        `)
-        .eq('invoices.company_id', selectedCompany.id);
-
-    const targetCategories = activeTab === 'diesel' 
-        ? ['petroleo', 'diesel']
-        : ['bencina', 'gasolina', 'combustible'];
-        
-    const fuelItems = items?.filter((item: any) => {
-        const cat = (item.category || item.products?.category || '').toLowerCase().trim();
-        const productName = (item.products?.name || '').toLowerCase();
-        const unit = (item.products?.unit || '').toLowerCase().trim();
-        
-        // 1. Exclude explicitly non-fuel units
-        const invalidUnits = ['un', 'unid', 'unidad', 'und', 'pieza', 'kit', 'juego', 'global', 'servicio', 'hrs', 'horas'];
-        if (invalidUnits.includes(unit)) {
-            return false;
-        }
-
-        // 2. Strict Category/Name Classification (Matching Table Logic)
-        const isDieselMatch = ['petroleo', 'diesel'].some(t => cat.includes(t) || productName.includes(t));
-        const isGasolineMatch = ['bencina', 'gasolina', 'combustible'].some(t => cat.includes(t) || productName.includes(t));
-
-        let itemType: 'diesel' | 'gasoline' | null = null;
-
-        if (isDieselMatch && !productName.includes('bencina') && !productName.includes('gasolina')) {
-            itemType = 'diesel';
-        } else if (isGasolineMatch) {
-             itemType = 'gasoline';
-        }
-
-        if (activeTab === 'diesel') return itemType === 'diesel';
-        return itemType === 'gasoline';
-    }) || [];
-
-    setInvoices(fuelItems);
-
-    // --- Calculate Monthly Summary (All Fuel Types) ---
-    const summary: Record<string, { diesel: number; gas93: number; gas95: number }> = {};
-    
-    items?.forEach((item: any) => {
-        const cat = (item.category || item.products?.category || '').toLowerCase().trim();
-        const productName = (item.products?.name || '').toLowerCase();
-        const unit = (item.products?.unit || '').toLowerCase().trim();
-        
-        // Skip non-fuel
-        const invalidUnits = ['un', 'unid', 'unidad', 'und', 'pieza', 'kit', 'juego', 'global', 'servicio', 'hrs', 'horas'];
-        if (invalidUnits.includes(unit)) return;
-
-        // Determine Type
-        let type: 'diesel' | 'gas93' | 'gas95' | null = null;
-        
-        const isDiesel = ['petroleo', 'diesel'].some(t => cat.includes(t) || productName.includes(t));
-        const isGasoline = ['bencina', 'gasolina', 'combustible'].some(t => cat.includes(t) || productName.includes(t));
-
-        if (isDiesel && !productName.includes('bencina') && !productName.includes('gasolina')) {
-            type = 'diesel';
-        } else if (isGasoline) {
-            if (productName.includes('95')) type = 'gas95';
-            else type = 'gas93'; // Default to 93 if not specified or 93
-        }
-
-        if (!type) return;
-
-        // Date Grouping
-        const date = new Date(item.invoices.invoice_date);
-        // Fix timezone issue by using UTC or just simple string parsing if format is YYYY-MM-DD
-        // invoice_date from supabase is usually YYYY-MM-DD string.
-        const dateStr = item.invoices.invoice_date; 
-        const monthKey = dateStr.substring(0, 7); // YYYY-MM
-
-        if (!summary[monthKey]) {
-            summary[monthKey] = { diesel: 0, gas93: 0, gas95: 0 };
-        }
-
-        const qty = Number(item.quantity || 0);
-        const docType = (item.invoices.document_type || '').toLowerCase();
-        const isNC = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
-        const finalQty = isNC ? -Math.abs(qty) : qty;
-
-        if (type === 'diesel') summary[monthKey].diesel = round2(summary[monthKey].diesel + finalQty);
-        else if (type === 'gas93') summary[monthKey].gas93 = round2(summary[monthKey].gas93 + finalQty);
-        else if (type === 'gas95') summary[monthKey].gas95 = round2(summary[monthKey].gas95 + finalQty);
-    });
-    
-    setMonthlySummary(summary);
-
-    const totalPurchasedLiters = round2(fuelItems.reduce((sum, item: any) => {
-        const docType = (item.invoices.document_type || '').toLowerCase();
-        const isNC = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
-        
-        const qty = Number(item.quantity || 0);
-        // If it's a Credit Note, we subtract the quantity (unless it was already entered as negative)
-        return sum + (isNC ? -Math.abs(qty) : qty);
-    }, 0));
-
-    const totalPurchasedCost = fuelItems.reduce((sum, item: any) => {
-        const docType = (item.invoices.document_type || '').toLowerCase();
-        const isNC = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
-        
-        // Use Net Price for Fuel stock valuation usually, but we ensure robustness here.
-        // If user wants Gross here too, we can add it, but standard accounting usually tracks Net for stock value.
-        // We will keep it as is (Net) for now unless requested, as it affects Average Price.
-        const price = Number(item.total_price || 0);
-        return sum + (isNC ? -Math.abs(price) : price);
-    }, 0);
-
-    const avgPrice = totalPurchasedLiters > 0 ? totalPurchasedCost / totalPurchasedLiters : 0;
-
-    // 2. Get Consumption Logs (Outflow)
-    // We filter consumption logs by checking if the activity or product suggests diesel/gasoline
-    // Or we might need a 'type' column in fuel_consumption.
-    // For now, we assume existing logs are Diesel unless stated otherwise.
-    // But better: Filter based on what the user enters.
-    // Actually, we should probably add a 'fuel_type' column to fuel_consumption.
-    // However, to avoid migration now, let's rely on the 'activity' or just show all for now, 
-    // OR filter by a convention.
-    // Let's filter by the tab context. If tab is gasoline, we show gasoline logs.
-    // But how do we know? We can check if 'activity' contains "Gasolina" or "Bencina".
-    // Or we can just show all logs but that messes up the stock calculation.
-    
-    // To properly support this without migration, we can append "(Gasolina)" to activity when saving.
-    
-    const { data: consumption } = await supabase
-        .from('fuel_consumption')
-        .select('*, sectors(name)')
-        .eq('company_id', selectedCompany.id)
-        .order('date', { ascending: false });
-
-    const filteredConsumption = consumption?.filter(log => {
-        const activityLower = (log.activity || '').toLowerCase();
-        const isGasoline = activityLower.includes('gasolina') || activityLower.includes('bencina');
-        
-        if (activeTab === 'diesel') return !isGasoline;
-        return isGasoline;
-    }) || [];
-
-    setLogs(filteredConsumption);
-
-    const totalConsumedLiters = round2(filteredConsumption.reduce((sum, log) => sum + Number(log.liters), 0));
-
-    setStats({
-        totalPurchasedLiters,
-        totalPurchasedCost,
-        avgPrice,
-        totalConsumedLiters,
-        currentStock: round2(totalPurchasedLiters - totalConsumedLiters)
-    });
+    const tab = activeTab === 'diesel' ? 'diesel' : 'gasoline';
+    const result = await loadFuelStockAndLogs({ companyId: selectedCompany.id, activeTab: tab });
+    setInvoices(result.fuelItems);
+    setMonthlySummary(result.monthlySummary);
+    setLogs(result.logs);
+    setStats(result.stats);
   };
 
   const handleEditLog = (log: FuelLog) => {
@@ -381,23 +220,29 @@ export const Fuel: React.FC = () => {
     try {
         const totalLiters = Number(liters);
         
+        const isGasolineActivity = (value: string) => /gasolina|bencina/i.test(value);
+
+        const activityBase = (() => {
+            const raw = String(activity || '');
+            if (raw && !isGasolineActivity(raw) && activeTab === 'gasoline') return `${raw} (Gasolina)`;
+            return raw;
+        })();
+
         // If editing, we update the existing record
         if (editingLogId) {
             // Recalculate cost based on current average price (or keep old price? Usually update cost if liters change)
             const cost = totalLiters * stats.avgPrice;
             
-            const { error } = await supabase
-                .from('fuel_consumption')
-                .update({
+            await updateFuelConsumptionLog({
+                id: editingLogId,
+                patch: {
                     date,
-                    activity,
+                    activity: activityBase,
                     liters: totalLiters,
                     estimated_price: cost,
                     sector_id: selectedSectorId
-                })
-                .eq('id', editingLogId);
-            
-            if (error) throw error;
+                }
+            });
             
             toast('Registro actualizado exitosamente');
             handleCancelEdit();
@@ -405,9 +250,7 @@ export const Fuel: React.FC = () => {
         } else {
             // CREATE NEW LOGIC (Existing code)
             // Prefix/Suffix for Gasoline to distinguish
-            const activitySuffix = activeTab === 'gasoline' ? ' (Gasolina)' : '';
-            // Only add suffix if not already present (to avoid double suffix if user selected one that has it)
-            const finalActivity = activity.includes('Gasolina') ? activity : `${activity}${activitySuffix}`;
+            const finalActivity = activityBase;
             
             if (distributeBy === 'company') {
                 // Distribute by Company (All Fields)
@@ -434,11 +277,7 @@ export const Fuel: React.FC = () => {
                     };
                 });
     
-                const { error } = await supabase
-                    .from('fuel_consumption')
-                    .insert(logsToInsert);
-                
-                if (error) throw error;
+                await insertFuelConsumptionLogs({ rows: logsToInsert });
     
             } else if (distributeBy === 'field') {
                 // Distribute by Field Logic
@@ -469,27 +308,19 @@ export const Fuel: React.FC = () => {
                     };
                 });
     
-                const { error } = await supabase
-                    .from('fuel_consumption')
-                    .insert(logsToInsert);
-                
-                if (error) throw error;
+                await insertFuelConsumptionLogs({ rows: logsToInsert });
     
             } else {
                 // Single Sector Logic
                 const cost = totalLiters * stats.avgPrice;
-                const { error } = await supabase
-                    .from('fuel_consumption')
-                    .insert({
+                await insertFuelConsumptionLogs({ rows: [{
                         company_id: selectedCompany.id,
                         date,
                         activity: finalActivity,
                         liters: totalLiters,
                         estimated_price: cost,
                         sector_id: selectedSectorId
-                    });
-    
-                if (error) throw error;
+                    }] });
             }
             
             toast('Consumo registrado exitosamente');
@@ -502,7 +333,6 @@ export const Fuel: React.FC = () => {
         await loadStockAndLogs();
 
     } catch (error: any) {
-        console.error('Error saving log:', error);
         toast.error('Error: ' + error.message);
     } finally {
         setLoading(false);
@@ -511,16 +341,11 @@ export const Fuel: React.FC = () => {
 
   const handleDeleteLog = async (id: string) => {
       if (!confirm('¿Eliminar este registro?')) return;
-      
-      const { error } = await supabase
-          .from('fuel_consumption')
-          .delete()
-          .eq('id', id);
-
-      if (error) {
-          toast.error('Error al eliminar');
-      } else {
+      try {
+          await deleteFuelConsumptionLog({ id });
           loadStockAndLogs();
+      } catch {
+          toast.error('Error al eliminar');
       }
   };
 
@@ -545,17 +370,11 @@ export const Fuel: React.FC = () => {
       setLoading(true);
       try {
           const idsToDelete = visibleLogs.map(l => l.id);
-          const { error } = await supabase
-              .from('fuel_consumption')
-              .delete()
-              .in('id', idsToDelete);
-
-          if (error) throw error;
+          await deleteFuelConsumptionLogs({ ids: idsToDelete });
           
           toast('Registros eliminados exitosamente.');
           await loadStockAndLogs();
       } catch (error: any) {
-          console.error('Error deleting all logs:', error);
           toast.error('Error al eliminar registros: ' + error.message);
       } finally {
           setLoading(false);
@@ -758,8 +577,18 @@ export const Fuel: React.FC = () => {
                             className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                         >
                             <option value="">Seleccione...</option>
+                            {activity &&
+                              ![
+                                'Cosecha',
+                                'Aplicación',
+                                'Aplicación (Automática)',
+                                'Riego',
+                                'Transporte',
+                                'Mantencion',
+                                'Otros'
+                              ].includes(activity) && <option value={activity}>{activity}</option>}
                             <option value="Cosecha">Cosecha</option>
-                            <option value="Aplicacion">Aplicación</option>
+                            <option value="Aplicación">Aplicación</option>
                             <option value="Aplicación (Automática)">Aplicación (Automática)</option>
                             <option value="Riego">Riego</option>
                             <option value="Transporte">Transporte</option>
@@ -847,7 +676,7 @@ export const Fuel: React.FC = () => {
                     </div>
                 )}
                 
-                {activity === 'Aplicacion' && (
+                {(String(activity || '').toLowerCase().startsWith('aplicación') || String(activity || '').toLowerCase().startsWith('aplicacion')) && (
                     <div className="bg-blue-50 p-3 rounded-md border border-blue-200 mb-4">
                         <label className="block text-xs font-medium text-blue-700 mb-1">Tasa de Aplicación (L/ha)</label>
                         <div className="flex items-center gap-2">

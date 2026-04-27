@@ -1,13 +1,13 @@
 import { toast } from 'sonner';
 import React, { useState, useEffect } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Tractor, ArrowRight, Save, Loader2, CheckCircle2, AlertCircle, Trash2, Edit2, FileText, Printer, RefreshCw, Copy, Download } from 'lucide-react';
+import { Tractor, ArrowRight, Save, Loader2, AlertCircle, Trash2, Edit2, FileText, RefreshCw, Copy, Download } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { utils, writeFile } from 'xlsx';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
+import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
+import { deleteAllLaborAssignments, deleteLaborAssignment, fetchLaborAssignmentsForAutoClassify, fetchLaborHistory, fetchPendingLaborItems, insertLaborAssignments, updateLaborAssignment, updateLaborType } from '../services/labors';
 
 const LABOR_TYPES = [
   'General',
@@ -135,8 +135,8 @@ export const Labors: React.FC = () => {
             loadPendingLabors(),
             loadHistory()
         ]);
-    } catch (error) {
-        console.error('Error loading data:', error);
+    } catch {
+        toast.error('Error al cargar datos de labores.');
     } finally {
         setLoading(false);
     }
@@ -145,159 +145,34 @@ export const Labors: React.FC = () => {
   const loadSectors = async () => {
     if (!selectedCompany) return;
     
-    // Load Fields
-    const { data: fieldsData } = await supabase
-        .from('fields')
-        .select('*')
-        .eq('company_id', selectedCompany.id);
+    const [fieldsData, sectorsData] = await Promise.all([
+      fetchCompanyFieldsBasic({ companyId: selectedCompany.id }),
+      fetchCompanySectorsBasic({ companyId: selectedCompany.id })
+    ]);
     setFields(fieldsData || []);
-
-    // We need sectors linked to fields of this company
-    const { data } = await supabase
-        .from('sectors')
-        .select(`
-            id, name, hectares, field_id,
-            fields!inner(company_id)
-        `)
-        .eq('fields.company_id', selectedCompany.id);
-    
-    setSectors(data || []);
+    setSectors(sectorsData || []);
   };
 
   const loadPendingLabors = async () => {
     if (!selectedCompany) return;
-
-    // 1. Get all invoice items with category related to labor
-    // We fetch ALL items for the company and filter in memory.
-    // Corrected query: join with products to get the name, as invoice_items doesn't have product_name
-    
-    const { data: items, error } = await supabase
-        .from('invoice_items')
-        .select(`
-            id, total_price, category,
-            products (name),
-            invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
-        `)
-        .eq('invoices.company_id', selectedCompany.id)
-        .range(0, 9999);
-
-    if (error) {
-        console.error('Error fetching items:', error);
-        // Don't throw, just log and return empty to avoid crashing UI completely
-        // throw error; 
-    }
-
-    // Filter strictly by Category as requested
-    const laborCategories = ['labores agrícolas', 'labores agricolas', 'mano de obra', 'servicio de labores'];
-    const filteredItems = items?.filter((item: any) => {
-        // Double check company_id strictly
-        if (item.invoices?.company_id !== selectedCompany.id) return false;
-
-        const cat = (item.category || '').toLowerCase().trim();
-        
-        // Match only if category contains the labor keywords
-        return laborCategories.some(c => cat.includes(c));
-    });
-
-    // Optimización: Usar RPC para obtener el total asignado de manera eficiente y escalable
-    let assignmentMap = new Map<string, number>();
-    
     try {
-        const { data: summary, error: rpcError } = await supabase
-            .rpc('get_labor_assignments_summary', { p_company_id: selectedCompany.id });
-            
-        if (rpcError) throw rpcError;
-        
-        if (summary) {
-            summary.forEach((item: any) => {
-                assignmentMap.set(item.invoice_item_id, Number(item.total_assigned));
-            });
-        }
-    } catch (err) {
-        console.error('Error fetching assignment summary via RPC:', err);
-         const { data: fallbackData } = await supabase
-             .from('labor_assignments')
-             .select('invoice_item_id, assigned_amount, invoice_items!inner(invoices!inner(company_id))')
-             .eq('invoice_items.invoices.company_id', selectedCompany.id);
-             
-         if (fallbackData) {
-             fallbackData.forEach((item: any) => {
-                 const current = assignmentMap.get(item.invoice_item_id) || 0;
-                 assignmentMap.set(item.invoice_item_id, current + Number(item.assigned_amount));
-             });
-         }
+      const pending = await fetchPendingLaborItems({ companyId: selectedCompany.id });
+      setPendingLabors(pending as any);
+    } catch {
+      toast.error('Error al cargar ítems de labores.');
+      setPendingLabors([]);
     }
-
-    const pending: LaborItem[] = [];
-    filteredItems?.forEach((item: any) => {
-        // Double Check: Ensure item belongs to selected company
-        if (item.invoices?.company_id !== selectedCompany.id) return;
-
-        // Credit Note Logic (Robust)
-        const docType = (item.invoices.document_type || '').toLowerCase();
-        // Check for common credit note variations
-        const isCreditNote = docType.includes('nota de cr') || 
-                             docType.includes('nota de cre') || 
-                             docType.includes('nota credito') ||
-                             docType.includes('credito') || 
-                             docType === 'nc';
-
-        // Calculate Gross Amount (Bruto)
-        const taxPercent = item.invoices.tax_percentage !== undefined ? item.invoices.tax_percentage : 19;
-        const netAmount = Number(item.total_price);
-        const grossAmount = netAmount * (1 + (taxPercent / 100));
-
-        let total = grossAmount;
-        
-        // Ensure negative if it's a credit note, even if database stored it as positive
-        if (isCreditNote) {
-            total = -Math.abs(total);
-        } else {
-            // If NOT a credit note, ensure positive
-            total = Math.abs(total);
-        }
-
-        const assigned = assignmentMap.get(item.id) || 0;
-        const remaining = total - assigned;
-
-        // Tolerance for float errors (absolute value for negative amounts)
-        // Increased threshold to 500 to handle small discrepancies and clean up views
-        if (Math.abs(remaining) > 500) {  
-            pending.push({
-                id: item.id,
-                invoice_id: item.invoices.id,
-                invoice_number: item.invoices.invoice_number,
-                date: item.invoices.invoice_date,
-                description: `${item.products?.name || 'Sin descripción'} ${isCreditNote ? '(NC)' : ''} [${item.invoices.document_type}]`, // Added doc type for debug visibility
-                total_amount: total,
-                assigned_amount: assigned,
-                remaining_amount: remaining
-            });
-        }
-    });
-
-    setPendingLabors(pending);
   };
 
   const loadHistory = async () => {
     if (!selectedCompany) return;
-
-    // Fetch more items to allow better client-side search (e.g. last 500)
-    const { data } = await supabase
-        .from('labor_assignments')
-        .select(`
-            id, assigned_amount, assigned_date, labor_type, sector_id,
-            sectors (name, field_id),
-            invoice_items!inner (
-                products (name),
-                invoices!inner (invoice_number, company_id, invoice_date, document_type)
-            )
-        `)
-        .eq('invoice_items.invoices.company_id', selectedCompany.id)
-        .order('assigned_date', { ascending: false })
-        .limit(1000); // Increased limit for better reporting
-    
-    setHistory(data as unknown as HistoryItem[] || []);
+    try {
+      const data = await fetchLaborHistory({ companyId: selectedCompany.id });
+      setHistory((data as unknown as HistoryItem[]) || []);
+    } catch {
+      toast.error('Error al cargar historial de labores.');
+      setHistory([]);
+    }
   };
 
   // Filtered History for Display
@@ -376,16 +251,9 @@ export const Labors: React.FC = () => {
       
       setLoading(true);
       try {
-          const { error } = await supabase
-              .from('labor_assignments')
-              .delete()
-              .eq('id', id);
-              
-          if (error) throw error;
-          
+          await deleteLaborAssignment({ assignmentId: id });
           loadData(); // Reload to update lists
       } catch (error: any) {
-          console.error('Error deleting:', error);
           toast.error('Error: ' + error.message);
       } finally {
           setLoading(false);
@@ -397,18 +265,12 @@ export const Labors: React.FC = () => {
       const loadingToast = toast.loading('Actualizando...');
       
       try {
-          const { error } = await supabase
-              .from('labor_assignments')
-              .update({ labor_type: newLaborType })
-              .eq('id', id);
-              
-          if (error) throw error;
+          await updateLaborType({ assignmentId: id, laborType: newLaborType });
           
           // Optimistically update history state
           setHistory(prev => prev.map(h => h.id === id ? { ...h, labor_type: newLaborType } : h));
           toast.success('Tipo de labor actualizado', { id: loadingToast });
       } catch (error: any) {
-          console.error('Error updating labor type:', error);
           toast.error('Error: ' + error.message, { id: loadingToast });
           loadData(); // Revert back by loading from server
       }
@@ -419,54 +281,12 @@ export const Labors: React.FC = () => {
     if (!confirm('¿ESTÁ SEGURO? Esto eliminará TODAS las asignaciones de labores para esta empresa. Esta acción no se puede deshacer.')) return;
 
     setLoading(true);
-    // Use a custom RPC to delete by company_id directly in the database.
     try {
-        const { error: rpcError } = await supabase.rpc('delete_labor_assignments_by_company', {
-            p_company_id: selectedCompany.id
-        });
-        
-        if (rpcError) {
-             // If RPC doesn't exist yet, fall back to the batched method
-             console.warn('RPC delete failed, falling back to manual batch delete', rpcError);
-             throw rpcError; 
-        }
-
+        await deleteAllLaborAssignments({ companyId: selectedCompany.id });
         toast('Todas las asignaciones han sido eliminadas.');
         loadData();
-    } catch (error: any) {
-         // Fallback implementation
-         try {
-            const { data: assignments, error: fetchError } = await supabase
-            .from('labor_assignments')
-            .select('id, invoice_items!inner(invoices!inner(company_id))')
-            .eq('invoice_items.invoices.company_id', selectedCompany.id);
-
-            if (fetchError) throw fetchError;
-
-            if (!assignments || assignments.length === 0) {
-                toast('No hay asignaciones para eliminar.');
-                return;
-            }
-
-            const ids = assignments.map(a => a.id);
-            // Smaller batch size
-            const BATCH_SIZE = 100; 
-            for (let i = 0; i < ids.length; i += BATCH_SIZE) {
-                const batch = ids.slice(i, i + BATCH_SIZE);
-                const { error: deleteError } = await supabase
-                    .from('labor_assignments')
-                    .delete()
-                    .in('id', batch);
-                
-                if (deleteError) throw deleteError;
-            }
-             toast('Todas las asignaciones han sido eliminadas (Método Manual).');
-             loadData();
-
-         } catch (manualError: any) {
-            console.error('Error deleting all:', manualError);
-            toast.error('Error al eliminar: ' + manualError.message);
-         }
+    } catch (manualError: any) {
+        toast.error('Error al eliminar: ' + manualError.message);
     } finally {
         setLoading(false);
     }
@@ -535,17 +355,15 @@ export const Labors: React.FC = () => {
             // Update existing assignment
             // Note: We only support single row editing in this simple mode
             const alloc = allocations[0];
-            const { error } = await supabase
-                .from('labor_assignments')
-                .update({
+            await updateLaborAssignment({
+                assignmentId: editingAssignmentId,
+                patch: {
                     sector_id: alloc.sector_id,
                     assigned_amount: alloc.amount,
                     assigned_date: assignedDate,
                     labor_type: laborType
-                })
-                .eq('id', editingAssignmentId);
-
-            if (error) throw error;
+                }
+            });
             toast('Asignación actualizada exitosamente');
         } else {
             // Create new assignments
@@ -588,11 +406,7 @@ export const Labors: React.FC = () => {
                  }));
             }
 
-            const { error } = await supabase
-                .from('labor_assignments')
-                .insert(payload);
-
-            if (error) throw error;
+            await insertLaborAssignments({ rows: payload });
             toast('Asignación guardada exitosamente');
         }
 
@@ -602,7 +416,6 @@ export const Labors: React.FC = () => {
         loadData();
 
     } catch (error: any) {
-        console.error('Error saving:', error);
         toast.error('Error: ' + error.message);
     } finally {
         setLoading(false);
@@ -616,19 +429,7 @@ export const Labors: React.FC = () => {
       setLoading(true);
       try {
           // 1. Fetch all assignments that are 'General' or null
-          const { data: assignments, error: fetchError } = await supabase
-              .from('labor_assignments')
-              .select(`
-                  id, labor_type,
-                  invoice_items!inner (
-                      products (name),
-                      invoices!inner (company_id)
-                  )
-              `)
-              .eq('invoice_items.invoices.company_id', selectedCompany.id)
-              .or('labor_type.eq.General,labor_type.is.null');
-
-          if (fetchError) throw fetchError;
+          const assignments = await fetchLaborAssignmentsForAutoClassify({ companyId: selectedCompany.id });
 
           if (!assignments || assignments.length === 0) {
               toast('No se encontraron asignaciones pendientes de clasificación.');
@@ -658,21 +459,17 @@ export const Labors: React.FC = () => {
 
               if (matchedType && matchedType !== 'General') {
                   updatedCount++;
-                  return supabase
-                      .from('labor_assignments')
-                      .update({ labor_type: matchedType })
-                      .eq('id', assignment.id);
+                  return updateLaborType({ assignmentId: assignment.id, laborType: matchedType });
               }
               return null;
           });
 
-          await Promise.all(updates);
+          await Promise.all(updates.filter(Boolean));
 
           toast(`Proceso completado. Se actualizaron ${updatedCount} asignaciones.`);
           loadData();
 
       } catch (error: any) {
-          console.error('Error auto-classifying:', error);
           toast.error('Error al clasificar: ' + error.message);
       } finally {
           setLoading(false);
@@ -782,7 +579,8 @@ export const Labors: React.FC = () => {
       setPdfPreviewOpen(true);
   };
 
-  const handleExportExcel = () => {
+  const handleExportExcel = async () => {
+        const { exportJsonToXlsx } = await import('../lib/excel');
         const exportData = filteredHistory.map(h => {
             const invoiceDate = h.invoice_items?.invoices?.invoice_date || '-';
             const documentType = h.invoice_items?.invoices?.document_type || 'Factura';
@@ -805,11 +603,11 @@ export const Labors: React.FC = () => {
                 'Monto Asignado': h.assigned_amount
             };
         });
-
-        const ws = utils.json_to_sheet(exportData);
-        const wb = utils.book_new();
-        utils.book_append_sheet(wb, ws, "Labores");
-        writeFile(wb, `Historial_Labores_${new Date().toLocaleDateString('en-CA')}.xlsx`);
+        await exportJsonToXlsx({
+            filename: `Historial_Labores_${new Date().toLocaleDateString('en-CA')}.xlsx`,
+            sheetName: 'Labores',
+            rows: exportData as any
+        });
     };
 
     return (

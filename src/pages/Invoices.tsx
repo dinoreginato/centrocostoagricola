@@ -1,10 +1,16 @@
 import { toast } from 'sonner';
 import React, { useState, useEffect } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCompany } from '../contexts/CompanyContext';
-import { supabase } from '../supabase/client';
 import { formatCLP } from '../lib/utils';
-import { Plus, FileText, Calendar, Trash2, Save, Loader2, Filter, ChevronDown, Check, Download, Upload, RefreshCw, Search, Printer, ChevronLeft, ChevronRight, MapPin, Database } from 'lucide-react';
+import { Plus, FileText, Trash2, Save, Loader2, Check, Download, Upload, RefreshCw, Search, Printer, ChevronLeft, ChevronRight, MapPin, Database } from 'lucide-react';
 import { InvoicePrint } from '../components/InvoicePrint';
+import { exportWorkbookToXlsx } from '../lib/excel';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { PdfPreviewModal } from '../components/PdfPreviewModal';
+import { fetchInvoiceDestinations, fetchInvoiceProducts, fetchInvoicesForCompany, fetchInvoiceSuppliers } from '../services/invoices';
+import { createInvoiceItemWithEffects, createOrFindProductByName, fetchInvoiceItems, fetchInvoicesBasic, findSupplierRut, rpcDeleteInvoiceForce, rpcDeleteInvoiceItemsWithEffects, rpcUpdateInvoiceItemWithEffects, searchOfficialProductsForInvoice, updateInvoice, upsertInvoiceHeader } from '../services/invoiceMutations';
 
 interface InvoiceItem {
   id?: string;
@@ -16,6 +22,7 @@ interface InvoiceItem {
   category: string;
   unit: string;
   active_ingredient?: string;
+  assignment_dirty?: boolean;
   // Direct Assignment Fields
   destination_type?: 'machine' | 'sector' | 'field' | 'company' | 'none';
   destination_id?: string; 
@@ -73,13 +80,12 @@ const guessCategory = (name: string): string => {
 };
 
 export const Invoices: React.FC = () => {
-  const { selectedCompany, companies } = useCompany();
+  const { selectedCompany, companies, userRole } = useCompany();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [machines, setMachines] = useState<{id: string, name: string}[]>([]);
-  const [sectors, setSectors] = useState<{id: string, name: string, type: 'sector' | 'field' | 'company', hectares?: number, field_id?: string}[]>([]); // Enhanced for multi-level assignment
-  const [labors, setLabors] = useState<{id: string, name: string}[]>([]); // To store actual labor assignments if needed, or just types
-  const laborTypes = ['Cosecha', 'Poda', 'Raleo', 'Aplicación', 'Fertilización', 'Riego', 'Siembra', 'Preparación Suelo', 'Otros']; // Hardcoded common labor types
+  const companyId = selectedCompany?.id ?? null;
+  const canWrite = userRole !== 'viewer';
+
 
   const [laborType, setLaborType] = useState<string>(''); // For labor assignment
 
@@ -118,17 +124,7 @@ export const Invoices: React.FC = () => {
   
   // Track total explicitly from input when not using items (though here we use items)
   const [items, setItems] = useState<InvoiceItem[]>([]);
-  const [suppliers, setSuppliers] = useState<string[]>([]);
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
-
-  // When Net Amount changes, auto-calculate tax
-  const handleNetTotalChange = (neto: number) => {
-      // Find the "total" item if it exists, or create a generic one
-      if (items.length === 0) {
-          // If no items, we can't easily set net, but if they enter it, we could create a dummy item
-          // For now, we rely on items to build the net.
-      }
-  };
 
   // Item Form State
   const [currentItem, setCurrentItem] = useState<Partial<InvoiceItem>>({
@@ -139,23 +135,24 @@ export const Invoices: React.FC = () => {
     category: 'Fertilizantes',
     unit: 'L',
     active_ingredient: '',
+    assignment_dirty: false,
     destination_type: 'none',
     destination_id: '',
   });
-  const [isNewProduct, setIsNewProduct] = useState(false);
+  const [, setIsNewProduct] = useState(false);
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
   const [officialSuggestions, setOfficialSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
   // Dashboard/Filter/Search State
   const [stats, setStats] = useState<DashboardStats>({ total: 0, paid: 0, pending: 0, count: 0, topCategories: [] });
-  const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('Todas');
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
   const [availableYears, setAvailableYears] = useState<string[]>([new Date().getFullYear().toString()]);
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -163,118 +160,64 @@ export const Invoices: React.FC = () => {
 
   const [destinationsLoading, setDestinationsLoading] = useState(false);
   const [invoiceToPrint, setInvoiceToPrint] = useState<Invoice | null>(null);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfPreviewTitle, setPdfPreviewTitle] = useState<string>('Facturas');
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+
+  const invoicesQuery = useQuery({
+    queryKey: ['invoices', companyId],
+    queryFn: async () => {
+      if (!companyId) return [];
+      return (await fetchInvoicesForCompany({ companyId, status: 'Todas' })) as unknown as Invoice[];
+    },
+    enabled: Boolean(companyId),
+    staleTime: 30_000,
+  });
+
+  const productsQuery = useQuery({
+    queryKey: ['invoiceProducts', companyId],
+    queryFn: async () => {
+      if (!companyId) return [];
+      return (await fetchInvoiceProducts({ companyId })) as unknown as Product[];
+    },
+    enabled: Boolean(companyId),
+    staleTime: 5 * 60_000,
+  });
+
+  const suppliersQuery = useQuery({
+    queryKey: ['invoiceSuppliers', companyId],
+    queryFn: async () => {
+      if (!companyId) return [];
+      return await fetchInvoiceSuppliers({ companyId });
+    },
+    enabled: Boolean(companyId),
+    staleTime: 5 * 60_000,
+  });
+
+  const destinationsQuery = useQuery({
+    queryKey: ['invoiceDestinations', companyId],
+    queryFn: async () => {
+      if (!selectedCompany) return { machines: [], destinations: [] };
+      return await fetchInvoiceDestinations({ companyId: selectedCompany.id, companyName: selectedCompany.name });
+    },
+    enabled: Boolean(companyId) && Boolean(selectedCompany),
+    staleTime: 5 * 60_000,
+  });
+
+  const products = (productsQuery.data || []) as Product[];
+  const suppliers = suppliersQuery.data || [];
+  const machines = destinationsQuery.data?.machines || [];
+  const sectors = destinationsQuery.data?.destinations || [];
+  const allInvoices = (invoicesQuery.data || []) as Invoice[];
+  const updateInvoicesCache = (updater: (prev: Invoice[]) => Invoice[]) => {
+    if (!companyId) return;
+    queryClient.setQueryData<Invoice[]>(['invoices', companyId], (prev) => updater((prev || []) as Invoice[]));
+  };
 
   useEffect(() => {
-    if (selectedCompany) {
-      loadProducts();
-      loadStats(); // Fetches data
-      loadSuppliers();
-      loadDestinations(); // Load machines and sectors
-    }
-  }, [selectedCompany, filterStatus]); // Reload if company or status filter changes
-
-  const loadDestinations = async () => {
-    if (!selectedCompany) return;
-    
-    setDestinationsLoading(true);
-    try {
-        // --- 1. Load Machines ---
-        // Using 'machines' table, not 'machinery'
-        const { data: mData, error: mError } = await supabase
-            .from('machines')
-            .select('id, name, brand, model')
-            .eq('company_id', selectedCompany.id);
-        
-        if (mError) {
-            console.error('Error loading machinery:', mError);
-        } else {
-            setMachines((mData || []).map(m => ({ id: m.id, name: `${m.name} (${m.brand} ${m.model})` })));
-        }
-
-        // --- 2. Load Sectors/Fields ---
-        // Step 1: Fetch Fields for this company
-        const { data: fieldsData, error: fError } = await supabase
-            .from('fields')
-            .select('id, name')
-            .eq('company_id', selectedCompany.id);
-
-        if (fError) {
-             console.error('Error loading fields:', fError);
-             setSectors([]);
-        } else if (fieldsData && fieldsData.length > 0) {
-             const fieldIds = fieldsData.map(f => f.id);
-             
-             // Step 2: Fetch Sectors for these fields
-             const { data: sectorsData, error: sError } = await supabase
-                 .from('sectors')
-                 .select('id, name, field_id, hectares')
-                 .in('field_id', fieldIds);
-
-             if (sError) {
-                 console.error('Error loading sectors:', sError);
-             }
-
-             // Step 3: Combine Data
-             const allOptions: {id: string, name: string, type: 'sector' | 'field' | 'company', hectares?: number, field_id?: string}[] = [];
-             
-             // A. Company Option
-             allOptions.push({
-                 id: 'company_general',
-                 name: `🏢 [EMPRESA] ${selectedCompany.name}`,
-                 type: 'company'
-             });
-
-             // B. Field Options
-             fieldsData.forEach(f => {
-                 allOptions.push({
-                     id: f.id,
-                     name: `🌱 [CAMPO] ${f.name}`,
-                     type: 'field'
-                 });
-             });
-
-             // C. Sector Options
-             if (sectorsData) {
-                 // Map field names to sectors for sorting
-                 const sectorsWithField = sectorsData.map(s => {
-                     const field = fieldsData.find(f => f.id === s.field_id);
-                     return { ...s, fieldName: field?.name || '' };
-                 });
-
-                 // Sort by Field Name then Sector Name
-                 sectorsWithField.sort((a, b) => {
-                     const fieldCompare = a.fieldName.localeCompare(b.fieldName);
-                     if (fieldCompare !== 0) return fieldCompare;
-                     return a.name.localeCompare(b.name);
-                 });
-
-                 sectorsWithField.forEach(s => {
-                     allOptions.push({
-                         id: s.id,
-                         name: `└── ${s.name}`,
-                         type: 'sector',
-                         hectares: s.hectares,
-                         field_id: s.field_id
-                     });
-                 });
-             }
-             
-             setSectors(allOptions);
-        } else {
-             // No fields found, but still add Company option
-             setSectors([{
-                 id: 'company_general',
-                 name: `🏢 [EMPRESA] ${selectedCompany.name}`,
-                 type: 'company'
-             }]);
-        }
-
-    } catch (err) {
-        console.error('Critical error loading destinations:', err);
-    } finally {
-        setDestinationsLoading(false);
-    }
-  };
+    setDestinationsLoading(destinationsQuery.isLoading);
+  }, [destinationsQuery.isLoading]);
 
   // Recalculate stats when data or year changes
   useEffect(() => {
@@ -290,62 +233,96 @@ export const Invoices: React.FC = () => {
     }
   }, [documentType]);
 
-  const loadSuppliers = async () => {
-    if (!selectedCompany) return;
-    const { data } = await supabase
-      .from('invoices')
-      .select('supplier')
-      .eq('company_id', selectedCompany.id)
-      .not('supplier', 'is', null);
-    
-    if (data) {
-      const uniqueSuppliers = Array.from(new Set(data.map(i => i.supplier)));
-      setSuppliers(uniqueSuppliers);
+  useEffect(() => {
+    setSelectedInvoiceIds([]);
+  }, [companyId]);
+
+  useEffect(() => {
+    if (!companyId) return;
+    const key = `invoicesFilters:${companyId}`;
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        searchQuery?: string;
+        filterStatus?: string;
+        filterDateFrom?: string;
+        filterDateTo?: string;
+        selectedYear?: string;
+      };
+      setSearchQuery(parsed.searchQuery ?? '');
+      setFilterStatus(parsed.filterStatus ?? 'Todas');
+      setFilterDateFrom(parsed.filterDateFrom ?? '');
+      setFilterDateTo(parsed.filterDateTo ?? '');
+      if (parsed.selectedYear) setSelectedYear(parsed.selectedYear);
+    } catch (_e) {
+      void _e;
     }
-  };
+  }, [companyId]);
 
-  const loadProducts = async () => {
-    if (!selectedCompany) return;
-    const { data } = await supabase
-      .from('products')
-      .select('id, name, unit, category')
-      .eq('company_id', selectedCompany.id);
-    setProducts(data || []);
-  };
-
-  const loadStats = async () => {
-    if (!selectedCompany) return;
-    
-    // Fetch all invoices with items and products for client-side search/stats
-    let query = supabase
-      .from('invoices')
-      .select(`
-        id, invoice_number, supplier, supplier_rut, invoice_date, payment_date, total_amount, status, due_date, notes, document_type,
-        tax_percentage, discount_amount, exempt_amount, special_tax_amount,
-        invoice_items (
-          id, quantity, unit_price, total_price, category, product_id,
-          products (id, name, unit)
-        )
-      `)
-      .eq('company_id', selectedCompany.id)
-      .order('invoice_date', { ascending: false });
-
-    if (filterStatus !== 'Todas') {
-      query = query.eq('status', filterStatus);
+  useEffect(() => {
+    if (!companyId) return;
+    const key = `invoicesFilters:${companyId}`;
+    try {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          searchQuery,
+          filterStatus,
+          filterDateFrom,
+          filterDateTo,
+          selectedYear,
+        }),
+      );
+    } catch (_e) {
+      void _e;
     }
+  }, [companyId, filterDateFrom, filterDateTo, filterStatus, searchQuery, selectedYear]);
 
-    const { data, error } = await query;
+  const bulkStatusMutation = useMutation({
+    mutationFn: async (params: { status: string }) => {
+      if (!selectedInvoiceIds.length) return;
+      if (!canWrite) throw new Error('No autorizado');
+      const paymentDate = params.status === 'Pagada' ? new Date().toLocaleDateString('en-CA') : null;
+      await Promise.all(
+        selectedInvoiceIds.map((id) =>
+          updateInvoice({
+            invoiceId: id,
+            patch: { status: params.status, payment_date: paymentDate },
+          }),
+        ),
+      );
+    },
+    onSuccess: (_data, vars) => {
+      const paymentDate = vars.status === 'Pagada' ? new Date().toLocaleDateString('en-CA') : null;
+      updateInvoicesCache((prev) =>
+        prev.map((inv) =>
+          selectedInvoiceIds.includes(inv.id) ? { ...inv, status: vars.status, payment_date: paymentDate } : inv,
+        ),
+      );
+      setSelectedInvoiceIds([]);
+      toast.success('Facturas actualizadas.');
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Error al actualizar facturas.');
+    },
+  });
 
-    if (data) {
-      // Store all for search and filtering
-      setAllInvoices(data as any[]);
-      
-      // Force refresh of search if active
-      if (searchQuery) {
-        setSearchQuery(prev => prev);
-      }
-    }
-  };
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedInvoiceIds.length) return;
+      if (!canWrite) throw new Error('No autorizado');
+      await Promise.all(selectedInvoiceIds.map((id) => rpcDeleteInvoiceForce({ invoiceId: id })));
+    },
+    onSuccess: () => {
+      updateInvoicesCache((prev) => prev.filter((inv) => !selectedInvoiceIds.includes(inv.id)));
+      setSelectedInvoiceIds([]);
+      toast('Facturas eliminadas (Forzado)');
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Error al eliminar facturas.');
+    },
+  });
 
   const processStatsAndYears = (data: Invoice[]) => {
     try {
@@ -364,7 +341,6 @@ export const Invoices: React.FC = () => {
       const currentYear = new Date().getFullYear().toString();
       const finalYears = years.length > 0 ? years : [currentYear];
       
-      console.log('Processed Years:', finalYears); // Debug
       setAvailableYears(finalYears);
 
       // Ensure selected year is valid
@@ -402,8 +378,8 @@ export const Invoices: React.FC = () => {
         count: filteredByYear.length,
         topCategories
       });
-    } catch (err) {
-      console.error('Error processing stats:', err);
+    } catch {
+      toast.error('Error al procesar estadísticas.');
     }
   };
 
@@ -454,6 +430,147 @@ export const Invoices: React.FC = () => {
   const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage);
   const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
+  const getInvoicesForExport = () => {
+    if (selectedInvoiceIds.length === 0) return filteredInvoices;
+    const selectedSet = new Set(selectedInvoiceIds);
+    return filteredInvoices.filter((inv) => selectedSet.has(inv.id));
+  };
+
+  const normalizeInvoiceItemProduct = (item: any) => {
+    const p = Array.isArray(item?.products) ? item.products[0] : item?.products;
+    return {
+      name: String(p?.name ?? item?.product_name ?? ''),
+      unit: String(p?.unit ?? item?.unit ?? ''),
+    };
+  };
+
+  const handleExportInvoicesExcel = async () => {
+    if (!selectedCompany) return;
+    const toExport = getInvoicesForExport();
+    if (toExport.length === 0) {
+      toast('No hay facturas para exportar');
+      return;
+    }
+
+    const summaryRows = toExport.map((inv: any) => {
+      const categories = Array.from(
+        new Set((inv.invoice_items || []).map((it: any) => String(it?.category ?? 'Otros')).filter((c: string) => c.length > 0))
+      ).join(', ');
+
+      const itemCount = Array.isArray(inv.invoice_items) ? inv.invoice_items.length : 0;
+
+      return {
+        Folio: String(inv.invoice_number ?? ''),
+        Proveedor: String(inv.supplier ?? ''),
+        'RUT Proveedor': String(inv.supplier_rut ?? ''),
+        'Tipo Documento': String(inv.document_type ?? ''),
+        'Fecha Emisión': String(inv.invoice_date ?? ''),
+        Vencimiento: String(inv.due_date ?? ''),
+        'Fecha Pago': String(inv.payment_date ?? ''),
+        Estado: String(inv.status ?? ''),
+        Total: Number(inv.total_amount ?? 0),
+        'N° Ítems': itemCount,
+        Categorías: categories,
+        Notas: String(inv.notes ?? ''),
+      } as Record<string, unknown>;
+    });
+
+    const detailRows = toExport.flatMap((inv: any) => {
+      const items = Array.isArray(inv.invoice_items) ? inv.invoice_items : [];
+      return items.map((it: any) => {
+        const p = normalizeInvoiceItemProduct(it);
+        return {
+          Folio: String(inv.invoice_number ?? ''),
+          Proveedor: String(inv.supplier ?? ''),
+          'Fecha Emisión': String(inv.invoice_date ?? ''),
+          Estado: String(inv.status ?? ''),
+          Producto: p.name,
+          Cantidad: Number(it?.quantity ?? 0),
+          Unidad: p.unit,
+          'Precio Unitario': Number(it?.unit_price ?? 0),
+          Total: Number(it?.total_price ?? 0),
+          Categoría: String(it?.category ?? ''),
+        } as Record<string, unknown>;
+      });
+    });
+
+    const dateTag = new Date().toISOString().slice(0, 10);
+    const filename = `Facturas_${selectedCompany.name}_${dateTag}`;
+    await exportWorkbookToXlsx({
+      filename,
+      sheets: [
+        { name: 'Resumen', rows: summaryRows },
+        { name: 'Detalle', rows: detailRows },
+      ],
+    });
+
+    toast(`Exportadas ${toExport.length} facturas`);
+  };
+
+  const handleExportInvoicesPdf = () => {
+    if (!selectedCompany) return;
+    const toExport = getInvoicesForExport();
+    if (toExport.length === 0) {
+      toast('No hay facturas para exportar');
+      return;
+    }
+
+    const dateTag = new Date().toISOString().slice(0, 10);
+    const title = `Facturas_${selectedCompany.name}_${dateTag}`;
+
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+    doc.setFontSize(14);
+    doc.text(title, 40, 40);
+    doc.setFontSize(10);
+    doc.text(`Cantidad: ${toExport.length}`, 40, 58);
+
+    const body = toExport.map((inv: any) => {
+      const categories = Array.from(
+        new Set((inv.invoice_items || []).map((it: any) => String(it?.category ?? 'Otros')).filter((c: string) => c.length > 0))
+      ).join(', ');
+
+      return [
+        String(inv.invoice_number ?? ''),
+        String(inv.supplier ?? ''),
+        String(inv.supplier_rut ?? ''),
+        String(inv.invoice_date ?? ''),
+        String(inv.due_date ?? ''),
+        String(inv.status ?? ''),
+        formatCLP(Number(inv.total_amount ?? 0)),
+        categories,
+      ];
+    });
+
+    autoTable(doc, {
+      startY: 75,
+      head: [['Folio', 'Proveedor', 'RUT', 'Emisión', 'Vence', 'Estado', 'Total', 'Categorías']],
+      body,
+      styles: { fontSize: 8, cellPadding: 3 },
+      headStyles: { fillColor: [37, 99, 235] },
+      columnStyles: {
+        0: { cellWidth: 60 },
+        1: { cellWidth: 170 },
+        2: { cellWidth: 80 },
+        3: { cellWidth: 60 },
+        4: { cellWidth: 60 },
+        5: { cellWidth: 60 },
+        6: { cellWidth: 70, halign: 'right' },
+        7: { cellWidth: 200 },
+      },
+    });
+
+    const url = String(doc.output('bloburl'));
+    setPdfPreviewTitle(title);
+    setPdfPreviewUrl(url);
+    setPdfPreviewOpen(true);
+  };
+
+  const handleClosePdfPreview = () => {
+    setPdfPreviewOpen(false);
+    if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+    setPdfPreviewUrl(null);
+  };
+
   const handleProductChange = async (val: string) => {
     // Check if selecting existing or new
     // For simplicity in this UI, we treat input as name search or new name
@@ -486,16 +603,15 @@ export const Invoices: React.FC = () => {
       const isChemical = ['Fertilizantes', 'Fungicida', 'Herbicida', 'Insecticida', 'Plaguicida', 'Quimicos'].includes(currentItem.category || '');
       
       if (isChemical && val.length >= 3) {
-          const { data } = await supabase
-              .from('official_products')
-              .select('*')
-              .ilike('commercial_name', `%${val}%`)
-              .limit(5);
-          
-          if (data && data.length > 0) {
-              setOfficialSuggestions(data);
-              setShowSuggestions(true);
-          } else {
+          try {
+              const data = await searchOfficialProductsForInvoice({ query: val, limit: 5 });
+              if (data && data.length > 0) {
+                  setOfficialSuggestions(data);
+                  setShowSuggestions(true);
+              } else {
+                  setShowSuggestions(false);
+              }
+          } catch {
               setShowSuggestions(false);
           }
       } else {
@@ -532,6 +648,7 @@ export const Invoices: React.FC = () => {
       category: currentItem.category || 'Otros',
       unit: currentItem.unit || 'un',
       active_ingredient: currentItem.active_ingredient,
+      assignment_dirty: Boolean((currentItem as any).assignment_dirty),
       destination_type: currentItem.destination_type,
       destination_id: currentItem.destination_id,
       labor_type: laborType,
@@ -562,6 +679,7 @@ export const Invoices: React.FC = () => {
       unit_price: 0,
       category: 'Fertilizantes',
       unit: 'L',
+      assignment_dirty: false,
       destination_id: '',
       destination_type: 'none',
       labor_type: undefined
@@ -580,6 +698,7 @@ export const Invoices: React.FC = () => {
         category: item.category,
         unit: item.unit,
         active_ingredient: item.active_ingredient || '',
+        assignment_dirty: item.assignment_dirty || false,
         destination_type: item.destination_type,
         destination_id: item.destination_id,
         labor_type: item.labor_type
@@ -600,6 +719,7 @@ export const Invoices: React.FC = () => {
       category: 'Fertilizantes',
       unit: 'L',
       active_ingredient: '',
+      assignment_dirty: false,
       destination_id: '',
       destination_type: 'none',
       labor_type: undefined
@@ -655,7 +775,7 @@ export const Invoices: React.FC = () => {
     };
   };
 
-  const { subtotal, tax, total, isCreditNote } = calculateTotals();
+  const { subtotal, tax, total } = calculateTotals();
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const xmlInputRef = React.useRef<HTMLInputElement>(null); // New ref for XML
@@ -677,7 +797,7 @@ export const Invoices: React.FC = () => {
         reader.onload = (event) => {
             try {
                 // Ensure proper decoding of ISO-8859-1 which is common in Chilean SII XMLs
-                let xmlText = event.target?.result as string;
+                const xmlText = event.target?.result as string;
                 
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(xmlText, "text/xml");
@@ -700,7 +820,7 @@ export const Invoices: React.FC = () => {
                     try {
                         // This handles cases where UTF-8 is misread as ISO-8859-1 (the "�" symbol issue)
                         return decodeURIComponent(escape(text));
-                    } catch (e) {
+                    } catch (_e) {
                         // Fallback replacement for common corrupted Spanish characters
                         return text
                             .replace(/Ã‘/g, 'Ñ')
@@ -772,8 +892,7 @@ export const Invoices: React.FC = () => {
                 // The form is always visible in this layout, so no need for setIsFormOpen
                 toast("Factura cargada exitosamente desde el XML. Revise los ítems y las asignaciones.");
 
-            } catch (error) {
-                console.error("Error parsing XML:", error);
+            } catch {
                 toast("Hubo un error al procesar el archivo XML.");
             } finally {
                 if (xmlInputRef.current) xmlInputRef.current.value = '';
@@ -797,7 +916,7 @@ export const Invoices: React.FC = () => {
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
-        let jsonContent = event.target?.result as string;
+        const jsonContent = event.target?.result as string;
         let json;
 
         // Smart JSON Parsing Strategy
@@ -805,16 +924,16 @@ export const Invoices: React.FC = () => {
           text = text.trim();
           
           // 1. Try standard parse
-          try { return JSON.parse(text); } catch (e) {}
+          try { return JSON.parse(text); } catch (_e) { void _e; }
           
           // 2. Try wrapping in brackets (for comma-separated lists)
-          try { return JSON.parse(`[${text}]`); } catch (e) {}
+          try { return JSON.parse(`[${text}]`); } catch (_e) { void _e; }
 
           // 3. Try fixing concatenated objects like } { -> }, {
           try {
              const fixed = text.replace(/}\s*{/g, '},{');
              return JSON.parse(`[${fixed}]`);
-          } catch (e) {}
+          } catch (_e) { void _e; }
 
           // 4. Aggressive Regex Extraction (Finds anything looking like an object)
           // Matches { ... } allowing for one level of nesting
@@ -824,7 +943,7 @@ export const Invoices: React.FC = () => {
               // Join matches with commas and wrap in brackets
               return JSON.parse(`[${matches.join(',')}]`);
             }
-          } catch (e) {}
+          } catch (_e) { void _e; }
 
           throw new Error("No se pudo interpretar el formato del archivo.");
         };
@@ -832,7 +951,6 @@ export const Invoices: React.FC = () => {
         try {
           json = parseFlexibleJSON(jsonContent);
         } catch (e: any) {
-          console.error('JSON Parse Error:', e);
           toast.error(`Error crítico al leer el archivo: ${e.message}\n\nPor favor verifica que sea un archivo de texto con formato JSON válido.`);
           return;
         }
@@ -880,54 +998,40 @@ export const Invoices: React.FC = () => {
 
                if (foundCompany) {
                  targetCompanyId = foundCompany.id;
-               } else {
-                 console.warn(`Company '${invoiceDataMap.companyName}' not found. Using default: ${selectedCompany.name}`);
                }
             }
 
             if (!invoiceDataMap.number || !invoiceDataMap.supplier || !invoiceDataMap.date || !inv.items) {
-              console.warn('Skipping invalid invoice:', inv);
               errorCount++;
               continue;
             }
 
-            // Check duplicate on import
-            const { data: existingImport } = await supabase
-              .from('invoices')
-              .select('id')
-              .eq('company_id', targetCompanyId)
-              .eq('invoice_number', invoiceDataMap.number)
-              .eq('supplier', invoiceDataMap.supplier)
-              .maybeSingle();
-
-            if (existingImport) {
-              console.warn(`Skipping duplicate invoice: ${invoiceDataMap.number} - ${invoiceDataMap.supplier}`);
-              // Optional: count as error or just skip silently? Let's skip.
-              continue;
+            let invoiceId: string;
+            try {
+              const invoiceData = await upsertInvoiceHeader({
+                payload: {
+                  company_id: targetCompanyId,
+                  invoice_number: invoiceDataMap.number,
+                  supplier: invoiceDataMap.supplier,
+                  invoice_date: invoiceDataMap.date,
+                  due_date: invoiceDataMap.dueDate || null,
+                  status: invoiceDataMap.status,
+                  notes: invoiceDataMap.notes,
+                  document_type: invoiceDataMap.type,
+                  tax_percentage: invoiceDataMap.taxPct,
+                  discount_amount: invoiceDataMap.discount,
+                  exempt_amount: invoiceDataMap.exempt,
+                  special_tax_amount: invoiceDataMap.specialTax,
+                  total_amount: invoiceDataMap.total
+                }
+              });
+              invoiceId = invoiceData.id;
+            } catch (e: any) {
+              if (String(e?.message || '').includes('DUPLICATE_INVOICE')) {
+                continue;
+              }
+              throw e;
             }
-
-            // 1. Create Invoice
-            const { data: invoiceData, error: invError } = await supabase
-              .from('invoices')
-              .insert([{
-                company_id: targetCompanyId,
-                invoice_number: invoiceDataMap.number,
-                supplier: invoiceDataMap.supplier,
-                invoice_date: invoiceDataMap.date,
-                due_date: invoiceDataMap.dueDate || null,
-                status: invoiceDataMap.status,
-                notes: invoiceDataMap.notes,
-                document_type: invoiceDataMap.type,
-                tax_percentage: invoiceDataMap.taxPct,
-                discount_amount: invoiceDataMap.discount,
-                exempt_amount: invoiceDataMap.exempt,
-                special_tax_amount: invoiceDataMap.specialTax,
-                total_amount: invoiceDataMap.total
-              }])
-              .select()
-              .single();
-
-            if (invError) throw invError;
 
             // 2. Process Items
             for (const item of inv.items) {
@@ -940,70 +1044,34 @@ export const Invoices: React.FC = () => {
                 total: Number(item.total || item.total_price || 0)
               };
 
-              let productId;
-              const { data: existingProduct } = await supabase
-                .from('products')
-                .select('id')
-                .eq('company_id', targetCompanyId)
-                .ilike('name', itemMap.name)
-                .single();
+              const productId = await createOrFindProductByName({
+                companyId: targetCompanyId,
+                name: itemMap.name,
+                category: itemMap.category,
+                unit: itemMap.unit
+              });
 
-              if (existingProduct) {
-                productId = existingProduct.id;
-              } else {
-                const { data: newProduct, error: prodError } = await supabase
-                  .from('products')
-                  .insert([{
-                    company_id: targetCompanyId,
-                    name: itemMap.name,
-                    category: itemMap.category,
-                    unit: itemMap.unit,
-                    current_stock: 0,
-                    average_cost: 0
-                  }])
-                  .select()
-                  .single();
-                
-                if (prodError) throw prodError;
-                productId = newProduct.id;
-              }
-
-              const { data: invItem, error: itemError } = await supabase
-                .from('invoice_items')
-                .insert([{
-                  invoice_id: invoiceData.id,
-                  product_id: productId,
-                  quantity: itemMap.quantity,
-                  unit_price: itemMap.price,
-                  total_price: itemMap.total,
-                  category: itemMap.category
-                }])
-                .select()
-                .single();
-
-              if (itemError) throw itemError;
-
-              await supabase.rpc('update_inventory_with_average_cost', {
-                product_id: productId,
-                quantity_in: itemMap.quantity,
-                unit_cost: itemMap.price,
-                invoice_item_id: invItem.id
+              await createInvoiceItemWithEffects({
+                invoiceId,
+                productId,
+                quantity: itemMap.quantity,
+                unitPrice: itemMap.price,
+                totalPrice: itemMap.total,
+                category: itemMap.category
               });
             }
             successCount++;
-          } catch (err) {
-            console.error('Error importing invoice:', inv, err);
+          } catch (_err) {
             errorCount++;
           }
         }
 
         toast(`Importación completada.\nExitosos: ${successCount}\nFallidos: ${errorCount}`);
-        loadStats();
-        loadProducts();
-        loadSuppliers();
+        await queryClient.invalidateQueries({ queryKey: ['invoices', companyId] });
+        await queryClient.invalidateQueries({ queryKey: ['invoiceProducts', companyId] });
+        await queryClient.invalidateQueries({ queryKey: ['invoiceSuppliers', companyId] });
 
-      } catch (error) {
-        console.error('Error parsing JSON:', error);
+      } catch {
         toast.error('Error al leer el archivo JSON. Asegúrate de que el formato sea correcto.');
       } finally {
         setLoading(false);
@@ -1014,6 +1082,10 @@ export const Invoices: React.FC = () => {
   };
 
   const handleEditClick = (inv: any) => {
+    if (!canWrite) {
+      toast.error('No tienes permisos para editar facturas.');
+      return;
+    }
     setEditingInvoiceId(inv.id);
     setInvoiceNumber(inv.invoice_number);
     setSupplier(inv.supplier);
@@ -1067,28 +1139,23 @@ export const Invoices: React.FC = () => {
 
   const handleDeleteInvoice = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    if (!canWrite) {
+      toast.error('No tienes permisos para eliminar facturas.');
+      return;
+    }
     if (!window.confirm('¿FUERZA BRUTA: Borrar esta factura definitivamente?')) return;
 
     try {
       setLoading(true);
       
-      // Use the new RPC function for atomic force delete
-      const { error } = await supabase.rpc('delete_invoice_force', {
-        target_invoice_id: id
-      });
-
-      if (error) throw error;
+      await rpcDeleteInvoiceForce({ invoiceId: id });
       
       toast('Factura eliminada (Forzado)');
-      
-      // Update local state
-      const updatedInvoices = allInvoices.filter(inv => inv.id !== id);
-      setAllInvoices(updatedInvoices);
-      
-      loadStats();
+
+      updateInvoicesCache((prev) => prev.filter((inv) => inv.id !== id));
+
       if (editingInvoiceId === id) handleCancelEdit();
     } catch (error: any) {
-      console.error('Error deleting:', error);
       toast.error('Error al eliminar: ' + error.message);
     } finally {
       setLoading(false);
@@ -1097,17 +1164,15 @@ export const Invoices: React.FC = () => {
 
   const handleCleanDuplicates = async () => {
     if (!selectedCompany) return;
+    if (!canWrite) {
+      toast.error('No tienes permisos para eliminar duplicados.');
+      return;
+    }
     if (!window.confirm('¿Desea buscar y eliminar facturas duplicadas automáticamente? Se conservará la versión más reciente de cada factura.')) return;
 
     setLoading(true);
     try {
-      // Fetch all invoices
-      const { data: allInvoicesRaw, error } = await supabase
-        .from('invoices')
-        .select('id, invoice_number, supplier, created_at')
-        .eq('company_id', selectedCompany.id);
-
-      if (error) throw error;
+      const allInvoicesRaw = await fetchInvoicesBasic({ companyId: selectedCompany.id });
 
       const duplicatesToDelete: string[] = [];
       const seen = new Set<string>();
@@ -1134,28 +1199,15 @@ export const Invoices: React.FC = () => {
             return;
         }
 
-        // Delete items first for these duplicates
-        const { error: itemsError } = await supabase
-            .from('invoice_items')
-            .delete()
-            .in('invoice_id', duplicatesToDelete);
-        
-        if (itemsError) throw itemsError;
-
-        // Delete invoices
-        const { error: deleteError } = await supabase
-            .from('invoices')
-            .delete()
-            .in('id', duplicatesToDelete);
-
-        if (deleteError) throw deleteError;
+        for (const duplicateId of duplicatesToDelete) {
+          await rpcDeleteInvoiceForce({ invoiceId: duplicateId });
+        }
 
         toast(`Se eliminaron ${duplicatesToDelete.length} facturas duplicadas.`);
-        loadStats();
+        await queryClient.invalidateQueries({ queryKey: ['invoices', companyId] });
       }
 
     } catch (err: any) {
-      console.error('Error cleaning duplicates:', err);
       toast.error('Error: ' + err.message);
     } finally {
       setLoading(false);
@@ -1164,6 +1216,10 @@ export const Invoices: React.FC = () => {
 
   const toggleInvoiceStatus = async (e: React.MouseEvent, invoice: Invoice) => {
     e.stopPropagation(); // Prevent opening edit mode
+    if (!canWrite) {
+      toast.error('No tienes permisos para cambiar el estado.');
+      return;
+    }
     
     const newStatus = invoice.status === 'Pagada' ? 'Pendiente' : 'Pagada';
     let newPaymentDate = null;
@@ -1177,21 +1233,9 @@ export const Invoices: React.FC = () => {
     }
     
     try {
-        const { error } = await supabase
-            .from('invoices')
-            .update({ 
-                status: newStatus,
-                payment_date: newPaymentDate
-            })
-            .eq('id', invoice.id);
+        await updateInvoice({ invoiceId: invoice.id, patch: { status: newStatus, payment_date: newPaymentDate } });
 
-        if (error) throw error;
-
-        // Update local state directly to reflect change immediately
-        const updatedInvoices = allInvoices.map(inv => 
-            inv.id === invoice.id ? { ...inv, status: newStatus, payment_date: newPaymentDate } : inv
-        );
-        setAllInvoices(updatedInvoices);
+        updateInvoicesCache((prev) => prev.map((inv) => (inv.id === invoice.id ? { ...inv, status: newStatus, payment_date: newPaymentDate } : inv)));
         
         // Also update editing form if it's the same invoice
         if (editingInvoiceId === invoice.id) {
@@ -1199,7 +1243,6 @@ export const Invoices: React.FC = () => {
         }
 
     } catch (error: any) {
-        console.error('Error toggling status:', error);
         toast.error('Error al cambiar estado: ' + error.message);
     }
   };
@@ -1207,6 +1250,10 @@ export const Invoices: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCompany || items.length === 0) return;
+    if (!canWrite) {
+      toast.error('No tienes permisos para guardar facturas.');
+      return;
+    }
 
     // Validate unique items
     const hasDuplicates = items.some((item, index) => 
@@ -1226,9 +1273,16 @@ export const Invoices: React.FC = () => {
       
       const total = calculateFinalTotal(); // Fix the reference to total
 
-      // --- HELPER: Process Direct Assignment ---
-      const processDirectAssignment = async (formItem: any, dbInvoiceItem: any) => {
-          if (!formItem.destination_type || !formItem.destination_id || formItem.destination_type === 'none') return;
+      const buildDirectAssignments = (formItem: any) => {
+          const result = {
+              laborAssignments: [] as Array<{ sector_id: string; assigned_amount: number; assigned_date: string; labor_type: string; worker_id: string | null; notes: string }>,
+              irrigationAssignments: [] as Array<{ sector_id: string; assigned_amount: number; assigned_date: string; notes: string }>,
+              machineryAssignments: [] as Array<{ sector_id: string | null; machine_id: string | null; assigned_amount: number; assigned_date: string; notes: string }>,
+              generalCosts: [] as Array<{ sector_id: string; amount: number; date: string; category: string; description: string }>,
+              fuelAssignments: [] as Array<{ sector_id: string; assigned_amount: number; assigned_date: string }>
+          };
+
+          if (!formItem.destination_type || !formItem.destination_id || formItem.destination_type === 'none') return result;
 
           const invoiceTotalValue = total;
           const invoiceExempt = exemptAmount || 0;
@@ -1255,28 +1309,24 @@ export const Invoices: React.FC = () => {
                  if (totalHa > 0) {
                      for (const s of targetSectors) {
                          const shareAmount = (Number(s.hectares || 0) / totalHa) * itemGrossAmount;
-                         await supabase.from('machinery_assignments').insert([{
-                             company_id: selectedCompany.id,
-                             invoice_item_id: dbInvoiceItem.id,
-                             machine_id: null, // Null indicates general machinery cost
-                             date: invoiceDate,
-                             amount: shareAmount,
-                             sector_id: s.id, 
+                         result.machineryAssignments.push({
+                             machine_id: null,
+                             sector_id: s.id,
+                             assigned_date: invoiceDate,
+                             assigned_amount: shareAmount,
                              notes: `Maquinaria General (Dist. Proporcional): ${formItem.product_name}`
-                         }]);
+                         });
                      }
                  }
              } else {
                  // Specific Machine
-                 await supabase.from('machinery_assignments').insert([{
-                     company_id: selectedCompany.id,
-                     invoice_item_id: dbInvoiceItem.id,
+                 result.machineryAssignments.push({
                      machine_id: formItem.destination_id,
-                     date: invoiceDate,
-                     amount: itemGrossAmount,
-                     sector_id: null, 
+                     sector_id: null,
+                     assigned_date: invoiceDate,
+                     assigned_amount: itemGrossAmount,
                      notes: 'Asignación automática desde Factura'
-                 }]);
+                 });
              }
           } else if (['sector', 'field', 'company'].includes(formItem.destination_type)) {
               const selectedOption = sectors.find(s => s.id === formItem.destination_id);
@@ -1284,41 +1334,45 @@ export const Invoices: React.FC = () => {
               const isIrrigation = formItem.category?.toLowerCase().includes('riego') || 
                                    formItem.category?.toLowerCase().includes('agua') || 
                                    formItem.category?.toLowerCase().includes('electricidad');
+              const isFuel = (() => {
+                  const c = String(formItem.category || '').toLowerCase();
+                  return c.includes('petroleo') || c.includes('diesel') || c.includes('combustible') || c.includes('bencina') || c.includes('gasolina');
+              })();
               
-              const baseAssignment = {
-                  company_id: selectedCompany.id,
-                  invoice_item_id: dbInvoiceItem.id,
-                  date: invoiceDate,
-              };
-
-              const insertAssignment = async (sectorId: string, amount: number, notesStr: string) => {
+              const insertAssignment = (sectorId: string, amount: number, notesStr: string) => {
                   // For Credit Notes, amount should be negative
                   const finalAmount = documentType === 'Nota de Crédito' ? -Math.abs(amount) : Math.abs(amount);
                   
                   if (isLabor) {
-                      await supabase.from('labor_assignments').insert([{
-                          ...baseAssignment,
+                      result.laborAssignments.push({
                           sector_id: sectorId,
                           assigned_amount: finalAmount,
+                          assigned_date: invoiceDate,
                           labor_type: formItem.labor_type || 'General',
                           worker_id: null,
                           notes: notesStr
-                      }]);
+                      });
                   } else if (isIrrigation) {
-                      await supabase.from('irrigation_assignments').insert([{
-                          ...baseAssignment,
+                      result.irrigationAssignments.push({
                           sector_id: sectorId,
-                          amount: finalAmount,
+                          assigned_amount: finalAmount,
+                          assigned_date: invoiceDate,
                           notes: notesStr
-                      }]);
+                      });
+                  } else if (isFuel) {
+                      result.fuelAssignments.push({
+                          sector_id: sectorId,
+                          assigned_amount: finalAmount,
+                          assigned_date: invoiceDate
+                      });
                   } else {
-                      await supabase.from('general_costs').insert([{
-                          ...baseAssignment,
+                      result.generalCosts.push({
                           sector_id: sectorId,
                           amount: finalAmount,
+                          date: invoiceDate,
                           category: formItem.category,
                           description: notesStr
-                      }]);
+                      });
                   }
               };
               
@@ -1328,7 +1382,7 @@ export const Invoices: React.FC = () => {
                   if (totalHa > 0) {
                       for (const s of targetSectors) {
                           const shareAmount = (Number(s.hectares || 0) / totalHa) * itemGrossAmount;
-                          await insertAssignment(s.id, shareAmount, `Gasto Empresa (Dist. Proporcional): ${formItem.product_name}`);
+                          insertAssignment(s.id, shareAmount, `Gasto Empresa (Dist. Proporcional): ${formItem.product_name}`);
                       }
                   }
               } else if (selectedOption?.type === 'field' || formItem.destination_type === 'field') {
@@ -1337,230 +1391,23 @@ export const Invoices: React.FC = () => {
                   if (totalHa > 0) {
                       for (const s of targetSectors) {
                           const shareAmount = (Number(s.hectares || 0) / totalHa) * itemGrossAmount;
-                          await insertAssignment(s.id, shareAmount, `Gasto Campo (Dist. Proporcional): ${formItem.product_name}`);
+                          insertAssignment(s.id, shareAmount, `Gasto Campo (Dist. Proporcional): ${formItem.product_name}`);
                       }
                   }
               } else {
-                  await insertAssignment(formItem.destination_id, itemGrossAmount, `Asignación Directa: ${formItem.product_name}`);
+                  insertAssignment(formItem.destination_id, itemGrossAmount, `Asignación Directa: ${formItem.product_name}`);
               }
           }
+          return result;
       };
       // ----------------------------------------------
 
       if (editingInvoiceId) {
         // --- UPDATE EXISTING INVOICE (DIFFING STRATEGY) ---
-        
-        // 1. Update Invoice Details Header
-        const { error: updateError } = await supabase
-          .from('invoices')
-          .update({
-            invoice_number: invoiceNumber,
-            supplier: supplier,
-            supplier_rut: supplierRut,
-            invoice_date: invoiceDate,
-            due_date: dueDate || null,
-            status: status,
-            notes: notes,
-            document_type: documentType,
-            tax_percentage: taxPercentage,
-            discount_amount: discountAmount,
-            exempt_amount: exemptAmount,
-            special_tax_amount: specialTaxAmount,
-            total_amount: total
-          })
-          .eq('id', editingInvoiceId);
 
-        if (updateError) throw updateError;
-        
-        invoiceId = editingInvoiceId;
-
-        // 2. Fetch current DB items to compare
-        const { data: currentDbItems, error: fetchError } = await supabase
-          .from('invoice_items')
-          .select('*')
-          .eq('invoice_id', editingInvoiceId);
-
-        if (fetchError) throw fetchError;
-        
-        const dbItems = currentDbItems || [];
-
-        // Identify items to DELETE (in DB but not in current State)
-        const itemsToDelete = dbItems.filter(dbItem => !items.find(formItem => formItem.id === dbItem.id));
-        
-        // Identify items to UPDATE (in both)
-        const itemsToUpdate = items.filter(formItem => formItem.id && dbItems.find(dbItem => dbItem.id === formItem.id));
-        
-        // Identify items to ADD (in State but no ID)
-        const itemsToAdd = items.filter(formItem => !formItem.id);
-
-        // A. Process DELETES
-        // Optimization: Gather IDs first for batch delete, but do inventory reversal individually
-        const deleteIds = itemsToDelete.map(i => i.id);
-
-        for (const item of itemsToDelete) {
-           // Reverse Inventory first
-           if (item.product_id) {
-             await supabase.rpc('reverse_inventory_movement', {
-               target_product_id: item.product_id,
-               quantity_to_remove: item.quantity
-             });
-           }
-        }
-        
-        if (deleteIds.length > 0) {
-            const { error: delErr } = await supabase
-                .from('invoice_items')
-                .delete()
-                .in('id', deleteIds);
-            if (delErr) throw delErr;
-        }
-
-        // B. Process UPDATES
-        for (const item of itemsToUpdate) {
-           const oldItem = dbItems.find(db => db.id === item.id);
-           if (!oldItem) continue;
-
-           let currentProductId = item.product_id;
-
-           // Handle Product Change / New Product during Update
-           // If product_id is 'new' or null, it means user typed a new name.
-           // Or if they selected a different product ID.
-           if (currentProductId === 'new' || !currentProductId) {
-                // Create new product
-                const { data: newProduct, error: productError } = await supabase
-                    .from('products')
-                    .insert([{
-                        company_id: selectedCompany.id,
-                        name: item.product_name,
-                        category: item.category,
-                        unit: item.unit,
-                        current_stock: 0, 
-                        average_cost: 0,
-                        active_ingredient: item.active_ingredient || ''
-                    }])
-                    .select()
-                    .single();
-                
-                if (productError) throw productError;
-                currentProductId = newProduct.id;
-           }
-
-           // Check if fields changed
-           const quantityChanged = oldItem.quantity !== item.quantity;
-           const priceChanged = oldItem.unit_price !== item.unit_price;
-           const productChanged = oldItem.product_id !== currentProductId;
-           const categoryChanged = oldItem.category !== item.category;
-
-           if (quantityChanged || priceChanged || productChanged || categoryChanged) {
-               // 1. Reverse OLD stock impact (if quantity or product changed)
-               // Even if only price changed, we usually reverse and re-apply to update avg cost correctly.
-               // If product changed, we MUST reverse old product.
-               
-               if (quantityChanged || priceChanged || productChanged) {
-                   await supabase.rpc('reverse_inventory_movement', {
-                       target_product_id: oldItem.product_id,
-                       quantity_to_remove: oldItem.quantity
-                   });
-               }
-
-               // 2. Update Item Record
-               const { error: upErr } = await supabase
-                   .from('invoice_items')
-                   .update({
-                       product_id: currentProductId, // Update product_id
-                       quantity: item.quantity,
-                       unit_price: item.unit_price,
-                       total_price: item.total_price,
-                       category: item.category
-                   })
-                   .eq('id', item.id);
-               if (upErr) throw upErr;
-
-               // 3. Add NEW stock impact (re-calculate avg cost)
-               // Only if inventory-relevant fields changed
-               if (quantityChanged || priceChanged || productChanged) {
-                   await supabase.rpc('update_inventory_with_average_cost', {
-                       product_id: currentProductId,
-                       quantity_in: item.quantity,
-                       unit_cost: item.unit_price,
-                       invoice_item_id: item.id
-                   });
-               }
-           }
-        }
-
-        // C. Process ADDS
-        for (const item of itemsToAdd) {
-            let productId = item.product_id;
-
-            // Handle New Product Creation
-            if (productId === 'new' || !productId) {
-                 const { data: newProduct, error: productError } = await supabase
-                    .from('products')
-                    .insert([{
-                      company_id: selectedCompany.id,
-                      name: item.product_name,
-                      category: item.category,
-                      unit: item.unit,
-                      current_stock: 0, 
-                      average_cost: 0,
-                      active_ingredient: item.active_ingredient || ''
-                    }])
-                    .select()
-                    .single();
-                  
-                  if (productError) throw productError;
-                  productId = newProduct.id;
-            }
-
-            // Insert Invoice Item
-            const { data: invoiceItem, error: itemError } = await supabase
-              .from('invoice_items')
-              .insert([{
-                invoice_id: invoiceId,
-                product_id: productId,
-                quantity: item.quantity,
-                unit_price: item.unit_price,
-                total_price: item.total_price,
-                category: item.category
-              }])
-              .select()
-              .single();
-
-            if (itemError) throw itemError;
-
-            await processDirectAssignment(item, invoiceItem);
-
-            // Update Inventory
-            await supabase.rpc('update_inventory_with_average_cost', {
-              product_id: productId,
-              quantity_in: item.quantity,
-              unit_cost: item.unit_price,
-              invoice_item_id: invoiceItem.id
-            });
-        }
-
-      } else {
-        // --- CREATE NEW INVOICE ---
-        
-        // 0. Check for duplicates before creating
-        const { data: existingInvoice } = await supabase
-          .from('invoices')
-          .select('id')
-          .eq('company_id', selectedCompany.id)
-          .eq('invoice_number', invoiceNumber)
-          .eq('supplier', supplier)
-          .maybeSingle();
-
-        if (existingInvoice) {
-          toast(`¡Atención! Ya existe una factura con el número "${invoiceNumber}" para el proveedor "${supplier}".\n\nNo se puede crear un duplicado.`);
-          setLoading(false);
-          return;
-        }
-
-        const { data: invoice, error: invoiceError } = await supabase
-          .from('invoices')
-          .insert([{
+        await upsertInvoiceHeader({
+          invoiceId: editingInvoiceId,
+          payload: {
             company_id: selectedCompany.id,
             invoice_number: invoiceNumber,
             supplier: supplier,
@@ -1575,59 +1422,165 @@ export const Invoices: React.FC = () => {
             exempt_amount: exemptAmount,
             special_tax_amount: specialTaxAmount,
             total_amount: total
-          }])
-          .select()
-          .single();
+          }
+        });
+        
+        invoiceId = editingInvoiceId;
 
-        if (invoiceError) throw invoiceError;
-        invoiceId = invoice.id;
+        const dbItems = await fetchInvoiceItems({ invoiceId: editingInvoiceId });
+
+        // Identify items to DELETE (in DB but not in current State)
+        const itemsToDelete = dbItems.filter(dbItem => !items.find(formItem => formItem.id === dbItem.id));
+        
+        // Identify items to UPDATE (in both)
+        const itemsToUpdate = items.filter(formItem => formItem.id && dbItems.find(dbItem => dbItem.id === formItem.id));
+        
+        // Identify items to ADD (in State but no ID)
+        const itemsToAdd = items.filter(formItem => !formItem.id);
+
+        const deleteIds = itemsToDelete.map(i => i.id).filter(Boolean) as string[];
+        await rpcDeleteInvoiceItemsWithEffects({ invoiceItemIds: deleteIds });
+
+        // B. Process UPDATES
+        for (const item of itemsToUpdate) {
+           const oldItem = dbItems.find(db => db.id === item.id);
+           if (!oldItem) continue;
+
+           let currentProductId = item.product_id;
+
+           // Handle Product Change / New Product during Update
+           // If product_id is 'new' or null, it means user typed a new name.
+           // Or if they selected a different product ID.
+           if (currentProductId === 'new' || !currentProductId) {
+                currentProductId = await createOrFindProductByName({
+                  companyId: selectedCompany.id,
+                  name: item.product_name,
+                  category: item.category,
+                  unit: item.unit,
+                  activeIngredient: item.active_ingredient || ''
+                });
+           }
+
+           const quantityChanged = oldItem.quantity !== item.quantity;
+           const priceChanged = oldItem.unit_price !== item.unit_price;
+           const productChanged = oldItem.product_id !== currentProductId;
+           const categoryChanged = oldItem.category !== item.category;
+           const replaceAssignments = Boolean(item.assignment_dirty);
+           const recalcInventory = quantityChanged || priceChanged || productChanged;
+           const shouldUpdate = recalcInventory || categoryChanged || replaceAssignments;
+
+           if (shouldUpdate) {
+               const assignments = replaceAssignments ? buildDirectAssignments(item) : null;
+
+               await rpcUpdateInvoiceItemWithEffects({
+                 invoiceItemId: item.id as string,
+                 productId: currentProductId as string,
+                 quantity: item.quantity,
+                 unitPrice: item.unit_price,
+                 totalPrice: item.total_price,
+                 category: item.category,
+                 recalcInventory,
+                 replaceAssignments,
+                 laborAssignments: assignments?.laborAssignments,
+                 irrigationAssignments: assignments?.irrigationAssignments,
+                 machineryAssignments: assignments?.machineryAssignments,
+                 generalCosts: assignments?.generalCosts,
+                 fuelAssignments: assignments?.fuelAssignments
+               });
+           }
+        }
+
+        // C. Process ADDS
+        for (const item of itemsToAdd) {
+            let productId = item.product_id;
+
+            // Handle New Product Creation
+            if (productId === 'new' || !productId) {
+                 productId = await createOrFindProductByName({
+                   companyId: selectedCompany.id,
+                   name: item.product_name,
+                   category: item.category,
+                   unit: item.unit,
+                   activeIngredient: item.active_ingredient || ''
+                 });
+            }
+
+            const assignments = buildDirectAssignments(item);
+
+            await createInvoiceItemWithEffects({
+              invoiceId,
+              productId: productId as string,
+              quantity: item.quantity,
+              unitPrice: item.unit_price,
+              totalPrice: item.total_price,
+              category: item.category,
+              laborAssignments: assignments.laborAssignments,
+              irrigationAssignments: assignments.irrigationAssignments,
+              machineryAssignments: assignments.machineryAssignments,
+              generalCosts: assignments.generalCosts,
+              fuelAssignments: assignments.fuelAssignments
+            });
+        }
+
+      } else {
+        // --- CREATE NEW INVOICE ---
+        try {
+          const invoice = await upsertInvoiceHeader({
+            payload: {
+              company_id: selectedCompany.id,
+              invoice_number: invoiceNumber,
+              supplier: supplier,
+              supplier_rut: supplierRut,
+              invoice_date: invoiceDate,
+              due_date: dueDate || null,
+              status: status,
+              notes: notes,
+              document_type: documentType,
+              tax_percentage: taxPercentage,
+              discount_amount: discountAmount,
+              exempt_amount: exemptAmount,
+              special_tax_amount: specialTaxAmount,
+              total_amount: total
+            }
+          });
+          invoiceId = invoice.id;
+        } catch (e: any) {
+          if (String(e?.message || '').includes('DUPLICATE_INVOICE')) {
+            toast(`¡Atención! Ya existe una factura con el número "${invoiceNumber}" para el proveedor "${supplier}".\n\nNo se puede crear un duplicado.`);
+            setLoading(false);
+            return;
+          }
+          throw e;
+        }
 
         // Process Items for NEW Invoice
         for (const item of items) {
             let productId = item.product_id;
 
             if (productId === 'new' || !productId) {
-              const { data: newProduct, error: productError } = await supabase
-                .from('products')
-                .insert([{
-                  company_id: selectedCompany.id,
-                  name: item.product_name,
-                  category: item.category,
-                  unit: item.unit,
-                  current_stock: 0, 
-                  average_cost: 0,
-                  active_ingredient: item.active_ingredient || ''
-                }])
-                .select()
-                .single();
-              
-              if (productError) throw productError;
-              productId = newProduct.id;
+              productId = await createOrFindProductByName({
+                companyId: selectedCompany.id,
+                name: item.product_name,
+                category: item.category,
+                unit: item.unit,
+                activeIngredient: item.active_ingredient || ''
+              });
             }
 
-            // Insert Invoice Item
-            const { data: invoiceItem, error: itemError } = await supabase
-              .from('invoice_items')
-              .insert([{
-                invoice_id: invoiceId,
-                product_id: productId,
-                quantity: item.quantity,
-                unit_price: item.unit_price,
-                total_price: item.total_price,
-                category: item.category
-              }])
-              .select()
-              .single();
+            const assignments = buildDirectAssignments(item);
 
-            if (itemError) throw itemError;
-
-            await processDirectAssignment(item, invoiceItem);
-
-            await supabase.rpc('update_inventory_with_average_cost', {
-              product_id: productId,
-              quantity_in: item.quantity,
-              unit_cost: item.unit_price,
-              invoice_item_id: invoiceItem.id
+            await createInvoiceItemWithEffects({
+              invoiceId,
+              productId: productId as string,
+              quantity: item.quantity,
+              unitPrice: item.unit_price,
+              totalPrice: item.total_price,
+              category: item.category,
+              laborAssignments: assignments.laborAssignments,
+              irrigationAssignments: assignments.irrigationAssignments,
+              machineryAssignments: assignments.machineryAssignments,
+              generalCosts: assignments.generalCosts,
+              fuelAssignments: assignments.fuelAssignments
             });
         }
       }
@@ -1642,12 +1595,11 @@ export const Invoices: React.FC = () => {
       setDueDate('');
       setSpecialTaxAmount(0);
       toast(editingInvoiceId ? 'Factura actualizada exitosamente' : 'Factura ingresada exitosamente');
-      loadProducts();
-      loadStats();
-      loadSuppliers();
+      await queryClient.invalidateQueries({ queryKey: ['invoices', companyId] });
+      await queryClient.invalidateQueries({ queryKey: ['invoiceProducts', companyId] });
+      await queryClient.invalidateQueries({ queryKey: ['invoiceSuppliers', companyId] });
 
     } catch (error: any) {
-      console.error('Error saving invoice:', error);
       toast.error('Error al guardar la factura: ' + error.message);
     } finally {
       setLoading(false);
@@ -1687,6 +1639,7 @@ export const Invoices: React.FC = () => {
               />
               <button 
                 onClick={handleXmlImportClick}
+                disabled={!canWrite}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm flex items-center font-bold"
                 title="Cargar Factura desde XML (SII)"
               >
@@ -1694,6 +1647,7 @@ export const Invoices: React.FC = () => {
               </button>
               <button 
                 onClick={handleCleanDuplicates}
+                disabled={!canWrite}
                 className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-sm flex items-center font-bold"
                 title="Buscar y eliminar facturas duplicadas"
               >
@@ -1708,13 +1662,46 @@ export const Invoices: React.FC = () => {
               />
               <button 
                 onClick={handleImportClick}
+                disabled={!canWrite}
                 className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm flex items-center"
               >
                 <Upload className="h-4 w-4 mr-1" /> Importar
               </button>
-              <button className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm flex items-center">
-                <Download className="h-4 w-4 mr-1" /> Exportar
-              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setExportMenuOpen((v) => !v)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm flex items-center"
+                >
+                  <Download className="h-4 w-4 mr-1" /> Exportar
+                </button>
+                {exportMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        void handleExportInvoicesExcel();
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      Excel (Resumen + Detalle)
+                      {selectedInvoiceIds.length > 0 ? ` (${selectedInvoiceIds.length} seleccionadas)` : ' (filtrado)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        handleExportInvoicesPdf();
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      PDF (Listado)
+                      {selectedInvoiceIds.length > 0 ? ` (${selectedInvoiceIds.length} seleccionadas)` : ' (filtrado)'}
+                    </button>
+                  </div>
+                )}
+              </div>
               <button className="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded text-sm flex items-center">
                 <FileText className="h-4 w-4 mr-1" /> Reportes
               </button>
@@ -1747,7 +1734,7 @@ export const Invoices: React.FC = () => {
                   )}
                   <button
                     type="submit"
-                    disabled={loading || items.length === 0}
+                    disabled={loading || items.length === 0 || !canWrite}
                     className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg flex items-center disabled:opacity-50 transition-colors shadow-sm"
                   >
                     {loading ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />}
@@ -1772,18 +1759,9 @@ export const Invoices: React.FC = () => {
                           const val = e.target.value;
                           setSupplier(val);
                           if (val.length > 3) {
-                              supabase.from('invoices')
-                                  .select('supplier_rut')
-                                  .eq('company_id', selectedCompany.id)
-                                  .eq('supplier', val)
-                                  .order('created_at', { ascending: false })
-                                  .limit(1)
-                                  .maybeSingle()
-                                  .then(({ data }) => {
-                                      if (data && data.supplier_rut) {
-                                          setSupplierRut(data.supplier_rut);
-                                      }
-                                  });
+                              void findSupplierRut({ companyId: selectedCompany.id, supplier: val }).then((rut) => {
+                                  if (rut) setSupplierRut(rut);
+                              });
                           }
                       }}
                       className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"
@@ -2002,7 +1980,8 @@ export const Invoices: React.FC = () => {
                                   ...currentItem, 
                                   category: newCat,
                                   destination_type: determineDestinationType(newCat) as any,
-                                  destination_id: '' // Reset destination when category changes
+                                  destination_id: '', // Reset destination when category changes
+                                  assignment_dirty: true
                               });
                           }}
                           className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 shadow-sm transition-colors overflow-hidden text-ellipsis whitespace-nowrap"
@@ -2068,7 +2047,8 @@ export const Invoices: React.FC = () => {
                             onChange={e => setCurrentItem({
                                 ...currentItem, 
                                 destination_type: e.target.value as any,
-                                destination_id: '' // Reset ID when type changes
+                                destination_id: '', // Reset ID when type changes
+                                assignment_dirty: true
                             })}
                             className="w-full bg-blue-50 border border-blue-200 text-blue-900 text-sm rounded-lg p-2.5 font-medium shadow-sm transition-colors"
                          >
@@ -2081,7 +2061,7 @@ export const Invoices: React.FC = () => {
                          
                          <select
                             value={currentItem.destination_id || ''}
-                            onChange={e => setCurrentItem({...currentItem, destination_id: e.target.value})}
+                            onChange={e => setCurrentItem({...currentItem, destination_id: e.target.value, assignment_dirty: true})}
                             disabled={destinationsLoading || !currentItem.destination_type || currentItem.destination_type === 'none'}
                             className="w-full bg-white dark:bg-gray-800 border border-blue-200 text-gray-900 dark:text-gray-100 text-sm rounded-lg p-2.5 disabled:bg-gray-100 dark:bg-gray-900 disabled:border-gray-200 dark:border-gray-700 shadow-sm transition-colors"
                          >
@@ -2238,7 +2218,7 @@ export const Invoices: React.FC = () => {
                   <div className="w-full md:w-auto">
                     <button
                       type="submit"
-                      disabled={loading || items.length === 0}
+                      disabled={loading || items.length === 0 || !canWrite}
                       className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 px-10 rounded-xl flex items-center disabled:opacity-50 disabled:hover:bg-blue-600 text-lg shadow-[0_0_20px_rgba(37,99,235,0.3)] hover:shadow-[0_0_25px_rgba(37,99,235,0.5)] transition-all w-full md:w-auto justify-center"
                     >
                       {loading ? <Loader2 className="animate-spin h-6 w-6 mr-2" /> : <Save className="h-6 w-6 mr-2" />}
@@ -2320,7 +2300,59 @@ export const Invoices: React.FC = () => {
             <div className="space-y-4">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xs font-bold text-gray-400 uppercase">RESULTADOS</h3>
-                <span className="text-xs text-gray-500 dark:text-gray-400">{getFilteredInvoices().length} encontrados</span>
+                <div className="flex items-center gap-2">
+                  {canWrite && selectedInvoiceIds.length > 0 && (
+                    <>
+                      <span className="text-xs text-gray-400">{selectedInvoiceIds.length} seleccionadas</span>
+                      <button
+                        type="button"
+                        onClick={() => bulkStatusMutation.mutate({ status: 'Pagada' })}
+                        disabled={bulkStatusMutation.isPending || bulkDeleteMutation.isPending}
+                        className="text-xs px-2 py-1 rounded bg-green-900 text-green-200 hover:bg-green-800 disabled:opacity-50"
+                      >
+                        Marcar pagada
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => bulkStatusMutation.mutate({ status: 'Pendiente' })}
+                        disabled={bulkStatusMutation.isPending || bulkDeleteMutation.isPending}
+                        className="text-xs px-2 py-1 rounded bg-yellow-900 text-yellow-200 hover:bg-yellow-800 disabled:opacity-50"
+                      >
+                        Marcar pendiente
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedInvoiceIds([])}
+                        disabled={bulkStatusMutation.isPending || bulkDeleteMutation.isPending}
+                        className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-200 hover:bg-gray-700 disabled:opacity-50"
+                      >
+                        Limpiar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!window.confirm(`¿FUERZA BRUTA: borrar ${selectedInvoiceIds.length} facturas definitivamente?`)) return;
+                          bulkDeleteMutation.mutate();
+                        }}
+                        disabled={bulkStatusMutation.isPending || bulkDeleteMutation.isPending}
+                        className="text-xs px-2 py-1 rounded bg-red-900 text-red-200 hover:bg-red-800 disabled:opacity-50"
+                      >
+                        Eliminar
+                      </button>
+                    </>
+                  )}
+                  {canWrite && selectedInvoiceIds.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedInvoiceIds(paginatedInvoices.map((inv) => inv.id))}
+                      disabled={paginatedInvoices.length === 0}
+                      className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-200 hover:bg-gray-700 disabled:opacity-50"
+                    >
+                      Seleccionar página
+                    </button>
+                  )}
+                  <span className="text-xs text-gray-500 dark:text-gray-400">{getFilteredInvoices().length} encontrados</span>
+                </div>
               </div>
               
               <div className="space-y-2 pr-2">
@@ -2331,6 +2363,22 @@ export const Invoices: React.FC = () => {
                       onClick={() => handleEditClick(inv)}
                       className="bg-gray-800 p-3 rounded-lg border border-gray-700 hover:border-blue-500 cursor-pointer transition-colors relative group"
                     >
+                      {canWrite && (
+                        <div className="absolute left-2 top-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedInvoiceIds.includes(inv.id)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setSelectedInvoiceIds((prev) =>
+                                prev.includes(inv.id) ? prev.filter((x) => x !== inv.id) : [...prev, inv.id],
+                              );
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-4 w-4 accent-blue-600"
+                          />
+                        </div>
+                      )}
                       <div className="flex justify-between items-start mb-1 pr-6">
                         <span className="font-bold text-sm text-white">#{inv.invoice_number}</span>
                         <div className="flex flex-col items-end">
@@ -2366,13 +2414,15 @@ export const Invoices: React.FC = () => {
                         >
                             <Printer className="h-3 w-3" />
                         </button>
-                        <button
-                            onClick={(e) => handleDeleteInvoice(e, inv.id)}
-                            className="p-1.5 bg-red-900/50 text-red-400 rounded hover:bg-red-600 hover:text-white"
-                            title="Eliminar factura"
-                        >
-                            <Trash2 className="h-3 w-3" />
-                        </button>
+                        {canWrite && (
+                          <button
+                              onClick={(e) => handleDeleteInvoice(e, inv.id)}
+                              className="p-1.5 bg-red-900/50 text-red-400 rounded hover:bg-red-600 hover:text-white"
+                              title="Eliminar factura"
+                          >
+                              <Trash2 className="h-3 w-3" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))
@@ -2552,6 +2602,8 @@ export const Invoices: React.FC = () => {
             `}</style>
         </div>
       )}
+
+      <PdfPreviewModal isOpen={pdfPreviewOpen} onClose={handleClosePdfPreview} title={pdfPreviewTitle} pdfUrl={pdfPreviewUrl} />
     </div>
   );
 };

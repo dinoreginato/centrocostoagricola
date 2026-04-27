@@ -344,23 +344,23 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Grant permissions (Explicitly needed as per guidelines)
-GRANT SELECT ON companies TO anon, authenticated;
-GRANT SELECT ON fields TO anon, authenticated;
-GRANT SELECT ON sectors TO anon, authenticated;
-GRANT SELECT ON products TO anon, authenticated;
-GRANT SELECT ON invoices TO anon, authenticated;
-GRANT SELECT ON invoice_items TO anon, authenticated;
-GRANT SELECT ON inventory_movements TO anon, authenticated;
-GRANT SELECT ON applications TO anon, authenticated;
-GRANT SELECT ON application_items TO anon, authenticated;
+GRANT SELECT ON companies TO authenticated;
+GRANT SELECT ON fields TO authenticated;
+GRANT SELECT ON sectors TO authenticated;
+GRANT SELECT ON products TO authenticated;
+GRANT SELECT ON invoices TO authenticated;
+GRANT SELECT ON invoice_items TO authenticated;
+GRANT SELECT ON inventory_movements TO authenticated;
+GRANT SELECT ON applications TO authenticated;
+GRANT SELECT ON application_items TO authenticated;
 
 -- Grant ALL for authenticated to allow Insert/Update/Delete (controlled by RLS)
-GRANT ALL ON companies TO authenticated;
-GRANT ALL ON fields TO authenticated;
-GRANT ALL ON sectors TO authenticated;
-GRANT ALL ON products TO authenticated;
-GRANT ALL ON invoices TO authenticated;
-GRANT ALL ON invoice_items TO authenticated;
-GRANT ALL ON inventory_movements TO authenticated;
-GRANT ALL ON applications TO authenticated;
-GRANT ALL ON application_items TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON companies TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON fields TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON sectors TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON products TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON invoices TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON invoice_items TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON inventory_movements TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON applications TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON application_items TO authenticated;

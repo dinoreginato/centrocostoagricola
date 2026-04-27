@@ -1,7 +1,7 @@
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '../supabase/client';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { useAuth } from './AuthContext';
+import { claimOrphanCompanies, fetchCompanies, fetchCompanyMemberRole } from '../services/companies';
 
 export interface Company {
   id: string;
@@ -32,32 +32,25 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchUserRole = async (company: Company, userId: string) => {
+  const fetchUserRole = useCallback(async (company: Company, userId: string) => {
     if (company.owner_id === userId) {
       setUserRole('admin');
       return;
     }
 
     try {
-      const { data, error } = await supabase
-        .from('company_members')
-        .select('role')
-        .eq('company_id', company.id)
-        .eq('user_id', userId)
-        .single();
-      
-      if (data) {
-        setUserRole(data.role as UserRole);
+      const role = await fetchCompanyMemberRole({ companyId: company.id, userId });
+      if (role) {
+        setUserRole(role as UserRole);
       } else {
         setUserRole('viewer'); // Default fallback
       }
-    } catch (error) {
-      console.error('Error fetching role:', error);
+    } catch (_error) {
       setUserRole('viewer');
     }
-  };
+  }, []);
 
-  const refreshCompanies = async () => {
+  const refreshCompanies = useCallback(async () => {
     if (!user) {
       setCompanies([]);
       setSelectedCompany(null);
@@ -67,12 +60,7 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
 
     try {
-      const { data, error } = await supabase
-        .from('companies')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
+      const data = await fetchCompanies();
 
       setCompanies(data || []);
 
@@ -80,18 +68,14 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (data && user) {
         const orphans = data.filter(c => !c.owner_id);
         if (orphans.length > 0) {
-          orphans.forEach(async (orphan) => {
-            try {
-              await supabase
-                .from('companies')
-                .update({ owner_id: user.id })
-                .eq('id', orphan.id);
-              // Optimistically update local state
+          try {
+            await claimOrphanCompanies({ companyIds: orphans.map(o => o.id), ownerId: user.id });
+            orphans.forEach(orphan => {
               orphan.owner_id = user.id;
-            } catch (err) {
-              console.error('Error claiming orphan company:', err);
-            }
-          });
+            });
+          } catch (_err) {
+            void _err;
+          }
         }
       }
 
@@ -115,16 +99,18 @@ export const CompanyProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setSelectedCompany(null);
         setUserRole(null);
       }
-    } catch (error) {
-      console.error('Error loading companies:', error);
+    } catch {
+      setCompanies([]);
+      setSelectedCompany(null);
+      setUserRole(null);
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchUserRole, user]);
 
   useEffect(() => {
     refreshCompanies();
-  }, [user]);
+  }, [refreshCompanies]);
 
   const selectCompany = async (companyId: string) => {
     const company = companies.find(c => c.id === companyId);
