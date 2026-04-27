@@ -25,6 +25,13 @@ Qué valida:
 - Detección de timestamps duplicados (riesgo alto)
 - Listado de archivos legacy (no timestamp) que Supabase CLI no aplica automáticamente
 
+## Estado actual del repo (historical)
+
+- Existen timestamps duplicados históricos (principalmente en fixes de RLS/recursión).
+- La postura prod-safe es no renombrarlos: se mitiga “re-aplicando” el estado canónico después con migraciones nuevas idempotentes.
+- Consolidación canónica de helpers/policies de membresía:
+  - `supabase/migrations/20260422215000_consolidate_company_access_helpers.sql`
+
 ## Cómo resolver timestamps duplicados (sin romper prod)
 
 Si existen dos migraciones con el mismo `YYYYMMDDHHMMSS`:
@@ -39,4 +46,3 @@ Si existen dos migraciones con el mismo `YYYYMMDDHHMMSS`:
 - Correr `npm run check:migrations:strict`.
 - Revisar que cualquier RPC nueva esté con `REVOKE/GRANT` correctos.
 - Revisar que cualquier cambio en RLS sea idempotente.
-
