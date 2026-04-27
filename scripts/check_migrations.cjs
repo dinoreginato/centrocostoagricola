@@ -98,6 +98,13 @@ function hasTimestampedReplacement(legacyName) {
 const legacyWithReplacement = legacy.filter(hasTimestampedReplacement);
 const legacyRemaining = legacy.filter((f) => !hasTimestampedReplacement(f));
 
+const knownDuplicateTimestamps = {
+  '20260226133000': ['20260422215000_consolidate_company_access_helpers.sql', '20260422216000_consolidate_rls_policies.sql'],
+  '20260226140000': ['20260422218000_consolidate_price_per_kg.sql'],
+  '20260226150000': ['20260422219000_consolidate_general_costs.sql', '20260422216000_consolidate_rls_policies.sql'],
+  '20260316000000': ['20260422217000_consolidate_viewer_role.sql'],
+};
+
 const byTs = new Map();
 for (const f of timestamped) {
   const ts = getTimestamp(f);
@@ -111,6 +118,9 @@ const duplicates = Array.from(byTs.entries())
   .filter(([_ts, files]) => files.length > 1)
   .sort((a, b) => a[0].localeCompare(b[0]));
 
+const knownDuplicates = duplicates.filter(([ts]) => Boolean(knownDuplicateTimestamps[ts]));
+const unknownDuplicates = duplicates.filter(([ts]) => !knownDuplicateTimestamps[ts]);
+
 const sortedAll = [...timestamped].sort((a, b) => a.localeCompare(b));
 const outOfOrder = timestamped.some((f, i) => f !== sortedAll[i]);
 
@@ -119,11 +129,21 @@ console.log('[migrations] total:', all.length);
 console.log('[migrations] timestamped:', timestamped.length);
 console.log('[migrations] legacy:', legacy.length);
 
-if (duplicates.length > 0) {
-  console.log('\n[migrations] DUPLICATE timestamps found:');
-  for (const [ts, files] of duplicates) {
+if (unknownDuplicates.length > 0) {
+  console.log('\n[migrations] DUPLICATE timestamps found (unmapped):');
+  for (const [ts, files] of unknownDuplicates) {
     console.log(`- ${ts}`);
     for (const f of files) console.log(`  - ${f}`);
+  }
+}
+
+if (knownDuplicates.length > 0) {
+  console.log('\n[migrations] DUPLICATE timestamps found (known + mitigated by canonical migrations):');
+  for (const [ts, files] of knownDuplicates) {
+    console.log(`- ${ts}`);
+    for (const f of files) console.log(`  - ${f}`);
+    const mitigations = knownDuplicateTimestamps[ts] || [];
+    for (const m of mitigations) console.log(`  -> ${m}`);
   }
 }
 
@@ -141,7 +161,7 @@ if (legacyWithReplacement.length > 0) {
   for (const f of legacyWithReplacement) console.log(`- ${f}`);
 }
 
-const hasIssues = duplicates.length > 0 || outOfOrder || legacyRemaining.length > 0;
+const hasIssues = unknownDuplicates.length > 0 || outOfOrder || legacyRemaining.length > 0;
 if (strict && hasIssues) {
   process.exitCode = 1;
 }

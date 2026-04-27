@@ -25,6 +25,9 @@ Qué valida:
 - Detección de timestamps duplicados (riesgo alto)
 - Listado de archivos legacy (no timestamp) que Supabase CLI no aplica automáticamente
 
+Nota:
+- `check:migrations:strict` falla solo si hay duplicados no mapeados o legacy sin reemplazo; los duplicados históricos están mitigados por migraciones canónicas posteriores.
+
 ## Estado actual del repo (historical)
 
 - Existen timestamps duplicados históricos (principalmente en fixes de RLS/recursión).
