@@ -39,7 +39,7 @@ export function getNavGroups(userRole?: string | null): NavGroup[] {
     {
       title: 'Finanzas y Costos',
       items: [
-        { name: 'Facturas', href: '/facturas', icon: FileText, roles: ['admin'] },
+        { name: 'Facturas', href: '/facturas', icon: FileText, roles: ['admin', 'editor', 'viewer'] },
         { name: 'Liquidaciones', href: '/liquidaciones', icon: DollarSign, roles: ['admin'] },
         { name: 'Distribución Costos', href: '/otros-costos', icon: LayoutList, roles: ['admin', 'editor', 'viewer'] }
       ]
@@ -65,7 +65,7 @@ export function getNavGroups(userRole?: string | null): NavGroup[] {
     {
       title: 'Administración',
       items: [
-        { name: 'Campos', href: '/campos', icon: Map, roles: ['admin', 'viewer'] },
+        { name: 'Campos', href: '/campos', icon: Map, roles: ['admin', 'editor', 'viewer'] },
         { name: 'Trabajadores', href: '/trabajadores', icon: Briefcase, roles: ['admin', 'editor', 'viewer'] },
         { name: 'Precios Químicos', href: '/precios-quimicos', icon: Beaker, roles: ['admin', 'editor', 'viewer'] },
         ...(userRole === 'admin' || userRole === 'editor' ? [{ name: 'Usuarios', href: '/usuarios', icon: Users, roles: ['admin', 'editor'] }] : [])

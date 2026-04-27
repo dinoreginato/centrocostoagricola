@@ -30,6 +30,10 @@ export const Layout: React.FC = () => {
 
   const handleBackup = async () => {
     if (!selectedCompany) return;
+    if (userRole === 'viewer') {
+      toast.error('No tienes permisos para descargar el respaldo.');
+      return;
+    }
     setIsBackingUp(true);
     const toastId = toast.loading('Generando copia de seguridad de toda la empresa...');
     
@@ -72,8 +76,8 @@ export const Layout: React.FC = () => {
             <div className="flex items-center space-x-2">
               <button 
                 onClick={handleBackup} 
-                disabled={isBackingUp}
-                className={`p-1.5 rounded-md text-gray-500 hover:text-green-700 dark:text-gray-400 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-gray-700 transition-colors ${isBackingUp ? 'opacity-50 cursor-not-allowed' : ''}`} 
+                disabled={isBackingUp || userRole === 'viewer'}
+                className={`p-1.5 rounded-md text-gray-500 hover:text-green-700 dark:text-gray-400 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-gray-700 transition-colors ${(isBackingUp || userRole === 'viewer') ? 'opacity-50 cursor-not-allowed' : ''}`} 
                 title="Descargar Respaldo (Excel)"
               >
                 <DownloadCloud className="h-5 w-5" />
@@ -184,8 +188,8 @@ export const Layout: React.FC = () => {
         <div className="flex items-center space-x-2">
           <button 
             onClick={handleBackup} 
-            disabled={isBackingUp}
-            className={`p-2 rounded-md text-gray-500 hover:text-green-700 dark:text-gray-400 dark:hover:text-green-400 ${isBackingUp ? 'opacity-50' : ''}`}
+            disabled={isBackingUp || userRole === 'viewer'}
+            className={`p-2 rounded-md text-gray-500 hover:text-green-700 dark:text-gray-400 dark:hover:text-green-400 ${(isBackingUp || userRole === 'viewer') ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             <DownloadCloud className="h-6 w-6" />
           </button>

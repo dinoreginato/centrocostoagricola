@@ -102,10 +102,11 @@ const getConversionFactor = (fromUnit: string, toUnit: string): number => {
 };
 
 export const ApplicationOrders: React.FC = () => {
-  const { selectedCompany } = useCompany();
+  const { selectedCompany, userRole } = useCompany();
   const queryClient = useQueryClient();
   const companyId = selectedCompany?.id ?? null;
   const [loading, setLoading] = useState(false);
+  const canWrite = userRole !== 'viewer';
   
   // PDF Preview State
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
@@ -359,6 +360,10 @@ export const ApplicationOrders: React.FC = () => {
   };
 
   const handleSaveOrder = async () => {
+      if (!canWrite) {
+          toast.error('No tienes permisos para guardar órdenes.');
+          return;
+      }
       if (!currentOrder.field_id || !currentOrder.sector_id || !currentOrder.items?.length) {
           toast('Complete los campos obligatorios (Campo, Sector, Items)');
           return;
@@ -414,6 +419,10 @@ export const ApplicationOrders: React.FC = () => {
   };
 
   const handleCloneOrder = (order: ApplicationOrder) => {
+      if (!canWrite) {
+          toast.error('No tienes permisos para duplicar órdenes.');
+          return;
+      }
       const userInputDate = prompt('Duplicar orden.\nIngrese la nueva fecha programada (YYYY-MM-DD):', new Date().toLocaleDateString('en-CA'));
       if (!userInputDate) return;
 
@@ -437,6 +446,10 @@ export const ApplicationOrders: React.FC = () => {
   };
 
   const handleDeleteOrder = async (id: string) => {
+      if (!canWrite) {
+          toast.error('No tienes permisos para eliminar órdenes.');
+          return;
+      }
       if (!window.confirm('¿Está seguro de eliminar esta orden de aplicación? Esta acción no se puede deshacer.')) {
           return;
       }
@@ -464,6 +477,10 @@ export const ApplicationOrders: React.FC = () => {
   };
 
   const handleRevertToPending = async (order: ApplicationOrder) => {
+      if (!canWrite) {
+          toast.error('No tienes permisos para modificar órdenes.');
+          return;
+      }
       if (!window.confirm(`¿Está seguro de revertir la orden #${order.order_number} a PENDIENTE? Si esta orden generó un registro en "Aplicaciones", ese registro no se eliminará automáticamente, deberá borrarlo manualmente allá.`)) {
           return;
       }
@@ -480,6 +497,10 @@ export const ApplicationOrders: React.FC = () => {
   };
 
   const handleMarkAsCompleted = async (order: ApplicationOrder, completedDate: string) => {
+      if (!canWrite) {
+          toast.error('No tienes permisos para completar órdenes.');
+          return;
+      }
       setLoading(true);
       try {
           // 1. Calculate Total Cost from items - STRICT NUMBER CASTING & CONVERSION
@@ -807,6 +828,7 @@ export const ApplicationOrders: React.FC = () => {
                     setIsEditing(true);
                     setWizardStep(1);
                 }}
+                disabled={!canWrite}
                 className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center"
             >
                 <Plus className="h-5 w-5 mr-2" /> Nueva Orden
@@ -1223,7 +1245,7 @@ export const ApplicationOrders: React.FC = () => {
               <div className="flex justify-end gap-3">
                 <button
                   onClick={handleSaveOrder}
-                  disabled={loading}
+                  disabled={loading || !canWrite}
                   className="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 flex items-center disabled:opacity-50"
                 >
                   {loading ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <Save className="h-5 w-5 mr-2" />}
@@ -1283,7 +1305,7 @@ export const ApplicationOrders: React.FC = () => {
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{order.objective || '-'}</td>
                               <td className="px-6 py-4 whitespace-nowrap">
-                                  {order.status === 'pendiente' ? (
+                                  {canWrite && order.status === 'pendiente' ? (
                                       <button
                                           onClick={async (e) => {
                                               e.stopPropagation();
@@ -1297,7 +1319,7 @@ export const ApplicationOrders: React.FC = () => {
                                       >
                                           {order.status.toUpperCase()}
                                       </button>
-                                  ) : (
+                                  ) : canWrite ? (
                                       <button 
                                           onClick={(e) => {
                                               e.stopPropagation();
@@ -1308,6 +1330,10 @@ export const ApplicationOrders: React.FC = () => {
                                       >
                                           {order.status.toUpperCase()} (Deshacer)
                                       </button>
+                                  ) : (
+                                      <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(order.status)}`}>
+                                          {order.status.toUpperCase()}
+                                      </span>
                                   )}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end gap-2">
@@ -1318,31 +1344,35 @@ export const ApplicationOrders: React.FC = () => {
                                   >
                                       <Printer className="h-5 w-5" />
                                   </button>
-                                  <button 
-                                      onClick={() => handleCloneOrder(order)}
-                                      className="text-green-600 hover:text-green-900"
-                                      title="Duplicar/Clonar"
-                                  >
-                                      <Copy className="h-5 w-5" />
-                                  </button>
-                                  <button 
-                                      onClick={() => {
-                                          setCurrentOrder(order);
-                                          setIsEditing(true);
-                                          setWizardStep(2);
-                                      }}
-                                      className="text-blue-600 hover:text-blue-900"
-                                      title="Editar"
-                                  >
-                                      <Edit className="h-5 w-5" />
-                                  </button>
-                                  <button 
-                                      onClick={() => handleDeleteOrder(order.id)}
-                                      className="text-red-600 hover:text-red-900 ml-2"
-                                      title="Eliminar"
-                                  >
-                                      <Trash2 className="h-5 w-5" />
-                                  </button>
+                                  {canWrite && (
+                                    <>
+                                      <button 
+                                          onClick={() => handleCloneOrder(order)}
+                                          className="text-green-600 hover:text-green-900"
+                                          title="Duplicar/Clonar"
+                                      >
+                                          <Copy className="h-5 w-5" />
+                                      </button>
+                                      <button 
+                                          onClick={() => {
+                                              setCurrentOrder(order);
+                                              setIsEditing(true);
+                                              setWizardStep(2);
+                                          }}
+                                          className="text-blue-600 hover:text-blue-900"
+                                          title="Editar"
+                                      >
+                                          <Edit className="h-5 w-5" />
+                                      </button>
+                                      <button 
+                                          onClick={() => handleDeleteOrder(order.id)}
+                                          className="text-red-600 hover:text-red-900 ml-2"
+                                          title="Eliminar"
+                                      >
+                                          <Trash2 className="h-5 w-5" />
+                                      </button>
+                                    </>
+                                  )}
                               </td>
                           </tr>
                       ))}

@@ -80,10 +80,12 @@ const guessCategory = (name: string): string => {
 };
 
 export const Invoices: React.FC = () => {
-  const { selectedCompany, companies } = useCompany();
+  const { selectedCompany, companies, userRole } = useCompany();
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const companyId = selectedCompany?.id ?? null;
+  const canWrite = userRole !== 'viewer';
+
 
   const [laborType, setLaborType] = useState<string>(''); // For labor assignment
 
@@ -280,6 +282,7 @@ export const Invoices: React.FC = () => {
   const bulkStatusMutation = useMutation({
     mutationFn: async (params: { status: string }) => {
       if (!selectedInvoiceIds.length) return;
+      if (!canWrite) throw new Error('No autorizado');
       const paymentDate = params.status === 'Pagada' ? new Date().toLocaleDateString('en-CA') : null;
       await Promise.all(
         selectedInvoiceIds.map((id) =>
@@ -308,6 +311,7 @@ export const Invoices: React.FC = () => {
   const bulkDeleteMutation = useMutation({
     mutationFn: async () => {
       if (!selectedInvoiceIds.length) return;
+      if (!canWrite) throw new Error('No autorizado');
       await Promise.all(selectedInvoiceIds.map((id) => rpcDeleteInvoiceForce({ invoiceId: id })));
     },
     onSuccess: () => {
@@ -1078,6 +1082,10 @@ export const Invoices: React.FC = () => {
   };
 
   const handleEditClick = (inv: any) => {
+    if (!canWrite) {
+      toast.error('No tienes permisos para editar facturas.');
+      return;
+    }
     setEditingInvoiceId(inv.id);
     setInvoiceNumber(inv.invoice_number);
     setSupplier(inv.supplier);
@@ -1131,6 +1139,10 @@ export const Invoices: React.FC = () => {
 
   const handleDeleteInvoice = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    if (!canWrite) {
+      toast.error('No tienes permisos para eliminar facturas.');
+      return;
+    }
     if (!window.confirm('¿FUERZA BRUTA: Borrar esta factura definitivamente?')) return;
 
     try {
@@ -1152,6 +1164,10 @@ export const Invoices: React.FC = () => {
 
   const handleCleanDuplicates = async () => {
     if (!selectedCompany) return;
+    if (!canWrite) {
+      toast.error('No tienes permisos para eliminar duplicados.');
+      return;
+    }
     if (!window.confirm('¿Desea buscar y eliminar facturas duplicadas automáticamente? Se conservará la versión más reciente de cada factura.')) return;
 
     setLoading(true);
@@ -1200,6 +1216,10 @@ export const Invoices: React.FC = () => {
 
   const toggleInvoiceStatus = async (e: React.MouseEvent, invoice: Invoice) => {
     e.stopPropagation(); // Prevent opening edit mode
+    if (!canWrite) {
+      toast.error('No tienes permisos para cambiar el estado.');
+      return;
+    }
     
     const newStatus = invoice.status === 'Pagada' ? 'Pendiente' : 'Pagada';
     let newPaymentDate = null;
@@ -1230,6 +1250,10 @@ export const Invoices: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCompany || items.length === 0) return;
+    if (!canWrite) {
+      toast.error('No tienes permisos para guardar facturas.');
+      return;
+    }
 
     // Validate unique items
     const hasDuplicates = items.some((item, index) => 
@@ -1615,6 +1639,7 @@ export const Invoices: React.FC = () => {
               />
               <button 
                 onClick={handleXmlImportClick}
+                disabled={!canWrite}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm flex items-center font-bold"
                 title="Cargar Factura desde XML (SII)"
               >
@@ -1622,6 +1647,7 @@ export const Invoices: React.FC = () => {
               </button>
               <button 
                 onClick={handleCleanDuplicates}
+                disabled={!canWrite}
                 className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-sm flex items-center font-bold"
                 title="Buscar y eliminar facturas duplicadas"
               >
@@ -1636,6 +1662,7 @@ export const Invoices: React.FC = () => {
               />
               <button 
                 onClick={handleImportClick}
+                disabled={!canWrite}
                 className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm flex items-center"
               >
                 <Upload className="h-4 w-4 mr-1" /> Importar
@@ -1707,7 +1734,7 @@ export const Invoices: React.FC = () => {
                   )}
                   <button
                     type="submit"
-                    disabled={loading || items.length === 0}
+                    disabled={loading || items.length === 0 || !canWrite}
                     className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg flex items-center disabled:opacity-50 transition-colors shadow-sm"
                   >
                     {loading ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />}
@@ -2191,7 +2218,7 @@ export const Invoices: React.FC = () => {
                   <div className="w-full md:w-auto">
                     <button
                       type="submit"
-                      disabled={loading || items.length === 0}
+                      disabled={loading || items.length === 0 || !canWrite}
                       className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 px-10 rounded-xl flex items-center disabled:opacity-50 disabled:hover:bg-blue-600 text-lg shadow-[0_0_20px_rgba(37,99,235,0.3)] hover:shadow-[0_0_25px_rgba(37,99,235,0.5)] transition-all w-full md:w-auto justify-center"
                     >
                       {loading ? <Loader2 className="animate-spin h-6 w-6 mr-2" /> : <Save className="h-6 w-6 mr-2" />}
@@ -2274,7 +2301,7 @@ export const Invoices: React.FC = () => {
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xs font-bold text-gray-400 uppercase">RESULTADOS</h3>
                 <div className="flex items-center gap-2">
-                  {selectedInvoiceIds.length > 0 && (
+                  {canWrite && selectedInvoiceIds.length > 0 && (
                     <>
                       <span className="text-xs text-gray-400">{selectedInvoiceIds.length} seleccionadas</span>
                       <button
@@ -2314,7 +2341,7 @@ export const Invoices: React.FC = () => {
                       </button>
                     </>
                   )}
-                  {selectedInvoiceIds.length === 0 && (
+                  {canWrite && selectedInvoiceIds.length === 0 && (
                     <button
                       type="button"
                       onClick={() => setSelectedInvoiceIds(paginatedInvoices.map((inv) => inv.id))}
@@ -2336,20 +2363,22 @@ export const Invoices: React.FC = () => {
                       onClick={() => handleEditClick(inv)}
                       className="bg-gray-800 p-3 rounded-lg border border-gray-700 hover:border-blue-500 cursor-pointer transition-colors relative group"
                     >
-                      <div className="absolute left-2 top-2">
-                        <input
-                          type="checkbox"
-                          checked={selectedInvoiceIds.includes(inv.id)}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            setSelectedInvoiceIds((prev) =>
-                              prev.includes(inv.id) ? prev.filter((x) => x !== inv.id) : [...prev, inv.id],
-                            );
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="h-4 w-4 accent-blue-600"
-                        />
-                      </div>
+                      {canWrite && (
+                        <div className="absolute left-2 top-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedInvoiceIds.includes(inv.id)}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              setSelectedInvoiceIds((prev) =>
+                                prev.includes(inv.id) ? prev.filter((x) => x !== inv.id) : [...prev, inv.id],
+                              );
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-4 w-4 accent-blue-600"
+                          />
+                        </div>
+                      )}
                       <div className="flex justify-between items-start mb-1 pr-6">
                         <span className="font-bold text-sm text-white">#{inv.invoice_number}</span>
                         <div className="flex flex-col items-end">
@@ -2385,13 +2414,15 @@ export const Invoices: React.FC = () => {
                         >
                             <Printer className="h-3 w-3" />
                         </button>
-                        <button
-                            onClick={(e) => handleDeleteInvoice(e, inv.id)}
-                            className="p-1.5 bg-red-900/50 text-red-400 rounded hover:bg-red-600 hover:text-white"
-                            title="Eliminar factura"
-                        >
-                            <Trash2 className="h-3 w-3" />
-                        </button>
+                        {canWrite && (
+                          <button
+                              onClick={(e) => handleDeleteInvoice(e, inv.id)}
+                              className="p-1.5 bg-red-900/50 text-red-400 rounded hover:bg-red-600 hover:text-white"
+                              title="Eliminar factura"
+                          >
+                              <Trash2 className="h-3 w-3" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))

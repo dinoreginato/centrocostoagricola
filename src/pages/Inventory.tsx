@@ -50,10 +50,11 @@ interface InventoryMovement {
 }
 
 export const Inventory: React.FC = () => {
-  const { selectedCompany } = useCompany();
+  const { selectedCompany, userRole } = useCompany();
   const queryClient = useQueryClient();
   const companyId = selectedCompany?.id ?? null;
   const [loading, setLoading] = useState(false);
+  const canWrite = userRole !== 'viewer';
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCategory, setFilterCategory] = useState('all');
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
@@ -161,6 +162,10 @@ export const Inventory: React.FC = () => {
   }, [companyId, filterCategory, searchTerm]);
 
   const handleMergeDuplicates = async () => {
+    if (!canWrite) {
+      toast.error('No tienes permisos para modificar inventario.');
+      return;
+    }
     if (!window.confirm('¿Desea buscar y fusionar productos duplicados? (Se unificará el stock bajo el producto más reciente y se borrarán los repetidos)')) return;
     setLoading(true);
     try {
@@ -300,6 +305,7 @@ export const Inventory: React.FC = () => {
 
   const bulkDeleteProductsMutation = useMutation({
     mutationFn: async (ids: string[]) => {
+      if (!canWrite) throw new Error('No autorizado');
       await Promise.all(ids.map((id) => deleteOrArchiveInventoryProduct({ productId: id })));
       return ids;
     },
@@ -314,11 +320,19 @@ export const Inventory: React.FC = () => {
   });
 
   const handleDeleteProduct = async (id: string, name: string) => {
+    if (!canWrite) {
+      toast.error('No tienes permisos para modificar inventario.');
+      return;
+    }
     if (!window.confirm(`¿Estás seguro de eliminar el producto "${name}" de tu bodega local?\n\n(Esto NO borrará las facturas históricas donde se haya comprado, solo lo ocultará de esta vista).`)) return;
     deleteProductMutation.mutate({ id, name });
   };
 
   const startEdit = (product: Product) => {
+    if (!canWrite) {
+      toast.error('No tienes permisos para editar productos.');
+      return;
+    }
     setEditingProduct(product);
     setEditForm({
       name: product.name,
@@ -401,6 +415,10 @@ export const Inventory: React.FC = () => {
 
   const handleApplyManualAdjustment = async () => {
     if (!selectedCompany || !editingProduct) return;
+    if (!canWrite) {
+      toast.error('No tienes permisos para modificar inventario.');
+      return;
+    }
     if (adjustQty <= 0) {
       toast('Ingrese una cantidad válida');
       return;
@@ -571,14 +589,16 @@ export const Inventory: React.FC = () => {
           <p className="text-sm text-gray-500 dark:text-gray-400">Gestión de inventario y costos promedio</p>
         </div>
         <div className="bg-white dark:bg-gray-800 px-4 py-2 rounded-lg shadow border border-gray-200 dark:border-gray-700 flex items-center space-x-2">
-          <button
-              onClick={handleMergeDuplicates}
-              className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 mr-2"
-              title="Fusionar productos duplicados con el mismo nombre"
-          >
-              <Package className="h-4 w-4 mr-2" />
-              Unir Duplicados
-          </button>
+          {canWrite && (
+            <button
+                onClick={handleMergeDuplicates}
+                className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 mr-2"
+                title="Fusionar productos duplicados con el mismo nombre"
+            >
+                <Package className="h-4 w-4 mr-2" />
+                Unir Duplicados
+            </button>
+          )}
           <button
               onClick={generateShoppingListPDF}
               className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
@@ -646,41 +666,43 @@ export const Inventory: React.FC = () => {
             ))}
           </select>
         </div>
-        <div className="flex items-center gap-2">
-          {selectedProductIds.length > 0 ? (
-            <>
-              <span className="text-xs text-gray-500 dark:text-gray-400">{selectedProductIds.length} seleccionados</span>
+        {canWrite && (
+          <div className="flex items-center gap-2">
+            {selectedProductIds.length > 0 ? (
+              <>
+                <span className="text-xs text-gray-500 dark:text-gray-400">{selectedProductIds.length} seleccionados</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedProductIds([])}
+                  disabled={bulkDeleteProductsMutation.isPending}
+                  className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-50"
+                >
+                  Limpiar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!window.confirm(`¿Eliminar/archivar ${selectedProductIds.length} productos?`)) return;
+                    bulkDeleteProductsMutation.mutate(selectedProductIds);
+                  }}
+                  disabled={bulkDeleteProductsMutation.isPending}
+                  className="inline-flex items-center px-3 py-2 border border-red-300 shadow-sm text-xs font-medium rounded-md text-red-700 bg-white dark:bg-gray-800 hover:bg-red-50 disabled:opacity-50"
+                >
+                  Eliminar
+                </button>
+              </>
+            ) : (
               <button
                 type="button"
-                onClick={() => setSelectedProductIds([])}
-                disabled={bulkDeleteProductsMutation.isPending}
+                onClick={() => setSelectedProductIds(filteredProducts.map((p) => p.id))}
+                disabled={filteredProducts.length === 0}
                 className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-50"
               >
-                Limpiar
+                Seleccionar todo
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!window.confirm(`¿Eliminar/archivar ${selectedProductIds.length} productos?`)) return;
-                  bulkDeleteProductsMutation.mutate(selectedProductIds);
-                }}
-                disabled={bulkDeleteProductsMutation.isPending}
-                className="inline-flex items-center px-3 py-2 border border-red-300 shadow-sm text-xs font-medium rounded-md text-red-700 bg-white dark:bg-gray-800 hover:bg-red-50 disabled:opacity-50"
-              >
-                Eliminar
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setSelectedProductIds(filteredProducts.map((p) => p.id))}
-              disabled={filteredProducts.length === 0}
-              className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-50"
-            >
-              Seleccionar todo
-            </button>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Inventory Table */}
@@ -728,16 +750,18 @@ export const Inventory: React.FC = () => {
                 filteredProducts.map((product) => (
                   <tr key={product.id}>
                     <td className="px-3 py-4 whitespace-nowrap">
-                      <input
-                        type="checkbox"
-                        checked={selectedProductIds.includes(product.id)}
-                        onChange={() =>
-                          setSelectedProductIds((prev) =>
-                            prev.includes(product.id) ? prev.filter((x) => x !== product.id) : [...prev, product.id],
-                          )
-                        }
-                        className="h-4 w-4 accent-green-600"
-                      />
+                      {canWrite && (
+                        <input
+                          type="checkbox"
+                          checked={selectedProductIds.includes(product.id)}
+                          onChange={() =>
+                            setSelectedProductIds((prev) =>
+                              prev.includes(product.id) ? prev.filter((x) => x !== product.id) : [...prev, product.id],
+                            )
+                          }
+                          className="h-4 w-4 accent-green-600"
+                        />
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
@@ -810,20 +834,24 @@ export const Inventory: React.FC = () => {
                       >
                         <History className="h-4 w-4" />
                       </button>
-                      <button 
-                        onClick={() => startEdit(product)}
-                        className="text-blue-600 hover:text-blue-900 mr-4"
-                        title="Editar"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteProduct(product.id, product.name)}
-                        className="text-red-600 hover:text-red-900"
-                        title="Eliminar"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      {canWrite && (
+                        <>
+                          <button 
+                            onClick={() => startEdit(product)}
+                            className="text-blue-600 hover:text-blue-900 mr-4"
+                            title="Editar"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteProduct(product.id, product.name)}
+                            className="text-red-600 hover:text-red-900"
+                            title="Eliminar"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))
