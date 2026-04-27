@@ -414,10 +414,15 @@ export const ApplicationOrders: React.FC = () => {
   };
 
   const handleCloneOrder = (order: ApplicationOrder) => {
+      const userInputDate = prompt('Duplicar orden.\nIngrese la nueva fecha programada (YYYY-MM-DD):', new Date().toLocaleDateString('en-CA'));
+      if (!userInputDate) return;
+
       const clonedOrder = { ...order };
       delete clonedOrder.id; // Remove the ID so it's treated as new
+      delete clonedOrder.order_number;
+      delete clonedOrder.completed_date;
       clonedOrder.status = 'pendiente';
-      clonedOrder.scheduled_date = new Date().toLocaleDateString('en-CA'); // Set to today
+      clonedOrder.scheduled_date = userInputDate;
       // Generate new items without IDs
       clonedOrder.items = (order.items || []).map(item => {
           const newItem = { ...item };
