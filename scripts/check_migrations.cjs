@@ -32,6 +32,7 @@ const legacyReplacements = {
   '20250226_add_machinery_details_and_income.sql': '20250226090000_create_machines_and_income_entries.sql',
   '20250226_add_machinery_details_and_income_v2.sql': '20250226090000_create_machines_and_income_entries.sql',
   '20250226_fix_machines_rls.sql': '20250226090000_create_machines_and_income_entries.sql',
+  'add_application_link_to_inventory.sql': '20260422191500_add_application_item_link_to_inventory_movements.sql',
   'create_application_orders.sql': '20260322000000_create_application_orders.sql',
   '20260327_phytosanitary_programs.sql': '20260327000000_create_phytosanitary_programs.sql',
   'create_official_products.sql': '20260422190500_create_official_products.sql',
