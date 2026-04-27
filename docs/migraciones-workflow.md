@@ -31,6 +31,8 @@ Qué valida:
 - La postura prod-safe es no renombrarlos: se mitiga “re-aplicando” el estado canónico después con migraciones nuevas idempotentes.
 - Consolidación canónica de helpers/policies de membresía:
   - `supabase/migrations/20260422215000_consolidate_company_access_helpers.sql`
+- Consolidación canónica de RLS final (re-aplica policies en tablas clave):
+  - `supabase/migrations/20260422216000_consolidate_rls_policies.sql`
 
 ## Cómo resolver timestamps duplicados (sin romper prod)
 
