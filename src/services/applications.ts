@@ -88,6 +88,7 @@ export type UpdateApplicationInventoryParams = {
   p_fuel_liters?: number | null;
   p_fuel_cost?: number | null;
   p_fuel_activity?: string;
+  p_fuel_machine_id?: string | null;
 };
 
 export type CreateApplicationInventoryParams = {
@@ -102,6 +103,7 @@ export type CreateApplicationInventoryParams = {
   p_fuel_liters?: number | null;
   p_fuel_cost?: number | null;
   p_fuel_activity?: string;
+  p_fuel_machine_id?: string | null;
 };
 
 export type ApplicationInsert = {
