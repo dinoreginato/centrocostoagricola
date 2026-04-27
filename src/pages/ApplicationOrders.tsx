@@ -1,5 +1,6 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCompany } from '../contexts/CompanyContext';
 import { Plus, Loader2, Save, Trash2, Printer, Edit, Copy, ClipboardList } from 'lucide-react';
 import jsPDF from 'jspdf';
@@ -107,14 +108,9 @@ const getConversionFactor = (fromUnit: string, toUnit: string): number => {
 
 export const ApplicationOrders: React.FC = () => {
   const { selectedCompany } = useCompany();
+  const queryClient = useQueryClient();
+  const companyId = selectedCompany?.id ?? null;
   const [loading, setLoading] = useState(false);
-  
-  // Data State
-  const [orders, setOrders] = useState<ApplicationOrder[]>([]);
-  const [fields, setFields] = useState<Field[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [machines, setMachines] = useState<Machine[]>([]);
-  const [workers, setWorkers] = useState<Worker[]>([]);
   
   // PDF Preview State
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
@@ -123,6 +119,7 @@ export const ApplicationOrders: React.FC = () => {
 
   // Form State
   const [isEditing, setIsEditing] = useState(false);
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
   const [currentOrder, setCurrentOrder] = useState<Partial<ApplicationOrder>>({
     scheduled_date: new Date().toLocaleDateString('en-CA'),
     status: 'pendiente',
@@ -149,35 +146,69 @@ export const ApplicationOrders: React.FC = () => {
     unit_override: ''
   });
 
-  const [programEvents, setProgramEvents] = useState<any[]>([]);
+  const pageQuery = useQuery({
+    queryKey: ['applicationOrdersPage', companyId],
+    queryFn: async () => {
+      if (!companyId) return null;
+      return await loadApplicationOrdersPageData({
+        companyId,
+        agrochemicalCategories: AGROCHEMICAL_CATEGORIES,
+      });
+    },
+    enabled: Boolean(companyId),
+    staleTime: 30_000,
+  });
 
-  const loadData = useCallback(async () => {
-    if (!selectedCompany) return;
-    setLoading(true);
-    try {
-        const res = await loadApplicationOrdersPageData({
-          companyId: selectedCompany.id,
-          agrochemicalCategories: AGROCHEMICAL_CATEGORIES
-        });
+  const orders = useMemo(() => (pageQuery.data?.orders || []) as ApplicationOrder[], [pageQuery.data?.orders]);
+  const fields = useMemo(() => (pageQuery.data?.fields || []) as Field[], [pageQuery.data?.fields]);
+  const products = useMemo(() => (pageQuery.data?.products || []) as Product[], [pageQuery.data?.products]);
+  const machines = useMemo(() => (pageQuery.data?.machines || []) as Machine[], [pageQuery.data?.machines]);
+  const workers = useMemo(() => (pageQuery.data?.workers || []) as Worker[], [pageQuery.data?.workers]);
+  const programEvents = useMemo(() => (pageQuery.data?.programEvents || []) as any[], [pageQuery.data?.programEvents]);
 
-        setOrders(res.orders || []);
-        setFields(res.fields || []);
-        setProducts(res.products || []);
-        setMachines(res.machines || []);
-        setWorkers(res.workers || []);
-        setProgramEvents(res.programEvents || []);
-    } catch (error: any) {
-        toast.error('Error cargando datos: ' + error.message);
-    } finally {
-        setLoading(false);
-    }
-  }, [selectedCompany]);
+  const reloadData = async () => {
+    if (!companyId) return;
+    await queryClient.invalidateQueries({ queryKey: ['applicationOrdersPage', companyId] });
+  };
+
+  const prefsKey = useMemo(() => (companyId ? `applicationOrdersPrefs:${companyId}` : null), [companyId]);
 
   useEffect(() => {
-    if (selectedCompany) {
-      loadData();
+    if (!prefsKey) return;
+    if (!isEditing) return;
+    try {
+      localStorage.setItem(
+        prefsKey,
+        JSON.stringify({
+          field_id: currentOrder.field_id ?? '',
+          sector_id: currentOrder.sector_id ?? '',
+          application_type: currentOrder.application_type ?? 'fitosanitario',
+          water_liters_per_hectare: currentOrder.water_liters_per_hectare ?? 1000,
+          tank_capacity: currentOrder.tank_capacity ?? 2000,
+        }),
+      );
+    } catch (_e) {
+      void _e;
     }
-  }, [selectedCompany, loadData]);
+  }, [
+    currentOrder.application_type,
+    currentOrder.field_id,
+    currentOrder.sector_id,
+    currentOrder.tank_capacity,
+    currentOrder.water_liters_per_hectare,
+    isEditing,
+    prefsKey,
+  ]);
+
+  useEffect(() => {
+    if (!isEditing) return;
+    if (!currentOrder.field_id) return;
+    if (currentOrder.sector_id) return;
+    const field = fields.find((f) => f.id === currentOrder.field_id);
+    const firstSector = field?.sectors?.[0];
+    if (!firstSector) return;
+    setCurrentOrder((prev) => ({ ...prev, sector_id: firstSector.id }));
+  }, [currentOrder.field_id, currentOrder.sector_id, fields, isEditing]);
 
   const handleLoadFromProgramEvent = (eventId: string) => {
     if (!eventId) return;
@@ -381,7 +412,7 @@ export const ApplicationOrders: React.FC = () => {
 
           toast('Orden guardada correctamente');
           setIsEditing(false);
-          loadData();
+          await reloadData();
 
       } catch (error: any) {
           toast.error('Error al guardar: ' + error.message);
@@ -405,6 +436,7 @@ export const ApplicationOrders: React.FC = () => {
       });
       setCurrentOrder(clonedOrder);
       setIsEditing(true);
+      setWizardStep(2);
   };
 
   const handleDeleteOrder = async (id: string) => {
@@ -426,7 +458,7 @@ export const ApplicationOrders: React.FC = () => {
 
           await deleteApplicationOrderCascade({ orderId: id, completedApplicationId });
           
-          loadData();
+          await reloadData();
       } catch (error: any) {
           toast.error('Error al eliminar: ' + error.message);
       } finally {
@@ -442,7 +474,7 @@ export const ApplicationOrders: React.FC = () => {
       try {
           await revertApplicationOrderToPending({ orderId: order.id });
           toast.success(`Orden #${order.order_number} revertida a PENDIENTE.`);
-          loadData();
+          await reloadData();
       } catch (error: any) {
           toast.error('Error al revertir: ' + error.message);
       } finally {
@@ -567,7 +599,7 @@ export const ApplicationOrders: React.FC = () => {
           await markApplicationOrderCompleted({ orderId: order.id, completedDate });
 
           toast.success('Orden completada exitosamente. Se ha registrado la aplicación y descontado el inventario.');
-          loadData();
+          await reloadData();
       } catch (error: any) {
           toast.error('Error al completar la orden: ' + error.message);
       } finally {
@@ -744,6 +776,9 @@ export const ApplicationOrders: React.FC = () => {
       }
   };
 
+  if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
+  if (pageQuery.isLoading) return <div className="p-8">Cargando...</div>;
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -751,17 +786,29 @@ export const ApplicationOrders: React.FC = () => {
         {!isEditing && (
             <button
                 onClick={() => {
+                    let prefs: any = null;
+                    if (prefsKey) {
+                      try {
+                        const raw = localStorage.getItem(prefsKey);
+                        prefs = raw ? JSON.parse(raw) : null;
+                      } catch (_e) {
+                        void _e;
+                      }
+                    }
                     setCurrentOrder({
                         scheduled_date: new Date().toLocaleDateString('en-CA'),
                         status: 'pendiente',
-                        application_type: 'fitosanitario',
-                        water_liters_per_hectare: 1000,
-                        tank_capacity: 2000,
+                        application_type: prefs?.application_type || 'fitosanitario',
+                        water_liters_per_hectare: Number(prefs?.water_liters_per_hectare ?? 1000),
+                        tank_capacity: Number(prefs?.tank_capacity ?? 2000),
+                        field_id: prefs?.field_id || '',
+                        sector_id: prefs?.sector_id || '',
                         items: [],
                         variety: '',
                         objective: ''
                     });
                     setIsEditing(true);
+                    setWizardStep(1);
                 }}
                 className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center"
             >
@@ -774,10 +821,47 @@ export const ApplicationOrders: React.FC = () => {
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
               <div className="flex justify-between mb-6">
                   <h2 className="text-lg font-bold">Crear/Editar Orden</h2>
-                  <button onClick={() => setIsEditing(false)} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300">Cancelar</button>
+                  <button
+                    onClick={() => {
+                      setIsEditing(false);
+                      setWizardStep(1);
+                    }}
+                    className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300"
+                  >
+                    Cancelar
+                  </button>
               </div>
 
-              {/* Form Header Fields */}
+              <div className="flex items-center justify-between mb-6">
+                <div className="text-sm text-gray-600 dark:text-gray-300">Paso {wizardStep} de 3</div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setWizardStep(1)}
+                    className={`px-3 py-1.5 rounded text-xs border ${wizardStep === 1 ? 'bg-green-600 text-white border-green-600' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600'}`}
+                  >
+                    Datos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWizardStep(2)}
+                    disabled={!currentOrder.field_id || !currentOrder.sector_id}
+                    className={`px-3 py-1.5 rounded text-xs border ${wizardStep === 2 ? 'bg-green-600 text-white border-green-600' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600'} disabled:opacity-50`}
+                  >
+                    Productos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWizardStep(3)}
+                    disabled={!currentOrder.items?.length || !currentOrder.field_id || !currentOrder.sector_id}
+                    className={`px-3 py-1.5 rounded text-xs border ${wizardStep === 3 ? 'bg-green-600 text-white border-green-600' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600'} disabled:opacity-50`}
+                  >
+                    Revisión
+                  </button>
+                </div>
+              </div>
+
+              {wizardStep === 1 && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                   <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha Planificada</label>
@@ -820,7 +904,15 @@ export const ApplicationOrders: React.FC = () => {
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Campo</label>
                       <select 
                           value={currentOrder.field_id || ''}
-                          onChange={e => setCurrentOrder({...currentOrder, field_id: e.target.value, sector_id: ''})}
+                          onChange={e => {
+                            const fieldId = e.target.value;
+                            const firstSector = fields.find((f) => f.id === fieldId)?.sectors?.[0];
+                            setCurrentOrder({
+                              ...currentOrder,
+                              field_id: fieldId,
+                              sector_id: firstSector?.id || '',
+                            });
+                          }}
                           className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                       >
                           <option value="">Seleccione...</option>
@@ -913,8 +1005,10 @@ export const ApplicationOrders: React.FC = () => {
                       </select>
                   </div>
               </div>
+              )}
 
               {/* Items Section */}
+              {wizardStep === 2 && (
               <div className="border rounded-md p-4 mb-6">
                   <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Productos y Dosis</h3>
                   
@@ -1014,6 +1108,7 @@ export const ApplicationOrders: React.FC = () => {
                       </tbody>
                   </table>
               </div>
+              )}
 
               {/* Machinery & Tech Specs (Collapsed/Secondary) */}
               {currentOrder.application_type !== 'fertirriego' && (
@@ -1083,7 +1178,8 @@ export const ApplicationOrders: React.FC = () => {
               </div>
               )}
 
-              {/* Footer Notes */}
+              {wizardStep === 3 && (
+              <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                   <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Observaciones</label>
@@ -1128,14 +1224,37 @@ export const ApplicationOrders: React.FC = () => {
               </div>
 
               <div className="flex justify-end gap-3">
-                  <button 
-                      onClick={handleSaveOrder}
-                      disabled={loading}
-                      className="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 flex items-center"
+                <button
+                  onClick={handleSaveOrder}
+                  disabled={loading}
+                  className="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 flex items-center disabled:opacity-50"
+                >
+                  {loading ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <Save className="h-5 w-5 mr-2" />}
+                  Guardar Orden
+                </button>
+              </div>
+              </>
+              )}
+
+              <div className="flex justify-between mt-6">
+                <button
+                  type="button"
+                  onClick={() => setWizardStep((s) => (s === 1 ? 1 : ((s - 1) as 1 | 2 | 3)))}
+                  disabled={wizardStep === 1}
+                  className="px-4 py-2 rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-50"
+                >
+                  Atrás
+                </button>
+                {wizardStep !== 3 && (
+                  <button
+                    type="button"
+                    onClick={() => setWizardStep((s) => (s === 1 ? 2 : 3))}
+                    disabled={(wizardStep === 1 && (!currentOrder.field_id || !currentOrder.sector_id)) || (wizardStep === 2 && !currentOrder.items?.length)}
+                    className="px-4 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
                   >
-                      {loading ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <Save className="h-5 w-5 mr-2" />}
-                      Guardar Orden
+                    Siguiente
                   </button>
+                )}
               </div>
           </div>
       ) : (
@@ -1213,6 +1332,7 @@ export const ApplicationOrders: React.FC = () => {
                                       onClick={() => {
                                           setCurrentOrder(order);
                                           setIsEditing(true);
+                                          setWizardStep(2);
                                       }}
                                       className="text-blue-600 hover:text-blue-900"
                                       title="Editar"
