@@ -40,13 +40,17 @@ export async function loadReportsRawData(params: { companyId: string }) {
     irrigationRes,
     generalCostsRes,
     incomeRes,
-    invoicesRes
+    invoicesRes,
+    productsRes
   ] = await Promise.all([
     supabase.from('applications').select('field_id, sector_id, total_cost, application_date').in('field_id', fieldIds),
     supabase.from('labor_assignments').select('sector_id, assigned_amount, assigned_date, labor_type').in('sector_id', sectorIds),
     supabase.from('worker_costs').select('sector_id, amount, date').in('sector_id', sectorIds),
     supabase.from('fuel_assignments').select('sector_id, assigned_amount, assigned_date').in('sector_id', sectorIds),
-    supabase.from('fuel_consumption').select('sector_id, estimated_price, date, activity, liters').in('sector_id', sectorIds),
+    supabase
+      .from('fuel_consumption')
+      .select('sector_id, estimated_price, date, activity, liters, machine_id, machine:machines(name, type)')
+      .eq('company_id', params.companyId),
     supabase.from('machinery_assignments').select('sector_id, assigned_amount, assigned_date').in('sector_id', sectorIds),
     supabase.from('irrigation_assignments').select('sector_id, assigned_amount, assigned_date').in('sector_id', sectorIds),
     supabase.from('general_costs').select('sector_id, amount, date').in('sector_id', sectorIds),
@@ -63,7 +67,12 @@ export async function loadReportsRawData(params: { companyId: string }) {
         )
       `
       )
+      .eq('company_id', params.companyId),
+    supabase
+      .from('products')
+      .select('id, name, unit, category, current_stock, minimum_stock, average_cost')
       .eq('company_id', params.companyId)
+      .neq('category', 'Archivado')
   ]);
 
   const errors = [
@@ -76,7 +85,8 @@ export async function loadReportsRawData(params: { companyId: string }) {
     irrigationRes.error,
     generalCostsRes.error,
     incomeRes.error,
-    invoicesRes.error
+    invoicesRes.error,
+    productsRes.error
   ].filter(Boolean);
 
   if (errors.length > 0) throw errors[0];
@@ -109,6 +119,7 @@ export async function loadReportsRawData(params: { companyId: string }) {
     generalCosts: generalCostsRes.data || [],
     incomeEntries: incomeRes.data || [],
     invoices,
+    products: productsRes.data || [],
     availableSeasons
   };
 }

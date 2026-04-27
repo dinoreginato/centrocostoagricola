@@ -608,6 +608,7 @@ export const ApplicationOrders: React.FC = () => {
                       liters: safeFuelLiters,
                       estimated_price: safeFuelCost,
                       sector_id: order.sector_id,
+                      machine_id: order.tractor_id || order.sprayer_id || null,
                       application_id: application.id
                     }
                   });

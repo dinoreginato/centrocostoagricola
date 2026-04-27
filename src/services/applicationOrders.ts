@@ -337,6 +337,7 @@ export type FuelConsumptionInsert = {
   liters: number;
   estimated_price: number;
   sector_id: string;
+  machine_id?: string | null;
   application_id?: string | null;
 };
 
