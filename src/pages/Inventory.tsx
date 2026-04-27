@@ -3,10 +3,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
-import { Package, Search, AlertTriangle, Edit, Trash2, X, Save, History, ArrowDownLeft, ArrowUpRight, Upload, ShoppingCart } from 'lucide-react';
+import { Package, Search, AlertTriangle, Edit, Trash2, X, Save, History, ArrowDownLeft, ArrowUpRight, Upload, ShoppingCart, Download } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { applyManualInventoryMovement, deleteOrArchiveInventoryProduct, fetchInventoryHistory, fetchInventoryProducts, fetchPhytosanitaryPrograms, fetchProgramEventsForProjection, mergeDuplicateInventoryProducts, searchOfficialProducts, updateInventoryProduct, upsertOfficialProducts } from '../services/inventory';
+import { exportJsonToXlsx } from '../lib/excel';
+import { applyManualInventoryMovement, deleteOrArchiveInventoryProduct, fetchInventoryHistory, fetchInventoryProducts, fetchInventoryStockAudit, fetchPhytosanitaryPrograms, fetchProgramEventsForProjection, mergeDuplicateInventoryProducts, searchOfficialProducts, updateInventoryProduct, upsertOfficialProducts, type InventoryStockAuditRow } from '../services/inventory';
 
 import { fetchIsSystemAdmin } from '../services/users';
 
@@ -68,6 +69,8 @@ export const Inventory: React.FC = () => {
 
   // History State
   const [viewingHistory, setViewingHistory] = useState<Product | null>(null);
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [auditRows, setAuditRows] = useState<InventoryStockAuditRow[]>([]);
 
   // SAG Import
   const sagFileInputRef = React.useRef<HTMLInputElement>(null);
@@ -106,6 +109,22 @@ export const Inventory: React.FC = () => {
   });
 
   const historyData = (historyQuery.data || []) as InventoryMovement[];
+
+  const stockAuditMutation = useMutation({
+    mutationFn: async () => {
+      if (!companyId) return [] as InventoryStockAuditRow[];
+      return await fetchInventoryStockAudit({ companyId });
+    },
+    onSuccess: (rows) => {
+      setAuditRows(rows);
+      setAuditOpen(true);
+    },
+    onError: (err: any) => {
+      toast.error(err?.message ? `Error al auditar: ${err.message}` : 'Error al auditar inventario');
+    }
+  });
+
+  const mismatches = useMemo(() => auditRows.filter((r) => Number(r.diff) !== 0), [auditRows]);
 
   useEffect(() => {
     if (!companyId) return;
@@ -568,6 +587,15 @@ export const Inventory: React.FC = () => {
               <ShoppingCart className="h-4 w-4 mr-2" />
               Lista de Compras
           </button>
+          <button
+              onClick={() => stockAuditMutation.mutate()}
+              disabled={stockAuditMutation.isPending}
+              className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-amber-600 hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 ml-2 disabled:opacity-60"
+              title="Auditar stock vs entradas/salidas"
+          >
+              <AlertTriangle className="h-4 w-4 mr-2" />
+              Auditar Stock
+          </button>
           <input
               type="file"
               accept=".xlsx"
@@ -892,6 +920,84 @@ export const Inventory: React.FC = () => {
                           </table>
                       </div>
                   )}
+          </div>
+        </div>
+      )}
+
+      {auditOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Auditoría de Stock</h2>
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  Productos: {auditRows.length} · Diferencias: {mismatches.length}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!selectedCompany) return;
+                    const dateTag = new Date().toISOString().slice(0, 10);
+                    void exportJsonToXlsx({
+                      filename: `Auditoria_Stock_${selectedCompany.name}_${dateTag}`,
+                      sheetName: 'Auditoría',
+                      rows: auditRows.map((r) => ({
+                        Producto: r.product_name,
+                        Unidad: r.product_unit,
+                        'Stock Actual': Number(r.current_stock ?? 0),
+                        'Stock Esperado': Number(r.expected_stock ?? 0),
+                        Diferencia: Number(r.diff ?? 0),
+                        Actualizado: r.updated_at ? new Date(r.updated_at).toLocaleString() : ''
+                      }))
+                    });
+                  }}
+                  className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Exportar Excel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAuditOpen(false)}
+                  className="p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 dark:bg-gray-900 rounded-full"
+                  title="Cerrar"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 z-10">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Producto</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Unidad</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Stock Actual</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Stock Esperado</th>
+                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Diferencia</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                  {auditRows.map((r) => {
+                    const diff = Number(r.diff ?? 0);
+                    return (
+                      <tr key={r.product_id} className={diff !== 0 ? 'bg-amber-50 dark:bg-amber-900/10' : ''}>
+                        <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">{r.product_name}</td>
+                        <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-200">{r.product_unit}</td>
+                        <td className="px-4 py-3 text-sm text-right text-gray-700 dark:text-gray-200">{Number(r.current_stock ?? 0).toFixed(2)}</td>
+                        <td className="px-4 py-3 text-sm text-right text-gray-700 dark:text-gray-200">{Number(r.expected_stock ?? 0).toFixed(2)}</td>
+                        <td className={`px-4 py-3 text-sm text-right font-semibold ${diff === 0 ? 'text-gray-500 dark:text-gray-400' : diff > 0 ? 'text-red-700 dark:text-red-300' : 'text-green-700 dark:text-green-300'}`}>
+                          {diff.toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

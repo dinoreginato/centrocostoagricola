@@ -68,6 +68,16 @@ export type ProgramEventProjection = {
   program_event_products: ProgramEventProductProjection[] | null;
 };
 
+export type InventoryStockAuditRow = {
+  product_id: string;
+  product_name: string;
+  product_unit: string;
+  current_stock: number;
+  expected_stock: number;
+  diff: number;
+  updated_at: string;
+};
+
 export async function fetchInventoryProducts(params: { companyId: string }): Promise<InventoryProduct[]> {
   const { data, error } = await supabase
     .from('products')
@@ -80,6 +90,12 @@ export async function fetchInventoryProducts(params: { companyId: string }): Pro
 
   const products = (data || []) as InventoryProduct[];
   return filterAgrochemicalProducts(products);
+}
+
+export async function fetchInventoryStockAudit(params: { companyId: string }): Promise<InventoryStockAuditRow[]> {
+  const { data, error } = await supabase.rpc('get_inventory_stock_audit', { p_company_id: params.companyId });
+  if (error) throw error;
+  return (data || []) as unknown as InventoryStockAuditRow[];
 }
 
 export async function fetchInventoryHistory(params: { productId: string }): Promise<InventoryMovement[]> {

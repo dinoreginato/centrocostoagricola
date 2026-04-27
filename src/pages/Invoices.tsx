@@ -5,6 +5,10 @@ import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { Plus, FileText, Trash2, Save, Loader2, Check, Download, Upload, RefreshCw, Search, Printer, ChevronLeft, ChevronRight, MapPin, Database } from 'lucide-react';
 import { InvoicePrint } from '../components/InvoicePrint';
+import { exportWorkbookToXlsx } from '../lib/excel';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { fetchInvoiceDestinations, fetchInvoiceProducts, fetchInvoicesForCompany, fetchInvoiceSuppliers } from '../services/invoices';
 import { createInvoiceItemWithEffects, createOrFindProductByName, fetchInvoiceItems, fetchInvoicesBasic, findSupplierRut, rpcDeleteInvoiceForce, rpcDeleteInvoiceItemsWithEffects, rpcUpdateInvoiceItemWithEffects, searchOfficialProductsForInvoice, updateInvoice, upsertInvoiceHeader } from '../services/invoiceMutations';
 
@@ -154,6 +158,10 @@ export const Invoices: React.FC = () => {
 
   const [destinationsLoading, setDestinationsLoading] = useState(false);
   const [invoiceToPrint, setInvoiceToPrint] = useState<Invoice | null>(null);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfPreviewTitle, setPdfPreviewTitle] = useState<string>('Facturas');
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
 
   const invoicesQuery = useQuery({
     queryKey: ['invoices', companyId],
@@ -417,6 +425,147 @@ export const Invoices: React.FC = () => {
   const filteredInvoices = getFilteredInvoices();
   const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage);
   const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const getInvoicesForExport = () => {
+    if (selectedInvoiceIds.length === 0) return filteredInvoices;
+    const selectedSet = new Set(selectedInvoiceIds);
+    return filteredInvoices.filter((inv) => selectedSet.has(inv.id));
+  };
+
+  const normalizeInvoiceItemProduct = (item: any) => {
+    const p = Array.isArray(item?.products) ? item.products[0] : item?.products;
+    return {
+      name: String(p?.name ?? item?.product_name ?? ''),
+      unit: String(p?.unit ?? item?.unit ?? ''),
+    };
+  };
+
+  const handleExportInvoicesExcel = async () => {
+    if (!selectedCompany) return;
+    const toExport = getInvoicesForExport();
+    if (toExport.length === 0) {
+      toast('No hay facturas para exportar');
+      return;
+    }
+
+    const summaryRows = toExport.map((inv: any) => {
+      const categories = Array.from(
+        new Set((inv.invoice_items || []).map((it: any) => String(it?.category ?? 'Otros')).filter((c: string) => c.length > 0))
+      ).join(', ');
+
+      const itemCount = Array.isArray(inv.invoice_items) ? inv.invoice_items.length : 0;
+
+      return {
+        Folio: String(inv.invoice_number ?? ''),
+        Proveedor: String(inv.supplier ?? ''),
+        'RUT Proveedor': String(inv.supplier_rut ?? ''),
+        'Tipo Documento': String(inv.document_type ?? ''),
+        'Fecha Emisión': String(inv.invoice_date ?? ''),
+        Vencimiento: String(inv.due_date ?? ''),
+        'Fecha Pago': String(inv.payment_date ?? ''),
+        Estado: String(inv.status ?? ''),
+        Total: Number(inv.total_amount ?? 0),
+        'N° Ítems': itemCount,
+        Categorías: categories,
+        Notas: String(inv.notes ?? ''),
+      } as Record<string, unknown>;
+    });
+
+    const detailRows = toExport.flatMap((inv: any) => {
+      const items = Array.isArray(inv.invoice_items) ? inv.invoice_items : [];
+      return items.map((it: any) => {
+        const p = normalizeInvoiceItemProduct(it);
+        return {
+          Folio: String(inv.invoice_number ?? ''),
+          Proveedor: String(inv.supplier ?? ''),
+          'Fecha Emisión': String(inv.invoice_date ?? ''),
+          Estado: String(inv.status ?? ''),
+          Producto: p.name,
+          Cantidad: Number(it?.quantity ?? 0),
+          Unidad: p.unit,
+          'Precio Unitario': Number(it?.unit_price ?? 0),
+          Total: Number(it?.total_price ?? 0),
+          Categoría: String(it?.category ?? ''),
+        } as Record<string, unknown>;
+      });
+    });
+
+    const dateTag = new Date().toISOString().slice(0, 10);
+    const filename = `Facturas_${selectedCompany.name}_${dateTag}`;
+    await exportWorkbookToXlsx({
+      filename,
+      sheets: [
+        { name: 'Resumen', rows: summaryRows },
+        { name: 'Detalle', rows: detailRows },
+      ],
+    });
+
+    toast(`Exportadas ${toExport.length} facturas`);
+  };
+
+  const handleExportInvoicesPdf = () => {
+    if (!selectedCompany) return;
+    const toExport = getInvoicesForExport();
+    if (toExport.length === 0) {
+      toast('No hay facturas para exportar');
+      return;
+    }
+
+    const dateTag = new Date().toISOString().slice(0, 10);
+    const title = `Facturas_${selectedCompany.name}_${dateTag}`;
+
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+    doc.setFontSize(14);
+    doc.text(title, 40, 40);
+    doc.setFontSize(10);
+    doc.text(`Cantidad: ${toExport.length}`, 40, 58);
+
+    const body = toExport.map((inv: any) => {
+      const categories = Array.from(
+        new Set((inv.invoice_items || []).map((it: any) => String(it?.category ?? 'Otros')).filter((c: string) => c.length > 0))
+      ).join(', ');
+
+      return [
+        String(inv.invoice_number ?? ''),
+        String(inv.supplier ?? ''),
+        String(inv.supplier_rut ?? ''),
+        String(inv.invoice_date ?? ''),
+        String(inv.due_date ?? ''),
+        String(inv.status ?? ''),
+        formatCLP(Number(inv.total_amount ?? 0)),
+        categories,
+      ];
+    });
+
+    autoTable(doc, {
+      startY: 75,
+      head: [['Folio', 'Proveedor', 'RUT', 'Emisión', 'Vence', 'Estado', 'Total', 'Categorías']],
+      body,
+      styles: { fontSize: 8, cellPadding: 3 },
+      headStyles: { fillColor: [37, 99, 235] },
+      columnStyles: {
+        0: { cellWidth: 60 },
+        1: { cellWidth: 170 },
+        2: { cellWidth: 80 },
+        3: { cellWidth: 60 },
+        4: { cellWidth: 60 },
+        5: { cellWidth: 60 },
+        6: { cellWidth: 70, halign: 'right' },
+        7: { cellWidth: 200 },
+      },
+    });
+
+    const url = String(doc.output('bloburl'));
+    setPdfPreviewTitle(title);
+    setPdfPreviewUrl(url);
+    setPdfPreviewOpen(true);
+  };
+
+  const handleClosePdfPreview = () => {
+    setPdfPreviewOpen(false);
+    if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+    setPdfPreviewUrl(null);
+  };
 
   const handleProductChange = async (val: string) => {
     // Check if selecting existing or new
@@ -1491,9 +1640,41 @@ export const Invoices: React.FC = () => {
               >
                 <Upload className="h-4 w-4 mr-1" /> Importar
               </button>
-              <button className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm flex items-center">
-                <Download className="h-4 w-4 mr-1" /> Exportar
-              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setExportMenuOpen((v) => !v)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm flex items-center"
+                >
+                  <Download className="h-4 w-4 mr-1" /> Exportar
+                </button>
+                {exportMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        void handleExportInvoicesExcel();
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      Excel (Resumen + Detalle)
+                      {selectedInvoiceIds.length > 0 ? ` (${selectedInvoiceIds.length} seleccionadas)` : ' (filtrado)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        handleExportInvoicesPdf();
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      PDF (Listado)
+                      {selectedInvoiceIds.length > 0 ? ` (${selectedInvoiceIds.length} seleccionadas)` : ' (filtrado)'}
+                    </button>
+                  </div>
+                )}
+              </div>
               <button className="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded text-sm flex items-center">
                 <FileText className="h-4 w-4 mr-1" /> Reportes
               </button>
@@ -2390,6 +2571,8 @@ export const Invoices: React.FC = () => {
             `}</style>
         </div>
       )}
+
+      <PdfPreviewModal isOpen={pdfPreviewOpen} onClose={handleClosePdfPreview} title={pdfPreviewTitle} pdfUrl={pdfPreviewUrl} />
     </div>
   );
 };
