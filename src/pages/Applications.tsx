@@ -69,19 +69,6 @@ interface ApplicationHistory {
   }[];
 }
 
-const AGROCHEMICAL_CATEGORIES = [
-  'Quimicos', 
-  'Plaguicida', 
-  'Insecticida', 
-  'Fungicida', 
-  'Herbicida', 
-  'Fertilizantes', 
-  'fertilizante', 
-  'pesticida', 
-  'herbicida', 
-  'fungicida'
-];
-
 // Helper to normalize units for comparison
 const normalizeUnit = (u: string) => {
   const lower = u.toLowerCase().trim();
@@ -158,7 +145,7 @@ export const Applications: React.FC = () => {
     queryKey: ['applicationsPage', companyId],
     queryFn: async () => {
       if (!companyId) return null;
-      return await loadApplicationsPageData({ companyId, agrochemicalCategories: AGROCHEMICAL_CATEGORIES });
+      return await loadApplicationsPageData({ companyId });
     },
     enabled: Boolean(companyId),
     staleTime: 30_000,

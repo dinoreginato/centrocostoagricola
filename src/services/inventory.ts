@@ -1,4 +1,5 @@
 import { supabase } from '../supabase/client';
+import { filterAgrochemicalProducts } from '../lib/agrochemicals';
 
 export type InventoryProduct = {
   id: string;
@@ -67,37 +68,18 @@ export type ProgramEventProjection = {
   program_event_products: ProgramEventProductProjection[] | null;
 };
 
-const AGRO_KEYWORDS = [
-  'fertilizante',
-  'plaguicida',
-  'insecticida',
-  'fungicida',
-  'herbicida',
-  'quimico',
-  'agro',
-  'urea',
-  'salitre',
-  'potasio',
-  'fosforo',
-  'nitrato',
-  'sulfato'
-];
-
 export async function fetchInventoryProducts(params: { companyId: string }): Promise<InventoryProduct[]> {
   const { data, error } = await supabase
     .from('products')
     .select('*')
     .eq('company_id', params.companyId)
+    .neq('category', 'Archivado')
     .order('name');
 
   if (error) throw error;
 
   const products = (data || []) as InventoryProduct[];
-  return products.filter((product) => {
-    const cat = String(product.category || '').toLowerCase();
-    const name = String(product.name || '').toLowerCase();
-    return AGRO_KEYWORDS.some((term) => cat.includes(term) || name.includes(term));
-  });
+  return filterAgrochemicalProducts(products);
 }
 
 export async function fetchInventoryHistory(params: { productId: string }): Promise<InventoryMovement[]> {

@@ -81,11 +81,6 @@ interface Product { id: string; name: string; unit: string; current_stock: numbe
 interface Machine { id: string; name: string; type: string }
 interface Worker { id: string; name: string; role: string }
 
-const AGROCHEMICAL_CATEGORIES = [
-  'Quimicos', 'Plaguicida', 'Insecticida', 'Fungicida', 'Herbicida', 'Fertilizantes', 
-  'fertilizante', 'pesticida', 'herbicida', 'fungicida'
-];
-
 const normalizeUnit = (u: string) => {
   const lower = (u || '').toLowerCase().trim();
   if (['l', 'lt', 'litro', 'litros'].includes(lower)) return 'l';
@@ -150,10 +145,7 @@ export const ApplicationOrders: React.FC = () => {
     queryKey: ['applicationOrdersPage', companyId],
     queryFn: async () => {
       if (!companyId) return null;
-      return await loadApplicationOrdersPageData({
-        companyId,
-        agrochemicalCategories: AGROCHEMICAL_CATEGORIES,
-      });
+      return await loadApplicationOrdersPageData({ companyId });
     },
     enabled: Boolean(companyId),
     staleTime: 30_000,

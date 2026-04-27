@@ -1,4 +1,5 @@
 import { supabase } from '../supabase/client';
+import { filterAgrochemicalProducts } from '../lib/agrochemicals';
 
 type ApplicationFieldSector = {
   id: string;
@@ -133,7 +134,7 @@ export type InventoryMovementInsert = {
 
 type FuelConsumptionIdRow = { id: string };
 
-export async function loadApplicationsPageData(params: { companyId: string; agrochemicalCategories: string[] }): Promise<{
+export async function loadApplicationsPageData(params: { companyId: string }): Promise<{
   fields: ApplicationField[];
   products: ApplicationProduct[];
   applications: ApplicationHistory[];
@@ -145,7 +146,7 @@ export async function loadApplicationsPageData(params: { companyId: string; agro
       .from('products')
       .select('*')
       .eq('company_id', params.companyId)
-      .in('category', params.agrochemicalCategories)
+      .neq('category', 'Archivado')
       .gt('current_stock', 0),
     supabase.rpc('get_company_applications_v2', { p_company_id: params.companyId }),
     supabase
@@ -199,7 +200,7 @@ export async function loadApplicationsPageData(params: { companyId: string; agro
 
   return {
     fields: (fieldsRes.data || []) as unknown as ApplicationField[],
-    products: (productsRes.data || []) as ApplicationProduct[],
+    products: filterAgrochemicalProducts((productsRes.data || []) as unknown as ApplicationProduct[]),
     applications: (appsRes.data || []) as ApplicationHistory[],
     avgFuelPrice
   };

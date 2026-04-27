@@ -1,4 +1,5 @@
 import { supabase } from '../supabase/client';
+import { filterAgrochemicalProducts } from '../lib/agrochemicals';
 
 export type ApplicationOrderStatus = 'pendiente' | 'completada' | 'cancelada';
 
@@ -104,7 +105,6 @@ type RawOrder = Omit<ApplicationOrder, 'items' | 'field' | 'sector' | 'tractor' 
 
 export async function loadApplicationOrdersPageData(params: {
   companyId: string;
-  agrochemicalCategories: string[];
 }): Promise<{
   orders: ApplicationOrder[];
   fields: FieldWithSectors[];
@@ -163,7 +163,7 @@ export async function loadApplicationOrdersPageData(params: {
       .from('products')
       .select('*')
       .eq('company_id', params.companyId)
-      .in('category', params.agrochemicalCategories)
+      .neq('category', 'Archivado')
       .gt('current_stock', 0),
     supabase.from('machines').select('id, name, type').eq('company_id', params.companyId).eq('is_active', true),
     supabase.from('workers').select('id, name, role').eq('company_id', params.companyId).eq('is_active', true),
@@ -203,7 +203,7 @@ export async function loadApplicationOrdersPageData(params: {
   return {
     orders: mappedOrders,
     fields: (fieldsRes.data || []) as unknown as FieldWithSectors[],
-    products: (productsRes.data || []) as unknown as ProductRow[],
+    products: filterAgrochemicalProducts((productsRes.data || []) as unknown as ProductRow[]),
     machines: (machinesRes.data || []) as unknown as MachineRow[],
     workers: (workersRes.data || []) as unknown as WorkerRow[],
     programEvents
