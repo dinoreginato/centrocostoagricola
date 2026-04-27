@@ -1,5 +1,6 @@
 import { toast } from 'sonner';
 import React, { useState, useEffect } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { Plus, FileText, Trash2, Save, Loader2, Check, Download, Upload, RefreshCw, Search, Printer, ChevronLeft, ChevronRight, MapPin, Database } from 'lucide-react';
@@ -76,10 +77,9 @@ const guessCategory = (name: string): string => {
 
 export const Invoices: React.FC = () => {
   const { selectedCompany, companies } = useCompany();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [machines, setMachines] = useState<{id: string, name: string}[]>([]);
-  const [sectors, setSectors] = useState<{id: string, name: string, type: 'sector' | 'field' | 'company', hectares?: number, field_id?: string}[]>([]); // Enhanced for multi-level assignment
+  const companyId = selectedCompany?.id ?? null;
 
   const [laborType, setLaborType] = useState<string>(''); // For labor assignment
 
@@ -118,7 +118,6 @@ export const Invoices: React.FC = () => {
   
   // Track total explicitly from input when not using items (though here we use items)
   const [items, setItems] = useState<InvoiceItem[]>([]);
-  const [suppliers, setSuppliers] = useState<string[]>([]);
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
 
   // Item Form State
@@ -141,13 +140,13 @@ export const Invoices: React.FC = () => {
 
   // Dashboard/Filter/Search State
   const [stats, setStats] = useState<DashboardStats>({ total: 0, paid: 0, pending: 0, count: 0, topCategories: [] });
-  const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('Todas');
   const [filterDateFrom, setFilterDateFrom] = useState('');
   const [filterDateTo, setFilterDateTo] = useState('');
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
   const [availableYears, setAvailableYears] = useState<string[]>([new Date().getFullYear().toString()]);
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -156,32 +155,59 @@ export const Invoices: React.FC = () => {
   const [destinationsLoading, setDestinationsLoading] = useState(false);
   const [invoiceToPrint, setInvoiceToPrint] = useState<Invoice | null>(null);
 
-  useEffect(() => {
-    if (selectedCompany) {
-      loadProducts();
-      loadStats(); // Fetches data
-      loadSuppliers();
-      loadDestinations(); // Load machines and sectors
-    }
-  }, [selectedCompany, filterStatus]); // Reload if company or status filter changes
+  const invoicesQuery = useQuery({
+    queryKey: ['invoices', companyId],
+    queryFn: async () => {
+      if (!companyId) return [];
+      return (await fetchInvoicesForCompany({ companyId, status: 'Todas' })) as unknown as Invoice[];
+    },
+    enabled: Boolean(companyId),
+    staleTime: 30_000,
+  });
 
-  const loadDestinations = async () => {
-    if (!selectedCompany) return;
-    
-    setDestinationsLoading(true);
-    try {
-        const { machines: m, destinations } = await fetchInvoiceDestinations({
-          companyId: selectedCompany.id,
-          companyName: selectedCompany.name
-        });
-        setMachines(m);
-        setSectors(destinations);
-    } catch (err: any) {
-        toast.error('Error al cargar destinos: ' + err.message);
-    } finally {
-        setDestinationsLoading(false);
-    }
+  const productsQuery = useQuery({
+    queryKey: ['invoiceProducts', companyId],
+    queryFn: async () => {
+      if (!companyId) return [];
+      return (await fetchInvoiceProducts({ companyId })) as unknown as Product[];
+    },
+    enabled: Boolean(companyId),
+    staleTime: 5 * 60_000,
+  });
+
+  const suppliersQuery = useQuery({
+    queryKey: ['invoiceSuppliers', companyId],
+    queryFn: async () => {
+      if (!companyId) return [];
+      return await fetchInvoiceSuppliers({ companyId });
+    },
+    enabled: Boolean(companyId),
+    staleTime: 5 * 60_000,
+  });
+
+  const destinationsQuery = useQuery({
+    queryKey: ['invoiceDestinations', companyId],
+    queryFn: async () => {
+      if (!selectedCompany) return { machines: [], destinations: [] };
+      return await fetchInvoiceDestinations({ companyId: selectedCompany.id, companyName: selectedCompany.name });
+    },
+    enabled: Boolean(companyId) && Boolean(selectedCompany),
+    staleTime: 5 * 60_000,
+  });
+
+  const products = (productsQuery.data || []) as Product[];
+  const suppliers = suppliersQuery.data || [];
+  const machines = destinationsQuery.data?.machines || [];
+  const sectors = destinationsQuery.data?.destinations || [];
+  const allInvoices = (invoicesQuery.data || []) as Invoice[];
+  const updateInvoicesCache = (updater: (prev: Invoice[]) => Invoice[]) => {
+    if (!companyId) return;
+    queryClient.setQueryData<Invoice[]>(['invoices', companyId], (prev) => updater((prev || []) as Invoice[]));
   };
+
+  useEffect(() => {
+    setDestinationsLoading(destinationsQuery.isLoading);
+  }, [destinationsQuery.isLoading]);
 
   // Recalculate stats when data or year changes
   useEffect(() => {
@@ -197,27 +223,94 @@ export const Invoices: React.FC = () => {
     }
   }, [documentType]);
 
-  const loadSuppliers = async () => {
-    if (!selectedCompany) return;
-    const uniqueSuppliers = await fetchInvoiceSuppliers({ companyId: selectedCompany.id });
-    setSuppliers(uniqueSuppliers);
-  };
+  useEffect(() => {
+    setSelectedInvoiceIds([]);
+  }, [companyId]);
 
-  const loadProducts = async () => {
-    if (!selectedCompany) return;
-    const data = await fetchInvoiceProducts({ companyId: selectedCompany.id });
-    setProducts(data || []);
-  };
-
-  const loadStats = async () => {
-    if (!selectedCompany) return;
-    const data = await fetchInvoicesForCompany({ companyId: selectedCompany.id, status: filterStatus });
-    setAllInvoices(data as any[]);
-
-    if (searchQuery) {
-      setSearchQuery((prev) => prev);
+  useEffect(() => {
+    if (!companyId) return;
+    const key = `invoicesFilters:${companyId}`;
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        searchQuery?: string;
+        filterStatus?: string;
+        filterDateFrom?: string;
+        filterDateTo?: string;
+        selectedYear?: string;
+      };
+      setSearchQuery(parsed.searchQuery ?? '');
+      setFilterStatus(parsed.filterStatus ?? 'Todas');
+      setFilterDateFrom(parsed.filterDateFrom ?? '');
+      setFilterDateTo(parsed.filterDateTo ?? '');
+      if (parsed.selectedYear) setSelectedYear(parsed.selectedYear);
+    } catch (_e) {
+      void _e;
     }
-  };
+  }, [companyId]);
+
+  useEffect(() => {
+    if (!companyId) return;
+    const key = `invoicesFilters:${companyId}`;
+    try {
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          searchQuery,
+          filterStatus,
+          filterDateFrom,
+          filterDateTo,
+          selectedYear,
+        }),
+      );
+    } catch (_e) {
+      void _e;
+    }
+  }, [companyId, filterDateFrom, filterDateTo, filterStatus, searchQuery, selectedYear]);
+
+  const bulkStatusMutation = useMutation({
+    mutationFn: async (params: { status: string }) => {
+      if (!selectedInvoiceIds.length) return;
+      const paymentDate = params.status === 'Pagada' ? new Date().toLocaleDateString('en-CA') : null;
+      await Promise.all(
+        selectedInvoiceIds.map((id) =>
+          updateInvoice({
+            invoiceId: id,
+            patch: { status: params.status, payment_date: paymentDate },
+          }),
+        ),
+      );
+    },
+    onSuccess: (_data, vars) => {
+      const paymentDate = vars.status === 'Pagada' ? new Date().toLocaleDateString('en-CA') : null;
+      updateInvoicesCache((prev) =>
+        prev.map((inv) =>
+          selectedInvoiceIds.includes(inv.id) ? { ...inv, status: vars.status, payment_date: paymentDate } : inv,
+        ),
+      );
+      setSelectedInvoiceIds([]);
+      toast.success('Facturas actualizadas.');
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Error al actualizar facturas.');
+    },
+  });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedInvoiceIds.length) return;
+      await Promise.all(selectedInvoiceIds.map((id) => rpcDeleteInvoiceForce({ invoiceId: id })));
+    },
+    onSuccess: () => {
+      updateInvoicesCache((prev) => prev.filter((inv) => !selectedInvoiceIds.includes(inv.id)));
+      setSelectedInvoiceIds([]);
+      toast('Facturas eliminadas (Forzado)');
+    },
+    onError: (err: any) => {
+      toast.error(err?.message || 'Error al eliminar facturas.');
+    },
+  });
 
   const processStatsAndYears = (data: Invoice[]) => {
     try {
@@ -821,9 +914,9 @@ export const Invoices: React.FC = () => {
         }
 
         toast(`Importación completada.\nExitosos: ${successCount}\nFallidos: ${errorCount}`);
-        loadStats();
-        loadProducts();
-        loadSuppliers();
+        await queryClient.invalidateQueries({ queryKey: ['invoices', companyId] });
+        await queryClient.invalidateQueries({ queryKey: ['invoiceProducts', companyId] });
+        await queryClient.invalidateQueries({ queryKey: ['invoiceSuppliers', companyId] });
 
       } catch {
         toast.error('Error al leer el archivo JSON. Asegúrate de que el formato sea correcto.');
@@ -897,12 +990,9 @@ export const Invoices: React.FC = () => {
       await rpcDeleteInvoiceForce({ invoiceId: id });
       
       toast('Factura eliminada (Forzado)');
-      
-      // Update local state
-      const updatedInvoices = allInvoices.filter(inv => inv.id !== id);
-      setAllInvoices(updatedInvoices);
-      
-      loadStats();
+
+      updateInvoicesCache((prev) => prev.filter((inv) => inv.id !== id));
+
       if (editingInvoiceId === id) handleCancelEdit();
     } catch (error: any) {
       toast.error('Error al eliminar: ' + error.message);
@@ -949,7 +1039,7 @@ export const Invoices: React.FC = () => {
         }
 
         toast(`Se eliminaron ${duplicatesToDelete.length} facturas duplicadas.`);
-        loadStats();
+        await queryClient.invalidateQueries({ queryKey: ['invoices', companyId] });
       }
 
     } catch (err: any) {
@@ -976,11 +1066,7 @@ export const Invoices: React.FC = () => {
     try {
         await updateInvoice({ invoiceId: invoice.id, patch: { status: newStatus, payment_date: newPaymentDate } });
 
-        // Update local state directly to reflect change immediately
-        const updatedInvoices = allInvoices.map(inv => 
-            inv.id === invoice.id ? { ...inv, status: newStatus, payment_date: newPaymentDate } : inv
-        );
-        setAllInvoices(updatedInvoices);
+        updateInvoicesCache((prev) => prev.map((inv) => (inv.id === invoice.id ? { ...inv, status: newStatus, payment_date: newPaymentDate } : inv)));
         
         // Also update editing form if it's the same invoice
         if (editingInvoiceId === invoice.id) {
@@ -1336,9 +1422,9 @@ export const Invoices: React.FC = () => {
       setDueDate('');
       setSpecialTaxAmount(0);
       toast(editingInvoiceId ? 'Factura actualizada exitosamente' : 'Factura ingresada exitosamente');
-      loadProducts();
-      loadStats();
-      loadSuppliers();
+      await queryClient.invalidateQueries({ queryKey: ['invoices', companyId] });
+      await queryClient.invalidateQueries({ queryKey: ['invoiceProducts', companyId] });
+      await queryClient.invalidateQueries({ queryKey: ['invoiceSuppliers', companyId] });
 
     } catch (error: any) {
       toast.error('Error al guardar la factura: ' + error.message);
@@ -2006,7 +2092,59 @@ export const Invoices: React.FC = () => {
             <div className="space-y-4">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xs font-bold text-gray-400 uppercase">RESULTADOS</h3>
-                <span className="text-xs text-gray-500 dark:text-gray-400">{getFilteredInvoices().length} encontrados</span>
+                <div className="flex items-center gap-2">
+                  {selectedInvoiceIds.length > 0 && (
+                    <>
+                      <span className="text-xs text-gray-400">{selectedInvoiceIds.length} seleccionadas</span>
+                      <button
+                        type="button"
+                        onClick={() => bulkStatusMutation.mutate({ status: 'Pagada' })}
+                        disabled={bulkStatusMutation.isPending || bulkDeleteMutation.isPending}
+                        className="text-xs px-2 py-1 rounded bg-green-900 text-green-200 hover:bg-green-800 disabled:opacity-50"
+                      >
+                        Marcar pagada
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => bulkStatusMutation.mutate({ status: 'Pendiente' })}
+                        disabled={bulkStatusMutation.isPending || bulkDeleteMutation.isPending}
+                        className="text-xs px-2 py-1 rounded bg-yellow-900 text-yellow-200 hover:bg-yellow-800 disabled:opacity-50"
+                      >
+                        Marcar pendiente
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedInvoiceIds([])}
+                        disabled={bulkStatusMutation.isPending || bulkDeleteMutation.isPending}
+                        className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-200 hover:bg-gray-700 disabled:opacity-50"
+                      >
+                        Limpiar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!window.confirm(`¿FUERZA BRUTA: borrar ${selectedInvoiceIds.length} facturas definitivamente?`)) return;
+                          bulkDeleteMutation.mutate();
+                        }}
+                        disabled={bulkStatusMutation.isPending || bulkDeleteMutation.isPending}
+                        className="text-xs px-2 py-1 rounded bg-red-900 text-red-200 hover:bg-red-800 disabled:opacity-50"
+                      >
+                        Eliminar
+                      </button>
+                    </>
+                  )}
+                  {selectedInvoiceIds.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedInvoiceIds(paginatedInvoices.map((inv) => inv.id))}
+                      disabled={paginatedInvoices.length === 0}
+                      className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-200 hover:bg-gray-700 disabled:opacity-50"
+                    >
+                      Seleccionar página
+                    </button>
+                  )}
+                  <span className="text-xs text-gray-500 dark:text-gray-400">{getFilteredInvoices().length} encontrados</span>
+                </div>
               </div>
               
               <div className="space-y-2 pr-2">
@@ -2017,6 +2155,20 @@ export const Invoices: React.FC = () => {
                       onClick={() => handleEditClick(inv)}
                       className="bg-gray-800 p-3 rounded-lg border border-gray-700 hover:border-blue-500 cursor-pointer transition-colors relative group"
                     >
+                      <div className="absolute left-2 top-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedInvoiceIds.includes(inv.id)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            setSelectedInvoiceIds((prev) =>
+                              prev.includes(inv.id) ? prev.filter((x) => x !== inv.id) : [...prev, inv.id],
+                            );
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="h-4 w-4 accent-blue-600"
+                        />
+                      </div>
                       <div className="flex justify-between items-start mb-1 pr-6">
                         <span className="font-bold text-sm text-white">#{inv.invoice_number}</span>
                         <div className="flex flex-col items-end">
