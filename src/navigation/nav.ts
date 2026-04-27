@@ -68,7 +68,7 @@ export function getNavGroups(userRole?: string | null): NavGroup[] {
         { name: 'Campos', href: '/campos', icon: Map, roles: ['admin', 'viewer'] },
         { name: 'Trabajadores', href: '/trabajadores', icon: Briefcase, roles: ['admin', 'editor', 'viewer'] },
         { name: 'Precios Químicos', href: '/precios-quimicos', icon: Beaker, roles: ['admin', 'editor', 'viewer'] },
-        ...(userRole === 'admin' ? [{ name: 'Usuarios', href: '/usuarios', icon: Users, roles: ['admin'] }] : [])
+        ...(userRole === 'admin' || userRole === 'editor' ? [{ name: 'Usuarios', href: '/usuarios', icon: Users, roles: ['admin', 'editor'] }] : [])
       ]
     }
   ];

@@ -40,3 +40,18 @@ export async function removeCompanyMember(params: { companyId: string; memberId:
     p_member_id: params.memberId,
   });
 }
+
+export async function updateCompanyMemberRole(params: { companyId: string; memberId: string; role: string }) {
+  await supabaseRpc('update_company_member_role', {
+    p_company_id: params.companyId,
+    p_member_id: params.memberId,
+    p_role: params.role,
+  });
+}
+
+export async function removeCompanyMembers(params: { companyId: string; memberIds: string[] }) {
+  await supabaseRpc('remove_company_members', {
+    p_company_id: params.companyId,
+    p_member_ids: params.memberIds,
+  });
+}
