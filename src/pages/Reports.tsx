@@ -121,7 +121,7 @@ const CHEMICAL_CATEGORIES = [
 export const Reports: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'labors' | 'applications' | 'monthly' | 'categories' | 'pending' | 'paid_payments' | 'chemicals' | 'detailed' | 'budget' | 'comparative'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'costs_ha' | 'labors' | 'applications' | 'monthly' | 'categories' | 'pending' | 'paid_payments' | 'chemicals' | 'detailed' | 'budget' | 'comparative'>('general');
   const [activeGroup, setActiveGroup] = useState<'general' | 'financial' | 'inventory' | 'comparative'>('general');
   
   // Pending Invoices Filter State
@@ -180,7 +180,7 @@ export const Reports: React.FC = () => {
 
   // Update orientation when tab changes
   useEffect(() => {
-    if (activeTab === 'general' || activeTab === 'detailed' || activeTab === 'labors') {
+    if (activeTab === 'general' || activeTab === 'detailed' || activeTab === 'labors' || activeTab === 'costs_ha') {
       setPdfOrientation('landscape');
     } else {
       setPdfOrientation('portrait');
@@ -886,7 +886,7 @@ export const Reports: React.FC = () => {
             subHeader += `| Categoría: ${filterCategory}`;
         }
         if (filterMonth === 'all' && filterCategory === 'all') subHeader += 'Todos';
-    } else if (activeTab === 'general') {
+    } else if (activeTab === 'general' || activeTab === 'costs_ha') {
         subHeader = `Tipo de Cambio: ${formatCLP(usdExchangeRate)} CLP/USD`;
     }
 
@@ -949,6 +949,82 @@ export const Reports: React.FC = () => {
                 12: { halign: 'right' },
                 13: { halign: 'right', fontStyle: 'bold' },
                 14: { halign: 'right', fontStyle: 'bold' }
+            }
+        });
+
+    } else if (activeTab === 'costs_ha') {
+        const tableBody = reportData.map((row) => {
+            const ha = row.hectares || 1;
+            return [
+                `${row.sector_name}\n(${row.field_name})`,
+                row.hectares.toString(),
+                formatCLP(row.app_cost_only / ha),
+                formatCLP(row.labor_cost / ha),
+                formatCLP(row.worker_cost / ha),
+                formatCLP(row.machinery_cost / ha),
+                formatCLP(row.irrigation_cost / ha),
+                formatCLP(row.fuel_cost_diesel / ha),
+                formatCLP(row.fuel_cost_gasoline / ha),
+                formatCLP(row.general_cost / ha),
+                formatCLP(row.cost_per_ha),
+                formatCLP(row.total_cost)
+            ];
+        });
+
+        const totalHas = reportData.reduce((sum, r) => sum + r.hectares, 0);
+        if (reportData.length > 0 && totalHas > 0) {
+            const totalApps = reportData.reduce((sum, r) => sum + r.app_cost_only, 0);
+            const totalLabor = reportData.reduce((sum, r) => sum + r.labor_cost, 0);
+            const totalWorker = reportData.reduce((sum, r) => sum + r.worker_cost, 0);
+            const totalMachinery = reportData.reduce((sum, r) => sum + r.machinery_cost, 0);
+            const totalIrrigation = reportData.reduce((sum, r) => sum + r.irrigation_cost, 0);
+            const totalDiesel = reportData.reduce((sum, r) => sum + r.fuel_cost_diesel, 0);
+            const totalGasoline = reportData.reduce((sum, r) => sum + r.fuel_cost_gasoline, 0);
+            const totalGeneral = reportData.reduce((sum, r) => sum + r.general_cost, 0);
+            const totalCost = reportData.reduce((sum, r) => sum + r.total_cost, 0);
+
+            tableBody.push([
+                'TOTAL GENERAL',
+                totalHas.toString(),
+                formatCLP(totalApps / totalHas),
+                formatCLP(totalLabor / totalHas),
+                formatCLP(totalWorker / totalHas),
+                formatCLP(totalMachinery / totalHas),
+                formatCLP(totalIrrigation / totalHas),
+                formatCLP(totalDiesel / totalHas),
+                formatCLP(totalGasoline / totalHas),
+                formatCLP(totalGeneral / totalHas),
+                formatCLP(totalCost / totalHas),
+                formatCLP(totalCost)
+            ]);
+        }
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Sector/Campo', 'Has', 'Aplic/Ha', 'Mano Obra/Ha', 'Personal/Ha', 'Maq/Ha', 'Riego/Ha', 'Diésel/Ha', 'Bencina/Ha', 'Otros/Ha', 'Total/Ha', 'Total (CLP)']],
+            body: tableBody,
+            theme: 'grid',
+            headStyles: { fillColor: [46, 125, 50], fontSize: 8 },
+            styles: { fontSize: 8, cellPadding: 2 },
+            columnStyles: {
+                0: { cellWidth: 26 },
+                1: { halign: 'right', cellWidth: 12 },
+                2: { halign: 'right' },
+                3: { halign: 'right' },
+                4: { halign: 'right' },
+                5: { halign: 'right' },
+                6: { halign: 'right' },
+                7: { halign: 'right' },
+                8: { halign: 'right' },
+                9: { halign: 'right' },
+                10: { halign: 'right', fontStyle: 'bold' },
+                11: { halign: 'right', fontStyle: 'bold' }
+            },
+            didParseCell: function(data) {
+                if (reportData.length > 0 && data.row.index === reportData.length) {
+                    data.cell.styles.fontStyle = 'bold';
+                    data.cell.styles.fillColor = [230, 230, 230];
+                }
             }
         });
 
@@ -1276,6 +1352,7 @@ export const Reports: React.FC = () => {
   const getReportTitle = () => {
     switch(activeTab) {
       case 'applications': return 'Costos de Aplicación';
+      case 'costs_ha': return 'Costos por Hectárea';
       case 'labors': return 'Detalle de Labores por Sector';
       case 'monthly': return 'Gastos Mensuales';
       case 'categories': return 'Gastos por Clasificación';
@@ -1388,6 +1465,14 @@ export const Reports: React.FC = () => {
                 } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
               >
                 Costos Generales (USD/Kg)
+              </button>
+              <button
+                onClick={() => setActiveTab('costs_ha')}
+                className={`${
+                  activeTab === 'costs_ha' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Costos por Ha
               </button>
               <button
                 onClick={() => setActiveTab('labors')}
@@ -1984,6 +2069,129 @@ export const Reports: React.FC = () => {
                   </table>
                 </div>
             </div>
+        </div>
+      )}
+
+      {activeTab === 'costs_ha' && (
+        <div className="space-y-6">
+          <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+            <div className="flex justify-between items-center px-4 py-5 sm:px-6 border-b border-gray-200">
+              <div>
+                <h3 className="text-lg leading-6 font-medium text-gray-900">Costos por Hectárea ({selectedSeason})</h3>
+                <p className="mt-1 text-sm text-gray-500">Desglose por rubro (CLP/ha) y total por sector</p>
+              </div>
+              <button
+                onClick={() => {
+                  const rows = [['Campo', 'Sector', 'Has', 'Aplic/Ha', 'Mano Obra/Ha', 'Personal/Ha', 'Maq/Ha', 'Riego/Ha', 'Diésel/Ha', 'Bencina/Ha', 'Otros/Ha', 'Total/Ha', 'Total (CLP)']];
+                  reportData.forEach((row) => {
+                    const ha = row.hectares || 1;
+                    rows.push([
+                      row.field_name,
+                      row.sector_name,
+                      row.hectares.toString(),
+                      (row.app_cost_only / ha).toFixed(2),
+                      (row.labor_cost / ha).toFixed(2),
+                      (row.worker_cost / ha).toFixed(2),
+                      (row.machinery_cost / ha).toFixed(2),
+                      (row.irrigation_cost / ha).toFixed(2),
+                      (row.fuel_cost_diesel / ha).toFixed(2),
+                      (row.fuel_cost_gasoline / ha).toFixed(2),
+                      (row.general_cost / ha).toFixed(2),
+                      row.cost_per_ha.toFixed(2),
+                      row.total_cost.toFixed(2),
+                    ]);
+                  });
+                  const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
+                  const encodedUri = encodeURI(csvContent);
+                  const link = document.createElement("a");
+                  link.setAttribute("href", encodedUri);
+                  link.setAttribute("download", `Costos_por_Ha_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.csv`);
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+                className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-green-700 bg-green-100 hover:bg-green-200"
+              >
+                <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sector/Campo</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Has</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Aplic/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Mano Obra/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Personal/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Maq/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Riego/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Diésel/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Bencina/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Otros/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-blue-50">Total/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total (CLP)</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {reportData.map((row, index) => {
+                    const ha = row.hectares || 1;
+                    return (
+                      <tr key={index} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">{row.sector_name}</div>
+                          <div className="text-xs text-gray-500">{row.field_name}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">{row.hectares}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.app_cost_only / ha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.labor_cost / ha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.worker_cost / ha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.machinery_cost / ha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.irrigation_cost / ha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.fuel_cost_diesel / ha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.fuel_cost_gasoline / ha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.general_cost / ha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-700 bg-blue-50">{formatCLP(row.cost_per_ha)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(row.total_cost)}</td>
+                      </tr>
+                    );
+                  })}
+                  {reportData.length > 0 && (
+                    (() => {
+                      const totalHas = reportData.reduce((sum, r) => sum + r.hectares, 0);
+                      const totalApps = reportData.reduce((sum, r) => sum + r.app_cost_only, 0);
+                      const totalLabor = reportData.reduce((sum, r) => sum + r.labor_cost, 0);
+                      const totalWorker = reportData.reduce((sum, r) => sum + r.worker_cost, 0);
+                      const totalMachinery = reportData.reduce((sum, r) => sum + r.machinery_cost, 0);
+                      const totalIrrigation = reportData.reduce((sum, r) => sum + r.irrigation_cost, 0);
+                      const totalDiesel = reportData.reduce((sum, r) => sum + r.fuel_cost_diesel, 0);
+                      const totalGasoline = reportData.reduce((sum, r) => sum + r.fuel_cost_gasoline, 0);
+                      const totalGeneral = reportData.reduce((sum, r) => sum + r.general_cost, 0);
+                      const totalCost = reportData.reduce((sum, r) => sum + r.total_cost, 0);
+                      const ha = totalHas || 1;
+
+                      return (
+                        <tr className="bg-gray-100 font-bold border-t-2 border-gray-300">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">TOTAL GENERAL</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{totalHas}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalApps / ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalLabor / ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalWorker / ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalMachinery / ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalIrrigation / ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalDiesel / ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalGasoline / ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalGeneral / ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-blue-800 bg-blue-100">{formatCLP(totalCost / ha)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalCost)}</td>
+                        </tr>
+                      );
+                    })()
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 
