@@ -85,6 +85,7 @@ export const Invoices: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const companyId = selectedCompany?.id ?? null;
   const canWrite = userRole !== 'viewer';
+  const [invoiceFormOpen, setInvoiceFormOpen] = useState(false);
 
 
   const [laborType, setLaborType] = useState<string>(''); // For labor assignment
@@ -161,6 +162,7 @@ export const Invoices: React.FC = () => {
   const [destinationsLoading, setDestinationsLoading] = useState(false);
   const [invoiceToPrint, setInvoiceToPrint] = useState<Invoice | null>(null);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [showInvoiceStats, setShowInvoiceStats] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [pdfPreviewTitle, setPdfPreviewTitle] = useState<string>('Facturas');
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
@@ -236,6 +238,10 @@ export const Invoices: React.FC = () => {
   useEffect(() => {
     setSelectedInvoiceIds([]);
   }, [companyId]);
+
+  useEffect(() => {
+    if (editingInvoiceId) setInvoiceFormOpen(true);
+  }, [editingInvoiceId]);
 
   useEffect(() => {
     if (!companyId) return;
@@ -889,7 +895,7 @@ export const Invoices: React.FC = () => {
                 }
 
                 setItems(parsedItems);
-                // The form is always visible in this layout, so no need for setIsFormOpen
+                setInvoiceFormOpen(true);
                 toast("Factura cargada exitosamente desde el XML. Revise los ítems y las asignaciones.");
 
             } catch {
@@ -1086,6 +1092,7 @@ export const Invoices: React.FC = () => {
       toast.error('No tienes permisos para editar facturas.');
       return;
     }
+    setInvoiceFormOpen(true);
     setEditingInvoiceId(inv.id);
     setInvoiceNumber(inv.invoice_number);
     setSupplier(inv.supplier);
@@ -1135,6 +1142,7 @@ export const Invoices: React.FC = () => {
     setDiscountAmount(0);
     setExemptAmount(0);
     setSpecialTaxAmount(0);
+    setInvoiceFormOpen(false);
   };
 
   const handleDeleteInvoice = async (e: React.MouseEvent, id: string) => {
@@ -1594,6 +1602,7 @@ export const Invoices: React.FC = () => {
       setNotes('');
       setDueDate('');
       setSpecialTaxAmount(0);
+      setInvoiceFormOpen(false);
       toast(editingInvoiceId ? 'Factura actualizada exitosamente' : 'Factura ingresada exitosamente');
       await queryClient.invalidateQueries({ queryKey: ['invoices', companyId] });
       await queryClient.invalidateQueries({ queryKey: ['invoiceProducts', companyId] });
@@ -1609,8 +1618,23 @@ export const Invoices: React.FC = () => {
   if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 min-h-[calc(100vh-100px)]">
+    <div className={`flex gap-6 min-h-[calc(100vh-100px)] ${invoiceFormOpen ? 'flex-col lg:flex-row' : 'flex-col'}`}>
+      <input
+        type="file"
+        accept=".xml"
+        className="hidden"
+        ref={xmlInputRef}
+        onChange={handleXmlUpload}
+      />
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleImportFile}
+        accept=".json"
+        className="hidden"
+      />
       {/* Left Panel: Invoice Form (Approx 66%) */}
+      {invoiceFormOpen && (
       <div className="lg:w-2/3 space-y-4">
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
           {/* Header */}
@@ -1620,23 +1644,13 @@ export const Invoices: React.FC = () => {
               <h2 className="text-lg font-semibold">Aplicación de Facturas Agrícolas</h2>
             </div>
             <div className="flex space-x-2">
-              {editingInvoiceId && (
-                <>
-                  <button 
-                    onClick={handleCancelEdit}
-                    className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm flex items-center"
-                  >
-                    Cancelar Edición
-                  </button>
-                </>
-              )}
-              <input 
-                type="file" 
-                accept=".xml" 
-                className="hidden" 
-                ref={xmlInputRef}
-                onChange={handleXmlUpload} 
-              />
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded text-sm flex items-center"
+              >
+                Cerrar
+              </button>
               <button 
                 onClick={handleXmlImportClick}
                 disabled={!canWrite}
@@ -1653,13 +1667,6 @@ export const Invoices: React.FC = () => {
               >
                 <RefreshCw className="h-4 w-4 mr-1" /> Limpiar Duplicados
               </button>
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleImportFile} 
-                accept=".json" 
-                className="hidden" 
-              />
               <button 
                 onClick={handleImportClick}
                 disabled={!canWrite}
@@ -2231,11 +2238,112 @@ export const Invoices: React.FC = () => {
           </div>
         </div>
       </div>
+      )}
 
       {/* Right Panel: Dashboard Stats (Approx 33%) */}
-      <div className="lg:w-1/3 space-y-4">
+      <div className={`${invoiceFormOpen ? 'lg:w-1/3' : 'w-full'} space-y-4`}>
         {/* Filters Card */}
         <div className="bg-gray-900 text-white rounded-xl p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-blue-400" />
+              <div className="text-sm font-bold">Facturas</div>
+              <div className="text-xs text-gray-400">{filteredInvoices.length}</div>
+            </div>
+            <div className="flex items-center gap-2">
+              {canWrite && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleCancelEdit();
+                    setInvoiceFormOpen(true);
+                  }}
+                  className="inline-flex items-center px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Nuevo
+                </button>
+              )}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setExportMenuOpen((v) => !v)}
+                  className="inline-flex items-center px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-white text-xs font-bold"
+                >
+                  Acciones
+                </button>
+                {exportMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        setInvoiceFormOpen(true);
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      Abrir formulario
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        handleXmlImportClick();
+                      }}
+                      disabled={!canWrite}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+                    >
+                      Importar XML (SII)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        handleImportClick();
+                      }}
+                      disabled={!canWrite}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+                    >
+                      Importar JSON
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        void handleExportInvoicesExcel();
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      Exportar Excel
+                      {selectedInvoiceIds.length > 0 ? ` (${selectedInvoiceIds.length} seleccionadas)` : ' (filtrado)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        handleExportInvoicesPdf();
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    >
+                      Exportar PDF (Listado)
+                      {selectedInvoiceIds.length > 0 ? ` (${selectedInvoiceIds.length} seleccionadas)` : ' (filtrado)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        void handleCleanDuplicates();
+                      }}
+                      disabled={!canWrite}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+                    >
+                      Limpiar duplicados
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-xs font-medium text-gray-400 mb-1">ESTADO</label>
@@ -2458,63 +2566,88 @@ export const Invoices: React.FC = () => {
             </div>
           ) : (
             <>
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xs font-bold text-gray-400 uppercase">ESTADÍSTICAS DEL AÑO:</h3>
-                <select 
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(e.target.value)}
-                  className="bg-gray-800 border-none text-xs rounded text-white focus:ring-0 cursor-pointer hover:bg-gray-700 w-24 text-right"
-                  style={{ colorScheme: 'dark' }} // Force dark dropdown to ensure visibility
-                >
-                  {availableYears.map(year => (
-                    <option key={year} value={year} className="text-black bg-white dark:bg-gray-800">{year}</option>
-                  ))}
-                  {/* Fallback if empty */}
-                  {availableYears.length === 0 && <option value="2026" className="text-black bg-white dark:bg-gray-800">2026</option>}
-                </select>
-              </div>
-
-              <div className="space-y-4">
-                <div className="bg-gray-800 p-4 rounded-lg">
-                  <div className="text-xs text-blue-400 mb-1">$ TOTAL</div>
-                  <div className="text-2xl font-bold">{formatCLP(stats.total)}</div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-gray-800 p-4 rounded-lg">
-                    <div className="flex items-center text-xs text-green-400 mb-1">
-                      <Check className="h-3 w-3 mr-1" /> PAGADO
-                    </div>
-                    <div className="text-xl font-bold">{formatCLP(stats.paid)}</div>
-                  </div>
-                  <div className="bg-gray-800 p-4 rounded-lg">
-                    <div className="flex items-center text-xs text-yellow-400 mb-1">
-                      <Loader2 className="h-3 w-3 mr-1" /> PENDIENTE
-                    </div>
-                    <div className="text-xl font-bold">{formatCLP(stats.pending)}</div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-gray-800 p-4 rounded-lg">
-                    <div className="text-xs text-gray-400 mb-1">CONTEO</div>
-                    <div className="text-xl font-bold">{stats.count}</div>
-                  </div>
-                  
-                  <div className="bg-gray-800 p-4 rounded-lg">
-                    <div className="text-xs text-purple-400 mb-2">TOP CATEGORÍAS</div>
-                    <div className="space-y-2">
-                      {stats.topCategories.map((cat, idx) => (
-                        <div key={idx} className="flex justify-between text-xs">
-                          <span className="text-gray-300">{cat.name}</span>
-                          <span className="font-bold">{formatCLP(cat.value)}</span>
-                        </div>
-                      ))}
-                      {stats.topCategories.length === 0 && <span className="text-gray-500 dark:text-gray-400 text-xs">Sin datos</span>}
-                    </div>
-                  </div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="text-xs font-bold text-gray-400 uppercase">Resumen {selectedYear}</div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(e.target.value)}
+                    className="bg-gray-800 border-none text-xs rounded text-white focus:ring-0 cursor-pointer hover:bg-gray-700 w-24 text-right"
+                    style={{ colorScheme: 'dark' }}
+                  >
+                    {availableYears.map(year => (
+                      <option key={year} value={year} className="text-black bg-white dark:bg-gray-800">{year}</option>
+                    ))}
+                    {availableYears.length === 0 && <option value="2026" className="text-black bg-white dark:bg-gray-800">2026</option>}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setShowInvoiceStats((v) => !v)}
+                    className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-200 hover:bg-gray-700"
+                  >
+                    {showInvoiceStats ? 'Ocultar' : 'Ver'}
+                  </button>
                 </div>
               </div>
+
+              {!showInvoiceStats ? (
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-gray-800 p-3 rounded-lg">
+                    <div className="text-[10px] text-gray-400 mb-1">TOTAL</div>
+                    <div className="text-sm font-bold">{formatCLP(stats.total)}</div>
+                  </div>
+                  <div className="bg-gray-800 p-3 rounded-lg">
+                    <div className="text-[10px] text-gray-400 mb-1">PAGADO</div>
+                    <div className="text-sm font-bold">{formatCLP(stats.paid)}</div>
+                  </div>
+                  <div className="bg-gray-800 p-3 rounded-lg">
+                    <div className="text-[10px] text-gray-400 mb-1">PENDIENTE</div>
+                    <div className="text-sm font-bold">{formatCLP(stats.pending)}</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="bg-gray-800 p-4 rounded-lg">
+                    <div className="text-xs text-blue-400 mb-1">$ TOTAL</div>
+                    <div className="text-2xl font-bold">{formatCLP(stats.total)}</div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-gray-800 p-4 rounded-lg">
+                      <div className="flex items-center text-xs text-green-400 mb-1">
+                        <Check className="h-3 w-3 mr-1" /> PAGADO
+                      </div>
+                      <div className="text-xl font-bold">{formatCLP(stats.paid)}</div>
+                    </div>
+                    <div className="bg-gray-800 p-4 rounded-lg">
+                      <div className="flex items-center text-xs text-yellow-400 mb-1">
+                        <Loader2 className="h-3 w-3 mr-1" /> PENDIENTE
+                      </div>
+                      <div className="text-xl font-bold">{formatCLP(stats.pending)}</div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-gray-800 p-4 rounded-lg">
+                      <div className="text-xs text-gray-400 mb-1">CONTEO</div>
+                      <div className="text-xl font-bold">{stats.count}</div>
+                    </div>
+                    
+                    <div className="bg-gray-800 p-4 rounded-lg">
+                      <div className="text-xs text-purple-400 mb-2">TOP CATEGORÍAS</div>
+                      <div className="space-y-2">
+                        {stats.topCategories.map((cat, idx) => (
+                          <div key={idx} className="flex justify-between text-xs">
+                            <span className="text-gray-300">{cat.name}</span>
+                            <span className="font-bold">{formatCLP(cat.value)}</span>
+                          </div>
+                        ))}
+                        {stats.topCategories.length === 0 && <span className="text-gray-500 dark:text-gray-400 text-xs">Sin datos</span>}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </>
           )}
           
