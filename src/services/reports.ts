@@ -15,7 +15,8 @@ type ReportApplicationRow = {
 };
 
 type ReportInvoiceRow = {
-  invoice_date: string;
+  invoice_date?: string | null;
+  [key: string]: any;
 };
 
 export async function loadReportsRawData(params: { companyId: string }) {
@@ -87,24 +88,28 @@ export async function loadReportsRawData(params: { companyId: string }) {
       .neq('category', 'Archivado')
   ]);
 
-  const errors = [
-    applicationsRes.error,
-    laborRes.error,
-    workerCostsRes.error,
-    fuelRes.error,
-    fuelConsRes.error,
-    machineryRes.error,
-    irrigationRes.error,
-    generalCostsRes.error,
-    incomeRes.error,
-    invoicesRes.error,
-    productsRes.error
-  ].filter(Boolean);
+  if (invoicesRes.error) throw invoicesRes.error;
 
-  if (errors.length > 0) throw errors[0];
+  const warnings: any[] = [];
+  const safeData = <T,>(res: { data: any; error: any }) => {
+    if (res.error) {
+      warnings.push(res.error);
+      return [] as unknown as T[];
+    }
+    return (res.data || []) as unknown as T[];
+  };
 
-  const applications = (applicationsRes.data || []) as unknown as ReportApplicationRow[];
+  const applications = safeData<ReportApplicationRow>(applicationsRes as any);
   const invoices = (invoicesRes.data || []) as unknown as ReportInvoiceRow[];
+  const labor = safeData<any>(laborRes as any);
+  const workerCosts = safeData<any>(workerCostsRes as any);
+  const fuel = safeData<any>(fuelRes as any);
+  const fuelConsumption = safeData<any>(fuelConsRes as any);
+  const machinery = safeData<any>(machineryRes as any);
+  const irrigation = safeData<any>(irrigationRes as any);
+  const generalCosts = safeData<any>(generalCostsRes as any);
+  const incomeEntries = safeData<any>(incomeRes as any);
+  const products = safeData<any>(productsRes as any);
 
   const seasonsSet = new Set<string>();
   seasonsSet.add(getSeasonFromDate(new Date()));
@@ -122,16 +127,17 @@ export async function loadReportsRawData(params: { companyId: string }) {
   return {
     fields: typedFields,
     applications,
-    labor: laborRes.data || [],
-    workerCosts: workerCostsRes.data || [],
-    fuel: fuelRes.data || [],
-    fuelConsumption: fuelConsRes.data || [],
-    machinery: machineryRes.data || [],
-    irrigation: irrigationRes.data || [],
-    generalCosts: generalCostsRes.data || [],
-    incomeEntries: incomeRes.data || [],
+    labor,
+    workerCosts,
+    fuel,
+    fuelConsumption,
+    machinery,
+    irrigation,
+    generalCosts,
+    incomeEntries,
     invoices,
-    products: productsRes.data || [],
-    availableSeasons
+    products,
+    availableSeasons,
+    warnings: warnings.map((w) => w?.message || String(w))
   };
 }
