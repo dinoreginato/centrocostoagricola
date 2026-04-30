@@ -9,7 +9,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { loadReportsRawData } from '../services/reports';
-import { exportWorkbookToXlsx } from '../lib/excel';
+import { exportDetailedSegmentedToXlsx } from '../lib/excel';
 
 interface ReportData {
   field_name: string;
@@ -3715,24 +3715,9 @@ export const Reports: React.FC = () => {
                                     const haystack = `${r.Mes} ${r.Categoría} ${r.Fecha} ${r.Proveedor} ${r['N° Factura']} ${r.Detalle}`.toLowerCase();
                                     return haystack.includes(q);
                                 });
-
-                            const summaryMap = new Map<string, number>();
-                            rows.forEach((r) => {
-                                const key = `${r.Mes}||${r.Categoría}`;
-                                summaryMap.set(key, (summaryMap.get(key) || 0) + (Number(r.Monto) || 0));
-                            });
-
-                            const summaryRows = Array.from(summaryMap.entries()).map(([key, total]) => {
-                                const [Mes, Categoría] = key.split('||');
-                                return { Mes, Categoría, Total: total };
-                            }).sort((a, b) => (a.Mes + a.Categoría).localeCompare(b.Mes + b.Categoría));
-
-                            await exportWorkbookToXlsx({
+                            await exportDetailedSegmentedToXlsx({
                                 filename: `Reporte_Detallado_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.xlsx`,
-                                sheets: [
-                                    { name: 'Detalle', rows },
-                                    { name: 'Resumen', rows: summaryRows }
-                                ]
+                                rows
                             });
                         }}
                         className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
