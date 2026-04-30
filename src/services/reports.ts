@@ -30,6 +30,8 @@ export async function loadReportsRawData(params: { companyId: string }) {
   const fieldIds = typedFields.map((f) => f.id);
   const sectorIds = typedFields.flatMap((f) => (f.sectors || []).map((s) => s.id));
 
+  const emptyOk = Promise.resolve({ data: [], error: null } as { data: any[]; error: any });
+
   const [
     applicationsRes,
     laborRes,
@@ -43,17 +45,27 @@ export async function loadReportsRawData(params: { companyId: string }) {
     invoicesRes,
     productsRes
   ] = await Promise.all([
-    supabase.from('applications').select('field_id, sector_id, total_cost, application_date').in('field_id', fieldIds),
-    supabase.from('labor_assignments').select('sector_id, assigned_amount, assigned_date, labor_type').in('sector_id', sectorIds),
-    supabase.from('worker_costs').select('sector_id, amount, date').in('sector_id', sectorIds),
-    supabase.from('fuel_assignments').select('sector_id, assigned_amount, assigned_date').in('sector_id', sectorIds),
+    fieldIds.length
+      ? supabase.from('applications').select('field_id, sector_id, total_cost, application_date').in('field_id', fieldIds)
+      : emptyOk,
+    sectorIds.length
+      ? supabase.from('labor_assignments').select('sector_id, assigned_amount, assigned_date, labor_type').in('sector_id', sectorIds)
+      : emptyOk,
+    sectorIds.length ? supabase.from('worker_costs').select('sector_id, amount, date').in('sector_id', sectorIds) : emptyOk,
+    sectorIds.length
+      ? supabase.from('fuel_assignments').select('sector_id, assigned_amount, assigned_date').in('sector_id', sectorIds)
+      : emptyOk,
     supabase
       .from('fuel_consumption')
       .select('sector_id, estimated_price, date, activity, liters, machine_id, machine:machines(name, type)')
       .eq('company_id', params.companyId),
-    supabase.from('machinery_assignments').select('sector_id, assigned_amount, assigned_date').in('sector_id', sectorIds),
-    supabase.from('irrigation_assignments').select('sector_id, assigned_amount, assigned_date').in('sector_id', sectorIds),
-    supabase.from('general_costs').select('sector_id, amount, date').in('sector_id', sectorIds),
+    sectorIds.length
+      ? supabase.from('machinery_assignments').select('sector_id, assigned_amount, assigned_date').in('sector_id', sectorIds)
+      : emptyOk,
+    sectorIds.length
+      ? supabase.from('irrigation_assignments').select('sector_id, assigned_amount, assigned_date').in('sector_id', sectorIds)
+      : emptyOk,
+    sectorIds.length ? supabase.from('general_costs').select('sector_id, amount, date').in('sector_id', sectorIds) : emptyOk,
     supabase.from('income_entries').select('*, fields(name), sectors(name)').eq('company_id', params.companyId),
     supabase
       .from('invoices')
