@@ -121,7 +121,7 @@ const CHEMICAL_CATEGORIES = [
 export const Reports: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'costs_ha' | 'margin' | 'labors' | 'applications' | 'monthly' | 'categories' | 'pending' | 'paid_payments' | 'fuel_machines' | 'chemicals' | 'stock_breaks' | 'detailed' | 'budget' | 'comparative'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'costs_ha' | 'margin' | 'labors' | 'applications' | 'monthly' | 'categories' | 'pending' | 'overdue' | 'paid_payments' | 'fuel_machines' | 'chemicals' | 'stock_breaks' | 'detailed' | 'budget' | 'comparative'>('general');
   const [activeGroup, setActiveGroup] = useState<'general' | 'financial' | 'inventory' | 'comparative'>('general');
   
   // Pending Invoices Filter State
@@ -225,6 +225,8 @@ export const Reports: React.FC = () => {
     return true;
   });
 
+  const filteredOverdueInvoices = filteredPendingInvoices.filter((inv) => inv.days_overdue > 0);
+
   const loadRawData = useCallback(() => {
     if (!selectedCompany) return;
     void loadRawDataImpl();
@@ -296,9 +298,7 @@ export const Reports: React.FC = () => {
 
   useEffect(() => {
     // Only process if we have sectors/fields loaded, otherwise wait
-    if (rawFields.length > 0) {
-        processReports();
-    }
+    processReports();
   }, [rawFields, rawApplications, rawInvoices, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawMachinery, rawIrrigation, rawGeneralCosts, rawProducts, incomeEntries, selectedSeason, processReports]);
 
   async function loadRawDataImpl() {
@@ -1406,6 +1406,43 @@ export const Reports: React.FC = () => {
             footStyles: { fillColor: [240, 240, 240], textColor: [0,0,0], fontStyle: 'bold', halign: 'right' }
         });
 
+    } else if (activeTab === 'overdue') {
+        if (pendingStartDate || pendingEndDate || pendingSupplierFilter.length > 0 || pendingCategoryFilter.length > 0) {
+            const startStr = pendingStartDate ? new Date(pendingStartDate + 'T12:00:00').toLocaleDateString() : 'Inicio';
+            const endStr = pendingEndDate ? new Date(pendingEndDate + 'T12:00:00').toLocaleDateString() : 'Fin';
+            let filterText = '';
+            if (pendingStartDate || pendingEndDate) filterText += `Vencimiento: ${startStr} - ${endStr} `;
+            if (pendingSupplierFilter.length > 0) filterText += `| Prov: ${pendingSupplierFilter.join(', ')} `;
+            if (pendingCategoryFilter.length > 0) filterText += `| Cat: ${pendingCategoryFilter.join(', ')}`;
+            
+            doc.text(`Filtros: ${filterText}`, 14, 45);
+            yPos += 5;
+        }
+
+        const tableBody = filteredOverdueInvoices.map(inv => [
+            new Date(inv.due_date + 'T12:00:00').toLocaleDateString(),
+            `${inv.days_overdue} días`,
+            inv.supplier,
+            inv.categories.join(', '),
+            inv.invoice_number,
+            formatCLP(inv.total_amount),
+        ]);
+
+        const totalAmount = filteredOverdueInvoices.reduce((sum, inv) => sum + Number(inv.total_amount), 0);
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Vencimiento', 'Días Vencida', 'Proveedor', 'Categorías', 'N° Factura', 'Monto']],
+            body: tableBody,
+            theme: 'grid',
+            headStyles: { fillColor: [220, 53, 69] },
+            columnStyles: {
+                5: { halign: 'right', fontStyle: 'bold' }
+            },
+            foot: [['', '', '', '', 'TOTAL:', formatCLP(totalAmount)]],
+            footStyles: { fillColor: [240, 240, 240], textColor: [0,0,0], fontStyle: 'bold', halign: 'right' }
+        });
+
     } else if (activeTab === 'detailed') {
         // DETAILED REPORT (Existing Logic)
         const filteredData = detailedReport
@@ -1492,6 +1529,7 @@ export const Reports: React.FC = () => {
       case 'chemicals': return 'Insumos Químicos';
       case 'stock_breaks': return 'Quiebres de Stock';
       case 'pending': return 'Facturas Pendientes';
+      case 'overdue': return 'Facturas Vencidas';
       case 'paid_payments': return 'Pagos Realizados por Categoría';
       case 'fuel_machines': return 'Petróleo por Máquina';
       case 'detailed': return 'Informe Detallado';
@@ -1782,6 +1820,14 @@ export const Reports: React.FC = () => {
                 } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
               >
                 Facturas Pendientes
+              </button>
+              <button
+                onClick={() => setActiveTab('overdue')}
+                className={`${
+                  activeTab === 'overdue' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Facturas Vencidas
               </button>
               <button
                 onClick={() => setActiveTab('paid_payments')}
@@ -3216,6 +3262,170 @@ export const Reports: React.FC = () => {
             </div>
           )}
 
+          {/* 6b. OVERDUE INVOICES REPORT */}
+          {activeTab === 'overdue' && (
+            <div className="space-y-6">
+                <div className="bg-white p-4 rounded-lg shadow border border-gray-200">
+                    <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-4">
+                        <div>
+                            <h3 className="text-lg leading-6 font-medium text-gray-900">Facturas Vencidas</h3>
+                            <p className="mt-1 text-sm text-gray-500">Facturas pendientes con vencimiento anterior a hoy</p>
+                        </div>
+                        <div className="text-right bg-red-50 p-3 rounded-lg border border-red-100 w-full lg:w-auto">
+                            <span className="text-sm font-medium text-red-800">Total Vencido Mostrado:</span>
+                            <span className="ml-2 text-2xl font-black text-red-600">
+                                {formatCLP(filteredOverdueInvoices.reduce((sum, inv) => sum + inv.total_amount, 0))}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-end gap-3 pt-4 border-t border-gray-100">
+                        <div className="w-full md:w-auto">
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Proveedores (Selección Múltiple)</label>
+                            <div className="flex gap-2">
+                                <select
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (val && !pendingSupplierFilter.includes(val)) {
+                                            setPendingSupplierFilter([...pendingSupplierFilter, val]);
+                                        }
+                                        e.target.value = '';
+                                    }}
+                                    className="block w-48 rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
+                                >
+                                    <option value="">Añadir proveedor...</option>
+                                    {Array.from(new Set(pendingInvoices.map(inv => inv.supplier))).sort().filter(s => !pendingSupplierFilter.includes(s)).map(sup => (
+                                        <option key={sup} value={sup}>{sup}</option>
+                                    ))}
+                                </select>
+                                {pendingSupplierFilter.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 max-w-[300px]">
+                                        {pendingSupplierFilter.map(sup => (
+                                            <span key={sup} className="bg-red-50 text-red-700 border border-red-200 text-[10px] px-2 py-1 rounded flex items-center">
+                                                <span className="truncate max-w-[100px]" title={sup}>{sup}</span>
+                                                <button onClick={() => setPendingSupplierFilter(prev => prev.filter(s => s !== sup))} className="ml-1 font-bold hover:text-red-900">&times;</button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div className="w-full md:w-auto">
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Categorías (Selección Múltiple)</label>
+                            <div className="flex gap-2">
+                                <select
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (val && !pendingCategoryFilter.includes(val)) {
+                                            setPendingCategoryFilter([...pendingCategoryFilter, val]);
+                                        }
+                                        e.target.value = '';
+                                    }}
+                                    className="block w-48 rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
+                                >
+                                    <option value="">Añadir categoría...</option>
+                                    {Array.from(new Set(pendingInvoices.flatMap(inv => inv.categories))).sort().filter(c => !pendingCategoryFilter.includes(c)).map(cat => (
+                                        <option key={cat} value={cat}>{cat}</option>
+                                    ))}
+                                </select>
+                                {pendingCategoryFilter.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 max-w-[200px]">
+                                        {pendingCategoryFilter.map(cat => (
+                                            <span key={cat} className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-2 py-1 rounded flex items-center">
+                                                {cat}
+                                                <button onClick={() => setPendingCategoryFilter(prev => prev.filter(c => c !== cat))} className="ml-1 font-bold hover:text-blue-900">&times;</button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Desde (Vencimiento)</label>
+                            <input 
+                                type="date" 
+                                value={pendingStartDate}
+                                onChange={(e) => setPendingStartDate(e.target.value)}
+                                className="block w-36 rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Hasta (Vencimiento)</label>
+                            <input 
+                                type="date" 
+                                value={pendingEndDate}
+                                onChange={(e) => setPendingEndDate(e.target.value)}
+                                className="block w-36 rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500 sm:text-xs"
+                            />
+                        </div>
+                        {(pendingStartDate || pendingEndDate || pendingSupplierFilter.length > 0 || pendingCategoryFilter.length > 0) && (
+                            <button
+                                onClick={() => { 
+                                    setPendingStartDate(''); 
+                                    setPendingEndDate(''); 
+                                    setPendingSupplierFilter([]);
+                                    setPendingCategoryFilter([]);
+                                }}
+                                className="mb-0.5 px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                            >
+                                Limpiar Filtros
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+              <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vencimiento</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Días Vencida</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Proveedor</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categorías</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">N° Factura</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Monto Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {filteredOverdueInvoices.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                            No hay facturas vencidas que coincidan con los filtros seleccionados.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredOverdueInvoices.map((inv) => (
+                        <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL')}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-md bg-red-100 text-red-800 border border-red-200">
+                              {inv.days_overdue} días
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-700">{inv.supplier}</td>
+                          <td className="px-6 py-4 text-sm text-gray-500">
+                              <div className="flex flex-wrap gap-1">
+                                  {inv.categories.slice(0, 2).map((cat, i) => (
+                                      <span key={i} className="bg-gray-100 px-2 py-0.5 rounded text-[10px] border border-gray-200">{cat}</span>
+                                  ))}
+                                  {inv.categories.length > 2 && <span className="text-xs text-gray-400">+{inv.categories.length - 2}</span>}
+                              </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">N° {inv.invoice_number}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-black text-red-600">{formatCLP(inv.total_amount)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              </div>
+            </div>
+          )}
+
           {/* 7. PAID PAYMENTS REPORT */}
           {activeTab === 'paid_payments' && (
             <div className="space-y-6">
@@ -3848,8 +4058,32 @@ export const Reports: React.FC = () => {
                     </div>
                   )}
 
+                  {activeTab === 'overdue' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                      {filteredOverdueInvoices.map((inv, idx) => (
+                        <div key={idx} className="bg-white p-8 rounded-2xl shadow border-l-8 border-red-500 flex flex-col">
+                          <div className="text-2xl font-bold text-slate-800 mb-2 truncate" title={inv.supplier}>{inv.supplier}</div>
+                          <div className="text-xl text-slate-500 mb-6">N° {inv.invoice_number}</div>
+                          <div className="flex justify-between items-end mt-auto pt-4 border-t border-slate-100">
+                            <div>
+                              <div className="text-sm text-slate-400 uppercase tracking-wider mb-1">Vencimiento</div>
+                              <div className="text-xl font-semibold text-red-600">
+                                {new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })}
+                              </div>
+                              <div className="text-sm text-red-600 font-semibold mt-1">{inv.days_overdue} días</div>
+                            </div>
+                            <div className="text-3xl font-bold text-slate-800">{formatCLP(inv.total_amount)}</div>
+                          </div>
+                        </div>
+                      ))}
+                      {filteredOverdueInvoices.length === 0 && (
+                         <div className="col-span-full text-center text-3xl text-slate-400 py-20">No hay facturas vencidas.</div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Add fallback for other tabs to show a simple table or message */}
-                  {!['general', 'monthly', 'categories', 'pending'].includes(activeTab) && (
+                  {!['general', 'monthly', 'categories', 'pending', 'overdue'].includes(activeTab) && (
                       <div className="text-center text-3xl text-slate-400 py-20 flex flex-col items-center">
                           <AlertCircle className="w-20 h-20 mb-6 text-slate-300" />
                           <p>Para esta vista, recomendamos generar el PDF o usar la tabla detallada.</p>
