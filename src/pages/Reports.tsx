@@ -9,6 +9,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { loadReportsRawData } from '../services/reports';
+import { exportWorkbookToXlsx } from '../lib/excel';
 
 interface ReportData {
   field_name: string;
@@ -171,6 +172,7 @@ export const Reports: React.FC = () => {
   // Detailed Report Filters
   const [filterMonth, setFilterMonth] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [detailedSearch, setDetailedSearch] = useState<string>('');
   // Chemical Report Filters
   const [filterChemicalCategory, setFilterChemicalCategory] = useState<string>('all');
 
@@ -3643,105 +3645,160 @@ export const Reports: React.FC = () => {
                             ))}
                         </select>
                     </div>
+                    <div className="flex-1 min-w-[240px]">
+                        <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Buscar</label>
+                        <input
+                            type="text"
+                            value={detailedSearch}
+                            onChange={(e) => setDetailedSearch(e.target.value)}
+                            placeholder="Proveedor, factura, detalle..."
+                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        />
+                    </div>
                 </div>
 
                 <div className="flex justify-end mb-4">
                     <button
-                        onClick={() => {
-                            // Simple CSV export for detailed report
-                            const rows = [['Mes', 'Categoría', 'Fecha', 'Proveedor', 'N° Factura', 'Detalle', 'Monto (CLP)']];
-                            
-                            detailedReport
+                        onClick={async () => {
+                            const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+                            const baseRows = detailedReport
                                 .filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth)
-                                .forEach(month => {
+                                .flatMap((month) =>
                                     month.categories
                                         .filter(c => filterCategory === 'all' || c.name === filterCategory)
-                                        .forEach(cat => {
-                                            cat.items.forEach(item => {
-                                                rows.push([
-                                                    month.monthName,
-                                                    cat.name,
-                                                    new Date(item.date + 'T12:00:00').toLocaleDateString('es-CL'),
-                                                    `"${item.supplier.replace(/"/g, '""')}"`,
-                                                    item.invoiceNumber,
-                                                    `"${item.description.replace(/"/g, '""')}"`,
-                                                    item.total.toString()
-                                                ]);
-                                            });
-                                        });
+                                        .flatMap((cat) =>
+                                            cat.items.map((item) => {
+                                                const date = item.date ? new Date(item.date + 'T12:00:00') : null;
+                                                const isoDate = date && !isNaN(date.getTime()) ? date.toLocaleDateString('en-CA') : '';
+                                                return {
+                                                    Mes: monthNames[month.monthIndex] || month.monthName,
+                                                    Categoría: cat.name,
+                                                    Fecha: isoDate,
+                                                    Proveedor: item.supplier,
+                                                    'N° Factura': item.invoiceNumber,
+                                                    Detalle: item.description,
+                                                    Monto: Number(item.total) || 0
+                                                };
+                                            })
+                                        )
+                                );
+
+                            const q = detailedSearch.trim().toLowerCase();
+                            const rows = q.length === 0
+                                ? baseRows
+                                : baseRows.filter((r) => {
+                                    const haystack = `${r.Mes} ${r.Categoría} ${r.Fecha} ${r.Proveedor} ${r['N° Factura']} ${r.Detalle}`.toLowerCase();
+                                    return haystack.includes(q);
                                 });
 
-                            const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
-                            const encodedUri = encodeURI(csvContent);
-                            const link = document.createElement("a");
-                            link.setAttribute("href", encodedUri);
-                            link.setAttribute("download", `Reporte_Detallado_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.csv`);
-                            document.body.appendChild(link);
-                            link.click();
-                            document.body.removeChild(link);
+                            const summaryMap = new Map<string, number>();
+                            rows.forEach((r) => {
+                                const key = `${r.Mes}||${r.Categoría}`;
+                                summaryMap.set(key, (summaryMap.get(key) || 0) + (Number(r.Monto) || 0));
+                            });
+
+                            const summaryRows = Array.from(summaryMap.entries()).map(([key, total]) => {
+                                const [Mes, Categoría] = key.split('||');
+                                return { Mes, Categoría, Total: total };
+                            }).sort((a, b) => (a.Mes + a.Categoría).localeCompare(b.Mes + b.Categoría));
+
+                            await exportWorkbookToXlsx({
+                                filename: `Reporte_Detallado_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.xlsx`,
+                                sheets: [
+                                    { name: 'Detalle', rows },
+                                    { name: 'Resumen', rows: summaryRows }
+                                ]
+                            });
                         }}
                         className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
                     >
-                        <FileText className="mr-2 h-4 w-4" /> Exportar a Excel (CSV)
+                        <FileText className="mr-2 h-4 w-4" /> Descargar Excel (.xlsx)
                     </button>
                 </div>
 
-                {detailedReport
-                    .filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth)
-                    .map(month => {
-                        const filteredCategories = month.categories.filter(c => filterCategory === 'all' || c.name === filterCategory);
-                        if (filteredCategories.length === 0) return null;
-                        const monthTotal = filteredCategories.reduce((sum, c) => sum + c.total, 0);
+                {(() => {
+                    const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+                    const baseRows = detailedReport
+                        .filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth)
+                        .flatMap((month) =>
+                            month.categories
+                                .filter(c => filterCategory === 'all' || c.name === filterCategory)
+                                .flatMap((cat) =>
+                                    cat.items.map((item) => ({
+                                        monthIndex: month.monthIndex,
+                                        Mes: monthNames[month.monthIndex] || month.monthName,
+                                        Categoría: cat.name,
+                                        Fecha: item.date,
+                                        Proveedor: item.supplier,
+                                        'N° Factura': item.invoiceNumber,
+                                        Detalle: item.description,
+                                        Monto: Number(item.total) || 0
+                                    }))
+                                )
+                        )
+                        .sort((a, b) => (String(a.Fecha || '')).localeCompare(String(b.Fecha || '')) || (a.Proveedor || '').localeCompare(b.Proveedor || ''));
 
+                    const q = detailedSearch.trim().toLowerCase();
+                    const rows = q.length === 0
+                        ? baseRows
+                        : baseRows.filter((r) => {
+                            const haystack = `${r.Mes} ${r.Categoría} ${r.Fecha} ${r.Proveedor} ${r['N° Factura']} ${r.Detalle}`.toLowerCase();
+                            return haystack.includes(q);
+                        });
+
+                    const total = rows.reduce((sum, r) => sum + (Number(r.Monto) || 0), 0);
+
+                    if (rows.length === 0) {
                         return (
-                            <div key={month.monthIndex} className="bg-white shadow overflow-hidden sm:rounded-lg">
-                                <div className="px-4 py-5 sm:px-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-                                    <h3 className="text-lg leading-6 font-medium text-gray-900">{month.monthName}</h3>
-                                    <span className="text-lg font-bold text-indigo-600">{formatCLP(monthTotal)}</span>
-                                </div>
-                                <div className="p-4 space-y-6">
-                                    {filteredCategories.map((cat, idx) => (
-                                        <div key={idx} className="border rounded-md overflow-hidden">
-                                            <div className="bg-gray-100 px-4 py-2 border-b flex justify-between">
-                                                <span className="font-semibold text-gray-700">{cat.name}</span>
-                                                <span className="font-bold text-gray-900">{formatCLP(cat.total)}</span>
-                                            </div>
-                                            <table className="min-w-full divide-y divide-gray-200">
-                                                <thead className="bg-gray-50">
-                                                    <tr>
-                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Proveedor</th>
-                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Factura</th>
-                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Detalle</th>
-                                                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Monto</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="bg-white divide-y divide-gray-200">
-                                                    {cat.items.map((item, i) => (
-                                                        <tr key={i}>
-                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">
-                                                                {new Date(item.date + 'T12:00:00').toLocaleDateString('es-CL')}
-                                                            </td>
-                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{item.supplier}</td>
-                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">{item.invoiceNumber}</td>
-                                                            <td className="px-4 py-2 text-xs text-gray-500 truncate max-w-xs">{item.description}</td>
-                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">{formatCLP(item.total)}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    ))}
-                                </div>
+                            <div className="text-center py-10 text-gray-500 bg-white rounded-lg shadow border border-gray-200">
+                                No hay registros para los filtros seleccionados.
                             </div>
                         );
-                    })}
-                
-                {detailedReport.filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth).length === 0 && (
-                    <div className="text-center py-10 text-gray-500 bg-white rounded-lg shadow">
-                        No hay registros para los filtros seleccionados.
-                    </div>
-                )}
+                    }
+
+                    return (
+                        <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                            <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+                                <div className="text-sm text-gray-600">
+                                    Filas: <span className="font-bold text-gray-900">{rows.length}</span>
+                                </div>
+                                <div className="text-sm text-gray-600">
+                                    Total: <span className="font-bold text-gray-900">{formatCLP(total)}</span>
+                                </div>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Mes</th>
+                                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Categoría</th>
+                                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Fecha</th>
+                                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Proveedor</th>
+                                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Factura</th>
+                                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Detalle</th>
+                                            <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase">Monto</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-100">
+                                        {rows.map((r, i) => (
+                                            <tr key={`${r.monthIndex}-${r['N° Factura']}-${i}`} className="hover:bg-gray-50">
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{r.Mes}</td>
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{r.Categoría}</td>
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">
+                                                    {r.Fecha ? new Date(String(r.Fecha) + 'T12:00:00').toLocaleDateString('es-CL') : ''}
+                                                </td>
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900 font-semibold">{r.Proveedor}</td>
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{r['N° Factura']}</td>
+                                                <td className="px-4 py-2 text-sm text-gray-600 max-w-[520px] whitespace-normal break-words">{r.Detalle}</td>
+                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-right font-bold text-gray-900">{formatCLP(r.Monto)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    );
+                })()}
             </div>
           )}
         </div>
