@@ -173,6 +173,7 @@ export const Reports: React.FC = () => {
   const [filterMonth, setFilterMonth] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [detailedSearch, setDetailedSearch] = useState<string>('');
+  const [detailedView, setDetailedView] = useState<'segmentado' | 'tabla'>('segmentado');
   // Chemical Report Filters
   const [filterChemicalCategory, setFilterChemicalCategory] = useState<string>('all');
 
@@ -3618,7 +3619,7 @@ export const Reports: React.FC = () => {
           {/* 7. DETAILED REPORT */}
           {activeTab === 'detailed' && (
             <div className="space-y-6">
-                <div className="bg-white p-4 rounded-lg shadow border border-gray-200 flex flex-wrap gap-4 items-center">
+                <div className="bg-white p-4 rounded-lg shadow border border-gray-200 flex flex-wrap gap-4 items-end">
                     <div>
                         <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Filtrar por Mes</label>
                         <select 
@@ -3654,6 +3655,30 @@ export const Reports: React.FC = () => {
                             placeholder="Proveedor, factura, detalle..."
                             className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                         />
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setDetailedView('segmentado')}
+                            className={`px-3 py-2 rounded-md text-sm font-semibold border ${
+                                detailedView === 'segmentado'
+                                    ? 'bg-indigo-600 text-white border-indigo-600'
+                                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                            }`}
+                        >
+                            Segmentado
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setDetailedView('tabla')}
+                            className={`px-3 py-2 rounded-md text-sm font-semibold border ${
+                                detailedView === 'tabla'
+                                    ? 'bg-indigo-600 text-white border-indigo-600'
+                                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                            }`}
+                        >
+                            Tabla
+                        </button>
                     </div>
                 </div>
 
@@ -3752,6 +3777,106 @@ export const Reports: React.FC = () => {
                         return (
                             <div className="text-center py-10 text-gray-500 bg-white rounded-lg shadow border border-gray-200">
                                 No hay registros para los filtros seleccionados.
+                            </div>
+                        );
+                    }
+
+                    if (detailedView === 'segmentado') {
+                        const months = detailedReport
+                            .filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth)
+                            .map((month) => {
+                                const categories = month.categories
+                                    .filter(c => filterCategory === 'all' || c.name === filterCategory)
+                                    .map((cat) => {
+                                        const items = cat.items
+                                            .map((item) => ({
+                                                date: item.date,
+                                                supplier: item.supplier,
+                                                invoiceNumber: item.invoiceNumber,
+                                                description: item.description,
+                                                total: Number(item.total) || 0
+                                            }))
+                                            .filter((it) => {
+                                                if (q.length === 0) return true;
+                                                const haystack = `${monthNames[month.monthIndex] || month.monthName} ${cat.name} ${it.date} ${it.supplier} ${it.invoiceNumber} ${it.description}`.toLowerCase();
+                                                return haystack.includes(q);
+                                            })
+                                            .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || (a.supplier || '').localeCompare(b.supplier || ''));
+
+                                        const catTotal = items.reduce((s, it) => s + (Number(it.total) || 0), 0);
+                                        return { name: cat.name, total: catTotal, items };
+                                    })
+                                    .filter((c) => c.items.length > 0)
+                                    .sort((a, b) => b.total - a.total);
+
+                                const monthTotal = categories.reduce((s, c) => s + c.total, 0);
+                                return { monthIndex: month.monthIndex, monthName: monthNames[month.monthIndex] || month.monthName, total: monthTotal, categories };
+                            })
+                            .filter((m) => m.categories.length > 0);
+
+                        if (months.length === 0) {
+                            return (
+                                <div className="text-center py-10 text-gray-500 bg-white rounded-lg shadow border border-gray-200">
+                                    No hay registros para los filtros seleccionados.
+                                </div>
+                            );
+                        }
+
+                        return (
+                            <div className="space-y-6">
+                                <div className="bg-white rounded-lg shadow border border-gray-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                                    <div className="text-sm text-gray-600">
+                                        Filas: <span className="font-bold text-gray-900">{rows.length}</span>
+                                    </div>
+                                    <div className="text-sm text-gray-600">
+                                        Total: <span className="font-bold text-gray-900">{formatCLP(total)}</span>
+                                    </div>
+                                </div>
+
+                                {months.map((m) => (
+                                    <div key={m.monthIndex} className="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+                                        <div className="px-4 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+                                            <h3 className="text-lg font-semibold text-gray-900">{m.monthName}</h3>
+                                            <span className="text-lg font-bold text-indigo-600">{formatCLP(m.total)}</span>
+                                        </div>
+                                        <div className="p-4 space-y-4">
+                                            {m.categories.map((cat) => (
+                                                <div key={cat.name} className="border border-gray-200 rounded-lg overflow-hidden">
+                                                    <div className="bg-gray-100 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
+                                                        <span className="font-semibold text-gray-800">{cat.name}</span>
+                                                        <span className="font-bold text-gray-900">{formatCLP(cat.total)}</span>
+                                                    </div>
+                                                    <div className="overflow-x-auto">
+                                                        <table className="min-w-full divide-y divide-gray-200">
+                                                            <thead className="bg-white">
+                                                                <tr>
+                                                                    <th className="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Fecha</th>
+                                                                    <th className="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Proveedor</th>
+                                                                    <th className="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Factura</th>
+                                                                    <th className="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Detalle</th>
+                                                                    <th className="px-4 py-2 text-right text-xs font-bold text-gray-500 uppercase">Monto</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="bg-white divide-y divide-gray-100">
+                                                                {cat.items.map((it, idx) => (
+                                                                    <tr key={`${cat.name}-${idx}`} className="hover:bg-gray-50">
+                                                                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">
+                                                                            {it.date ? new Date(String(it.date) + 'T12:00:00').toLocaleDateString('es-CL') : ''}
+                                                                        </td>
+                                                                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900 font-semibold">{it.supplier}</td>
+                                                                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{it.invoiceNumber}</td>
+                                                                        <td className="px-4 py-2 text-sm text-gray-600 max-w-[720px] whitespace-normal break-words">{it.description}</td>
+                                                                        <td className="px-4 py-2 whitespace-nowrap text-sm text-right font-bold text-gray-900">{formatCLP(it.total)}</td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         );
                     }
