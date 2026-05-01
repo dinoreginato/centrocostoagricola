@@ -65,18 +65,20 @@ export async function fetchPendingMachineryItems(params: { companyId: string }) 
 
   if (error) throw error;
 
+  const normalize = (value: unknown) =>
+    String(value || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+
+  const allowedCategories = new Set(['maquinaria', 'repuesto']);
+
   const filteredItems = (items || []).filter((item: any) => {
     if (item.invoices?.company_id !== params.companyId) return false;
 
-    const rawCat = item.category || item.products?.category || '';
-    const rawName = item.products?.name || '';
-
-    const cat = String(rawCat).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-    const name = String(rawName).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-    const textToCheck = `${cat} ${name}`;
-
-    const allowedKeywords = ['maquinaria', 'repuesto'];
-    return allowedKeywords.some((keyword) => textToCheck.includes(keyword));
+    const cat = normalize(item.category || item.products?.category || '');
+    return allowedCategories.has(cat);
   });
 
   const assignmentMap = await fetchMachineryAssignmentsSummary({ companyId: params.companyId });

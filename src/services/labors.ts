@@ -1,5 +1,13 @@
 import { supabase } from '../supabase/client';
 
+function normalize(value: unknown) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
 export async function fetchLaborAssignmentsSummary(params: { companyId: string }) {
   const assignmentMap = new Map<string, number>();
 
@@ -40,13 +48,12 @@ export async function fetchPendingLaborItems(params: { companyId: string }) {
 
   if (error) throw error;
 
-  const laborKeywords = ['mano de obra', 'labor', 'labores', 'servicio de labores', 'cosecha', 'poda', 'raleo', 'siembra'];
+  const allowedCategories = new Set(['mano de obra', 'labores agricolas']);
 
   const filteredItems = (items || []).filter((item: any) => {
     if (item.invoices?.company_id !== params.companyId) return false;
-    const cat = String(item.category || '').toLowerCase().trim();
-    const name = String(item.products?.name || '').toLowerCase().trim();
-    return laborKeywords.some((k) => cat.includes(k) || name.includes(k));
+    const cat = normalize(item.category);
+    return allowedCategories.has(cat);
   });
 
   const assignmentMap = await fetchLaborAssignmentsSummary({ companyId: params.companyId });

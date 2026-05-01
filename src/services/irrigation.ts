@@ -92,11 +92,18 @@ export async function fetchIrrigationPendingItems(params: { companyId: string })
 
   if (error) throw error;
 
-  const targetCategories = ['riego', 'agua', 'electricidad'];
+  const normalize = (value: unknown) =>
+    String(value || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+
+  const targetCategories = new Set(['riego', 'agua', 'electricidad']);
   const filteredItems = ((items || []) as unknown as IrrigationInvoiceItemRow[]).filter((item) => {
     if (item.invoices?.company_id !== params.companyId) return false;
-    const cat = String(item.category || item.products?.category || '').toLowerCase().trim();
-    return targetCategories.some((c) => cat.includes(c));
+    const cat = normalize(item.category || item.products?.category || '');
+    return targetCategories.has(cat);
   });
 
   const assignmentMap = await fetchIrrigationAssignmentsSummary({ companyId: params.companyId });
