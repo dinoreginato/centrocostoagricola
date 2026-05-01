@@ -55,13 +55,16 @@ export async function fetchPendingMachineryItems(params: { companyId: string }) 
     .select(
       `
       id, total_price, category,
+      created_at,
       products (name, category),
       invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
     `
     )
     .eq('invoices.company_id', params.companyId)
+    .or('category.ilike.%maquinaria%,category.ilike.%repuesto%')
+    .order('created_at', { ascending: false })
     .order('id', { ascending: false })
-    .range(0, 19999);
+    .range(0, 9999);
 
   if (error) throw error;
 
