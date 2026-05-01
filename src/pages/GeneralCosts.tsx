@@ -75,6 +75,7 @@ export const GeneralCosts: React.FC = () => {
   // History State
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historySearch, setHistorySearch] = useState('');
+  const [pendingSearch, setPendingSearch] = useState('');
 
   useEffect(() => {
     if (selectedCompany) {
@@ -139,6 +140,15 @@ export const GeneralCosts: React.FC = () => {
     const invoice = (h.invoice_items?.invoices?.invoice_number || '').toLowerCase();
     
     return desc.includes(search) || cat.includes(search) || sector.includes(search) || invoice.includes(search);
+  });
+
+  const filteredPendingCosts = pendingCosts.filter((p) => {
+    const q = pendingSearch.trim().toLowerCase();
+    if (!q) return true;
+    const invoice = String(p.invoice_number || '').toLowerCase();
+    const desc = String(p.description || '').toLowerCase();
+    const cat = String(p.category || '').toLowerCase();
+    return invoice.includes(q) || desc.includes(q) || cat.includes(q);
   });
 
   const handleSelectCost = (cost: GeneralCostItem) => {
@@ -283,12 +293,18 @@ export const GeneralCosts: React.FC = () => {
                     <AlertCircle className="h-4 w-4 mr-2 text-yellow-500" />
                     Items Pendientes
                 </h3>
+                <input
+                    value={pendingSearch}
+                    onChange={(e) => setPendingSearch(e.target.value)}
+                    placeholder="Buscar por factura, categoría o nombre..."
+                    className="mt-3 w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
+                />
             </div>
             <div className="divide-y divide-gray-200 dark:divide-gray-700 max-h-[600px] overflow-y-auto">
-                {pendingCosts.length === 0 ? (
+                {filteredPendingCosts.length === 0 ? (
                     <div className="p-8 text-center text-gray-500 dark:text-gray-400 text-sm">No hay items pendientes.</div>
                 ) : (
-                    pendingCosts.map(item => (
+                    filteredPendingCosts.map(item => (
                         <div 
                             key={item.id} 
                             onClick={() => handleSelectCost(item)}

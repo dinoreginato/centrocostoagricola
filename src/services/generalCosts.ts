@@ -100,6 +100,12 @@ export async function fetchPendingGeneralCosts(params: { companyId: string }) {
     if (from >= 100000) break;
   }
 
+  const invoiceSubtotals = new Map<string, number>();
+  items.forEach((item) => {
+    const invId = String(item.invoices.id);
+    invoiceSubtotals.set(invId, (invoiceSubtotals.get(invId) || 0) + Number(item.total_price || 0));
+  });
+
   const CORE_EXCLUDED = [
     'mano de obra',
     'labores agricolas',
@@ -141,28 +147,6 @@ export async function fetchPendingGeneralCosts(params: { companyId: string }) {
   ((assignments || []) as unknown as GeneralCostSummaryRow[]).forEach((a) => {
     assignmentMap.set(String(a.invoice_item_id), Number(a.total_assigned || 0));
   });
-
-  const invoiceIds = Array.from(new Set(filteredItems.map((i) => String(i.invoices.id))));
-  const invoiceSubtotals = new Map<string, number>();
-  if (invoiceIds.length > 0) {
-    let invFrom = 0;
-    const invPageSize = 5000;
-    while (true) {
-      const { data: invItems, error: invError } = await supabase
-        .from('invoice_items')
-        .select('invoice_id, total_price')
-        .in('invoice_id', invoiceIds)
-        .range(invFrom, invFrom + invPageSize - 1);
-      if (invError) throw invError;
-      (invItems || []).forEach((it: any) => {
-        const invId = String(it.invoice_id);
-        invoiceSubtotals.set(invId, (invoiceSubtotals.get(invId) || 0) + Number(it.total_price || 0));
-      });
-      if (!invItems || invItems.length < invPageSize) break;
-      invFrom += invPageSize;
-      if (invFrom >= 200000) break;
-    }
-  }
 
   const pending: PendingGeneralCostItem[] = [];
 
