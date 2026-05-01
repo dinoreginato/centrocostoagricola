@@ -9,29 +9,20 @@ import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
 import { deleteAllLaborAssignments, deleteLaborAssignment, fetchLaborAssignmentsForAutoClassify, fetchLaborHistory, fetchPendingLaborItems, insertLaborAssignments, updateLaborAssignment, updateLaborType } from '../services/labors';
 
-const LABOR_TYPES = [
-  'General',
-  'Cosecha',
-  'Poda',
-  'Raleo',
-  'Riego',
-  'Aplicaciones',
-  'Mantenimiento',
-  'Plantación',
-  'Administración',
-  'Otros'
-];
+const LABOR_TYPES = ['General', 'Cosecha', 'Poda', 'Raleo', 'Plantación', 'Mantenimiento', 'Otros'];
+
+function normalizeLaborType(value?: string | null) {
+  const v = String(value || '').trim();
+  return LABOR_TYPES.includes(v) ? v : 'Otros';
+}
 
 // Mapping of keywords to Labor Types for auto-detection
 const LABOR_KEYWORDS: Record<string, string[]> = {
     'Cosecha': ['cosecha', 'recoleccion', 'recolección', 'picking', 'vendimia', 'cosech'],
     'Poda': ['poda', 'pruning', 'recorte', 'despunte'],
     'Raleo': ['raleo', 'thinning', 'entresaque', 'aclareo'],
-    'Riego': ['riego', 'irrigation', 'agua', 'regador'],
-    'Aplicaciones': ['aplicacion', 'fumigacion', 'pulverizacion', 'spray', 'tratamiento'],
     'Mantenimiento': ['mantenimiento', 'reparacion', 'arreglo', 'taller', 'mantencion'],
     'Plantación': ['plantacion', 'siembra', 'planting'],
-    'Administración': ['administracion', 'gestion', 'oficina', 'contabilidad'],
 };
 
 interface LaborItem {
@@ -215,14 +206,14 @@ export const Labors: React.FC = () => {
         if (simpleMatch) matchedType = simpleMatch;
     }
 
-    setLaborType(matchedType);
+    setLaborType(normalizeLaborType(matchedType));
   };
 
   const handleCloneAssignment = (assignment: HistoryItem) => {
       setEditingAssignmentId(null); // Force it to be a new entry
       setSelectedLaborId(assignment.invoice_item_id);
       setAssignedDate(assignment.assigned_date ? assignment.assigned_date.split('T')[0] : new Date().toISOString().split('T')[0]);
-      setLaborType(assignment.labor_type || 'General');
+      setLaborType(normalizeLaborType(assignment.labor_type));
       
       setAllocations([{ 
           sector_id: assignment.sector_id, 
@@ -234,7 +225,7 @@ export const Labors: React.FC = () => {
       setEditingAssignmentId(assignment.id);
       setSelectedLaborId(assignment.invoice_item_id);
       setAssignedDate(assignment.assigned_date ? assignment.assigned_date.split('T')[0] : new Date().toISOString().split('T')[0]);
-      setLaborType(assignment.labor_type || 'General');
+      setLaborType(normalizeLaborType(assignment.labor_type));
       
       // When editing, we need to know the original labor item to show details
       // We also need to 'free up' the amount of this assignment so it can be re-allocated
@@ -494,7 +485,7 @@ export const Labors: React.FC = () => {
 
       // Filter by Labor Type
       if (reportLaborType !== 'all') {
-          reportData = reportData.filter(item => (item.labor_type || 'General') === reportLaborType);
+          reportData = reportData.filter(item => normalizeLaborType(item.labor_type) === reportLaborType);
           titleSuffix += ` - Labor: ${reportLaborType}`;
       }
 
@@ -514,7 +505,7 @@ export const Labors: React.FC = () => {
 
       // Group by Labor Type
       const grouped = reportData.reduce((acc, curr) => {
-          const type = curr.labor_type || 'General';
+          const type = normalizeLaborType(curr.labor_type);
           if (!acc[type]) acc[type] = [];
           acc[type].push(curr);
           return acc;
@@ -1000,7 +991,7 @@ export const Labors: React.FC = () => {
                                         {inlineEditingId === h.id ? (
                                             <select
                                                 autoFocus
-                                                value={h.labor_type || 'General'}
+                                                value={normalizeLaborType(h.labor_type)}
                                                 onChange={(e) => handleInlineLaborTypeChange(h.id, e.target.value)}
                                                 onBlur={() => setInlineEditingId(null)}
                                                 className="text-xs border-gray-300 rounded shadow-sm focus:border-green-500 focus:ring-green-500"
@@ -1010,18 +1001,23 @@ export const Labors: React.FC = () => {
                                                 ))}
                                             </select>
                                         ) : (
+                                            (() => {
+                                              const t = normalizeLaborType(h.labor_type);
+                                              return (
                                             <span 
                                                 onClick={() => setInlineEditingId(h.id)}
                                                 className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full cursor-pointer hover:opacity-80 transition-opacity ${
-                                                    h.labor_type === 'Cosecha' ? 'bg-orange-100 text-orange-800' :
-                                                    h.labor_type === 'Poda' ? 'bg-blue-100 text-blue-800' :
-                                                    h.labor_type === 'Raleo' ? 'bg-purple-100 text-purple-800' :
+                                                    t === 'Cosecha' ? 'bg-orange-100 text-orange-800' :
+                                                    t === 'Poda' ? 'bg-blue-100 text-blue-800' :
+                                                    t === 'Raleo' ? 'bg-purple-100 text-purple-800' :
                                                     'bg-gray-100 text-gray-800'
                                                 }`}
                                                 title="Clic para cambiar el tipo de labor"
                                             >
-                                                {h.labor_type || 'General'}
+                                                {t}
                                             </span>
+                                              );
+                                            })()
                                         )}
                                     </td>
                                     <td className="px-6 py-4 text-sm text-gray-900">
