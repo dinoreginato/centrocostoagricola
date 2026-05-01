@@ -75,13 +75,13 @@ export async function fetchPendingMachineryItems(params: { companyId: string }) 
       .replace(/[\u0300-\u036f]/g, '')
       .trim();
 
-  const allowedCategories = new Set(['maquinaria', 'repuesto']);
+  const allowedCategoryKeywords = ['maquinaria', 'repuesto'];
 
   const filteredItems = (items || []).filter((item: any) => {
     if (item.invoices?.company_id !== params.companyId) return false;
 
     const cat = normalize(item.category || item.products?.category || '');
-    return allowedCategories.has(cat);
+    return allowedCategoryKeywords.some((k) => cat.includes(k));
   });
 
   const assignmentMap = await fetchMachineryAssignmentsSummary({ companyId: params.companyId });
@@ -107,7 +107,7 @@ export async function fetchPendingMachineryItems(params: { companyId: string }) 
     const assigned = assignmentMap.get(String(item.id)) || 0;
     const remaining = total - assigned;
 
-    if (Math.abs(remaining) > 500) {
+    if (Math.abs(remaining) > 1) {
       pending.push({
         id: String(item.id),
         invoice_id: String(item.invoices.id),
