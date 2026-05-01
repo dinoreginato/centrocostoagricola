@@ -150,7 +150,7 @@ export async function fetchMachineryHistory(params: { companyId: string }) {
     )
     .eq('invoice_items.invoices.company_id', params.companyId)
     .order('assigned_date', { ascending: false })
-    .limit(500);
+    .limit(5000);
 
   if (error) throw error;
   return (data || []) as unknown as Array<{
