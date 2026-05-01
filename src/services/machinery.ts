@@ -50,23 +50,33 @@ export async function fetchMachineryAssignmentsSummary(params: { companyId: stri
 }
 
 export async function fetchPendingMachineryItems(params: { companyId: string }) {
-  const { data: items, error } = await supabase
-    .from('invoice_items')
-    .select(
-      `
-      id, total_price, category,
-      created_at,
-      products (name, category),
-      invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
-    `
-    )
-    .eq('invoices.company_id', params.companyId)
-    .or('category.ilike.%maquinaria%,category.ilike.%repuesto%')
-    .order('created_at', { ascending: false })
-    .order('id', { ascending: false })
-    .range(0, 9999);
+  const pageSize = 5000;
+  let from = 0;
+  const items: any[] = [];
 
-  if (error) throw error;
+  while (true) {
+    const { data, error } = await supabase
+      .from('invoice_items')
+      .select(
+        `
+        id, total_price, category,
+        created_at,
+        products (name, category),
+        invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
+      `
+      )
+      .eq('invoices.company_id', params.companyId)
+      .or('category.ilike.%maquinaria%,category.ilike.%repuesto%')
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    (data || []).forEach((r: any) => items.push(r));
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+    if (from >= 100000) break;
+  }
 
   const normalize = (value: unknown) =>
     String(value || '')

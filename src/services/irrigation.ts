@@ -78,19 +78,33 @@ export async function fetchIrrigationAssignmentsSummary(params: { companyId: str
 }
 
 export async function fetchIrrigationPendingItems(params: { companyId: string }) {
-  const { data: items, error } = await supabase
-    .from('invoice_items')
-    .select(
-      `
-      id, total_price, category,
-      products (name, category),
-      invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
-    `
-    )
-    .eq('invoices.company_id', params.companyId)
-    .range(0, 9999);
+  const pageSize = 5000;
+  let from = 0;
+  const items: IrrigationInvoiceItemRow[] = [];
 
-  if (error) throw error;
+  while (true) {
+    const { data, error } = await supabase
+      .from('invoice_items')
+      .select(
+        `
+        id, total_price, category,
+        created_at,
+        products (name, category),
+        invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
+      `
+      )
+      .eq('invoices.company_id', params.companyId)
+      .or('category.ilike.%riego%,category.ilike.%agua%,category.ilike.%electricidad%')
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    ((data || []) as unknown as IrrigationInvoiceItemRow[]).forEach((r) => items.push(r));
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+    if (from >= 100000) break;
+  }
 
   const normalize = (value: unknown) =>
     String(value || '')
@@ -99,11 +113,11 @@ export async function fetchIrrigationPendingItems(params: { companyId: string })
       .replace(/[\u0300-\u036f]/g, '')
       .trim();
 
-  const targetCategories = new Set(['riego', 'agua', 'electricidad']);
-  const filteredItems = ((items || []) as unknown as IrrigationInvoiceItemRow[]).filter((item) => {
+  const targetKeywords = ['riego', 'agua', 'electricidad'];
+  const filteredItems = items.filter((item) => {
     if (item.invoices?.company_id !== params.companyId) return false;
     const cat = normalize(item.category || item.products?.category || '');
-    return targetCategories.has(cat);
+    return targetKeywords.some((k) => cat.includes(k));
   });
 
   const assignmentMap = await fetchIrrigationAssignmentsSummary({ companyId: params.companyId });
@@ -128,7 +142,7 @@ export async function fetchIrrigationPendingItems(params: { companyId: string })
     const assigned = assignmentMap.get(String(item.id)) || 0;
     const remaining = total - assigned;
 
-    if (Math.abs(remaining) > 500) {
+    if (Math.abs(remaining) > 1) {
       pending.push({
         id: String(item.id),
         invoice_id: String(item.invoices.id),
