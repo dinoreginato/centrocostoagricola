@@ -4,7 +4,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { LayoutList, ArrowRight, Save, Loader2, AlertCircle, Trash2 } from 'lucide-react';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
-import { deleteAllGeneralCostHistory, deleteGeneralCostAssignment, fetchGeneralCostsDiagnosis, fetchGeneralCostsHistory, fetchPendingGeneralCosts, insertGeneralCostAssignments, updateGeneralCostAssignment } from '../services/generalCosts';
+import { deleteAllGeneralCostHistory, deleteGeneralCostAssignment, fetchGeneralCostsDiagnosis, fetchGeneralCostsHistory, fetchGeneralCostsHistoryByQuery, fetchPendingGeneralCosts, insertGeneralCostAssignments, updateGeneralCostAssignment } from '../services/generalCosts';
 
 interface GeneralCostItem {
   id: string; // invoice_item_id
@@ -128,7 +128,10 @@ export const GeneralCosts: React.FC = () => {
   const loadHistory = async () => {
     if (!selectedCompany) return;
     try {
-      const mapped = await fetchGeneralCostsHistory({ companyId: selectedCompany.id });
+      const q = historySearch.trim();
+      const mapped = q
+        ? await fetchGeneralCostsHistoryByQuery({ companyId: selectedCompany.id, query: q })
+        : await fetchGeneralCostsHistory({ companyId: selectedCompany.id });
       setHistory(mapped as any);
     } catch {
       toast.error('Error al cargar historial.');
@@ -136,16 +139,15 @@ export const GeneralCosts: React.FC = () => {
     }
   };
 
-  const filteredHistory = history.filter(h => {
-    if (!historySearch) return true;
-    const search = historySearch.toLowerCase();
-    const desc = (h.description || '').toLowerCase();
-    const cat = (h.category || '').toLowerCase();
-    const sector = (h.sectors?.name || '').toLowerCase();
-    const invoice = (h.invoice_items?.invoices?.invoice_number || '').toLowerCase();
-    
-    return desc.includes(search) || cat.includes(search) || sector.includes(search) || invoice.includes(search);
-  });
+  useEffect(() => {
+    if (!selectedCompany) return;
+    const t = window.setTimeout(() => {
+      loadHistory();
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, [historySearch, selectedCompany?.id]);
+
+  const filteredHistory = history;
 
   const filteredPendingCosts = pendingCosts.filter((p) => {
     const q = pendingSearch.trim().toLowerCase();

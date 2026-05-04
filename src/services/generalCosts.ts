@@ -309,6 +309,103 @@ export async function fetchGeneralCostsHistory(params: { companyId: string }) {
   })) as GeneralCostHistoryItem[];
 }
 
+export async function fetchGeneralCostsHistoryByQuery(params: { companyId: string; query: string }) {
+  const q = String(params.query || '').trim();
+  if (!q) return [] as GeneralCostHistoryItem[];
+
+  const { data: invoices, error: invError } = await supabase
+    .from('invoices')
+    .select('id')
+    .eq('company_id', params.companyId)
+    .ilike('invoice_number', `%${q}%`)
+    .range(0, 99);
+  if (invError) throw invError;
+
+  const { data: products, error: prodError } = await supabase
+    .from('products')
+    .select('id')
+    .eq('company_id', params.companyId)
+    .ilike('name', `%${q}%`)
+    .range(0, 99);
+  if (prodError) throw prodError;
+
+  const invoiceIds = Array.from(new Set((invoices || []).map((i: any) => String(i.id))));
+  const productIds = Array.from(new Set((products || []).map((p: any) => String(p.id))));
+
+  const itemIds: string[] = [];
+
+  if (invoiceIds.length > 0) {
+    const chunkSize = 200;
+    for (let i = 0; i < invoiceIds.length; i += chunkSize) {
+      const chunk = invoiceIds.slice(i, i + chunkSize);
+      const { data: invItems, error: invItemsError } = await supabase
+        .from('invoice_items')
+        .select('id, invoices!inner(company_id)')
+        .in('invoice_id', chunk)
+        .eq('invoices.company_id', params.companyId)
+        .range(0, 2000);
+      if (invItemsError) throw invItemsError;
+      (invItems || []).forEach((it: any) => itemIds.push(String(it.id)));
+    }
+  }
+
+  if (productIds.length > 0) {
+    const chunkSize = 200;
+    for (let i = 0; i < productIds.length; i += chunkSize) {
+      const chunk = productIds.slice(i, i + chunkSize);
+      const { data: prodItems, error: prodItemsError } = await supabase
+        .from('invoice_items')
+        .select('id, invoices!inner(company_id)')
+        .in('product_id', chunk)
+        .eq('invoices.company_id', params.companyId)
+        .range(0, 2000);
+      if (prodItemsError) throw prodItemsError;
+      (prodItems || []).forEach((it: any) => itemIds.push(String(it.id)));
+    }
+  }
+
+  if (itemIds.length === 0) return [] as GeneralCostHistoryItem[];
+
+  const uniqueItemIds = Array.from(new Set(itemIds));
+  const rows: GeneralCostRaw[] = [];
+  const chunkSize = 200;
+
+  for (let i = 0; i < uniqueItemIds.length; i += chunkSize) {
+    const chunk = uniqueItemIds.slice(i, i + chunkSize);
+    const { data, error } = await supabase
+      .from('general_costs')
+      .select(
+        `
+        id, amount, date, category, description, invoice_item_id,
+        sectors (name),
+        invoice_items (
+          products (name),
+          invoices (invoice_number)
+        )
+      `
+      )
+      .eq('company_id', params.companyId)
+      .in('invoice_item_id', chunk)
+      .order('date', { ascending: false })
+      .range(0, 5000);
+
+    if (error) throw error;
+    ((data || []) as unknown as GeneralCostRaw[]).forEach((r) => rows.push(r));
+  }
+
+  return rows.map((d) => ({
+    id: d.id,
+    assigned_amount: d.amount,
+    assigned_date: d.date,
+    sector_id: d.sectors?.id,
+    invoice_item_id: d.invoice_item_id,
+    category: d.category,
+    description: d.description,
+    sectors: d.sectors,
+    invoice_items: d.invoice_items
+  })) as GeneralCostHistoryItem[];
+}
+
 export async function deleteGeneralCostAssignment(params: { id: string }) {
   const { error } = await supabase.from('general_costs').delete().eq('id', params.id);
   if (error) throw error;
