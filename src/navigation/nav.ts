@@ -12,7 +12,8 @@ import {
   Map,
   Package,
   Tractor,
-  Users
+  Users,
+  MessageSquare
 } from 'lucide-react';
 
 export type NavItem = {
@@ -33,7 +34,8 @@ export function getNavGroups(userRole?: string | null): NavGroup[] {
       title: 'Principal',
       items: [
         { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['admin', 'viewer'] },
-        { name: 'Reportes', href: '/reportes', icon: BarChart3, roles: ['admin', 'viewer'] }
+        { name: 'Reportes', href: '/reportes', icon: BarChart3, roles: ['admin', 'viewer'] },
+        { name: 'Asistente', href: '/asistente', icon: MessageSquare, roles: ['admin', 'editor', 'viewer'] }
       ]
     },
     {

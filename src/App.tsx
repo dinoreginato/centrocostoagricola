@@ -28,6 +28,7 @@ const GeneralCosts = React.lazy(() => import('./pages/GeneralCosts').then(module
 const ChemicalCosts = React.lazy(() => import('./pages/ChemicalCosts').then(module => ({ default: module.ChemicalCosts })));
 const Incomes = React.lazy(() => import('./pages/Incomes').then(module => ({ default: module.Incomes })));
 const PhytosanitaryPrograms = React.lazy(() => import('./pages/PhytosanitaryPrograms').then(module => ({ default: module.PhytosanitaryPrograms })));
+const Assistant = React.lazy(() => import('./pages/Assistant').then(module => ({ default: module.Assistant })));
 
 const FallbackLoader = () => (
   <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -64,6 +65,7 @@ function App() {
                   <Route path="otros-costos" element={<GeneralCosts />} />
                   <Route path="precios-quimicos" element={<ChemicalCosts />} />
                   <Route path="reportes" element={<Reports />} />
+                  <Route path="asistente" element={<Assistant />} />
                   <Route path="usuarios" element={<Users />} />
                   
                   {/* 404 Catch All */}

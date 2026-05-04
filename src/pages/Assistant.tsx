@@ -1,0 +1,443 @@
+import { toast } from 'sonner';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useCompany } from '../contexts/CompanyContext';
+import { formatCLP } from '../lib/utils';
+import { parseAssistantIntent } from '../lib/assistantNlp';
+import { generateFieldCostsReport, type FieldCostsReport } from '../services/assistantReports';
+import { exportWorkbookToXlsx } from '../lib/excel';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { Loader2, MessageSquare, FileDown, Send, Phone } from 'lucide-react';
+import { PdfPreviewModal } from '../components/PdfPreviewModal';
+
+type ChatMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  createdAt: number;
+};
+
+function uid() {
+  return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function filterLabel(filter: FieldCostsReport['filter']) {
+  if (filter.kind === 'all') return 'Todo el período';
+  if (filter.kind === 'season') return `Temporada ${filter.season}`;
+  return `${filter.from} a ${filter.to}`;
+}
+
+export const Assistant: React.FC = () => {
+  const { selectedCompany } = useCompany();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [report, setReport] = useState<FieldCostsReport | null>(null);
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfPreviewTitle, setPdfPreviewTitle] = useState('');
+  const [whatsappTo, setWhatsappTo] = useState('');
+  const listRef = useRef<HTMLDivElement | null>(null);
+
+  const canRun = Boolean(selectedCompany);
+
+  const quickHelp = useMemo(
+    () => [
+      'Costos por campo temporada 2025-2026',
+      'Costos por campo marzo 2026'
+    ],
+    []
+  );
+
+  const appendMessage = React.useCallback((msg: Omit<ChatMessage, 'id' | 'createdAt'>) => {
+    setMessages((prev) => [...prev, { id: uid(), createdAt: Date.now(), ...msg }]);
+  }, []);
+
+  const runAssistant = React.useCallback(async (text: string) => {
+    if (!selectedCompany) return;
+    const intent = parseAssistantIntent(text);
+
+    appendMessage({ role: 'user', text });
+    setLoading(true);
+    setReport(null);
+    try {
+      if (intent.kind !== 'field_costs') {
+        appendMessage({
+          role: 'assistant',
+          text: 'Puedo ayudarte con “Costos por campo”. Ejemplos: “Costos por campo temporada 2025-2026” o “Costos por campo marzo 2026”.'
+        });
+        return;
+      }
+
+      const filter =
+        intent.from && intent.to
+          ? ({ kind: 'range', from: intent.from, to: intent.to } as const)
+          : intent.season
+            ? ({ kind: 'season', season: intent.season } as const)
+            : ({ kind: 'all' } as const);
+
+      const title = `Costos por Campo - ${selectedCompany.name} - ${filterLabel(filter)}`;
+      const rep = await generateFieldCostsReport({ companyId: selectedCompany.id, filter, title });
+      setReport(rep);
+      appendMessage({
+        role: 'assistant',
+        text: `Listo. Generé el reporte “Costos por campo” (${filterLabel(filter)}). Total: ${formatCLP(rep.total_cost)}.`
+      });
+    } catch (e: any) {
+      toast.error('Error al generar reporte: ' + String(e?.message || e));
+      appendMessage({ role: 'assistant', text: 'No pude generar el reporte. Reintenta o cambia el período.' });
+    } finally {
+      setLoading(false);
+    }
+  }, [appendMessage, selectedCompany]);
+
+  useEffect(() => {
+    const q = searchParams.get('q');
+    if (!q || !selectedCompany) return;
+    setSearchParams({});
+    void runAssistant(q);
+  }, [runAssistant, searchParams, selectedCompany, setSearchParams]);
+
+  useEffect(() => {
+    if (!listRef.current) return;
+    listRef.current.scrollTop = listRef.current.scrollHeight;
+  }, [messages.length]);
+
+  const downloadExcel = async () => {
+    if (!report || !selectedCompany) return;
+    const rowsFields = report.fields.map((r) => ({
+      Campo: r.field_name,
+      Hectareas: Number(r.hectares) || 0,
+      Total: Number(r.total_cost) || 0,
+      'Costo/ha': Number(r.cost_per_ha) || 0,
+      Aplicaciones: r.breakdown.applications,
+      Labores: r.breakdown.labor,
+      Trabajadores: r.breakdown.workers,
+      Petróleo: r.breakdown.fuel,
+      Maquinaria: r.breakdown.machinery,
+      Riego: r.breakdown.irrigation,
+      'Distribución': r.breakdown.distribution
+    }));
+
+    const rowsSectors = report.sectors.map((r) => ({
+      Campo: r.field_name,
+      Sector: r.sector_name,
+      Hectareas: Number(r.hectares) || 0,
+      Total: Number(r.total_cost) || 0,
+      Aplicaciones: r.breakdown.applications,
+      Labores: r.breakdown.labor,
+      Trabajadores: r.breakdown.workers,
+      Petróleo: r.breakdown.fuel,
+      Maquinaria: r.breakdown.machinery,
+      Riego: r.breakdown.irrigation,
+      'Distribución': r.breakdown.distribution
+    }));
+
+    await exportWorkbookToXlsx({
+      filename: `Costos_por_Campo_${selectedCompany.name.replace(/\s+/g, '_')}.xlsx`,
+      sheets: [
+        { name: 'Resumen_Campos', rows: rowsFields },
+        { name: 'Detalle_Sectores', rows: rowsSectors }
+      ]
+    });
+  };
+
+  const buildPdf = () => {
+    if (!report || !selectedCompany) return null;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+    doc.setFontSize(14);
+    doc.text(report.title, 40, 40);
+    doc.setFontSize(10);
+    doc.text(`Total: ${formatCLP(report.total_cost)}`, 40, 58);
+
+    const body = report.fields.map((r) => [
+      r.field_name,
+      (Number(r.hectares) || 0).toFixed(2),
+      formatCLP(r.total_cost),
+      formatCLP(r.cost_per_ha),
+      formatCLP(r.breakdown.applications),
+      formatCLP(r.breakdown.labor),
+      formatCLP(r.breakdown.workers),
+      formatCLP(r.breakdown.fuel),
+      formatCLP(r.breakdown.machinery),
+      formatCLP(r.breakdown.irrigation),
+      formatCLP(r.breakdown.distribution)
+    ]);
+
+    autoTable(doc, {
+      startY: 75,
+      head: [
+        [
+          'Campo',
+          'Ha',
+          'Total',
+          'Costo/ha',
+          'Aplicaciones',
+          'Labores',
+          'Trabajadores',
+          'Petróleo',
+          'Maquinaria',
+          'Riego',
+          'Distribución'
+        ]
+      ],
+      body,
+      styles: { fontSize: 8, cellPadding: 3 },
+      headStyles: { fillColor: [34, 197, 94] },
+      columnStyles: {
+        0: { cellWidth: 160 },
+        1: { cellWidth: 45, halign: 'right' },
+        2: { cellWidth: 70, halign: 'right' },
+        3: { cellWidth: 70, halign: 'right' }
+      }
+    });
+
+    return doc;
+  };
+
+  const previewPdf = () => {
+    const doc = buildPdf();
+    if (!doc) return;
+    const url = String(doc.output('bloburl'));
+    setPdfPreviewTitle(report?.title || 'Reporte');
+    setPdfPreviewUrl(url);
+    setPdfPreviewOpen(true);
+  };
+
+  const downloadPdf = () => {
+    const doc = buildPdf();
+    if (!doc || !selectedCompany) return;
+    doc.save(`Costos_por_Campo_${selectedCompany.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
+  const sendWhatsapp = async () => {
+    if (!report) return;
+    const to = whatsappTo.trim();
+    if (!to) return;
+
+    try {
+      const base = window.location.origin;
+      const link = `${base}/asistente?q=${encodeURIComponent('Costos por campo ' + filterLabel(report.filter))}`;
+      const text = `Reporte listo: ${report.title}\nTotal: ${formatCLP(report.total_cost)}\nAbrir en AgroCostos: ${link}`;
+      const resp = await fetch('/api/whatsapp/send', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ to, text })
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data?.error || 'No se pudo enviar WhatsApp');
+      toast.success('Mensaje enviado por WhatsApp');
+    } catch (e: any) {
+      toast.error(String(e?.message || e));
+    }
+  };
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const text = input.trim();
+    if (!text) return;
+    setInput('');
+    void runAssistant(text);
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex items-center gap-3">
+        <MessageSquare className="h-6 w-6 text-green-600" />
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Asistente</h1>
+          <p className="text-sm text-gray-600 dark:text-gray-300">Pide reportes con lenguaje natural y descárgalos en PDF y Excel.</p>
+        </div>
+      </div>
+
+      {!canRun && (
+        <div className="rounded-md border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
+          Selecciona una empresa para usar el asistente.
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-1 rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 overflow-hidden">
+          <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+            <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">Ejemplos rápidos</div>
+            <div className="mt-3 space-y-2">
+              {quickHelp.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => void runAssistant(q)}
+                  disabled={!canRun || loading}
+                  className="w-full text-left text-sm px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="p-4">
+            <form onSubmit={onSubmit} className="space-y-3">
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Ej: Costos por campo temporada 2025-2026"
+                className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:border-green-500 focus:ring-green-500"
+                disabled={!canRun || loading}
+              />
+              <button
+                type="submit"
+                disabled={!canRun || loading}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+              >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Enviar
+              </button>
+            </form>
+
+            <div className="mt-4 text-xs text-gray-500 dark:text-gray-400">
+              Por WhatsApp: configura la integración y podrás enviar el link del reporte a un número.
+            </div>
+          </div>
+        </div>
+
+        <div className="lg:col-span-2 space-y-6">
+          <div className="rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">Conversación</div>
+              {loading && (
+                <div className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Generando…
+                </div>
+              )}
+            </div>
+            <div ref={listRef} className="max-h-[380px] overflow-y-auto p-4 space-y-3">
+              {messages.length === 0 ? (
+                <div className="text-sm text-gray-500 dark:text-gray-400">Escribe una solicitud para empezar.</div>
+              ) : (
+                messages.map((m) => (
+                  <div key={m.id} className={`text-sm ${m.role === 'user' ? 'text-gray-900 dark:text-gray-100' : 'text-gray-700 dark:text-gray-200'}`}>
+                    <span className="font-semibold">{m.role === 'user' ? 'Tú: ' : 'Asistente: '}</span>
+                    {m.text}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {report && (
+            <div className="rounded-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 overflow-hidden">
+              <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">{report.title}</div>
+                  <div className="text-xs text-gray-600 dark:text-gray-300">Total: {formatCLP(report.total_cost)}</div>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={downloadExcel}
+                    className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                  >
+                    <FileDown className="h-4 w-4" />
+                    Excel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={previewPdf}
+                    className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                  >
+                    <FileDown className="h-4 w-4" />
+                    Ver PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={downloadPdf}
+                    className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                  >
+                    <FileDown className="h-4 w-4" />
+                    PDF
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+                    <div className="px-3 py-2 text-xs font-semibold bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-200">Resumen por Campo</div>
+                    <div className="max-h-[320px] overflow-y-auto">
+                      <table className="min-w-full text-xs">
+                        <thead className="bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-300">
+                          <tr>
+                            <th className="px-3 py-2 text-left">Campo</th>
+                            <th className="px-3 py-2 text-right">Ha</th>
+                            <th className="px-3 py-2 text-right">Total</th>
+                            <th className="px-3 py-2 text-right">Costo/ha</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                          {report.fields.map((r) => (
+                            <tr key={r.field_id} className="text-gray-700 dark:text-gray-200">
+                              <td className="px-3 py-2">{r.field_name}</td>
+                              <td className="px-3 py-2 text-right">{(Number(r.hectares) || 0).toFixed(2)}</td>
+                              <td className="px-3 py-2 text-right">{formatCLP(r.total_cost)}</td>
+                              <td className="px-3 py-2 text-right">{formatCLP(r.cost_per_ha)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+                    <div className="px-3 py-2 text-xs font-semibold bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-200">Enviar por WhatsApp</div>
+                    <div className="p-3 space-y-2">
+                      <div className="text-xs text-gray-600 dark:text-gray-300">
+                        Envía un mensaje con el link del reporte. Para automatizar recepción por WhatsApp se configura el webhook.
+                      </div>
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <Phone className="h-4 w-4 text-gray-400 absolute left-3 top-2.5" />
+                          <input
+                            value={whatsappTo}
+                            onChange={(e) => setWhatsappTo(e.target.value)}
+                            placeholder="Ej: 56912345678"
+                            className="w-full pl-9 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:border-green-500 focus:ring-green-500"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={sendWhatsapp}
+                          className="inline-flex items-center gap-2 rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-700"
+                        >
+                          Enviar
+                        </button>
+                      </div>
+                      <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                        Requiere variables de entorno WhatsApp en Vercel (token y phone_number_id).
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <PdfPreviewModal
+        isOpen={pdfPreviewOpen}
+        onClose={() => {
+          setPdfPreviewOpen(false);
+          if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+          setPdfPreviewUrl(null);
+        }}
+        pdfUrl={pdfPreviewUrl}
+        title={pdfPreviewTitle}
+      />
+    </div>
+  );
+};
+
+export default Assistant;
