@@ -76,6 +76,7 @@ export async function fetchPendingGeneralCosts(params: { companyId: string }) {
   const pageSize = 5000;
   let from = 0;
   const items: GeneralCostInvoiceItemRow[] = [];
+  const invoiceSubtotals = new Map<string, number>();
 
   while (true) {
     const { data, error } = await supabase
@@ -89,22 +90,16 @@ export async function fetchPendingGeneralCosts(params: { companyId: string }) {
       `
       )
       .eq('invoices.company_id', params.companyId)
-      .or(
-        [
-          'category.ilike.%insumo%',
-          'category.ilike.%servicio%',
-          'category.ilike.%transporte%',
-          'category.ilike.%honorario%',
-          'category.ilike.%otro%',
-          'category.is.null'
-        ].join(',')
-      )
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
       .range(from, from + pageSize - 1);
 
     if (error) throw error;
-    ((data || []) as unknown as GeneralCostInvoiceItemRow[]).forEach((r) => items.push(r));
+    ((data || []) as unknown as GeneralCostInvoiceItemRow[]).forEach((r) => {
+      items.push(r);
+      const invId = String(r.invoices.id);
+      invoiceSubtotals.set(invId, (invoiceSubtotals.get(invId) || 0) + Number(r.total_price || 0));
+    });
     if (!data || data.length < pageSize) break;
     from += pageSize;
     if (from >= 200000) break;
@@ -117,42 +112,38 @@ export async function fetchPendingGeneralCosts(params: { companyId: string }) {
       .replace(/[\u0300-\u036f]/g, '')
       .trim();
 
+  const isExcludedFromDistribution = (cat: string) => {
+    if (!cat) return false;
+    const keywords = [
+      'mano de obra',
+      'labores',
+      'servicio de labores',
+      'petroleo',
+      'diesel',
+      'bencina',
+      'combustible',
+      'riego',
+      'agua',
+      'electricidad',
+      'maquinaria',
+      'arriendo maquinaria',
+      'repuesto',
+      'mantencion',
+      'quimic',
+      'fertiliz',
+      'pestic',
+      'fungic',
+      'herbic',
+      'insectic',
+      'plaguicid'
+    ];
+    return keywords.some((k) => cat.includes(k));
+  };
+
   const filteredItems = items.filter((item) => {
     const cat = normalize(item.category || item.products?.category || '');
-    if (!cat) return true;
-    return ['insumo', 'servicio', 'transporte', 'honorario', 'otro'].some((k) => cat.includes(k));
+    return !isExcludedFromDistribution(cat);
   });
-
-  const invoiceIds = Array.from(new Set(filteredItems.map((i) => String(i.invoices.id))));
-  const invoiceSubtotals = new Map<string, number>();
-  if (invoiceIds.length > 0) {
-    const chunkSize = 200;
-    const pageSizeItems = 5000;
-
-    for (let i = 0; i < invoiceIds.length; i += chunkSize) {
-      const chunk = invoiceIds.slice(i, i + chunkSize);
-      let offset = 0;
-
-      while (true) {
-        const { data: invItems, error: invError } = await supabase
-          .from('invoice_items')
-          .select('invoice_id, total_price')
-          .in('invoice_id', chunk)
-          .range(offset, offset + pageSizeItems - 1);
-
-        if (invError) throw invError;
-        (invItems || []).forEach((it: any) => {
-          const invId = String(it.invoice_id);
-          const current = invoiceSubtotals.get(invId) || 0;
-          invoiceSubtotals.set(invId, current + Number(it.total_price || 0));
-        });
-
-        if (!invItems || invItems.length < pageSizeItems) break;
-        offset += pageSizeItems;
-        if (offset >= 200000) break;
-      }
-    }
-  }
 
   const { data: assignments, error: assignmentError } = await supabase.rpc('get_general_costs_summary', { p_company_id: params.companyId });
   if (assignmentError) throw assignmentError;
