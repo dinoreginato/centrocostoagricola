@@ -123,6 +123,37 @@ export async function fetchPendingGeneralCosts(params: { companyId: string }) {
     return ['insumo', 'servicio', 'transporte', 'honorario', 'otro'].some((k) => cat.includes(k));
   });
 
+  const invoiceIds = Array.from(new Set(filteredItems.map((i) => String(i.invoices.id))));
+  const invoiceSubtotals = new Map<string, number>();
+  if (invoiceIds.length > 0) {
+    const chunkSize = 200;
+    const pageSizeItems = 5000;
+
+    for (let i = 0; i < invoiceIds.length; i += chunkSize) {
+      const chunk = invoiceIds.slice(i, i + chunkSize);
+      let offset = 0;
+
+      while (true) {
+        const { data: invItems, error: invError } = await supabase
+          .from('invoice_items')
+          .select('invoice_id, total_price')
+          .in('invoice_id', chunk)
+          .range(offset, offset + pageSizeItems - 1);
+
+        if (invError) throw invError;
+        (invItems || []).forEach((it: any) => {
+          const invId = String(it.invoice_id);
+          const current = invoiceSubtotals.get(invId) || 0;
+          invoiceSubtotals.set(invId, current + Number(it.total_price || 0));
+        });
+
+        if (!invItems || invItems.length < pageSizeItems) break;
+        offset += pageSizeItems;
+        if (offset >= 200000) break;
+      }
+    }
+  }
+
   const { data: assignments, error: assignmentError } = await supabase.rpc('get_general_costs_summary', { p_company_id: params.companyId });
   if (assignmentError) throw assignmentError;
 
@@ -141,11 +172,22 @@ export async function fetchPendingGeneralCosts(params: { companyId: string }) {
     if (docType.includes('exenta') || docType.includes('honorario')) taxPercent = 0;
 
     const itemNet = Number(item.total_price) || 0;
-    const grossAmount = itemNet * (1 + taxPercent / 100);
+    const invId = String(item.invoices.id);
+    const invoiceSubtotal = invoiceSubtotals.get(invId) || 0;
+    const invoiceExempt = Number(item.invoices.exempt_amount) || 0;
+    const invoiceSpecial = Number(item.invoices.special_tax_amount) || 0;
+
+    const itemProportion = invoiceSubtotal > 0 ? itemNet / invoiceSubtotal : 1;
+    const itemExemptShare = itemProportion * invoiceExempt;
+    const itemSpecialShare = itemProportion * invoiceSpecial;
+
+    const itemTaxAmount = itemNet * (taxPercent / 100);
+    const grossAmount = itemNet + itemTaxAmount + itemExemptShare + itemSpecialShare;
 
     const total = isCreditNote ? -Math.abs(grossAmount) : Math.abs(grossAmount);
     const assigned = assignmentMap.get(String(item.id)) || 0;
-    const remaining = total - assigned;
+    let remaining = total - assigned;
+    if (!isCreditNote && remaining < 0) remaining = 0;
 
     if (Math.abs(remaining) > 1) {
       pending.push({
