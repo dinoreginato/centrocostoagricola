@@ -89,6 +89,16 @@ export async function fetchPendingGeneralCosts(params: { companyId: string }) {
       `
       )
       .eq('invoices.company_id', params.companyId)
+      .or(
+        [
+          'category.ilike.%insumo%',
+          'category.ilike.%servicio%',
+          'category.ilike.%transporte%',
+          'category.ilike.%honorario%',
+          'category.ilike.%otro%',
+          'category.is.null'
+        ].join(',')
+      )
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
       .range(from, from + pageSize - 1);
@@ -97,47 +107,20 @@ export async function fetchPendingGeneralCosts(params: { companyId: string }) {
     ((data || []) as unknown as GeneralCostInvoiceItemRow[]).forEach((r) => items.push(r));
     if (!data || data.length < pageSize) break;
     from += pageSize;
-    if (from >= 100000) break;
+    if (from >= 200000) break;
   }
 
-  const invoiceSubtotals = new Map<string, number>();
-  items.forEach((item) => {
-    const invId = String(item.invoices.id);
-    invoiceSubtotals.set(invId, (invoiceSubtotals.get(invId) || 0) + Number(item.total_price || 0));
-  });
-
-  const CORE_EXCLUDED = [
-    'mano de obra',
-    'labores agricolas',
-    'labores agricolas',
-    'servicio de labores',
-    'petroleo',
-    'combustible',
-    'diesel',
-    'bencina',
-    'riego',
-    'agua',
-    'electricidad',
-    'maquinaria',
-    'arriendo maquinaria',
-    'repuesto',
-    'mantencion',
-    'quimicos',
-    'fertilizantes',
-    'pesticida',
-    'fungicida',
-    'herbicida',
-    'insecticida',
-    'semillas',
-    'plantas',
-    'plaguicida'
-  ];
+  const normalize = (value: unknown) =>
+    String(value || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
 
   const filteredItems = items.filter((item) => {
-    const rawCat = item.category || item.products?.category || '';
-    const cat = String(rawCat).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-    const isCore = CORE_EXCLUDED.some((ex) => cat.includes(ex));
-    return !isCore;
+    const cat = normalize(item.category || item.products?.category || '');
+    if (!cat) return true;
+    return ['insumo', 'servicio', 'transporte', 'honorario', 'otro'].some((k) => cat.includes(k));
   });
 
   const { data: assignments, error: assignmentError } = await supabase.rpc('get_general_costs_summary', { p_company_id: params.companyId });
@@ -158,18 +141,7 @@ export async function fetchPendingGeneralCosts(params: { companyId: string }) {
     if (docType.includes('exenta') || docType.includes('honorario')) taxPercent = 0;
 
     const itemNet = Number(item.total_price) || 0;
-    const invId = String(item.invoices.id);
-    const invoiceSubtotal = invoiceSubtotals.get(invId) || 0;
-
-    const invoiceExempt = Number(item.invoices.exempt_amount) || 0;
-    const invoiceSpecial = Number(item.invoices.special_tax_amount) || 0;
-
-    const itemProportion = invoiceSubtotal > 0 ? itemNet / invoiceSubtotal : 1;
-    const itemExemptShare = itemProportion * invoiceExempt;
-    const itemSpecialShare = itemProportion * invoiceSpecial;
-
-    const itemTaxAmount = itemNet * (taxPercent / 100);
-    const grossAmount = itemNet + itemTaxAmount + itemExemptShare + itemSpecialShare;
+    const grossAmount = itemNet * (1 + taxPercent / 100);
 
     const total = isCreditNote ? -Math.abs(grossAmount) : Math.abs(grossAmount);
     const assigned = assignmentMap.get(String(item.id)) || 0;
@@ -208,7 +180,7 @@ export async function fetchGeneralCostsHistory(params: { companyId: string }) {
     )
     .eq('company_id', params.companyId)
     .order('date', { ascending: false })
-    .limit(500);
+    .limit(5000);
 
   if (error) throw error;
 
