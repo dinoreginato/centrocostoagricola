@@ -4,7 +4,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { LayoutList, ArrowRight, Save, Loader2, AlertCircle, Trash2 } from 'lucide-react';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
-import { deleteAllGeneralCostHistory, deleteGeneralCostAssignment, fetchGeneralCostsHistory, fetchInvoiceItemsForGeneralCostsDiagnosis, fetchPendingGeneralCosts, insertGeneralCostAssignments, updateGeneralCostAssignment } from '../services/generalCosts';
+import { deleteAllGeneralCostHistory, deleteGeneralCostAssignment, fetchGeneralCostsDiagnosis, fetchGeneralCostsHistory, fetchPendingGeneralCosts, insertGeneralCostAssignments, updateGeneralCostAssignment } from '../services/generalCosts';
 
 interface GeneralCostItem {
   id: string; // invoice_item_id
@@ -79,6 +79,8 @@ export const GeneralCosts: React.FC = () => {
   const [diagnosisOpen, setDiagnosisOpen] = useState(false);
   const [diagnosisLoading, setDiagnosisLoading] = useState(false);
   const [diagnosisRows, setDiagnosisRows] = useState<any[]>([]);
+  const [diagnosisInvoices, setDiagnosisInvoices] = useState<any[]>([]);
+  const [diagnosisAssignedByItemId, setDiagnosisAssignedByItemId] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (selectedCompany) {
@@ -160,11 +162,15 @@ export const GeneralCosts: React.FC = () => {
     if (!q) return;
     setDiagnosisLoading(true);
     try {
-      const rows = await fetchInvoiceItemsForGeneralCostsDiagnosis({ companyId: selectedCompany.id, invoiceNumberOrText: q });
-      setDiagnosisRows(rows as any[]);
+      const res = await fetchGeneralCostsDiagnosis({ companyId: selectedCompany.id, query: q });
+      setDiagnosisInvoices((res as any).invoices || []);
+      setDiagnosisRows((res as any).items || []);
+      setDiagnosisAssignedByItemId((res as any).assignedByItemId || {});
       setDiagnosisOpen(true);
     } catch {
+      setDiagnosisInvoices([]);
       setDiagnosisRows([]);
+      setDiagnosisAssignedByItemId({});
       setDiagnosisOpen(true);
     } finally {
       setDiagnosisLoading(false);
@@ -359,23 +365,40 @@ export const GeneralCosts: React.FC = () => {
             </div>
             {diagnosisOpen && (
                 <div className="border-t border-gray-200 dark:border-gray-700 p-3 text-xs text-gray-600 dark:text-gray-300">
-                    {diagnosisRows.length === 0 ? (
+                    {diagnosisInvoices.length === 0 && diagnosisRows.length === 0 ? (
                         <div>No se encontró esa factura/ítem en Facturas para esta empresa.</div>
                     ) : (
                         <div className="space-y-2">
-                            <div className="font-bold text-gray-700 dark:text-gray-200">Encontrado en Facturas (muestra parcial)</div>
-                            {diagnosisRows.slice(0, 8).map((r, idx) => (
-                                <div key={idx} className="flex flex-col gap-0.5">
-                                    <div>
-                                        #{r?.invoices?.invoice_number} · {r?.products?.name || 'Item'} · {r?.category || '-'}
-                                    </div>
-                                    <div className="text-gray-500 dark:text-gray-400">
-                                        Total neto: {formatCLP(Number(r?.total_price) || 0)}
-                                    </div>
+                            {diagnosisInvoices.length > 0 && (
+                                <div className="space-y-1">
+                                    <div className="font-bold text-gray-700 dark:text-gray-200">Facturas encontradas (por número)</div>
+                                    {diagnosisInvoices.slice(0, 5).map((inv, idx) => (
+                                        <div key={idx} className="text-gray-700 dark:text-gray-200">
+                                            #{inv?.invoice_number} · {inv?.supplier || ''} · {inv?.invoice_date ? new Date(inv.invoice_date).toLocaleDateString() : ''}
+                                        </div>
+                                    ))}
+                                    {diagnosisInvoices.length > 5 && (
+                                        <div className="text-gray-500 dark:text-gray-400">y {diagnosisInvoices.length - 5} más…</div>
+                                    )}
                                 </div>
-                            ))}
-                            {diagnosisRows.length > 8 && (
-                                <div className="text-gray-500 dark:text-gray-400">y {diagnosisRows.length - 8} más…</div>
+                            )}
+
+                            <div className="font-bold text-gray-700 dark:text-gray-200">Ítems encontrados (muestra parcial)</div>
+                            {diagnosisRows.slice(0, 8).map((r, idx) => {
+                                const assigned = diagnosisAssignedByItemId[String(r?.id)] || 0;
+                                return (
+                                    <div key={idx} className="flex flex-col gap-0.5">
+                                        <div>
+                                            #{r?.invoices?.invoice_number} · {r?.products?.name || 'Item'} · {r?.category || '-'}
+                                        </div>
+                                        <div className="text-gray-500 dark:text-gray-400">
+                                            Neto: {formatCLP(Number(r?.total_price) || 0)} · Asignado: {formatCLP(assigned)}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {diagnosisRows.length === 0 && diagnosisInvoices.length > 0 && (
+                                <div className="text-gray-500 dark:text-gray-400">La factura existe, pero no se encontraron ítems asociados.</div>
                             )}
                         </div>
                     )}

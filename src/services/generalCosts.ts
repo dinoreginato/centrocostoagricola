@@ -72,26 +72,82 @@ type GeneralCostRaw = {
   invoice_items: GeneralCostHistoryItem['invoice_items'];
 };
 
-export async function fetchInvoiceItemsForGeneralCostsDiagnosis(params: { companyId: string; invoiceNumberOrText: string }) {
-  const q = String(params.invoiceNumberOrText || '').trim();
-  if (!q) return [];
+export async function fetchGeneralCostsDiagnosis(params: { companyId: string; query: string }) {
+  const q = String(params.query || '').trim();
+  if (!q) return { invoices: [], items: [], assignedByItemId: {} as Record<string, number> };
 
-  const { data, error } = await supabase
-    .from('invoice_items')
-    .select(
-      `
-      id, total_price, category, created_at,
-      products (name, category),
-      invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage, exempt_amount, special_tax_amount, total_amount)
-    `
-    )
-    .eq('invoices.company_id', params.companyId)
-    .or(['invoices.invoice_number.ilike.%' + q + '%', 'products.name.ilike.%' + q + '%'].join(','))
-    .order('created_at', { ascending: false })
-    .range(0, 200);
+  const { data: invoices, error: invError } = await supabase
+    .from('invoices')
+    .select('id, invoice_number, invoice_date, supplier, company_id, document_type, tax_percentage, exempt_amount, special_tax_amount, total_amount')
+    .eq('company_id', params.companyId)
+    .ilike('invoice_number', `%${q}%`)
+    .order('invoice_date', { ascending: false })
+    .range(0, 49);
 
-  if (error) throw error;
-  return data || [];
+  if (invError) throw invError;
+
+  const { data: products, error: prodError } = await supabase
+    .from('products')
+    .select('id')
+    .eq('company_id', params.companyId)
+    .ilike('name', `%${q}%`)
+    .range(0, 49);
+
+  if (prodError) throw prodError;
+
+  const productIds = (products || []).map((p: any) => String(p.id));
+  const invoiceIds = Array.from(new Set((invoices || []).map((i: any) => String(i.id))));
+
+  const items: any[] = [];
+
+  if (invoiceIds.length > 0) {
+    const chunkSize = 200;
+    for (let i = 0; i < invoiceIds.length; i += chunkSize) {
+      const chunk = invoiceIds.slice(i, i + chunkSize);
+      const { data: invItems, error: invItemsError } = await supabase
+        .from('invoice_items')
+        .select('id, invoice_id, product_id, total_price, category, created_at, products(name, category), invoices!inner(id, invoice_number, invoice_date, company_id, document_type, tax_percentage, exempt_amount, special_tax_amount, total_amount)')
+        .in('invoice_id', chunk)
+        .eq('invoices.company_id', params.companyId)
+        .order('created_at', { ascending: false })
+        .range(0, 200);
+      if (invItemsError) throw invItemsError;
+      (invItems || []).forEach((r: any) => items.push(r));
+    }
+  }
+
+  if (productIds.length > 0) {
+    const chunkSize = 200;
+    for (let i = 0; i < productIds.length; i += chunkSize) {
+      const chunk = productIds.slice(i, i + chunkSize);
+      const { data: prodItems, error: prodItemsError } = await supabase
+        .from('invoice_items')
+        .select('id, invoice_id, product_id, total_price, category, created_at, products(name, category), invoices!inner(id, invoice_number, invoice_date, company_id, document_type, tax_percentage, exempt_amount, special_tax_amount, total_amount)')
+        .in('product_id', chunk)
+        .eq('invoices.company_id', params.companyId)
+        .order('created_at', { ascending: false })
+        .range(0, 200);
+      if (prodItemsError) throw prodItemsError;
+      (prodItems || []).forEach((r: any) => items.push(r));
+    }
+  }
+
+  const itemIds = Array.from(new Set(items.map((r) => String(r.id))));
+  const assignedByItemId: Record<string, number> = {};
+  if (itemIds.length > 0) {
+    const chunkSize = 200;
+    for (let i = 0; i < itemIds.length; i += chunkSize) {
+      const chunk = itemIds.slice(i, i + chunkSize);
+      const { data: gc, error: gcError } = await supabase.from('general_costs').select('invoice_item_id, amount').in('invoice_item_id', chunk);
+      if (gcError) throw gcError;
+      (gc || []).forEach((row: any) => {
+        const key = String(row.invoice_item_id);
+        assignedByItemId[key] = (assignedByItemId[key] || 0) + Number(row.amount || 0);
+      });
+    }
+  }
+
+  return { invoices: invoices || [], items, assignedByItemId };
 }
 
 export async function fetchPendingGeneralCosts(params: { companyId: string }) {
