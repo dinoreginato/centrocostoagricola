@@ -72,6 +72,28 @@ type GeneralCostRaw = {
   invoice_items: GeneralCostHistoryItem['invoice_items'];
 };
 
+export async function fetchInvoiceItemsForGeneralCostsDiagnosis(params: { companyId: string; invoiceNumberOrText: string }) {
+  const q = String(params.invoiceNumberOrText || '').trim();
+  if (!q) return [];
+
+  const { data, error } = await supabase
+    .from('invoice_items')
+    .select(
+      `
+      id, total_price, category, created_at,
+      products (name, category),
+      invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage, exempt_amount, special_tax_amount, total_amount)
+    `
+    )
+    .eq('invoices.company_id', params.companyId)
+    .or(['invoices.invoice_number.ilike.%' + q + '%', 'products.name.ilike.%' + q + '%'].join(','))
+    .order('created_at', { ascending: false })
+    .range(0, 200);
+
+  if (error) throw error;
+  return data || [];
+}
+
 export async function fetchPendingGeneralCosts(params: { companyId: string }) {
   const pageSize = 5000;
   let from = 0;

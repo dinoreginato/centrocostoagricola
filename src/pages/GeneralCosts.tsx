@@ -4,7 +4,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { LayoutList, ArrowRight, Save, Loader2, AlertCircle, Trash2 } from 'lucide-react';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
-import { deleteAllGeneralCostHistory, deleteGeneralCostAssignment, fetchGeneralCostsHistory, fetchPendingGeneralCosts, insertGeneralCostAssignments, updateGeneralCostAssignment } from '../services/generalCosts';
+import { deleteAllGeneralCostHistory, deleteGeneralCostAssignment, fetchGeneralCostsHistory, fetchInvoiceItemsForGeneralCostsDiagnosis, fetchPendingGeneralCosts, insertGeneralCostAssignments, updateGeneralCostAssignment } from '../services/generalCosts';
 
 interface GeneralCostItem {
   id: string; // invoice_item_id
@@ -76,6 +76,9 @@ export const GeneralCosts: React.FC = () => {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historySearch, setHistorySearch] = useState('');
   const [pendingSearch, setPendingSearch] = useState('');
+  const [diagnosisOpen, setDiagnosisOpen] = useState(false);
+  const [diagnosisLoading, setDiagnosisLoading] = useState(false);
+  const [diagnosisRows, setDiagnosisRows] = useState<any[]>([]);
 
   useEffect(() => {
     if (selectedCompany) {
@@ -150,6 +153,23 @@ export const GeneralCosts: React.FC = () => {
     const cat = String(p.category || '').toLowerCase();
     return invoice.includes(q) || desc.includes(q) || cat.includes(q);
   });
+
+  const runDiagnosis = async () => {
+    if (!selectedCompany) return;
+    const q = pendingSearch.trim();
+    if (!q) return;
+    setDiagnosisLoading(true);
+    try {
+      const rows = await fetchInvoiceItemsForGeneralCostsDiagnosis({ companyId: selectedCompany.id, invoiceNumberOrText: q });
+      setDiagnosisRows(rows as any[]);
+      setDiagnosisOpen(true);
+    } catch {
+      setDiagnosisRows([]);
+      setDiagnosisOpen(true);
+    } finally {
+      setDiagnosisLoading(false);
+    }
+  };
 
   const handleSelectCost = (cost: GeneralCostItem) => {
     setSelectedCostId(cost.id);
@@ -299,6 +319,16 @@ export const GeneralCosts: React.FC = () => {
                     placeholder="Buscar por factura, categoría o nombre..."
                     className="mt-3 w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
                 />
+                <div className="mt-2 flex justify-end">
+                    <button
+                        type="button"
+                        onClick={runDiagnosis}
+                        disabled={diagnosisLoading || pendingSearch.trim().length === 0}
+                        className="text-xs font-semibold text-purple-700 disabled:text-gray-400"
+                    >
+                        {diagnosisLoading ? 'Buscando…' : 'Diagnosticar búsqueda'}
+                    </button>
+                </div>
             </div>
             <div className="divide-y divide-gray-200 dark:divide-gray-700 max-h-[600px] overflow-y-auto">
                 {filteredPendingCosts.length === 0 ? (
@@ -327,6 +357,30 @@ export const GeneralCosts: React.FC = () => {
                     ))
                 )}
             </div>
+            {diagnosisOpen && (
+                <div className="border-t border-gray-200 dark:border-gray-700 p-3 text-xs text-gray-600 dark:text-gray-300">
+                    {diagnosisRows.length === 0 ? (
+                        <div>No se encontró esa factura/ítem en Facturas para esta empresa.</div>
+                    ) : (
+                        <div className="space-y-2">
+                            <div className="font-bold text-gray-700 dark:text-gray-200">Encontrado en Facturas (muestra parcial)</div>
+                            {diagnosisRows.slice(0, 8).map((r, idx) => (
+                                <div key={idx} className="flex flex-col gap-0.5">
+                                    <div>
+                                        #{r?.invoices?.invoice_number} · {r?.products?.name || 'Item'} · {r?.category || '-'}
+                                    </div>
+                                    <div className="text-gray-500 dark:text-gray-400">
+                                        Total neto: {formatCLP(Number(r?.total_price) || 0)}
+                                    </div>
+                                </div>
+                            ))}
+                            {diagnosisRows.length > 8 && (
+                                <div className="text-gray-500 dark:text-gray-400">y {diagnosisRows.length - 8} más…</div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
 
         {/* Form */}
