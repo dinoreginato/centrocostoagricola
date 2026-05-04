@@ -5,7 +5,6 @@ import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { parseAssistantIntent } from '../lib/assistantNlp';
 import { generateFieldCostsReport, type FieldCostsReport } from '../services/assistantReports';
-import { exportWorkbookToXlsx } from '../lib/excel';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Loader2, MessageSquare, FileDown, Send, Phone } from 'lucide-react';
@@ -39,6 +38,7 @@ export const Assistant: React.FC = () => {
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [pdfPreviewTitle, setPdfPreviewTitle] = useState('');
   const [whatsappTo, setWhatsappTo] = useState('');
+  const [sendingWhatsapp, setSendingWhatsapp] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   const canRun = Boolean(selectedCompany);
@@ -107,6 +107,22 @@ export const Assistant: React.FC = () => {
 
   const downloadExcel = async () => {
     if (!report || !selectedCompany) return;
+    const blob = await buildExcelBlob();
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Costos_por_Campo_${selectedCompany.name.replace(/\s+/g, '_')}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const buildExcelBlob = async () => {
+    if (!report || !selectedCompany) return null;
+    const ExcelJSImport = (await import('exceljs/dist/exceljs.bare.min.js')).default as unknown as any;
+    const ExcelJS = ExcelJSImport as unknown as { Workbook: new () => any };
+    const wb = new ExcelJS.Workbook();
+
     const rowsFields = report.fields.map((r) => ({
       Campo: r.field_name,
       Hectareas: Number(r.hectares) || 0,
@@ -118,7 +134,7 @@ export const Assistant: React.FC = () => {
       Petróleo: r.breakdown.fuel,
       Maquinaria: r.breakdown.machinery,
       Riego: r.breakdown.irrigation,
-      'Distribución': r.breakdown.distribution
+      Distribución: r.breakdown.distribution
     }));
 
     const rowsSectors = report.sectors.map((r) => ({
@@ -132,16 +148,27 @@ export const Assistant: React.FC = () => {
       Petróleo: r.breakdown.fuel,
       Maquinaria: r.breakdown.machinery,
       Riego: r.breakdown.irrigation,
-      'Distribución': r.breakdown.distribution
+      Distribución: r.breakdown.distribution
     }));
 
-    await exportWorkbookToXlsx({
-      filename: `Costos_por_Campo_${selectedCompany.name.replace(/\s+/g, '_')}.xlsx`,
-      sheets: [
-        { name: 'Resumen_Campos', rows: rowsFields },
-        { name: 'Detalle_Sectores', rows: rowsSectors }
-      ]
-    });
+    const addSheet = (name: string, rows: Array<Record<string, unknown>>) => {
+      const ws = wb.addWorksheet(String(name).slice(0, 31) || 'Hoja');
+      const keySet = new Set<string>();
+      rows.forEach((r) => Object.keys(r || {}).forEach((k) => keySet.add(k)));
+      const keys = Array.from(keySet);
+      ws.columns = keys.map((k) => ({
+        header: k,
+        key: k,
+        width: Math.min(Math.max(k.length + 2, 12), 40)
+      }));
+      rows.forEach((r) => ws.addRow(r || {}));
+    };
+
+    addSheet('Resumen_Campos', rowsFields);
+    addSheet('Detalle_Sectores', rowsSectors);
+
+    const buffer = await wb.xlsx.writeBuffer();
+    return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   };
 
   const buildPdf = () => {
@@ -232,6 +259,72 @@ export const Assistant: React.FC = () => {
     } catch (e: any) {
       toast.error(String(e?.message || e));
     }
+  };
+
+  const blobToBase64 = (blob: Blob) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const raw = String(reader.result || '');
+        const idx = raw.indexOf('base64,');
+        if (idx === -1) resolve('');
+        else resolve(raw.slice(idx + 7));
+      };
+      reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+      reader.readAsDataURL(blob);
+    });
+
+  const sendWhatsappFile = async (opts: { filename: string; mime: string; blob: Blob }) => {
+    if (!report) return;
+    const to = whatsappTo.trim();
+    if (!to) return;
+
+    setSendingWhatsapp(true);
+    try {
+      const dataBase64 = await blobToBase64(opts.blob);
+      if (!dataBase64) throw new Error('Archivo inválido');
+      const resp = await fetch('/api/whatsapp/send-media', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          to,
+          filename: opts.filename,
+          mime: opts.mime,
+          dataBase64,
+          caption: report.title
+        })
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data?.error || 'No se pudo enviar archivo');
+      toast.success('Archivo enviado por WhatsApp');
+    } catch (e: any) {
+      toast.error(String(e?.message || e));
+    } finally {
+      setSendingWhatsapp(false);
+    }
+  };
+
+  const sendWhatsappPdf = async () => {
+    if (!report || !selectedCompany) return;
+    const doc = buildPdf();
+    if (!doc) return;
+    const blob = doc.output('blob') as unknown as Blob;
+    await sendWhatsappFile({
+      filename: `Costos_por_Campo_${selectedCompany.name.replace(/\s+/g, '_')}.pdf`,
+      mime: 'application/pdf',
+      blob
+    });
+  };
+
+  const sendWhatsappExcel = async () => {
+    if (!report || !selectedCompany) return;
+    const blob = await buildExcelBlob();
+    if (!blob) return;
+    await sendWhatsappFile({
+      filename: `Costos_por_Campo_${selectedCompany.name.replace(/\s+/g, '_')}.xlsx`,
+      mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      blob
+    });
   };
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -412,6 +505,26 @@ export const Assistant: React.FC = () => {
                           className="inline-flex items-center gap-2 rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-700"
                         >
                           Enviar
+                        </button>
+                      </div>
+                      <div className="flex gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          disabled={sendingWhatsapp}
+                          onClick={sendWhatsappPdf}
+                          className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                        >
+                          <FileDown className="h-4 w-4" />
+                          WhatsApp PDF
+                        </button>
+                        <button
+                          type="button"
+                          disabled={sendingWhatsapp}
+                          onClick={() => void sendWhatsappExcel()}
+                          className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          <FileDown className="h-4 w-4" />
+                          WhatsApp Excel
                         </button>
                       </div>
                       <div className="text-[11px] text-gray-500 dark:text-gray-400">
