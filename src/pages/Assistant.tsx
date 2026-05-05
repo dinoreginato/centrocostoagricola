@@ -37,6 +37,7 @@ export const Assistant: React.FC = () => {
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [pdfPreviewTitle, setPdfPreviewTitle] = useState('');
+  const [whatsappEnabled, setWhatsappEnabled] = useState(false);
   const [whatsappTo, setWhatsappTo] = useState('');
   const [sendingWhatsapp, setSendingWhatsapp] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -104,6 +105,23 @@ export const Assistant: React.FC = () => {
     if (!listRef.current) return;
     listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages.length]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/whatsapp/status')
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        setWhatsappEnabled(Boolean(data?.enabled));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setWhatsappEnabled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const downloadExcel = async () => {
     if (!report || !selectedCompany) return;
@@ -390,7 +408,7 @@ export const Assistant: React.FC = () => {
             </form>
 
             <div className="mt-4 text-xs text-gray-500 dark:text-gray-400">
-              Por WhatsApp: configura la integración y podrás enviar el link del reporte a un número.
+              Descarga reportes en PDF/Excel desde esta pantalla.
             </div>
           </div>
         </div>
@@ -483,55 +501,51 @@ export const Assistant: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
-                    <div className="px-3 py-2 text-xs font-semibold bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-200">Enviar por WhatsApp</div>
-                    <div className="p-3 space-y-2">
-                      <div className="text-xs text-gray-600 dark:text-gray-300">
-                        Envía un mensaje con el link del reporte. Para automatizar recepción por WhatsApp se configura el webhook.
-                      </div>
-                      <div className="flex gap-2">
-                        <div className="relative flex-1">
-                          <Phone className="h-4 w-4 text-gray-400 absolute left-3 top-2.5" />
-                          <input
-                            value={whatsappTo}
-                            onChange={(e) => setWhatsappTo(e.target.value)}
-                            placeholder="Ej: 56912345678"
-                            className="w-full pl-9 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:border-green-500 focus:ring-green-500"
-                          />
+                  {whatsappEnabled && (
+                    <div className="rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
+                      <div className="px-3 py-2 text-xs font-semibold bg-gray-50 dark:bg-gray-900 text-gray-700 dark:text-gray-200">Enviar por WhatsApp</div>
+                      <div className="p-3 space-y-2">
+                        <div className="flex gap-2">
+                          <div className="relative flex-1">
+                            <Phone className="h-4 w-4 text-gray-400 absolute left-3 top-2.5" />
+                            <input
+                              value={whatsappTo}
+                              onChange={(e) => setWhatsappTo(e.target.value)}
+                              placeholder="Ej: 56912345678"
+                              className="w-full pl-9 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:border-green-500 focus:ring-green-500"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={sendWhatsapp}
+                            className="inline-flex items-center gap-2 rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-700"
+                          >
+                            Enviar
+                          </button>
                         </div>
-                        <button
-                          type="button"
-                          onClick={sendWhatsapp}
-                          className="inline-flex items-center gap-2 rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-700"
-                        >
-                          Enviar
-                        </button>
-                      </div>
-                      <div className="flex gap-2 flex-wrap">
-                        <button
-                          type="button"
-                          disabled={sendingWhatsapp}
-                          onClick={sendWhatsappPdf}
-                          className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-                        >
-                          <FileDown className="h-4 w-4" />
-                          WhatsApp PDF
-                        </button>
-                        <button
-                          type="button"
-                          disabled={sendingWhatsapp}
-                          onClick={() => void sendWhatsappExcel()}
-                          className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-                        >
-                          <FileDown className="h-4 w-4" />
-                          WhatsApp Excel
-                        </button>
-                      </div>
-                      <div className="text-[11px] text-gray-500 dark:text-gray-400">
-                        Requiere variables de entorno WhatsApp en Vercel (token y phone_number_id).
+                        <div className="flex gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            disabled={sendingWhatsapp}
+                            onClick={sendWhatsappPdf}
+                            className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                          >
+                            <FileDown className="h-4 w-4" />
+                            WhatsApp PDF
+                          </button>
+                          <button
+                            type="button"
+                            disabled={sendingWhatsapp}
+                            onClick={() => void sendWhatsappExcel()}
+                            className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                          >
+                            <FileDown className="h-4 w-4" />
+                            WhatsApp Excel
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             </div>
