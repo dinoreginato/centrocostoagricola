@@ -508,15 +508,14 @@ function parseFieldQuery(text) {
   const raw = String(text || '');
   const quoted = raw.match(/"(.*?)"/);
   if (quoted && quoted[1]) return quoted[1].trim();
-  const t = normalize(raw);
-  const idx = t.lastIndexOf('campo');
-  if (idx === -1) return '';
-  const after = t.slice(idx + 'campo'.length).trim();
-  return after
-    .replace(/^el\s+/, '')
-    .replace(/^la\s+/, '')
-    .replace(/^de\s+/, '')
-    .replace(/^del\s+/, '')
+  const m = raw.match(/campo\s+(.+)$/i);
+  if (!m || !m[1]) return '';
+  return String(m[1])
+    .trim()
+    .replace(/^el\s+/i, '')
+    .replace(/^la\s+/i, '')
+    .replace(/^de\s+/i, '')
+    .replace(/^del\s+/i, '')
     .replace(/[?¿!.,;:]+/g, '')
     .trim();
 }
@@ -529,12 +528,20 @@ async function getLastApplicationForField(supabase, companyId, fieldQuery) {
     .from('fields')
     .select('id, name')
     .eq('company_id', companyId)
-    .ilike('name', `%${q}%`)
     .order('name', { ascending: true })
-    .limit(5);
+    .limit(250);
   if (fieldsError) throw fieldsError;
-  const field = (fields || [])[0];
-  if (!field) return { error: `No encontré un campo que coincida con “${q}”.` };
+  const qn = normalize(q);
+  const candidates = (fields || []).filter((f) => normalize(f.name).includes(qn));
+  const field = candidates[0];
+  if (!field) {
+    const examples = (fields || []).slice(0, 10).map((f) => `- ${f.name}`).join('\n');
+    return {
+      error:
+        `No encontré un campo que coincida con “${q}”.` +
+        (examples ? `\nCampos disponibles (ejemplos):\n${examples}` : '')
+    };
+  }
 
   const { data: apps, error: appsError } = await supabase.rpc('get_company_applications_v2', { p_company_id: companyId });
   if (appsError) throw appsError;
