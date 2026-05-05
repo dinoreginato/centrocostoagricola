@@ -222,7 +222,8 @@ export const Assistant: React.FC = () => {
       Aplicaciones: r.breakdown.applications,
       Labores: r.breakdown.labor,
       Trabajadores: r.breakdown.workers,
-      Petróleo: r.breakdown.fuel,
+      Petróleo: r.breakdown.fuel_diesel,
+      Bencina: r.breakdown.fuel_gasoline,
       Maquinaria: r.breakdown.machinery,
       Riego: r.breakdown.irrigation,
       Distribución: r.breakdown.distribution
@@ -236,7 +237,8 @@ export const Assistant: React.FC = () => {
       Aplicaciones: r.breakdown.applications,
       Labores: r.breakdown.labor,
       Trabajadores: r.breakdown.workers,
-      Petróleo: r.breakdown.fuel,
+      Petróleo: r.breakdown.fuel_diesel,
+      Bencina: r.breakdown.fuel_gasoline,
       Maquinaria: r.breakdown.machinery,
       Riego: r.breakdown.irrigation,
       Distribución: r.breakdown.distribution
@@ -278,7 +280,8 @@ export const Assistant: React.FC = () => {
       formatCLP(r.breakdown.applications),
       formatCLP(r.breakdown.labor),
       formatCLP(r.breakdown.workers),
-      formatCLP(r.breakdown.fuel),
+      formatCLP(r.breakdown.fuel_diesel),
+      formatCLP(r.breakdown.fuel_gasoline),
       formatCLP(r.breakdown.machinery),
       formatCLP(r.breakdown.irrigation),
       formatCLP(r.breakdown.distribution)
@@ -296,6 +299,7 @@ export const Assistant: React.FC = () => {
           'Labores',
           'Trabajadores',
           'Petróleo',
+          'Bencina',
           'Maquinaria',
           'Riego',
           'Distribución'
