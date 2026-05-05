@@ -95,22 +95,30 @@ async function toolSearchInvoices(supabase, args) {
   const q = query.trim();
   const isNumber = /^\d+$/.test(q);
 
-  let builder = supabase
+  const base = supabase
     .from('invoices')
-    .select('id, invoice_number, supplier, invoice_date, total_amount, status, document_type')
+    .select('id, invoice_number, supplier, invoice_date, due_date, total_amount, status, document_type')
     .eq('company_id', companyId)
     .order('invoice_date', { ascending: false })
     .limit(limit);
 
   if (isNumber) {
-    builder = builder.ilike('invoice_number', `%${q}%`);
-  } else {
-    builder = builder.or(`supplier.ilike.%${q}%,invoice_number.ilike.%${q}%`);
+    const { data, error } = await base.ilike('invoice_number', `%${q}%`);
+    if (error) throw error;
+    return { invoices: data || [] };
   }
 
-  const { data, error } = await builder;
-  if (error) throw error;
-  return { invoices: data || [] };
+  const [bySupplier, byNumber] = await Promise.all([
+    base.ilike('supplier', `%${q}%`),
+    base.ilike('invoice_number', `%${q}%`)
+  ]);
+  if (bySupplier.error) throw bySupplier.error;
+  if (byNumber.error) throw byNumber.error;
+
+  const byId = new Map();
+  (bySupplier.data || []).forEach((r) => byId.set(r.id, r));
+  (byNumber.data || []).forEach((r) => byId.set(r.id, r));
+  return { invoices: Array.from(byId.values()).slice(0, limit) };
 }
 
 async function toolSearchProducts(supabase, args) {
@@ -130,6 +138,112 @@ async function toolSearchProducts(supabase, args) {
     .limit(limit);
   if (error) throw error;
   return { products: data || [] };
+}
+
+function getMonthRange(year, monthIndex0) {
+  const start = new Date(Date.UTC(year, monthIndex0, 1, 0, 0, 0));
+  const end = new Date(Date.UTC(year, monthIndex0 + 1, 0, 23, 59, 59));
+  return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
+}
+
+async function toolGetInvoicesDue(supabase, args) {
+  const companyId = requireString(args.companyId);
+  if (!companyId) throw new Error('companyId requerido');
+
+  const year = args.year ? Number(args.year) : new Date().getUTCFullYear();
+  const month = args.month ? Number(args.month) : new Date().getUTCMonth() + 1;
+  const status = requireString(args.status) || 'Pendiente';
+  const limit = Math.max(1, Math.min(Number(args.limit || 50), 200));
+
+  if (Number.isNaN(year) || year < 2000 || year > 2100) throw new Error('year inválido');
+  if (Number.isNaN(month) || month < 1 || month > 12) throw new Error('month inválido');
+
+  const range = getMonthRange(year, month - 1);
+
+  const { data, error } = await supabase
+    .from('invoices')
+    .select('id, invoice_number, supplier, invoice_date, due_date, total_amount, status, document_type')
+    .eq('company_id', companyId)
+    .eq('status', status)
+    .not('due_date', 'is', null)
+    .gte('due_date', range.from)
+    .lte('due_date', range.to)
+    .order('due_date', { ascending: true })
+    .limit(limit);
+
+  if (error) throw error;
+  return { range, status, invoices: data || [] };
+}
+
+const ALLOWED_TABLES = new Set([
+  'invoices',
+  'invoice_items',
+  'products',
+  'fields',
+  'sectors',
+  'applications',
+  'application_items',
+  'labor_assignments',
+  'worker_costs',
+  'fuel_consumption',
+  'fuel_assignments',
+  'machinery_assignments',
+  'irrigation_assignments',
+  'general_costs',
+  'income_entries',
+  'inventory_movements'
+]);
+
+function isSafeIdent(value) {
+  return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value);
+}
+
+async function toolSelectRows(supabase, args) {
+  const companyId = requireString(args.companyId);
+  const table = requireString(args.table);
+  const select = requireString(args.select) || '*';
+  const limit = Math.max(1, Math.min(Number(args.limit || 50), 200));
+  const orderBy = requireString(args.orderBy);
+  const orderAsc = args.orderAsc === undefined ? false : Boolean(args.orderAsc);
+  const filters = Array.isArray(args.filters) ? args.filters : [];
+
+  if (!companyId) throw new Error('companyId requerido');
+  if (!table || !ALLOWED_TABLES.has(table)) throw new Error('table no permitido');
+  if (orderBy && !isSafeIdent(orderBy)) throw new Error('orderBy inválido');
+
+  let q = supabase.from(table).select(select).limit(limit);
+
+  const applyCompany = async (query) => {
+    try {
+      const { data, error } = await query.eq('company_id', companyId);
+      if (error) throw error;
+      return { data };
+    } catch (e) {
+      return null;
+    }
+  };
+
+  for (const f of filters) {
+    const column = requireString(f?.column);
+    const op = requireString(f?.op);
+    const value = f?.value;
+    if (!column || !isSafeIdent(column)) continue;
+    if (op === 'eq') q = q.eq(column, value);
+    else if (op === 'ilike') q = q.ilike(column, `%${requireString(value)}%`);
+    else if (op === 'gte') q = q.gte(column, requireString(value));
+    else if (op === 'lte') q = q.lte(column, requireString(value));
+    else if (op === 'in' && Array.isArray(value)) q = q.in(column, value);
+    else if (op === 'is') q = q.is(column, value);
+  }
+
+  if (orderBy) q = q.order(orderBy, { ascending: orderAsc });
+
+  const tryWithCompany = await applyCompany(q);
+  if (tryWithCompany) return { rows: tryWithCompany.data || [] };
+
+  const { data, error } = await q;
+  if (error) throw error;
+  return { rows: data || [] };
 }
 
 async function safeSelectFuelConsumption(supabase, companyId, from, to) {
@@ -402,6 +516,26 @@ export default async function handler(req, res) {
       {
         type: 'function',
         function: {
+          name: 'get_invoices_due',
+          description:
+            'Lista facturas pendientes que vencen en un mes específico (por defecto el mes actual).',
+          parameters: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              companyId: { type: 'string' },
+              year: { type: 'number' },
+              month: { type: 'number' },
+              status: { type: 'string' },
+              limit: { type: 'number' }
+            },
+            required: ['companyId']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
           name: 'search_products',
           description: 'Busca productos por nombre para ver stock y costo promedio.',
           parameters: {
@@ -413,6 +547,39 @@ export default async function handler(req, res) {
               limit: { type: 'number' }
             },
             required: ['companyId', 'query']
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'select_rows',
+          description:
+            'Consulta filas de tablas del sistema de forma segura (solo lectura, con filtros y límite).',
+          parameters: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              companyId: { type: 'string' },
+              table: { type: 'string' },
+              select: { type: 'string' },
+              filters: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    column: { type: 'string' },
+                    op: { type: 'string' },
+                    value: {}
+                  }
+                }
+              },
+              orderBy: { type: 'string' },
+              orderAsc: { type: 'boolean' },
+              limit: { type: 'number' }
+            },
+            required: ['companyId', 'table']
           }
         }
       },
@@ -471,7 +638,9 @@ export default async function handler(req, res) {
 
     const toolHandlers = {
       search_invoices: (args) => toolSearchInvoices(supabase, args),
+      get_invoices_due: (args) => toolGetInvoicesDue(supabase, args),
       search_products: (args) => toolSearchProducts(supabase, args),
+      select_rows: (args) => toolSelectRows(supabase, args),
       get_costs_summary: (args) => toolGetCostsSummary(supabase, args),
       save_memory: (args) => toolSaveMemory(supabase, args)
     };

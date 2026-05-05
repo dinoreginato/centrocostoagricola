@@ -86,7 +86,7 @@ export const Assistant: React.FC = () => {
       });
 
       const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error(data?.error || data?.detail || 'No se pudo obtener respuesta');
+      if (!resp.ok) throw new Error(data?.detail || data?.error || 'No se pudo obtener respuesta');
       const answer = String(data?.answer || '').trim();
       appendMessage({ role: 'assistant', text: answer || 'No pude generar una respuesta.', userText: userTextForAnswer });
 
@@ -197,7 +197,7 @@ export const Assistant: React.FC = () => {
         })
       });
       const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error(data?.error || data?.detail || 'No se pudo guardar feedback');
+      if (!resp.ok) throw new Error(data?.detail || data?.error || 'No se pudo guardar feedback');
       toast.success('Gracias, guardé tu feedback.');
     } catch (e: any) {
       toast.error(String(e?.message || e));
