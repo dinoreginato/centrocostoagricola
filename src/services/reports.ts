@@ -1,6 +1,27 @@
 import { supabase } from '../supabase/client';
 import { getSeasonFromDate } from '../lib/seasonUtils';
 
+async function fetchAllPages<T>(
+  queryFactory: (from: number, to: number) => any,
+  params?: { pageSize?: number; maxRows?: number }
+): Promise<T[]> {
+  const pageSize = params?.pageSize ?? 5000;
+  const maxRows = params?.maxRows ?? 100000;
+  let from = 0;
+  const out: T[] = [];
+
+  while (true) {
+    const { data, error } = await queryFactory(from, from + pageSize - 1);
+    if (error) throw error;
+    (data || []).forEach((r: any) => out.push(r as T));
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+    if (from >= maxRows) break;
+  }
+
+  return out;
+}
+
 type ReportFieldRow = {
   id: string;
   name: string;
@@ -38,12 +59,9 @@ export async function loadReportsRawData(params: { companyId: string }) {
     laborRes,
     workerCostsRes,
     fuelRes,
-    fuelConsRes,
     machineryRes,
     irrigationRes,
     generalCostsRes,
-    incomeRes,
-    invoicesRes,
     productsRes
   ] = await Promise.all([
     fieldIds.length
@@ -56,10 +74,6 @@ export async function loadReportsRawData(params: { companyId: string }) {
     sectorIds.length
       ? supabase.from('fuel_assignments').select('sector_id, assigned_amount, assigned_date').in('sector_id', sectorIds)
       : emptyOk,
-    supabase
-      .from('fuel_consumption')
-      .select('sector_id, estimated_price, date, activity, liters, machine_id, machine:machines(name, type)')
-      .eq('company_id', params.companyId),
     sectorIds.length
       ? supabase.from('machinery_assignments').select('sector_id, assigned_amount, assigned_date').in('sector_id', sectorIds)
       : emptyOk,
@@ -67,28 +81,12 @@ export async function loadReportsRawData(params: { companyId: string }) {
       ? supabase.from('irrigation_assignments').select('sector_id, assigned_amount, assigned_date').in('sector_id', sectorIds)
       : emptyOk,
     sectorIds.length ? supabase.from('general_costs').select('sector_id, amount, date').in('sector_id', sectorIds) : emptyOk,
-    supabase.from('income_entries').select('*, fields(name), sectors(name)').eq('company_id', params.companyId),
-    supabase
-      .from('invoices')
-      .select(
-        `
-        id, invoice_number, invoice_date, total_amount, supplier, status, due_date, document_type, notes,
-        tax_percentage, discount_amount, exempt_amount, special_tax_amount,
-        invoice_items (
-          id, category, total_price, quantity,
-          products (name, unit, category)
-        )
-      `
-      )
-      .eq('company_id', params.companyId),
     supabase
       .from('products')
       .select('id, name, unit, category, current_stock, minimum_stock, average_cost')
       .eq('company_id', params.companyId)
       .neq('category', 'Archivado')
   ]);
-
-  if (invoicesRes.error) throw invoicesRes.error;
 
   const warnings: any[] = [];
   const safeData = <T,>(res: { data: any; error: any }) => {
@@ -99,16 +97,58 @@ export async function loadReportsRawData(params: { companyId: string }) {
     return (res.data || []) as unknown as T[];
   };
 
+  const [fuelConsumption, incomeEntries, invoices] = await Promise.all([
+    fetchAllPages<any>((from, to) =>
+      supabase
+        .from('fuel_consumption')
+        .select('sector_id, estimated_price, date, activity, liters, machine_id, machine:machines(name, type)')
+        .eq('company_id', params.companyId)
+        .order('date', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to)
+    ).catch((e) => {
+      warnings.push(e);
+      return [];
+    }),
+    fetchAllPages<any>((from, to) =>
+      supabase
+        .from('income_entries')
+        .select('*, fields(name), sectors(name)')
+        .eq('company_id', params.companyId)
+        .order('date', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to)
+    ).catch((e) => {
+      warnings.push(e);
+      return [];
+    }),
+    fetchAllPages<ReportInvoiceRow>((from, to) =>
+      supabase
+        .from('invoices')
+        .select(
+          `
+          id, invoice_number, invoice_date, total_amount, supplier, status, due_date, document_type, notes,
+          tax_percentage, discount_amount, exempt_amount, special_tax_amount,
+          invoice_items (
+            id, category, total_price, quantity,
+            products (name, unit, category)
+          )
+        `
+        )
+        .eq('company_id', params.companyId)
+        .order('invoice_date', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to)
+    )
+  ]);
+
   const applications = safeData<ReportApplicationRow>(applicationsRes as any);
-  const invoices = (invoicesRes.data || []) as unknown as ReportInvoiceRow[];
   const labor = safeData<any>(laborRes as any);
   const workerCosts = safeData<any>(workerCostsRes as any);
   const fuel = safeData<any>(fuelRes as any);
-  const fuelConsumption = safeData<any>(fuelConsRes as any);
   const machinery = safeData<any>(machineryRes as any);
   const irrigation = safeData<any>(irrigationRes as any);
   const generalCosts = safeData<any>(generalCostsRes as any);
-  const incomeEntries = safeData<any>(incomeRes as any);
   const products = safeData<any>(productsRes as any);
 
   const seasonsSet = new Set<string>();
