@@ -16,6 +16,24 @@ type ChatMessage = {
   role: 'user' | 'assistant';
   text: string;
   userText?: string;
+  attachment?: {
+    kind: 'invoices_due';
+    title: string;
+    month: number;
+    year: number;
+    status: string;
+    range: { from: string; to: string };
+    invoices: Array<{
+      id: string;
+      invoice_number: string | null;
+      supplier: string | null;
+      invoice_date: string | null;
+      due_date: string | null;
+      total_amount: number | null;
+      status: string | null;
+      document_type: string | null;
+    }>;
+  };
   createdAt: number;
 };
 
@@ -88,7 +106,13 @@ export const Assistant: React.FC = () => {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data?.detail || data?.error || 'No se pudo obtener respuesta');
       const answer = String(data?.answer || '').trim();
-      appendMessage({ role: 'assistant', text: answer || 'No pude generar una respuesta.', userText: userTextForAnswer });
+      const attachment = data?.attachment && typeof data.attachment === 'object' ? data.attachment : undefined;
+      appendMessage({
+        role: 'assistant',
+        text: answer || 'No pude generar una respuesta.',
+        userText: userTextForAnswer,
+        attachment
+      });
 
       if (Array.isArray(data?.warnings) && data.warnings.length > 0) {
         toast.warning(String(data.warnings[0]));
@@ -359,6 +383,87 @@ export const Assistant: React.FC = () => {
     return doc;
   };
 
+  const buildInvoicesDuePdf = (attachment: NonNullable<ChatMessage['attachment']>) => {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+    doc.setFontSize(14);
+    doc.text(attachment.title, 40, 40);
+    doc.setFontSize(10);
+    doc.text(`Período: ${attachment.range.from} a ${attachment.range.to}`, 40, 58);
+
+    const body = (attachment.invoices || []).map((inv) => [
+      String(inv.due_date || ''),
+      String(inv.supplier || ''),
+      String(inv.invoice_number || ''),
+      formatCLP(Number(inv.total_amount) || 0),
+      String(inv.status || '')
+    ]);
+
+    autoTable(doc, {
+      startY: 75,
+      head: [['Vence', 'Proveedor', 'N°', 'Monto', 'Estado']],
+      body,
+      styles: { fontSize: 9, cellPadding: 3 },
+      headStyles: { fillColor: [34, 197, 94] },
+      columnStyles: {
+        0: { cellWidth: 70 },
+        1: { cellWidth: 220 },
+        2: { cellWidth: 90 },
+        3: { cellWidth: 80, halign: 'right' },
+        4: { cellWidth: 70 }
+      }
+    });
+
+    return doc;
+  };
+
+  const buildInvoicesDueExcelBlob = async (attachment: NonNullable<ChatMessage['attachment']>) => {
+    const ExcelJSImport = (await import('exceljs/dist/exceljs.bare.min.js')).default as unknown as any;
+    const ExcelJS = ExcelJSImport as unknown as { Workbook: new () => any };
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Facturas');
+    ws.columns = [
+      { header: 'Vence', key: 'due_date', width: 12 },
+      { header: 'Proveedor', key: 'supplier', width: 32 },
+      { header: 'N°', key: 'invoice_number', width: 14 },
+      { header: 'Monto', key: 'total_amount', width: 14 },
+      { header: 'Estado', key: 'status', width: 14 }
+    ];
+    (attachment.invoices || []).forEach((inv) =>
+      ws.addRow({
+        due_date: inv.due_date || '',
+        supplier: inv.supplier || '',
+        invoice_number: inv.invoice_number || '',
+        total_amount: Number(inv.total_amount) || 0,
+        status: inv.status || ''
+      })
+    );
+    const buffer = await wb.xlsx.writeBuffer();
+    return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  };
+
+  const previewInvoicesPdf = (attachment: NonNullable<ChatMessage['attachment']>) => {
+    const doc = buildInvoicesDuePdf(attachment);
+    const url = String(doc.output('bloburl'));
+    setPdfPreviewTitle(attachment.title);
+    setPdfPreviewUrl(url);
+    setPdfPreviewOpen(true);
+  };
+
+  const downloadInvoicesPdf = (attachment: NonNullable<ChatMessage['attachment']>) => {
+    const doc = buildInvoicesDuePdf(attachment);
+    doc.save(`Facturas_por_Vencer_${attachment.year}_${String(attachment.month).padStart(2, '0')}.pdf`);
+  };
+
+  const downloadInvoicesExcel = async (attachment: NonNullable<ChatMessage['attachment']>) => {
+    const blob = await buildInvoicesDueExcelBlob(attachment);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Facturas_por_Vencer_${attachment.year}_${String(attachment.month).padStart(2, '0')}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const previewPdf = () => {
     const doc = buildPdf();
     if (!doc) return;
@@ -574,6 +679,31 @@ export const Assistant: React.FC = () => {
                           <ThumbsDown className="h-3.5 w-3.5" />
                           Corregir
                         </button>
+                        {m.attachment?.kind === 'invoices_due' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => previewInvoicesPdf(m.attachment!)}
+                              className="inline-flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            >
+                              Ver PDF
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => downloadInvoicesPdf(m.attachment!)}
+                              className="inline-flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            >
+                              PDF
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void downloadInvoicesExcel(m.attachment!)}
+                              className="inline-flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            >
+                              Excel
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                     {m.role === 'assistant' && feedbackOpenFor === m.id && (

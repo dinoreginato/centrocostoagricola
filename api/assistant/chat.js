@@ -527,7 +527,9 @@ async function answerWithRules(supabase, ctx, companyId, text) {
   if (learn) {
     const payload = { type: 'alias_intent', alias: learn.alias, intent: learn.intent };
     await toolSaveMemory(supabase, { companyId, kind: 'rule', content: JSON.stringify(payload), importance: 3 });
-    return `Listo. Aprendí: cuando digas “${learn.alias}” lo interpretaré como “${learn.intent}”.`;
+    return {
+      answer: `Listo. Aprendí: cuando digas “${learn.alias}” lo interpretaré como “${learn.intent}”.`
+    };
   }
 
   const ruleIntent = resolveRuleIntent(ctx.memories || [], text);
@@ -537,7 +539,18 @@ async function answerWithRules(supabase, ctx, companyId, text) {
     const my = parseMonthYear(text) || { month: new Date().getUTCMonth() + 1, year: new Date().getUTCFullYear() };
     const result = await toolGetInvoicesDue(supabase, { companyId, month: my.month, year: my.year, status: 'Pendiente', limit: 50 });
     if (!result.invoices || result.invoices.length === 0) {
-      return `No encontré facturas Pendientes con vencimiento en ${monthNameES(my.month)} ${my.year}.`;
+      return {
+        answer: `No encontré facturas Pendientes con vencimiento en ${monthNameES(my.month)} ${my.year}.`,
+        attachment: {
+          kind: 'invoices_due',
+          title: `Facturas Pendientes por vencer - ${monthNameES(my.month)} ${my.year}`,
+          month: my.month,
+          year: my.year,
+          status: result.status,
+          range: result.range,
+          invoices: []
+        }
+      };
     }
     const lines = result.invoices.slice(0, 15).map((inv) => {
       const due = inv.due_date || '';
@@ -546,13 +559,24 @@ async function answerWithRules(supabase, ctx, companyId, text) {
       return `- ${due} · ${sup} · ${num} · ${formatCLP(inv.total_amount)}`;
     });
     const more = result.invoices.length > 15 ? `\n- ...y ${result.invoices.length - 15} más` : '';
-    return `Facturas Pendientes que vencen en ${monthNameES(my.month)} ${my.year}:\n${lines.join('\n')}${more}`;
+    return {
+      answer: `Facturas Pendientes que vencen en ${monthNameES(my.month)} ${my.year}:\n${lines.join('\n')}${more}`,
+      attachment: {
+        kind: 'invoices_due',
+        title: `Facturas Pendientes por vencer - ${monthNameES(my.month)} ${my.year}`,
+        month: my.month,
+        year: my.year,
+        status: result.status,
+        range: result.range,
+        invoices: result.invoices
+      }
+    };
   }
 
   if (ruleIntent === 'buscar_factura' || (t.includes('factura') && (/\d{2,}/.test(t) || t.includes('proveedor')))) {
     const q = text.replace(/facturas?/gi, '').trim();
     const result = await toolSearchInvoices(supabase, { companyId, query: q || text, limit: 20 });
-    if (!result.invoices || result.invoices.length === 0) return 'No encontré facturas con ese criterio.';
+    if (!result.invoices || result.invoices.length === 0) return { answer: 'No encontré facturas con ese criterio.' };
     const lines = result.invoices.slice(0, 10).map((inv) => {
       const d = inv.invoice_date || '';
       const sup = inv.supplier || 'Sin proveedor';
@@ -560,7 +584,7 @@ async function answerWithRules(supabase, ctx, companyId, text) {
       return `- ${d} · ${sup} · ${num} · ${formatCLP(inv.total_amount)} · ${inv.status || ''}`;
     });
     const more = result.invoices.length > 10 ? `\n- ...y ${result.invoices.length - 10} más` : '';
-    return `Encontré estas facturas:\n${lines.join('\n')}${more}`;
+    return { answer: `Encontré estas facturas:\n${lines.join('\n')}${more}` };
   }
 
   if (ruleIntent === 'stock_producto' || t.includes('stock') || t.includes('bodega')) {
@@ -569,11 +593,11 @@ async function answerWithRules(supabase, ctx, companyId, text) {
       .replace(/bodega/gi, '')
       .replace(/cuanto|cuanta|tengo|hay|de/gi, ' ')
       .trim();
-    if (!q) return 'Dime el nombre del producto para revisar el stock.';
+    if (!q) return { answer: 'Dime el nombre del producto para revisar el stock.' };
     const result = await toolSearchProducts(supabase, { companyId, query: q, limit: 10 });
-    if (!result.products || result.products.length === 0) return 'No encontré productos con ese nombre.';
+    if (!result.products || result.products.length === 0) return { answer: 'No encontré productos con ese nombre.' };
     const lines = result.products.map((p) => `- ${p.name} · Stock: ${Number(p.current_stock) || 0} ${p.unit || ''}`);
-    return `Stock:\n${lines.join('\n')}`;
+    return { answer: `Stock:\n${lines.join('\n')}` };
   }
 
   const season = parseSeason(text);
@@ -584,10 +608,13 @@ async function answerWithRules(supabase, ctx, companyId, text) {
   ) {
     const result = await toolGetCostsSummary(supabase, { companyId, season: season || '' });
     const total = (result.fields || []).reduce((acc, r) => acc + (Number(r.total) || 0), 0);
-    return `En Temporada ${season || ''}, el costo total es ${formatCLP(total)}.`;
+    return { answer: `En Temporada ${season || ''}, el costo total es ${formatCLP(total)}.` };
   }
 
-  return 'Puedo responder preguntas usando los datos del sistema (facturas, costos, productos/stock). Si quieres, enséñame con: aprende: <tu frase> => <intención>. Ejemplo: aprende: "facturas a vencer" => facturas_vencen_mes';
+  return {
+    answer:
+      'Puedo responder preguntas usando los datos del sistema (facturas, costos, productos/stock). Si quieres, enséñame con: aprende: <tu frase> => <intención>. Ejemplo: aprende: "facturas a vencer" => facturas_vencen_mes'
+  };
 }
 
 export default async function handler(req, res) {
@@ -615,8 +642,12 @@ export default async function handler(req, res) {
       return;
     }
 
-    const answer = await answerWithRules(supabase, ctx, companyId, question);
-    json(res, 200, { answer, warnings: (ctx.warnings || []).filter(Boolean).slice(0, 5) });
+    const result = await answerWithRules(supabase, ctx, companyId, question);
+    json(res, 200, {
+      answer: String(result?.answer || '').trim(),
+      attachment: result?.attachment || null,
+      warnings: (ctx.warnings || []).filter(Boolean).slice(0, 5)
+    });
   } catch (e) {
     json(res, 500, { error: 'Error interno', detail: String(e?.message || e) });
   }
