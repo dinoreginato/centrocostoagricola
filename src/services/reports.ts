@@ -47,6 +47,34 @@ type ReportInvoiceRow = {
   [key: string]: any;
 };
 
+async function fetchFuelConsumptionAll(params: { companyId: string }) {
+  try {
+    return await fetchAllPages<any>((from, to) =>
+      supabase
+        .from('fuel_consumption')
+        .select('id, application_id, sector_id, estimated_price, date, activity, liters')
+        .eq('company_id', params.companyId)
+        .order('date', { ascending: false })
+        .order('id', { ascending: false })
+        .range(from, to)
+    );
+  } catch (e: any) {
+    const msg = String(e?.message || e);
+    if (msg.toLowerCase().includes('application_id')) {
+      return await fetchAllPages<any>((from, to) =>
+        supabase
+          .from('fuel_consumption')
+          .select('id, sector_id, estimated_price, date, activity, liters')
+          .eq('company_id', params.companyId)
+          .order('date', { ascending: false })
+          .order('id', { ascending: false })
+          .range(from, to)
+      );
+    }
+    throw e;
+  }
+}
+
 export async function loadReportsRawData(params: { companyId: string }) {
   const { data: fields, error: fieldsError } = await supabase
     .from('fields')
@@ -105,14 +133,7 @@ export async function loadReportsRawData(params: { companyId: string }) {
   };
 
   const [fuelConsumption, incomeEntries, invoices, applicationItems] = await Promise.all([
-    fetchAllPages<any>((from, to) =>
-      supabase
-        .from('fuel_consumption')
-        .select('id, application_id, sector_id, estimated_price, date, activity, liters, machine_id')
-        .eq('company_id', params.companyId)
-        .order('date', { ascending: false })
-        .range(from, to)
-    ).catch((e) => {
+    fetchFuelConsumptionAll({ companyId: params.companyId }).catch((e) => {
       warnings.push(e);
       return [];
     }),
