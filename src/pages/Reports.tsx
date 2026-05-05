@@ -143,6 +143,7 @@ export const Reports: React.FC = () => {
   const [rawWorkerCosts, setRawWorkerCosts] = useState<any[]>([]); // New state
   const [rawFuel, setRawFuel] = useState<any[]>([]); 
   const [rawFuelConsumption, setRawFuelConsumption] = useState<any[]>([]); // New: Fuel Consumption
+  const [rawApplicationItems, setRawApplicationItems] = useState<any[]>([]);
   const [rawMachinery, setRawMachinery] = useState<any[]>([]); 
   const [rawIrrigation, setRawIrrigation] = useState<any[]>([]); 
   const [rawGeneralCosts, setRawGeneralCosts] = useState<any[]>([]); // New state
@@ -289,6 +290,7 @@ export const Reports: React.FC = () => {
     rawWorkerCosts,
     rawFuel,
     rawFuelConsumption,
+    rawApplicationItems,
     rawMachinery,
     rawIrrigation,
     rawGeneralCosts,
@@ -302,7 +304,7 @@ export const Reports: React.FC = () => {
   useEffect(() => {
     // Only process if we have sectors/fields loaded, otherwise wait
     processReports();
-  }, [rawFields, rawApplications, rawInvoices, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawMachinery, rawIrrigation, rawGeneralCosts, rawProducts, incomeEntries, selectedSeason, processReports]);
+  }, [rawFields, rawApplications, rawInvoices, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawApplicationItems, rawMachinery, rawIrrigation, rawGeneralCosts, rawProducts, incomeEntries, selectedSeason, processReports]);
 
   async function loadRawDataImpl() {
     if (!selectedCompany) return;
@@ -315,6 +317,7 @@ export const Reports: React.FC = () => {
       setRawWorkerCosts(res.workerCosts || []);
       setRawFuel(res.fuel || []);
       setRawFuelConsumption(res.fuelConsumption || []);
+      setRawApplicationItems((res as any).applicationItems || []);
       setRawMachinery(res.machinery || []);
       setRawIrrigation(res.irrigation || []);
       setRawGeneralCosts(res.generalCosts || []);
@@ -325,6 +328,9 @@ export const Reports: React.FC = () => {
       setAvailableSeasons(res.availableSeasons || []);
       if (res.availableSeasons && res.availableSeasons.length > 0 && !res.availableSeasons.includes(selectedSeason)) {
         setSelectedSeason(res.availableSeasons[0]);
+      }
+      if ((res as any).warnings && Array.isArray((res as any).warnings) && (res as any).warnings.length > 0) {
+        toast.warning(`Algunas fuentes de datos no se pudieron cargar: ${(res as any).warnings[0]}`);
       }
 
     } catch {
@@ -464,6 +470,37 @@ export const Reports: React.FC = () => {
     const avgPriceDiesel = totalDieselLiters > 0 ? totalDieselCost / totalDieselLiters : 0;
     const avgPriceGasoline = totalGasLiters > 0 ? totalGasCost / totalGasLiters : 0;
 
+    const consumptionApplicationIds = new Set<string>();
+    rawFuelConsumption.forEach((c: any) => {
+      if (c?.application_id) consumptionApplicationIds.add(String(c.application_id));
+    });
+
+    const fuelFromApplicationsBySector = new Map<string, { diesel: number; gasoline: number }>();
+    rawApplicationItems.forEach((row: any) => {
+      const app = Array.isArray(row.applications) ? row.applications[0] : row.applications;
+      if (!app?.sector_id || !app?.application_date) return;
+
+      const appId = String(row.application_id || app.id || '');
+      if (appId && consumptionApplicationIds.has(appId)) return;
+
+      if (!isDateInSeason(String(app.application_date), selectedSeason)) return;
+
+      const product = Array.isArray(row.products) ? row.products[0] : row.products;
+      const cat = String(product?.category || '').toLowerCase().trim();
+      const name = String(product?.name || '').toLowerCase().trim();
+
+      const isDiesel = ['petroleo', 'diesel'].some((t) => cat.includes(t) || name.includes(t));
+      const isGasoline = ['bencina', 'gasolina', 'combustible'].some((t) => cat.includes(t) || name.includes(t));
+      if (!isDiesel && !isGasoline) return;
+
+      const sectorId = String(app.sector_id);
+      const curr = fuelFromApplicationsBySector.get(sectorId) || { diesel: 0, gasoline: 0 };
+      const cost = Number(row.total_cost || 0);
+      if (isDiesel && !name.includes('bencina') && !name.includes('gasolina')) curr.diesel += cost;
+      else curr.gasoline += cost;
+      fuelFromApplicationsBySector.set(sectorId, curr);
+    });
+
     // Filter apps by season
     const filteredApps = rawApplications.filter(app => {
       if (!app.application_date) return false;
@@ -518,7 +555,9 @@ export const Reports: React.FC = () => {
       field.sectors?.forEach((sector: any) => {
         // Costs
         const sectorApps = filteredApps.filter(app => app.sector_id === sector.id);
-        const appCost = sectorApps.reduce((sum, app) => sum + Number(app.total_cost), 0);
+        const sectorAppsTotal = sectorApps.reduce((sum, app) => sum + Number(app.total_cost), 0);
+        const fuelFromApps = fuelFromApplicationsBySector.get(String(sector.id)) || { diesel: 0, gasoline: 0 };
+        const appCost = Math.max(sectorAppsTotal - (fuelFromApps.diesel + fuelFromApps.gasoline), 0);
         
         const sectorLabor = filteredLabor.filter(lab => lab.sector_id === sector.id);
         const laborCost = sectorLabor.reduce((sum, lab) => sum + Number(lab.assigned_amount), 0);
@@ -554,6 +593,9 @@ export const Reports: React.FC = () => {
         
         let fuelCostDiesel = fuelCostDirect;
         let fuelCostGasoline = 0;
+
+        fuelCostDiesel += fuelFromApps.diesel;
+        fuelCostGasoline += fuelFromApps.gasoline;
 
         sectorFuelCons.forEach(item => {
             const activity = (item.activity || '').toLowerCase();

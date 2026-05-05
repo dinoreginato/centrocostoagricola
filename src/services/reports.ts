@@ -35,6 +35,13 @@ type ReportApplicationRow = {
   application_date: string;
 };
 
+type ReportApplicationItemRow = {
+  application_id: string;
+  total_cost: number;
+  applications: { id: string; sector_id: string; application_date: string } | { id: string; sector_id: string; application_date: string }[];
+  products?: { name: string | null; category: string | null; unit: string | null } | { name: string | null; category: string | null; unit: string | null }[] | null;
+};
+
 type ReportInvoiceRow = {
   invoice_date?: string | null;
   [key: string]: any;
@@ -97,14 +104,13 @@ export async function loadReportsRawData(params: { companyId: string }) {
     return (res.data || []) as unknown as T[];
   };
 
-  const [fuelConsumption, incomeEntries, invoices] = await Promise.all([
+  const [fuelConsumption, incomeEntries, invoices, applicationItems] = await Promise.all([
     fetchAllPages<any>((from, to) =>
       supabase
         .from('fuel_consumption')
-        .select('sector_id, estimated_price, date, activity, liters, machine_id, machine:machines(name, type)')
+        .select('id, application_id, sector_id, estimated_price, date, activity, liters, machine_id, machine:machines(name, type)')
         .eq('company_id', params.companyId)
         .order('date', { ascending: false })
-        .order('id', { ascending: false })
         .range(from, to)
     ).catch((e) => {
       warnings.push(e);
@@ -139,7 +145,25 @@ export async function loadReportsRawData(params: { companyId: string }) {
         .order('invoice_date', { ascending: false })
         .order('id', { ascending: false })
         .range(from, to)
-    )
+    ),
+    fetchAllPages<ReportApplicationItemRow>((from, to) =>
+      supabase
+        .from('application_items')
+        .select(
+          `
+          application_id,
+          total_cost,
+          applications!inner(id, sector_id, application_date),
+          products (name, category, unit)
+        `
+        )
+        .in('applications.sector_id', sectorIds)
+        .order('application_id', { ascending: false })
+        .range(from, to)
+    ).catch((e) => {
+      warnings.push(e);
+      return [];
+    })
   ]);
 
   const applications = safeData<ReportApplicationRow>(applicationsRes as any);
@@ -176,6 +200,7 @@ export async function loadReportsRawData(params: { companyId: string }) {
     generalCosts,
     incomeEntries,
     invoices,
+    applicationItems,
     products,
     availableSeasons,
     warnings: warnings.map((w) => w?.message || String(w))
