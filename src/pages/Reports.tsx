@@ -328,6 +328,30 @@ export const Reports: React.FC = () => {
       setAvailableSeasons(res.availableSeasons || []);
       if (res.availableSeasons && res.availableSeasons.length > 0 && !res.availableSeasons.includes(selectedSeason)) {
         setSelectedSeason(res.availableSeasons[0]);
+      } else {
+        const isCurrentDefaultSeason = selectedSeason === getSeasonFromDate(new Date());
+        if (isCurrentDefaultSeason) {
+          const hasDataInSelectedSeason =
+            (res.applications || []).some((a: any) => a?.application_date && isDateInSeason(String(a.application_date), selectedSeason)) ||
+            (res.invoices || []).some((i: any) => i?.invoice_date && isDateInSeason(String(i.invoice_date), selectedSeason));
+
+          if (!hasDataInSelectedSeason) {
+            const dataSeasons = new Set<string>();
+            (res.applications || []).forEach((a: any) => {
+              if (!a?.application_date) return;
+              const d = new Date(String(a.application_date));
+              if (!isNaN(d.getTime())) dataSeasons.add(getSeasonFromDate(d));
+            });
+            (res.invoices || []).forEach((i: any) => {
+              if (!i?.invoice_date) return;
+              const d = new Date(String(i.invoice_date));
+              if (!isNaN(d.getTime())) dataSeasons.add(getSeasonFromDate(d));
+            });
+
+            const preferred = Array.from(dataSeasons).sort().reverse()[0];
+            if (preferred && preferred !== selectedSeason) setSelectedSeason(preferred);
+          }
+        }
       }
       if ((res as any).warnings && Array.isArray((res as any).warnings) && (res as any).warnings.length > 0) {
         toast.warning(`Algunas fuentes de datos no se pudieron cargar: ${(res as any).warnings[0]}`);

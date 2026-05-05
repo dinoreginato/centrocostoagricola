@@ -108,7 +108,7 @@ export async function loadReportsRawData(params: { companyId: string }) {
     fetchAllPages<any>((from, to) =>
       supabase
         .from('fuel_consumption')
-        .select('id, application_id, sector_id, estimated_price, date, activity, liters, machine_id, machine:machines(name, type)')
+        .select('id, application_id, sector_id, estimated_price, date, activity, liters, machine_id')
         .eq('company_id', params.companyId)
         .order('date', { ascending: false })
         .range(from, to)
