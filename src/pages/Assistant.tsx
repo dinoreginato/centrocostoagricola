@@ -103,30 +103,69 @@ export const Assistant: React.FC = () => {
 
     appendMessage({ role: 'user', text });
     setLoading(true);
-    setReport(null);
     try {
-      if (intent.kind !== 'field_costs') {
-        await callAi(text, text);
+      if (intent.kind === 'field_costs' || intent.kind === 'cost_category') {
+        const filter =
+          intent.from && intent.to
+            ? ({ kind: 'range', from: intent.from, to: intent.to } as const)
+            : intent.season
+              ? ({ kind: 'season', season: intent.season } as const)
+              : ({ kind: 'all' } as const);
+
+        const title = `Costos por Campo - ${selectedCompany.name} - ${filterLabel(filter)}`;
+        const rep = await generateFieldCostsReport({ companyId: selectedCompany.id, filter, title });
+        setReport(rep);
+
+        if (intent.kind === 'field_costs') {
+          appendMessage({
+            role: 'assistant',
+            text: `Listo. Generé el reporte “Costos por campo” (${filterLabel(filter)}). Total: ${formatCLP(rep.total_cost)}.`,
+            userText: text
+          });
+          return;
+        }
+
+        const sum = rep.fields.reduce((acc, r) => {
+          const b = r.breakdown as any;
+          if (intent.category === 'fuel') return acc + Number(b.fuel_diesel || 0) + Number(b.fuel_gasoline || 0);
+          return acc + Number(b[intent.category] || 0);
+        }, 0);
+
+        const label =
+          intent.category === 'irrigation'
+            ? 'Riego'
+            : intent.category === 'labor'
+              ? 'Labores'
+              : intent.category === 'workers'
+                ? 'Trabajadores'
+                : intent.category === 'machinery'
+                  ? 'Maquinaria'
+                  : intent.category === 'applications'
+                    ? 'Aplicaciones'
+                    : intent.category === 'distribution'
+                      ? 'Distribución'
+                      : intent.category === 'fuel_diesel'
+                        ? 'Petróleo'
+                        : intent.category === 'fuel_gasoline'
+                          ? 'Bencina'
+                          : 'Combustible';
+
+        appendMessage({
+          role: 'assistant',
+          text: `En ${filterLabel(filter)}, el gasto total de ${label} es ${formatCLP(sum)}.`,
+          userText: text
+        });
         return;
       }
 
-      const filter =
-        intent.from && intent.to
-          ? ({ kind: 'range', from: intent.from, to: intent.to } as const)
-          : intent.season
-            ? ({ kind: 'season', season: intent.season } as const)
-            : ({ kind: 'all' } as const);
-
-      const title = `Costos por Campo - ${selectedCompany.name} - ${filterLabel(filter)}`;
-      const rep = await generateFieldCostsReport({ companyId: selectedCompany.id, filter, title });
-      setReport(rep);
+      await callAi(text, text);
+    } catch (e: any) {
+      toast.error(String(e?.message || e));
       appendMessage({
         role: 'assistant',
-        text: `Listo. Generé el reporte “Costos por campo” (${filterLabel(filter)}). Total: ${formatCLP(rep.total_cost)}.`
+        text: 'No pude obtener una respuesta con los datos. Reintenta o indica la temporada/período.',
+        userText: text
       });
-    } catch (e: any) {
-      toast.error('Error al generar reporte: ' + String(e?.message || e));
-      appendMessage({ role: 'assistant', text: 'No pude generar el reporte. Reintenta o cambia el período.' });
     } finally {
       setLoading(false);
     }

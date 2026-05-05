@@ -2,7 +2,25 @@ import { getSeasonFromDate } from './seasonUtils';
 
 export type AssistantIntent =
   | { kind: 'field_costs'; season?: string; from?: string; to?: string }
+  | {
+      kind: 'cost_category';
+      category:
+        | 'irrigation'
+        | 'labor'
+        | 'workers'
+        | 'machinery'
+        | 'applications'
+        | 'distribution'
+        | 'fuel'
+        | 'fuel_diesel'
+        | 'fuel_gasoline';
+      season?: string;
+      from?: string;
+      to?: string;
+    }
   | { kind: 'unknown' };
+
+type CostCategory = Extract<AssistantIntent, { kind: 'cost_category' }>['category'];
 
 const MONTHS: Record<string, number> = {
   enero: 0,
@@ -48,12 +66,34 @@ export function parseAssistantIntent(input: string): AssistantIntent {
     text.includes('costos campo') ||
     text.includes('costos de campo');
 
-  if (!isFieldCosts) return { kind: 'unknown' };
+  const category: CostCategory | null =
+    text.includes('riego')
+      ? 'irrigation'
+      : text.includes('labor') || text.includes('mano de obra') || text.includes('labores')
+        ? 'labor'
+        : text.includes('trabajador') || text.includes('personal')
+          ? 'workers'
+          : text.includes('maquinaria')
+            ? 'machinery'
+            : text.includes('aplicacion')
+              ? 'applications'
+              : text.includes('distribucion') || text.includes('costos generales')
+                ? 'distribution'
+                : text.includes('bencina') || text.includes('gasolina')
+                  ? 'fuel_gasoline'
+                  : text.includes('petroleo') || text.includes('diesel')
+                    ? 'fuel_diesel'
+                    : text.includes('combustible')
+                      ? 'fuel'
+                      : null;
+
+  if (!isFieldCosts && !category) return { kind: 'unknown' };
 
   const seasonMatch = text.match(/(\d{4})\s*-\s*(\d{4})/);
   if (seasonMatch) {
     const season = `${seasonMatch[1]}-${seasonMatch[2]}`;
-    return { kind: 'field_costs', season };
+    if (isFieldCosts) return { kind: 'field_costs', season };
+    return { kind: 'cost_category', category, season };
   }
 
   const monthMatch = text.match(
@@ -64,11 +104,12 @@ export function parseAssistantIntent(input: string): AssistantIntent {
     const year = Number(monthMatch[2]);
     if (month != null && !Number.isNaN(year)) {
       const { from, to } = monthRange(month, year);
-      return { kind: 'field_costs', from, to };
+      if (isFieldCosts) return { kind: 'field_costs', from, to };
+      return { kind: 'cost_category', category, from, to };
     }
   }
 
   const nowSeason = getSeasonFromDate(new Date());
-  return { kind: 'field_costs', season: nowSeason };
+  if (isFieldCosts) return { kind: 'field_costs', season: nowSeason };
+  return { kind: 'cost_category', category, season: nowSeason };
 }
-
