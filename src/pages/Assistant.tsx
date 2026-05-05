@@ -2,18 +2,20 @@ import { toast } from 'sonner';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useCompany } from '../contexts/CompanyContext';
+import { useAuth } from '../contexts/AuthContext';
 import { formatCLP } from '../lib/utils';
 import { parseAssistantIntent } from '../lib/assistantNlp';
 import { generateFieldCostsReport, type FieldCostsReport } from '../services/assistantReports';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Loader2, MessageSquare, FileDown, Send, Phone } from 'lucide-react';
+import { Loader2, MessageSquare, FileDown, Send, Phone, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 
 type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
   text: string;
+  userText?: string;
   createdAt: number;
 };
 
@@ -29,6 +31,7 @@ function filterLabel(filter: FieldCostsReport['filter']) {
 
 export const Assistant: React.FC = () => {
   const { selectedCompany } = useCompany();
+  const { session } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -40,6 +43,9 @@ export const Assistant: React.FC = () => {
   const [whatsappEnabled, setWhatsappEnabled] = useState(false);
   const [whatsappTo, setWhatsappTo] = useState('');
   const [sendingWhatsapp, setSendingWhatsapp] = useState(false);
+  const [feedbackOpenFor, setFeedbackOpenFor] = useState<string | null>(null);
+  const [feedbackCorrection, setFeedbackCorrection] = useState('');
+  const [sendingFeedback, setSendingFeedback] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   const canRun = Boolean(selectedCompany);
@@ -56,6 +62,41 @@ export const Assistant: React.FC = () => {
     setMessages((prev) => [...prev, { id: uid(), createdAt: Date.now(), ...msg }]);
   }, []);
 
+  const callAi = React.useCallback(
+    async (text: string, userTextForAnswer: string) => {
+      if (!selectedCompany) return;
+      if (!session?.access_token) {
+        appendMessage({ role: 'assistant', text: 'Para usar IA, inicia sesión nuevamente.' });
+        return;
+      }
+
+      const history = [...messages, { id: uid(), createdAt: Date.now(), role: 'user' as const, text }].slice(-20);
+      const payload = {
+        companyId: selectedCompany.id,
+        messages: history.map((m) => ({ role: m.role, content: m.text }))
+      };
+
+      const resp = await fetch('/api/assistant/chat', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data?.error || data?.detail || 'No se pudo obtener respuesta');
+      const answer = String(data?.answer || '').trim();
+      appendMessage({ role: 'assistant', text: answer || 'No pude generar una respuesta.', userText: userTextForAnswer });
+
+      if (Array.isArray(data?.warnings) && data.warnings.length > 0) {
+        toast.warning(String(data.warnings[0]));
+      }
+    },
+    [appendMessage, messages, selectedCompany, session?.access_token]
+  );
+
   const runAssistant = React.useCallback(async (text: string) => {
     if (!selectedCompany) return;
     const intent = parseAssistantIntent(text);
@@ -65,10 +106,7 @@ export const Assistant: React.FC = () => {
     setReport(null);
     try {
       if (intent.kind !== 'field_costs') {
-        appendMessage({
-          role: 'assistant',
-          text: 'Puedo ayudarte con “Costos por campo”. Ejemplos: “Costos por campo temporada 2025-2026” o “Costos por campo marzo 2026”.'
-        });
+        await callAi(text, text);
         return;
       }
 
@@ -92,7 +130,42 @@ export const Assistant: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [appendMessage, selectedCompany]);
+  }, [appendMessage, callAi, selectedCompany]);
+
+  const sendFeedback = async (opts: { messageId: string; rating: 1 | -1; correction?: string }) => {
+    if (!selectedCompany) return;
+    if (!session?.access_token) return;
+    const msg = messages.find((m) => m.id === opts.messageId);
+    if (!msg || msg.role !== 'assistant') return;
+
+    const userMessage = String(msg.userText || '').trim();
+    if (!userMessage) return;
+
+    setSendingFeedback(true);
+    try {
+      const resp = await fetch('/api/assistant/feedback', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          companyId: selectedCompany.id,
+          userMessage,
+          assistantMessage: msg.text,
+          rating: opts.rating,
+          correction: opts.correction || ''
+        })
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data?.error || data?.detail || 'No se pudo guardar feedback');
+      toast.success('Gracias, guardé tu feedback.');
+    } catch (e: any) {
+      toast.error(String(e?.message || e));
+    } finally {
+      setSendingFeedback(false);
+    }
+  };
 
   useEffect(() => {
     const q = searchParams.get('q');
@@ -429,9 +502,58 @@ export const Assistant: React.FC = () => {
                 <div className="text-sm text-gray-500 dark:text-gray-400">Escribe una solicitud para empezar.</div>
               ) : (
                 messages.map((m) => (
-                  <div key={m.id} className={`text-sm ${m.role === 'user' ? 'text-gray-900 dark:text-gray-100' : 'text-gray-700 dark:text-gray-200'}`}>
-                    <span className="font-semibold">{m.role === 'user' ? 'Tú: ' : 'Asistente: '}</span>
-                    {m.text}
+                  <div key={m.id} className="space-y-2">
+                    <div className={`text-sm ${m.role === 'user' ? 'text-gray-900 dark:text-gray-100' : 'text-gray-700 dark:text-gray-200'}`}>
+                      <span className="font-semibold">{m.role === 'user' ? 'Tú: ' : 'Asistente: '}</span>
+                      {m.text}
+                    </div>
+                    {m.role === 'assistant' && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={sendingFeedback}
+                          onClick={() => void sendFeedback({ messageId: m.id, rating: 1 })}
+                          className="inline-flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                        >
+                          <ThumbsUp className="h-3.5 w-3.5" />
+                          Útil
+                        </button>
+                        <button
+                          type="button"
+                          disabled={sendingFeedback}
+                          onClick={() => {
+                            setFeedbackOpenFor(m.id);
+                            setFeedbackCorrection('');
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                        >
+                          <ThumbsDown className="h-3.5 w-3.5" />
+                          Corregir
+                        </button>
+                      </div>
+                    )}
+                    {m.role === 'assistant' && feedbackOpenFor === m.id && (
+                      <div className="flex gap-2">
+                        <input
+                          value={feedbackCorrection}
+                          onChange={(e) => setFeedbackCorrection(e.target.value)}
+                          placeholder="¿Qué debería haber respondido?"
+                          className="flex-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:border-green-500 focus:ring-green-500"
+                        />
+                        <button
+                          type="button"
+                          disabled={sendingFeedback}
+                          onClick={() => {
+                            void sendFeedback({ messageId: m.id, rating: -1, correction: feedbackCorrection });
+                            setFeedbackOpenFor(null);
+                            setFeedbackCorrection('');
+                          }}
+                          className="inline-flex items-center justify-center rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+                        >
+                          Guardar
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))
               )}
