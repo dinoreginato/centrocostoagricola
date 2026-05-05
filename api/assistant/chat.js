@@ -504,6 +504,46 @@ function parseLearnCommand(text) {
   return { alias, intent };
 }
 
+function parseFieldQuery(text) {
+  const raw = String(text || '');
+  const quoted = raw.match(/"(.*?)"/);
+  if (quoted && quoted[1]) return quoted[1].trim();
+  const t = normalize(raw);
+  const idx = t.lastIndexOf('campo');
+  if (idx === -1) return '';
+  const after = t.slice(idx + 'campo'.length).trim();
+  return after
+    .replace(/^el\s+/, '')
+    .replace(/^la\s+/, '')
+    .replace(/^de\s+/, '')
+    .replace(/^del\s+/, '')
+    .replace(/[?¿!.,;:]+/g, '')
+    .trim();
+}
+
+async function getLastApplicationForField(supabase, companyId, fieldQuery) {
+  const q = String(fieldQuery || '').trim();
+  if (!q) return { error: 'Dime el nombre del campo. Ej: “última aplicación en campo La Palma”.' };
+
+  const { data: fields, error: fieldsError } = await supabase
+    .from('fields')
+    .select('id, name')
+    .eq('company_id', companyId)
+    .ilike('name', `%${q}%`)
+    .order('name', { ascending: true })
+    .limit(5);
+  if (fieldsError) throw fieldsError;
+  const field = (fields || [])[0];
+  if (!field) return { error: `No encontré un campo que coincida con “${q}”.` };
+
+  const { data: apps, error: appsError } = await supabase.rpc('get_company_applications_v2', { p_company_id: companyId });
+  if (appsError) throw appsError;
+
+  const last = (apps || []).find((a) => a.field_id === field.id);
+  if (!last) return { error: `No encontré aplicaciones para el campo “${field.name}”.` };
+  return { field, application: last };
+}
+
 function resolveRuleIntent(memories, text) {
   const t = normalize(text);
   for (const m of memories || []) {
@@ -534,6 +574,37 @@ async function answerWithRules(supabase, ctx, companyId, text) {
 
   const ruleIntent = resolveRuleIntent(ctx.memories || [], text);
   const t = normalize(text);
+
+  if (
+    ruleIntent === 'ultima_aplicacion_campo' ||
+    ((t.includes('ultima') || t.includes('última')) && t.includes('aplic'))
+  ) {
+    const fieldQuery = parseFieldQuery(text);
+    const result = await getLastApplicationForField(supabase, companyId, fieldQuery);
+    if (result.error) return { answer: result.error };
+
+    const app = result.application;
+    const items = Array.isArray(app.items) ? app.items : [];
+    const lines = items
+      .slice(0, 15)
+      .map((it) => `- ${it.product_name || ''} · ${Number(it.quantity_used) || 0} ${it.unit || ''}`)
+      .filter(Boolean);
+
+    return {
+      answer:
+        `Última aplicación en el campo ${app.field_name} (${app.sector_name || 'sin sector'}):\n` +
+        `- Fecha: ${app.application_date}\n` +
+        `- Tipo: ${app.application_type || ''}\n` +
+        `- Costo total: ${formatCLP(app.total_cost)}\n` +
+        (Number(app.water_liters_per_hectare) ? `- Agua (L/ha): ${Number(app.water_liters_per_hectare)}` : '') +
+        (lines.length ? `\nInsumos:\n${lines.join('\n')}${items.length > 15 ? `\n- ...y ${items.length - 15} más` : ''}` : ''),
+      attachment: {
+        kind: 'application_last',
+        title: `Última aplicación - ${app.field_name}`,
+        application: app
+      }
+    };
+  }
 
   if (ruleIntent === 'facturas_vencen_mes' || (t.includes('factura') && t.includes('venc'))) {
     const my = parseMonthYear(text) || { month: new Date().getUTCMonth() + 1, year: new Date().getUTCFullYear() };

@@ -16,24 +16,50 @@ type ChatMessage = {
   role: 'user' | 'assistant';
   text: string;
   userText?: string;
-  attachment?: {
-    kind: 'invoices_due';
-    title: string;
-    month: number;
-    year: number;
-    status: string;
-    range: { from: string; to: string };
-    invoices: Array<{
-      id: string;
-      invoice_number: string | null;
-      supplier: string | null;
-      invoice_date: string | null;
-      due_date: string | null;
-      total_amount: number | null;
-      status: string | null;
-      document_type: string | null;
-    }>;
-  };
+  attachment?:
+    | {
+        kind: 'invoices_due';
+        title: string;
+        month: number;
+        year: number;
+        status: string;
+        range: { from: string; to: string };
+        invoices: Array<{
+          id: string;
+          invoice_number: string | null;
+          supplier: string | null;
+          invoice_date: string | null;
+          due_date: string | null;
+          total_amount: number | null;
+          status: string | null;
+          document_type: string | null;
+        }>;
+      }
+    | {
+        kind: 'application_last';
+        title: string;
+        application: {
+          id: string;
+          application_date: string | null;
+          application_type: string | null;
+          total_cost: number | null;
+          water_liters_per_hectare: number | null;
+          field_id: string | null;
+          field_name: string | null;
+          sector_id: string | null;
+          sector_name: string | null;
+          sector_hectares: number | null;
+          items: Array<{
+            product_id: string | null;
+            product_name: string | null;
+            quantity_used: number | null;
+            dose_per_hectare: number | null;
+            unit: string | null;
+            unit_cost: number | null;
+            total_cost: number | null;
+          }>;
+        };
+      };
   createdAt: number;
 };
 
@@ -383,7 +409,10 @@ export const Assistant: React.FC = () => {
     return doc;
   };
 
-  const buildInvoicesDuePdf = (attachment: NonNullable<ChatMessage['attachment']>) => {
+  type InvoicesDueAttachment = Extract<NonNullable<ChatMessage['attachment']>, { kind: 'invoices_due' }>;
+  type ApplicationLastAttachment = Extract<NonNullable<ChatMessage['attachment']>, { kind: 'application_last' }>;
+
+  const buildInvoicesDuePdf = (attachment: InvoicesDueAttachment) => {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
     doc.setFontSize(14);
     doc.text(attachment.title, 40, 40);
@@ -416,7 +445,46 @@ export const Assistant: React.FC = () => {
     return doc;
   };
 
-  const buildInvoicesDueExcelBlob = async (attachment: NonNullable<ChatMessage['attachment']>) => {
+  const buildLastApplicationPdf = (attachment: ApplicationLastAttachment) => {
+    const app = attachment.application;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+    doc.setFontSize(14);
+    doc.text(attachment.title, 40, 40);
+    doc.setFontSize(10);
+    doc.text(`Fecha: ${String(app.application_date || '')}`, 40, 58);
+    doc.text(`Campo: ${String(app.field_name || '')}`, 40, 72);
+    doc.text(`Sector: ${String(app.sector_name || '')}`, 40, 86);
+    doc.text(`Tipo: ${String(app.application_type || '')}`, 40, 100);
+    doc.text(`Costo total: ${formatCLP(Number(app.total_cost) || 0)}`, 40, 114);
+    if (Number(app.water_liters_per_hectare)) {
+      doc.text(`Agua (L/ha): ${Number(app.water_liters_per_hectare)}`, 40, 128);
+    }
+
+    const body = (app.items || []).map((it) => [
+      String(it.product_name || ''),
+      String(Number(it.quantity_used) || 0),
+      String(it.unit || ''),
+      formatCLP(Number(it.total_cost) || 0)
+    ]);
+
+    autoTable(doc, {
+      startY: 150,
+      head: [['Producto', 'Cantidad', 'Unidad', 'Costo']],
+      body,
+      styles: { fontSize: 9, cellPadding: 3 },
+      headStyles: { fillColor: [34, 197, 94] },
+      columnStyles: {
+        0: { cellWidth: 240 },
+        1: { cellWidth: 70, halign: 'right' },
+        2: { cellWidth: 70 },
+        3: { cellWidth: 80, halign: 'right' }
+      }
+    });
+
+    return doc;
+  };
+
+  const buildInvoicesDueExcelBlob = async (attachment: InvoicesDueAttachment) => {
     const ExcelJSImport = (await import('exceljs/dist/exceljs.bare.min.js')).default as unknown as any;
     const ExcelJS = ExcelJSImport as unknown as { Workbook: new () => any };
     const wb = new ExcelJS.Workbook();
@@ -441,7 +509,7 @@ export const Assistant: React.FC = () => {
     return new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   };
 
-  const previewInvoicesPdf = (attachment: NonNullable<ChatMessage['attachment']>) => {
+  const previewInvoicesPdf = (attachment: InvoicesDueAttachment) => {
     const doc = buildInvoicesDuePdf(attachment);
     const url = String(doc.output('bloburl'));
     setPdfPreviewTitle(attachment.title);
@@ -449,12 +517,25 @@ export const Assistant: React.FC = () => {
     setPdfPreviewOpen(true);
   };
 
-  const downloadInvoicesPdf = (attachment: NonNullable<ChatMessage['attachment']>) => {
+  const previewLastApplicationPdf = (attachment: ApplicationLastAttachment) => {
+    const doc = buildLastApplicationPdf(attachment);
+    const url = String(doc.output('bloburl'));
+    setPdfPreviewTitle(attachment.title);
+    setPdfPreviewUrl(url);
+    setPdfPreviewOpen(true);
+  };
+
+  const downloadInvoicesPdf = (attachment: InvoicesDueAttachment) => {
     const doc = buildInvoicesDuePdf(attachment);
     doc.save(`Facturas_por_Vencer_${attachment.year}_${String(attachment.month).padStart(2, '0')}.pdf`);
   };
 
-  const downloadInvoicesExcel = async (attachment: NonNullable<ChatMessage['attachment']>) => {
+  const downloadLastApplicationPdf = (attachment: ApplicationLastAttachment) => {
+    const doc = buildLastApplicationPdf(attachment);
+    doc.save(`Ultima_Aplicacion_${String(attachment.application.field_name || 'campo').replace(/\s+/g, '_')}.pdf`);
+  };
+
+  const downloadInvoicesExcel = async (attachment: InvoicesDueAttachment) => {
     const blob = await buildInvoicesDueExcelBlob(attachment);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -683,24 +764,42 @@ export const Assistant: React.FC = () => {
                           <>
                             <button
                               type="button"
-                              onClick={() => previewInvoicesPdf(m.attachment!)}
+                              onClick={() => previewInvoicesPdf(m.attachment as InvoicesDueAttachment)}
                               className="inline-flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
                             >
                               Ver PDF
                             </button>
                             <button
                               type="button"
-                              onClick={() => downloadInvoicesPdf(m.attachment!)}
+                              onClick={() => downloadInvoicesPdf(m.attachment as InvoicesDueAttachment)}
                               className="inline-flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
                             >
                               PDF
                             </button>
                             <button
                               type="button"
-                              onClick={() => void downloadInvoicesExcel(m.attachment!)}
+                              onClick={() => void downloadInvoicesExcel(m.attachment as InvoicesDueAttachment)}
                               className="inline-flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
                             >
                               Excel
+                            </button>
+                          </>
+                        )}
+                        {m.attachment?.kind === 'application_last' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => previewLastApplicationPdf(m.attachment as ApplicationLastAttachment)}
+                              className="inline-flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            >
+                              Ver PDF
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => downloadLastApplicationPdf(m.attachment as ApplicationLastAttachment)}
+                              className="inline-flex items-center gap-1 rounded-md border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            >
+                              PDF
                             </button>
                           </>
                         )}
