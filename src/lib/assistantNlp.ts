@@ -66,8 +66,16 @@ export function parseAssistantIntent(input: string): AssistantIntent {
     text.includes('costos campo') ||
     text.includes('costos de campo');
 
-  const category: CostCategory | null =
-    text.includes('riego')
+  const wantsCost =
+    text.includes('gasto') ||
+    text.includes('cost') ||
+    text.includes('cuanto') ||
+    text.includes('total') ||
+    text.includes('temporada') ||
+    text.includes('mes');
+
+  const category: CostCategory | null = wantsCost
+    ? text.includes('riego')
       ? 'irrigation'
       : text.includes('labor') || text.includes('mano de obra') || text.includes('labores')
         ? 'labor'
@@ -85,7 +93,8 @@ export function parseAssistantIntent(input: string): AssistantIntent {
                     ? 'fuel_diesel'
                     : text.includes('combustible')
                       ? 'fuel'
-                      : null;
+                      : null
+    : null;
 
   if (!isFieldCosts && !category) return { kind: 'unknown' };
 

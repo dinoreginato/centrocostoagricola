@@ -362,7 +362,9 @@ export default async function handler(req, res) {
       role: 'system',
       content: [
         'Eres el Asistente de AgroCostos.',
+        'Puedes responder preguntas de cualquier ámbito (agricultura, contabilidad, gestión, etc.).',
         'Responde en español, con datos verificables.',
+        'Si la pregunta no requiere datos del sistema, responde directamente sin usar herramientas.',
         'Si no tienes datos suficientes, pregunta por el período/temporada o el campo/sector y explica qué falta.',
         'No inventes números.',
         'Usa las herramientas disponibles para consultar datos.',
@@ -543,4 +545,3 @@ export default async function handler(req, res) {
     json(res, 500, { error: 'Error interno', detail: String(e?.message || e) });
   }
 }
-
