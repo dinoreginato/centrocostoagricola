@@ -425,32 +425,169 @@ async function toolSaveMemory(supabase, args) {
   return { ok: true };
 }
 
-async function openaiChat(params) {
-  const apiKey = pickEnv('OPENAI_API_KEY');
-  if (!apiKey) throw new Error('Falta OPENAI_API_KEY');
-  const model = pickEnv('OPENAI_MODEL') || 'gpt-4o-mini';
+function normalize(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
 
-  const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      'content-type': 'application/json'
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.2,
-      messages: params.messages,
-      tools: params.tools,
-      tool_choice: 'auto'
-    })
-  });
+function formatCLP(value) {
+  const n = Number(value) || 0;
+  return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(n);
+}
 
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) {
-    const msg = data?.error?.message || data?.message || 'Error OpenAI';
-    throw new Error(msg);
+function monthNameES(month) {
+  const names = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  return names[month - 1] || '';
+}
+
+function parseSeason(text) {
+  const m = normalize(text).match(/(\d{4})\s*-\s*(\d{4})/);
+  if (!m) return '';
+  return `${m[1]}-${m[2]}`;
+}
+
+function parseMonthYear(text) {
+  const t = normalize(text);
+  const months = {
+    enero: 1,
+    feb: 2,
+    febrero: 2,
+    mar: 3,
+    marzo: 3,
+    abr: 4,
+    abril: 4,
+    may: 5,
+    mayo: 5,
+    jun: 6,
+    junio: 6,
+    jul: 7,
+    julio: 7,
+    ago: 8,
+    agosto: 8,
+    sep: 9,
+    sept: 9,
+    septiembre: 9,
+    oct: 10,
+    octubre: 10,
+    nov: 11,
+    noviembre: 11,
+    dic: 12,
+    diciembre: 12
+  };
+
+  for (const [k, v] of Object.entries(months)) {
+    const re = new RegExp(`\\b${k}\\b\\s*(\\d{4})`);
+    const m = t.match(re);
+    if (m) return { month: v, year: Number(m[1]) };
   }
-  return data;
+
+  if (t.includes('este mes')) {
+    const now = new Date();
+    return { month: now.getUTCMonth() + 1, year: now.getUTCFullYear() };
+  }
+
+  return null;
+}
+
+function parseLearnCommand(text) {
+  const raw = String(text || '').trim();
+  if (!raw.toLowerCase().startsWith('aprende:')) return null;
+  const rest = raw.slice('aprende:'.length).trim();
+  const parts = rest.split('=>');
+  if (parts.length !== 2) return null;
+  const alias = parts[0].trim().replace(/^"(.*)"$/, '$1').trim();
+  const intent = parts[1].trim();
+  if (!alias || !intent) return null;
+  return { alias, intent };
+}
+
+function resolveRuleIntent(memories, text) {
+  const t = normalize(text);
+  for (const m of memories || []) {
+    if (m.kind !== 'rule') continue;
+    const parsed = (() => {
+      try {
+        return JSON.parse(m.content);
+      } catch {
+        return null;
+      }
+    })();
+    if (!parsed || parsed.type !== 'alias_intent') continue;
+    if (!parsed.alias || !parsed.intent) continue;
+    if (t.includes(normalize(parsed.alias))) return String(parsed.intent);
+  }
+  return '';
+}
+
+async function answerWithRules(supabase, ctx, companyId, text) {
+  const learn = parseLearnCommand(text);
+  if (learn) {
+    const payload = { type: 'alias_intent', alias: learn.alias, intent: learn.intent };
+    await toolSaveMemory(supabase, { companyId, kind: 'rule', content: JSON.stringify(payload), importance: 3 });
+    return `Listo. Aprendí: cuando digas “${learn.alias}” lo interpretaré como “${learn.intent}”.`;
+  }
+
+  const ruleIntent = resolveRuleIntent(ctx.memories || [], text);
+  const t = normalize(text);
+
+  if (ruleIntent === 'facturas_vencen_mes' || (t.includes('factura') && t.includes('venc'))) {
+    const my = parseMonthYear(text) || { month: new Date().getUTCMonth() + 1, year: new Date().getUTCFullYear() };
+    const result = await toolGetInvoicesDue(supabase, { companyId, month: my.month, year: my.year, status: 'Pendiente', limit: 50 });
+    if (!result.invoices || result.invoices.length === 0) {
+      return `No encontré facturas Pendientes con vencimiento en ${monthNameES(my.month)} ${my.year}.`;
+    }
+    const lines = result.invoices.slice(0, 15).map((inv) => {
+      const due = inv.due_date || '';
+      const sup = inv.supplier || 'Sin proveedor';
+      const num = inv.invoice_number ? `N° ${inv.invoice_number}` : 'Sin N°';
+      return `- ${due} · ${sup} · ${num} · ${formatCLP(inv.total_amount)}`;
+    });
+    const more = result.invoices.length > 15 ? `\n- ...y ${result.invoices.length - 15} más` : '';
+    return `Facturas Pendientes que vencen en ${monthNameES(my.month)} ${my.year}:\n${lines.join('\n')}${more}`;
+  }
+
+  if (ruleIntent === 'buscar_factura' || (t.includes('factura') && (/\d{2,}/.test(t) || t.includes('proveedor')))) {
+    const q = text.replace(/facturas?/gi, '').trim();
+    const result = await toolSearchInvoices(supabase, { companyId, query: q || text, limit: 20 });
+    if (!result.invoices || result.invoices.length === 0) return 'No encontré facturas con ese criterio.';
+    const lines = result.invoices.slice(0, 10).map((inv) => {
+      const d = inv.invoice_date || '';
+      const sup = inv.supplier || 'Sin proveedor';
+      const num = inv.invoice_number ? `N° ${inv.invoice_number}` : 'Sin N°';
+      return `- ${d} · ${sup} · ${num} · ${formatCLP(inv.total_amount)} · ${inv.status || ''}`;
+    });
+    const more = result.invoices.length > 10 ? `\n- ...y ${result.invoices.length - 10} más` : '';
+    return `Encontré estas facturas:\n${lines.join('\n')}${more}`;
+  }
+
+  if (ruleIntent === 'stock_producto' || t.includes('stock') || t.includes('bodega')) {
+    const q = text
+      .replace(/stock/gi, '')
+      .replace(/bodega/gi, '')
+      .replace(/cuanto|cuanta|tengo|hay|de/gi, ' ')
+      .trim();
+    if (!q) return 'Dime el nombre del producto para revisar el stock.';
+    const result = await toolSearchProducts(supabase, { companyId, query: q, limit: 10 });
+    if (!result.products || result.products.length === 0) return 'No encontré productos con ese nombre.';
+    const lines = result.products.map((p) => `- ${p.name} · Stock: ${Number(p.current_stock) || 0} ${p.unit || ''}`);
+    return `Stock:\n${lines.join('\n')}`;
+  }
+
+  const season = parseSeason(text);
+  if (
+    ruleIntent === 'resumen_costos' ||
+    (t.includes('costo') || t.includes('costos') || t.includes('gasto') || t.includes('gastos')) &&
+      (t.includes('temporada') || season)
+  ) {
+    const result = await toolGetCostsSummary(supabase, { companyId, season: season || '' });
+    const total = (result.fields || []).reduce((acc, r) => acc + (Number(r.total) || 0), 0);
+    return `En Temporada ${season || ''}, el costo total es ${formatCLP(total)}.`;
+  }
+
+  return 'Puedo responder preguntas usando los datos del sistema (facturas, costos, productos/stock). Si quieres, enséñame con: aprende: <tu frase> => <intención>. Ejemplo: aprende: "facturas a vencer" => facturas_vencen_mes';
 }
 
 export default async function handler(req, res) {
@@ -471,245 +608,15 @@ export default async function handler(req, res) {
 
     const supabase = buildSupabaseClient(req);
     const ctx = await fetchAssistantContext(supabase, companyId);
-
-    const system = {
-      role: 'system',
-      content: [
-        'Eres el Asistente de AgroCostos.',
-        'Puedes responder preguntas de cualquier ámbito (agricultura, contabilidad, gestión, etc.).',
-        'Responde en español, con datos verificables.',
-        'Si la pregunta no requiere datos del sistema, responde directamente sin usar herramientas.',
-        'Si no tienes datos suficientes, pregunta por el período/temporada o el campo/sector y explica qué falta.',
-        'No inventes números.',
-        'Usa las herramientas disponibles para consultar datos.',
-        ctx.memories.length ? `Memoria:\n${ctx.memories.map((m) => `- (${m.kind}) ${m.content}`).join('\n')}` : '',
-        ctx.feedback.length
-          ? `Feedback reciente:\n${ctx.feedback
-              .filter((f) => f.rating === -1 && f.correction)
-              .slice(0, 5)
-              .map((f) => `- Corrección: ${f.correction}`)
-              .join('\n')}`
-          : ''
-      ]
-        .filter(Boolean)
-        .join('\n')
-    };
-
-    const toolDefs = [
-      {
-        type: 'function',
-        function: {
-          name: 'search_invoices',
-          description: 'Busca facturas por número o proveedor (dentro de una empresa).',
-          parameters: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              companyId: { type: 'string' },
-              query: { type: 'string' },
-              limit: { type: 'number' }
-            },
-            required: ['companyId', 'query']
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'get_invoices_due',
-          description:
-            'Lista facturas pendientes que vencen en un mes específico (por defecto el mes actual).',
-          parameters: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              companyId: { type: 'string' },
-              year: { type: 'number' },
-              month: { type: 'number' },
-              status: { type: 'string' },
-              limit: { type: 'number' }
-            },
-            required: ['companyId']
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'search_products',
-          description: 'Busca productos por nombre para ver stock y costo promedio.',
-          parameters: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              companyId: { type: 'string' },
-              query: { type: 'string' },
-              limit: { type: 'number' }
-            },
-            required: ['companyId', 'query']
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'select_rows',
-          description:
-            'Consulta filas de tablas del sistema de forma segura (solo lectura, con filtros y límite).',
-          parameters: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              companyId: { type: 'string' },
-              table: { type: 'string' },
-              select: { type: 'string' },
-              filters: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  additionalProperties: false,
-                  properties: {
-                    column: { type: 'string' },
-                    op: { type: 'string' },
-                    value: {}
-                  }
-                }
-              },
-              orderBy: { type: 'string' },
-              orderAsc: { type: 'boolean' },
-              limit: { type: 'number' }
-            },
-            required: ['companyId', 'table']
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'get_costs_summary',
-          description:
-            'Entrega un resumen de costos por campo/sector en un rango o temporada (aplicaciones, labores, trabajadores, combustible, maquinaria, riego, distribución).',
-          parameters: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              companyId: { type: 'string' },
-              season: { type: 'string' },
-              range: {
-                type: 'object',
-                additionalProperties: false,
-                properties: {
-                  from: { type: 'string' },
-                  to: { type: 'string' }
-                }
-              }
-            },
-            required: ['companyId']
-          }
-        }
-      },
-      {
-        type: 'function',
-        function: {
-          name: 'save_memory',
-          description: 'Guarda una preferencia/corrección/regla para que el asistente la recuerde en el futuro.',
-          parameters: {
-            type: 'object',
-            additionalProperties: false,
-            properties: {
-              companyId: { type: 'string' },
-              kind: { type: 'string' },
-              content: { type: 'string' },
-              importance: { type: 'number' }
-            },
-            required: ['companyId', 'content']
-          }
-        }
-      }
-    ];
-
-    const convo = [system, ...messages]
-      .filter((m) => m && typeof m === 'object')
-      .map((m) => ({
-        role: m.role,
-        content: typeof m.content === 'string' ? m.content : m.text
-      }))
-      .filter((m) => m.role && typeof m.content === 'string' && m.content.length > 0);
-
-    const toolHandlers = {
-      search_invoices: (args) => toolSearchInvoices(supabase, args),
-      get_invoices_due: (args) => toolGetInvoicesDue(supabase, args),
-      search_products: (args) => toolSearchProducts(supabase, args),
-      select_rows: (args) => toolSelectRows(supabase, args),
-      get_costs_summary: (args) => toolGetCostsSummary(supabase, args),
-      save_memory: (args) => toolSaveMemory(supabase, args)
-    };
-
-    let workingMessages = [...convo];
-    let finalText = '';
-    let warnings = ctx.warnings || [];
-
-    for (let i = 0; i < 4; i++) {
-      const completion = await openaiChat({ messages: workingMessages, tools: toolDefs });
-      const choice = completion?.choices?.[0];
-      const msg = choice?.message || {};
-      const toolCalls = msg.tool_calls || [];
-
-      if (toolCalls.length === 0) {
-        finalText = String(msg.content || '').trim();
-        break;
-      }
-
-      workingMessages.push({
-        role: 'assistant',
-        content: msg.content || '',
-        tool_calls: toolCalls
-      });
-
-      for (const call of toolCalls) {
-        const name = call?.function?.name;
-        const rawArgs = call?.function?.arguments || '{}';
-        const parsed = (() => {
-          try {
-            return JSON.parse(rawArgs);
-          } catch {
-            return {};
-          }
-        })();
-
-        const handlerFn = toolHandlers[name];
-        if (!handlerFn) {
-          workingMessages.push({
-            role: 'tool',
-            tool_call_id: call.id,
-            content: JSON.stringify({ error: `Tool no soportada: ${name}` })
-          });
-          continue;
-        }
-
-        try {
-          const result = await handlerFn({ companyId, ...parsed });
-          if (result?.warnings && Array.isArray(result.warnings)) warnings = [...warnings, ...result.warnings];
-          workingMessages.push({
-            role: 'tool',
-            tool_call_id: call.id,
-            content: JSON.stringify(result || {})
-          });
-        } catch (e) {
-          workingMessages.push({
-            role: 'tool',
-            tool_call_id: call.id,
-            content: JSON.stringify({ error: String(e?.message || e) })
-          });
-        }
-      }
+    const lastUser = [...messages].reverse().find((m) => m && typeof m === 'object' && m.role === 'user');
+    const question = requireString(lastUser?.content || lastUser?.text);
+    if (!question) {
+      json(res, 400, { error: 'message requerido' });
+      return;
     }
 
-    if (!finalText) {
-      finalText = 'No pude generar una respuesta. Prueba reformulando la pregunta o indicando la temporada.';
-    }
-
-    json(res, 200, { answer: finalText, warnings: warnings.filter(Boolean).slice(0, 5) });
+    const answer = await answerWithRules(supabase, ctx, companyId, question);
+    json(res, 200, { answer, warnings: (ctx.warnings || []).filter(Boolean).slice(0, 5) });
   } catch (e) {
     json(res, 500, { error: 'Error interno', detail: String(e?.message || e) });
   }
