@@ -160,10 +160,11 @@ export const Assistant: React.FC = () => {
 
       await callAi(text, text);
     } catch (e: any) {
-      toast.error(String(e?.message || e));
+      const detail = String(e?.message || e || '').trim();
+      toast.error(detail || 'Error al responder');
       appendMessage({
         role: 'assistant',
-        text: 'No pude obtener una respuesta con los datos. Reintenta o indica la temporada/período.',
+        text: detail ? `No pude responder: ${detail}` : 'No pude obtener una respuesta con los datos.',
         userText: text
       });
     } finally {
