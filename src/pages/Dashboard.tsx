@@ -1178,7 +1178,11 @@ export const Dashboard: React.FC = () => {
                             {monthInvoices.map((inv: any) => (
                               <div
                                 key={inv.id}
-                                onClick={() => openInvoiceDetail(inv.id)}
+                                onClick={(e) => {
+                                  const el = e.target as HTMLElement | null;
+                                  if (el && el.closest('input[type="checkbox"]')) return;
+                                  openInvoiceDetail(inv.id);
+                                }}
                                 className="bg-white p-4 rounded-xl shadow-sm border border-red-100 flex flex-col justify-between h-full hover:shadow-md transition-all duration-200 cursor-pointer hover:-translate-y-1 relative overflow-hidden group"
                               >
                                 <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
@@ -1188,6 +1192,10 @@ export const Dashboard: React.FC = () => {
                                     <input
                                       type="checkbox"
                                       checked={selectedInvoiceIds.includes(inv.id)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onMouseDown={(e) => e.stopPropagation()}
+                                      onPointerDown={(e) => e.stopPropagation()}
+                                      onTouchStart={(e) => e.stopPropagation()}
                                       onChange={(e) => {
                                         e.stopPropagation();
                                         toggleInvoiceSelected(inv.id);
