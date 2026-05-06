@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCLP } from '../lib/utils';
+import { exportJsonToXlsx } from '../lib/excel';
 import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X, Trash2, Layout, AlertCircle, Play, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, ShieldAlert } from 'lucide-react';
 import { 
   BarChart, 
@@ -847,6 +848,37 @@ export const Dashboard: React.FC = () => {
     }
   };
 
+  const exportUpcomingInvoicesExcel = async () => {
+    if (!selectedCompany) return;
+    const monthInvoices = upcomingInvoices
+      .filter((inv: any) => inv?.due_date && String(inv.due_date).slice(0, 7) === selectedInvoiceMonth)
+      .sort((a: any, b: any) => String(a.due_date).localeCompare(String(b.due_date)));
+
+    const list = selectedInvoiceIds.length > 0
+      ? monthInvoices.filter((inv: any) => selectedInvoiceIds.includes(inv.id))
+      : monthInvoices;
+
+    if (list.length === 0) {
+      toast('No hay facturas para exportar');
+      return;
+    }
+
+    const rows = list.map((inv: any) => ({
+      Folio: String(inv.invoice_number ?? ''),
+      Proveedor: String(inv.supplier ?? ''),
+      Vencimiento: String(inv.due_date ?? ''),
+      Total: Number(inv.total_amount ?? 0),
+      Estado: String(inv.status ?? ''),
+      Notas: String(inv.notes ?? '')
+    }));
+
+    await exportJsonToXlsx({
+      filename: `Facturas_por_Vencer_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedInvoiceMonth}.xlsx`,
+      sheetName: `Vence_${selectedInvoiceMonth}`,
+      rows
+    });
+  };
+
   if (loading) {
     return <div className="flex justify-center p-8">Cargando...</div>;
   }
@@ -1099,12 +1131,19 @@ export const Dashboard: React.FC = () => {
                         })}
                       </div>
 
-                      {invoiceMonthsExpanded && canWrite && (
+                      {invoiceMonthsExpanded && (
                         <div className="flex flex-wrap items-center justify-between gap-3 bg-white/60 border border-red-100 rounded-lg px-3 py-2">
                           <div className="text-xs font-semibold text-gray-700">
                             Seleccionadas: {selectedInvoiceIds.length}
                           </div>
                           <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void exportUpcomingInvoicesExcel()}
+                              className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-bold bg-blue-600 text-white hover:bg-blue-700"
+                            >
+                              Excel
+                            </button>
                             <button
                               type="button"
                               onClick={() => setSelectedInvoiceIds([])}
@@ -1113,14 +1152,16 @@ export const Dashboard: React.FC = () => {
                             >
                               Limpiar
                             </button>
-                            <button
-                              type="button"
-                              onClick={markSelectedInvoicesAsPaid}
-                              disabled={selectedInvoiceIds.length === 0}
-                              className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-bold bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-                            >
-                              Marcar Pagadas
-                            </button>
+                            {canWrite && (
+                              <button
+                                type="button"
+                                onClick={markSelectedInvoicesAsPaid}
+                                disabled={selectedInvoiceIds.length === 0}
+                                className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-bold bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                              >
+                                Marcar Pagadas
+                              </button>
+                            )}
                           </div>
                         </div>
                       )}
