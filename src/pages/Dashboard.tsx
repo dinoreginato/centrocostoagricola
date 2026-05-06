@@ -1147,6 +1147,8 @@ export const Dashboard: React.FC = () => {
                                     <input
                                       type="checkbox"
                                       checked={selectedInvoiceIds.includes(inv.id)}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onMouseDown={(e) => e.stopPropagation()}
                                       onChange={(e) => {
                                         e.stopPropagation();
                                         toggleInvoiceSelected(inv.id);
