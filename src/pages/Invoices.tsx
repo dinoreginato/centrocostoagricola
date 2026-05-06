@@ -1887,6 +1887,17 @@ export const Invoices: React.FC = () => {
                       <option value="Anulada">Anulada</option>
                     </select>
                   </div>
+
+                  <div className="md:col-span-4">
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Notas (Factura)</label>
+                    <textarea
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"
+                      placeholder="Ej: Confirmar OC / retención / fecha de pago / detalle importante para esta factura..."
+                      rows={2}
+                    />
+                  </div>
                 </div>
               </div>
 
