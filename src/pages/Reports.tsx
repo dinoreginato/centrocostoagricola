@@ -1585,6 +1585,31 @@ export const Reports: React.FC = () => {
     setShowPreview(true);
   };
 
+  const exportPendingInvoicesExcel = async (rows: PendingInvoice[], filenamePrefix: string) => {
+    if (!selectedCompany) return;
+    if (!rows || rows.length === 0) {
+      toast('No hay facturas para exportar');
+      return;
+    }
+
+    const xlsxRows = rows.map((inv) => ({
+      Vencimiento: inv.due_date ? new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL') : '',
+      'Días vencida': Number(inv.days_overdue || 0),
+      Proveedor: String(inv.supplier || ''),
+      Categorías: (inv.categories || []).join(', '),
+      'N° Factura': String(inv.invoice_number || ''),
+      Monto: Number(inv.total_amount || 0),
+      Notas: String(inv.notes || '')
+    }));
+
+    const todayTag = new Date().toISOString().slice(0, 10);
+    await exportJsonToXlsx({
+      filename: `${filenamePrefix}_${selectedCompany.name.replace(/\s+/g, '_')}_${todayTag}.xlsx`,
+      sheetName: filenamePrefix,
+      rows: xlsxRows
+    });
+  };
+
   if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
   
   const getReportTitle = () => {
@@ -3357,11 +3382,20 @@ export const Reports: React.FC = () => {
                             <h3 className="text-lg leading-6 font-medium text-gray-900">Facturas Pendientes de Pago</h3>
                             <p className="mt-1 text-sm text-gray-500">Facturas ingresadas sin marcar como "Pagada"</p>
                         </div>
-                        <div className="text-right bg-red-50 p-3 rounded-lg border border-red-100 w-full lg:w-auto">
-                            <span className="text-sm font-medium text-red-800">Total Deuda Mostrada:</span>
-                            <span className="ml-2 text-2xl font-black text-red-600">
-                                {formatCLP(filteredPendingInvoices.reduce((sum, inv) => sum + inv.total_amount, 0))}
-                            </span>
+                        <div className="flex items-center justify-end gap-3 w-full lg:w-auto">
+                            <button
+                                type="button"
+                                onClick={() => void exportPendingInvoicesExcel(filteredPendingInvoices, 'Facturas_Pendientes')}
+                                className="inline-flex items-center px-3 py-2 border border-transparent shadow-sm text-xs font-bold rounded text-white bg-green-600 hover:bg-green-700"
+                            >
+                                <FileText className="mr-1.5 h-4 w-4" /> Excel
+                            </button>
+                            <div className="text-right bg-red-50 p-3 rounded-lg border border-red-100">
+                                <span className="text-sm font-medium text-red-800">Total Deuda Mostrada:</span>
+                                <span className="ml-2 text-2xl font-black text-red-600">
+                                    {formatCLP(filteredPendingInvoices.reduce((sum, inv) => sum + inv.total_amount, 0))}
+                                </span>
+                            </div>
                         </div>
                     </div>
 
@@ -3523,11 +3557,20 @@ export const Reports: React.FC = () => {
                             <h3 className="text-lg leading-6 font-medium text-gray-900">Facturas Vencidas</h3>
                             <p className="mt-1 text-sm text-gray-500">Facturas pendientes con vencimiento anterior a hoy</p>
                         </div>
-                        <div className="text-right bg-red-50 p-3 rounded-lg border border-red-100 w-full lg:w-auto">
-                            <span className="text-sm font-medium text-red-800">Total Vencido Mostrado:</span>
-                            <span className="ml-2 text-2xl font-black text-red-600">
-                                {formatCLP(filteredOverdueInvoices.reduce((sum, inv) => sum + inv.total_amount, 0))}
-                            </span>
+                        <div className="flex items-center justify-end gap-3 w-full lg:w-auto">
+                            <button
+                                type="button"
+                                onClick={() => void exportPendingInvoicesExcel(filteredOverdueInvoices, 'Facturas_Vencidas')}
+                                className="inline-flex items-center px-3 py-2 border border-transparent shadow-sm text-xs font-bold rounded text-white bg-green-600 hover:bg-green-700"
+                            >
+                                <FileText className="mr-1.5 h-4 w-4" /> Excel
+                            </button>
+                            <div className="text-right bg-red-50 p-3 rounded-lg border border-red-100">
+                                <span className="text-sm font-medium text-red-800">Total Vencido Mostrado:</span>
+                                <span className="ml-2 text-2xl font-black text-red-600">
+                                    {formatCLP(filteredOverdueInvoices.reduce((sum, inv) => sum + inv.total_amount, 0))}
+                                </span>
+                            </div>
                         </div>
                     </div>
 
