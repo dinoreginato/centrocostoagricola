@@ -9,7 +9,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { loadReportsRawData } from '../services/reports';
-import { exportDetailedSegmentedToXlsx } from '../lib/excel';
+import { exportDetailedSegmentedToXlsx, exportJsonToXlsx } from '../lib/excel';
 
 interface ReportData {
   field_name: string;
@@ -2353,7 +2353,48 @@ export const Reports: React.FC = () => {
                     <h3 className="text-lg leading-6 font-medium text-gray-900">Costos Generales y Producción ({selectedSeason})</h3>
                     <p className="mt-1 text-sm text-gray-500">Resumen por Sector incluyendo Labores y Aplicaciones</p>
                   </div>
-                  <button
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const rows = reportData.map((row) => {
+                          const costUsd = row.total_cost / (usdExchangeRate || 1);
+                          const costPerHaUsd = row.cost_per_ha / (usdExchangeRate || 1);
+                          const costPerKgClp = (row.kg_produced || 0) > 0 ? row.total_cost / row.kg_produced! : 0;
+                          const costPerKgUsd = (row.kg_produced || 0) > 0 ? costUsd / row.kg_produced! : 0;
+                          return {
+                            Campo: row.field_name,
+                            Sector: row.sector_name,
+                            Has: row.hectares,
+                            'Prod. (Kg)': Number(row.kg_produced || 0),
+                            'Mano Obra': row.labor_cost,
+                            Personal: row.worker_cost,
+                            Aplicaciones: row.app_cost_only,
+                            Maquinaria: row.machinery_cost,
+                            Riego: row.irrigation_cost,
+                            'Petróleo': row.fuel_cost_diesel,
+                            'Bencina': row.fuel_cost_gasoline,
+                            Otros: row.general_cost,
+                            'Total (CLP)': row.total_cost,
+                            'Total (USD)': Number(costUsd.toFixed(2)),
+                            'Costo/Ha (CLP)': row.cost_per_ha,
+                            'Costo/Ha (USD)': Number(costPerHaUsd.toFixed(2)),
+                            'Costo/Kg (CLP)': Number(costPerKgClp.toFixed(2)),
+                            'Costo/Kg (USD)': Number(costPerKgUsd.toFixed(2))
+                          };
+                        });
+                        await exportJsonToXlsx({
+                          filename: `Costos_Generales_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.xlsx`,
+                          sheetName: `Costos_${selectedSeason}`,
+                          rows
+                        });
+                      }}
+                      className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700"
+                    >
+                      <FileText className="mr-1.5 h-4 w-4" /> Excel
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => {
                           const rows = [['Campo', 'Sector', 'Has', 'Prod. (Kg)', 'Mano Obra', 'Personal', 'Aplicaciones', 'Maquinaria', 'Riego', 'Petróleo', 'Combustible (Bencina)', 'Otros', 'Total (CLP)', 'Total (USD)', 'Costo/Ha (CLP)', 'Costo/Ha (USD)', 'Costo/Kg (CLP)', 'Costo/Kg (USD)']];
                           reportData.forEach(row => {
@@ -2395,6 +2436,7 @@ export const Reports: React.FC = () => {
                   >
                       <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
                   </button>
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
@@ -2475,7 +2517,40 @@ export const Reports: React.FC = () => {
                 <h3 className="text-lg leading-6 font-medium text-gray-900">Costos por Hectárea ({selectedSeason})</h3>
                 <p className="mt-1 text-sm text-gray-500">Desglose por rubro (CLP/ha) y total por sector</p>
               </div>
+              <div className="flex items-center gap-2">
               <button
+                type="button"
+                onClick={async () => {
+                  const rows = reportData.map((row) => {
+                    const ha = row.hectares || 1;
+                    return {
+                      Campo: row.field_name,
+                      Sector: row.sector_name,
+                      Has: row.hectares,
+                      'Aplic/Ha': Number((row.app_cost_only / ha).toFixed(2)),
+                      'Mano Obra/Ha': Number((row.labor_cost / ha).toFixed(2)),
+                      'Personal/Ha': Number((row.worker_cost / ha).toFixed(2)),
+                      'Maq/Ha': Number((row.machinery_cost / ha).toFixed(2)),
+                      'Riego/Ha': Number((row.irrigation_cost / ha).toFixed(2)),
+                      'Diésel/Ha': Number((row.fuel_cost_diesel / ha).toFixed(2)),
+                      'Bencina/Ha': Number((row.fuel_cost_gasoline / ha).toFixed(2)),
+                      'Otros/Ha': Number((row.general_cost / ha).toFixed(2)),
+                      'Total/Ha': Number(row.cost_per_ha.toFixed(2)),
+                      'Total (CLP)': Number(row.total_cost.toFixed(2))
+                    };
+                  });
+                  await exportJsonToXlsx({
+                    filename: `Costos_por_Ha_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.xlsx`,
+                    sheetName: `Ha_${selectedSeason}`,
+                    rows
+                  });
+                }}
+                className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700"
+              >
+                <FileText className="mr-1.5 h-4 w-4" /> Excel
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   const rows = [['Campo', 'Sector', 'Has', 'Aplic/Ha', 'Mano Obra/Ha', 'Personal/Ha', 'Maq/Ha', 'Riego/Ha', 'Diésel/Ha', 'Bencina/Ha', 'Otros/Ha', 'Total/Ha', 'Total (CLP)']];
                   reportData.forEach((row) => {
@@ -2509,6 +2584,7 @@ export const Reports: React.FC = () => {
               >
                 <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
               </button>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
@@ -2598,7 +2674,43 @@ export const Reports: React.FC = () => {
                 <h3 className="text-lg leading-6 font-medium text-gray-900">Rentabilidad Neta ({selectedSeason})</h3>
                 <p className="mt-1 text-sm text-gray-500">Ingresos estimados vs costos por sector</p>
               </div>
+              <div className="flex items-center gap-2">
               <button
+                type="button"
+                onClick={async () => {
+                  const { rows, totals } = getMarginRows();
+                  const out = rows.map((r) => ({
+                    Campo: r.field_name,
+                    Sector: r.sector_name,
+                    Has: r.hectares,
+                    'Ingresos (CLP)': Number(r.income.toFixed(2)),
+                    'Costos (CLP)': Number(r.cost.toFixed(2)),
+                    'Utilidad (CLP)': Number(r.profit.toFixed(2)),
+                    'Utilidad/Ha': Number(r.profit_per_ha.toFixed(2)),
+                    'Margen %': Number(r.margin_pct.toFixed(2))
+                  }));
+                  out.push({
+                    Campo: 'TOTAL',
+                    Sector: '',
+                    Has: totals.totalHa,
+                    'Ingresos (CLP)': Number(totals.totalIncome.toFixed(2)),
+                    'Costos (CLP)': Number(totals.totalCost.toFixed(2)),
+                    'Utilidad (CLP)': Number(totals.totalProfit.toFixed(2)),
+                    'Utilidad/Ha': Number(totals.totalProfitPerHa.toFixed(2)),
+                    'Margen %': Number(totals.totalMarginPct.toFixed(2))
+                  });
+                  await exportJsonToXlsx({
+                    filename: `Rentabilidad_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.xlsx`,
+                    sheetName: `Rent_${selectedSeason}`,
+                    rows: out
+                  });
+                }}
+                className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700"
+              >
+                <FileText className="mr-1.5 h-4 w-4" /> Excel
+              </button>
+              <button
+                type="button"
                 onClick={() => {
                   const { rows, totals } = getMarginRows();
                   const csvRows = [['Campo', 'Sector', 'Has', 'Ingresos (CLP)', 'Costos (CLP)', 'Utilidad (CLP)', 'Utilidad/Ha', 'Margen %']];
@@ -2628,6 +2740,7 @@ export const Reports: React.FC = () => {
               >
                 <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
               </button>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
@@ -2908,7 +3021,39 @@ export const Reports: React.FC = () => {
                   <h3 className="text-lg leading-6 font-medium text-gray-900">Petróleo por Máquina ({selectedSeason})</h3>
                   <p className="mt-1 text-sm text-gray-500">Consumo registrado en bitácora (fuel_consumption)</p>
                 </div>
+                <div className="flex items-center gap-2">
                 <button
+                  type="button"
+                  onClick={async () => {
+                    const { rows, totals } = getFuelMachinesRows();
+                    const out = rows.map((r) => ({
+                      Máquina: r.machine_name,
+                      'L Diésel': Number(r.liters_diesel.toFixed(1)),
+                      'L Bencina': Number(r.liters_gasoline.toFixed(1)),
+                      'L Total': Number(r.liters_total.toFixed(1)),
+                      'Costo Total': Number(r.cost_total.toFixed(2)),
+                      'CLP/L': Number(r.avg_price.toFixed(2))
+                    }));
+                    out.push({
+                      Máquina: 'TOTAL',
+                      'L Diésel': Number(totals.liters_diesel.toFixed(1)),
+                      'L Bencina': Number(totals.liters_gasoline.toFixed(1)),
+                      'L Total': Number(totals.liters_total.toFixed(1)),
+                      'Costo Total': Number(totals.cost_total.toFixed(2)),
+                      'CLP/L': Number(totals.avg_price.toFixed(2))
+                    });
+                    await exportJsonToXlsx({
+                      filename: `Petroleo_por_Maquina_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.xlsx`,
+                      sheetName: `Fuel_${selectedSeason}`,
+                      rows: out
+                    });
+                  }}
+                  className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700"
+                >
+                  <FileText className="mr-1.5 h-4 w-4" /> Excel
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     const { rows, totals } = getFuelMachinesRows();
                     const csvRows = [['Máquina', 'L Diésel', 'L Bencina', 'L Total', 'Costo Total', 'CLP/L']];
@@ -2936,6 +3081,7 @@ export const Reports: React.FC = () => {
                 >
                   <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
                 </button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
@@ -2996,7 +3142,43 @@ export const Reports: React.FC = () => {
                   <h3 className="text-lg leading-6 font-medium text-gray-900">Quiebres de Stock</h3>
                   <p className="mt-1 text-sm text-gray-500">Productos bajo stock mínimo (bodega local)</p>
                 </div>
+                <div className="flex items-center gap-2">
                 <button
+                  type="button"
+                  onClick={async () => {
+                    const { rows, totals } = getStockBreakRows();
+                    const out = rows.map((r) => ({
+                      Producto: r.name,
+                      Categoría: r.category,
+                      Unidad: r.unit,
+                      Stock: Number(r.current_stock.toFixed(2)),
+                      'Stock mínimo': Number(r.minimum_stock.toFixed(2)),
+                      Faltante: Number(r.deficit.toFixed(2)),
+                      'Costo Prom.': Number(r.average_cost.toFixed(2)),
+                      'Costo Reposición': Number(r.value.toFixed(2))
+                    }));
+                    out.push({
+                      Producto: 'TOTAL',
+                      Categoría: '',
+                      Unidad: '',
+                      Stock: 0,
+                      'Stock mínimo': 0,
+                      Faltante: Number(totals.deficit.toFixed(2)),
+                      'Costo Prom.': 0,
+                      'Costo Reposición': Number(totals.value.toFixed(2))
+                    });
+                    await exportJsonToXlsx({
+                      filename: `Quiebres_Stock_${selectedCompany.name.replace(/\s+/g, '_')}.xlsx`,
+                      sheetName: 'Quiebres',
+                      rows: out
+                    });
+                  }}
+                  className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700"
+                >
+                  <FileText className="mr-1.5 h-4 w-4" /> Excel
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     const { rows, totals } = getStockBreakRows();
                     const csvRows = [['Producto', 'Categoría', 'Unidad', 'Stock', 'Mínimo', 'Faltante', 'Costo Prom.', 'Costo Reposición']];
@@ -3026,6 +3208,7 @@ export const Reports: React.FC = () => {
                 >
                   <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
                 </button>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
