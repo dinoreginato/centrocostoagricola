@@ -1039,32 +1039,38 @@ export const Invoices: React.FC = () => {
               throw e;
             }
 
-            // 2. Process Items
-            for (const item of inv.items) {
-              const itemMap = {
-                name: item.descripcion || item.product_name,
-                category: item.categoria || guessCategory(item.descripcion || item.product_name || ''),
-                quantity: Number(item.cantidad || item.quantity || 0),
-                unit: item.unidad ? (item.unidad.toLowerCase().startsWith('unid') ? 'un' : item.unidad) : 'un',
-                price: Number(item.precio || item.precioUnit || item.unit_price || 0),
-                total: Number(item.total || item.total_price || 0)
-              };
+            try {
+              for (const item of inv.items) {
+                const itemMap = {
+                  name: item.descripcion || item.product_name,
+                  category: item.categoria || guessCategory(item.descripcion || item.product_name || ''),
+                  quantity: Number(item.cantidad || item.quantity || 0),
+                  unit: item.unidad ? (item.unidad.toLowerCase().startsWith('unid') ? 'un' : item.unidad) : 'un',
+                  price: Number(item.precio || item.precioUnit || item.unit_price || 0),
+                  total: Number(item.total || item.total_price || 0)
+                };
 
-              const productId = await createOrFindProductByName({
-                companyId: targetCompanyId,
-                name: itemMap.name,
-                category: itemMap.category,
-                unit: itemMap.unit
-              });
+                const productId = await createOrFindProductByName({
+                  companyId: targetCompanyId,
+                  name: itemMap.name,
+                  category: itemMap.category,
+                  unit: itemMap.unit
+                });
 
-              await createInvoiceItemWithEffects({
-                invoiceId,
-                productId,
-                quantity: itemMap.quantity,
-                unitPrice: itemMap.price,
-                totalPrice: itemMap.total,
-                category: itemMap.category
-              });
+                await createInvoiceItemWithEffects({
+                  invoiceId,
+                  productId,
+                  quantity: itemMap.quantity,
+                  unitPrice: itemMap.price,
+                  totalPrice: itemMap.total,
+                  category: itemMap.category
+                });
+              }
+            } catch (e) {
+              try {
+                await rpcDeleteInvoiceForce({ invoiceId });
+              } catch {}
+              throw e;
             }
             successCount++;
           } catch (_err) {
@@ -1278,6 +1284,7 @@ export const Invoices: React.FC = () => {
     setLoading(true);
     try {
       let invoiceId = editingInvoiceId;
+      let createdNewInvoiceId: string | null = null;
       
       const total = calculateFinalTotal(); // Fix the reference to total
 
@@ -1560,9 +1567,11 @@ export const Invoices: React.FC = () => {
           }
           throw e;
         }
+        createdNewInvoiceId = invoiceId;
 
         // Process Items for NEW Invoice
-        for (const item of items) {
+        try {
+          for (const item of items) {
             let productId = item.product_id;
 
             if (productId === 'new' || !productId) {
@@ -1590,6 +1599,14 @@ export const Invoices: React.FC = () => {
               generalCosts: assignments.generalCosts,
               fuelAssignments: assignments.fuelAssignments
             });
+          }
+        } catch (e) {
+          if (createdNewInvoiceId) {
+            try {
+              await rpcDeleteInvoiceForce({ invoiceId: createdNewInvoiceId });
+            } catch {}
+          }
+          throw e;
         }
       }
 
