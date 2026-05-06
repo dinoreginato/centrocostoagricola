@@ -162,7 +162,7 @@ async function toolGetInvoicesDue(supabase, args) {
 
   const { data, error } = await supabase
     .from('invoices')
-    .select('id, invoice_number, supplier, invoice_date, due_date, total_amount, status, document_type')
+    .select('id, invoice_number, supplier, invoice_date, due_date, total_amount, status, document_type, notes')
     .eq('company_id', companyId)
     .eq('status', status)
     .not('due_date', 'is', null)

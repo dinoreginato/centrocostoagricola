@@ -33,6 +33,7 @@ type ChatMessage = {
           total_amount: number | null;
           status: string | null;
           document_type: string | null;
+          notes?: string | null;
         }>;
       }
     | {
@@ -424,21 +425,23 @@ export const Assistant: React.FC = () => {
       String(inv.supplier || ''),
       String(inv.invoice_number || ''),
       formatCLP(Number(inv.total_amount) || 0),
-      String(inv.status || '')
+      String(inv.status || ''),
+      String(inv.notes || '')
     ]);
 
     autoTable(doc, {
       startY: 75,
-      head: [['Vence', 'Proveedor', 'N°', 'Monto', 'Estado']],
+      head: [['Vence', 'Proveedor', 'N°', 'Monto', 'Estado', 'Notas']],
       body,
       styles: { fontSize: 9, cellPadding: 3 },
       headStyles: { fillColor: [34, 197, 94] },
       columnStyles: {
         0: { cellWidth: 70 },
-        1: { cellWidth: 220 },
+        1: { cellWidth: 180 },
         2: { cellWidth: 90 },
         3: { cellWidth: 80, halign: 'right' },
-        4: { cellWidth: 70 }
+        4: { cellWidth: 70 },
+        5: { cellWidth: 90 }
       }
     });
 
@@ -494,7 +497,8 @@ export const Assistant: React.FC = () => {
       { header: 'Proveedor', key: 'supplier', width: 32 },
       { header: 'N°', key: 'invoice_number', width: 14 },
       { header: 'Monto', key: 'total_amount', width: 14 },
-      { header: 'Estado', key: 'status', width: 14 }
+      { header: 'Estado', key: 'status', width: 14 },
+      { header: 'Notas', key: 'notes', width: 40 }
     ];
     (attachment.invoices || []).forEach((inv) =>
       ws.addRow({
@@ -502,7 +506,8 @@ export const Assistant: React.FC = () => {
         supplier: inv.supplier || '',
         invoice_number: inv.invoice_number || '',
         total_amount: Number(inv.total_amount) || 0,
-        status: inv.status || ''
+        status: inv.status || '',
+        notes: inv.notes || ''
       })
     );
     const buffer = await wb.xlsx.writeBuffer();

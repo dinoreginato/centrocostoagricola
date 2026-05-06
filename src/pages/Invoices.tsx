@@ -535,6 +535,9 @@ export const Invoices: React.FC = () => {
         new Set((inv.invoice_items || []).map((it: any) => String(it?.category ?? 'Otros')).filter((c: string) => c.length > 0))
       ).join(', ');
 
+      const notes = String(inv.notes ?? '');
+      const notesShort = notes.length > 80 ? `${notes.slice(0, 77)}...` : notes;
+
       return [
         String(inv.invoice_number ?? ''),
         String(inv.supplier ?? ''),
@@ -544,12 +547,13 @@ export const Invoices: React.FC = () => {
         String(inv.status ?? ''),
         formatCLP(Number(inv.total_amount ?? 0)),
         categories,
+        notesShort,
       ];
     });
 
     autoTable(doc, {
       startY: 75,
-      head: [['Folio', 'Proveedor', 'RUT', 'Emisión', 'Vence', 'Estado', 'Total', 'Categorías']],
+      head: [['Folio', 'Proveedor', 'RUT', 'Emisión', 'Vence', 'Estado', 'Total', 'Categorías', 'Notas']],
       body,
       styles: { fontSize: 8, cellPadding: 3 },
       headStyles: { fillColor: [37, 99, 235] },
@@ -561,7 +565,8 @@ export const Invoices: React.FC = () => {
         4: { cellWidth: 60 },
         5: { cellWidth: 60 },
         6: { cellWidth: 70, halign: 'right' },
-        7: { cellWidth: 200 },
+        7: { cellWidth: 140 },
+        8: { cellWidth: 240 },
       },
     });
 

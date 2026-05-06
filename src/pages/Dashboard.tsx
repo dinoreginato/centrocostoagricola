@@ -1964,6 +1964,11 @@ export const Dashboard: React.FC = () => {
                     <div key={idx} className="bg-white p-8 rounded-2xl shadow-lg border-l-8 border-red-500 flex flex-col">
                       <div className="text-2xl font-bold text-slate-800 mb-2 truncate" title={inv.supplier}>{inv.supplier || 'Desconocido'}</div>
                       <div className="text-xl text-slate-500 mb-6">N° {inv.invoice_number}</div>
+                      {inv.notes && (
+                        <div className="text-sm text-slate-600 mb-6 max-h-16 overflow-hidden" title={inv.notes}>
+                          {inv.notes}
+                        </div>
+                      )}
                       <div className="flex justify-between items-end mt-auto pt-4 border-t border-slate-100">
                         <div>
                           <div className="text-sm text-slate-400 uppercase tracking-wider mb-1">Vencimiento</div>
