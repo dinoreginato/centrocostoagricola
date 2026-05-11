@@ -9,7 +9,6 @@ export interface Company {
   rut: string | null;
   owner_id: string;
   application_fuel_rate?: number;
-  fruit_prices?: Record<string, number> | null;
 }
 
 export type UserRole = 'admin' | 'editor' | 'viewer';

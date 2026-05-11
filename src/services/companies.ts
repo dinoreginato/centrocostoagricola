@@ -42,11 +42,6 @@ export async function updateCompanyApplicationFuelRate(params: { companyId: stri
   if (error) throw error;
 }
 
-export async function updateCompanyFruitPrices(params: { companyId: string; fruitPrices: Record<string, number> }) {
-  const { error } = await supabase.from('companies').update({ fruit_prices: params.fruitPrices }).eq('id', params.companyId);
-  if (error) throw error;
-}
-
 export async function fetchCompanies(): Promise<Company[]> {
   const { data, error } = await supabase.from('companies').select('*').order('created_at', { ascending: false });
   if (error) throw error;

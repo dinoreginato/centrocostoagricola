@@ -10,7 +10,6 @@ import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { loadReportsRawData } from '../services/reports';
 import { exportDetailedSegmentedToXlsx, exportJsonToXlsx } from '../lib/excel';
-import { updateCompanyFruitPrices } from '../services/companies';
 
 interface ReportData {
   field_name: string;
@@ -122,7 +121,7 @@ const CHEMICAL_CATEGORIES = [
 ];
 
 export const Reports: React.FC = () => {
-  const { selectedCompany, refreshCompanies } = useCompany();
+  const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'general' | 'costs_ha' | 'margin' | 'labors' | 'applications' | 'monthly' | 'categories' | 'pending' | 'overdue' | 'paid_payments' | 'fuel_machines' | 'chemicals' | 'stock_breaks' | 'detailed' | 'budget' | 'comparative'>('general');
   const [activeGroup, setActiveGroup] = useState<'general' | 'financial' | 'inventory' | 'comparative'>('general');
@@ -163,7 +162,6 @@ export const Reports: React.FC = () => {
   const [usdExchangeRate, setUsdExchangeRate] = useState<number>(950);
   const [distributeGeneralCosts, setDistributeGeneralCosts] = useState(false);
   const [pdfOrientation, setPdfOrientation] = useState<'portrait' | 'landscape'>('landscape'); // Default landscape
-  const [fruitPrices, setFruitPrices] = useState<Record<string, number>>({});
 
   // Display State
   const [reportData, setReportData] = useState<ReportData[]>([]);
@@ -244,15 +242,6 @@ export const Reports: React.FC = () => {
       loadRawData();
     }
   }, [selectedCompany, loadRawData]);
-
-  useEffect(() => {
-    const existing = (selectedCompany as any)?.fruit_prices;
-    if (existing && typeof existing === 'object') {
-      setFruitPrices(existing as Record<string, number>);
-      return;
-    }
-    setFruitPrices({});
-  }, [selectedCompany]);
 
   // Update presentation logic to support 4 slides for General tab
   useEffect(() => {
@@ -719,20 +708,6 @@ export const Reports: React.FC = () => {
     });
 
     setReportData(data);
-  };
-
-  const saveFruitPrices = async () => {
-    if (!selectedCompany) return;
-    const cleaned: Record<string, number> = {};
-    Object.entries(fruitPrices || {}).forEach(([k, v]) => {
-      const key = String(k || '').trim();
-      if (!key) return;
-      const n = Number(v);
-      if (Number.isFinite(n) && n > 0) cleaned[key] = n;
-    });
-    await updateCompanyFruitPrices({ companyId: selectedCompany.id, fruitPrices: cleaned });
-    await refreshCompanies();
-    toast('Precios guardados');
   };
 
   const processFinancialReports = () => {
@@ -2563,42 +2538,6 @@ export const Reports: React.FC = () => {
 
       {activeTab === 'costs_ha' && (
         <div className="space-y-6">
-          {(() => {
-            const fruits = Array.from(new Set(reportData.map((r) => String(r.fruit_type || '').trim()).filter(Boolean))).sort();
-            if (fruits.length === 0) return null;
-            return (
-              <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
-                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-                  <div>
-                    <h3 className="text-lg font-medium text-gray-900">Precios de Venta por Fruta</h3>
-                    <p className="mt-1 text-sm text-gray-500">CLP/Kg por fruta para calcular kilos/ha de equilibrio</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void saveFruitPrices()}
-                    className="inline-flex items-center px-3 py-2 border border-transparent shadow-sm text-xs font-bold rounded text-white bg-green-600 hover:bg-green-700"
-                  >
-                    Guardar precios
-                  </button>
-                </div>
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                  {fruits.map((fruit) => (
-                    <div key={fruit} className="flex items-center justify-between gap-3 border border-gray-200 rounded-lg px-3 py-2">
-                      <div className="text-sm font-medium text-gray-900">{fruit}</div>
-                      <input
-                        type="number"
-                        value={fruitPrices[fruit] ?? ''}
-                        onChange={(e) => setFruitPrices((p) => ({ ...p, [fruit]: Number(e.target.value) }))}
-                        className="w-32 text-right bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-green-500 focus:border-green-500 block p-2"
-                        placeholder="CLP/Kg"
-                        min={0}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
           <div className="bg-white shadow overflow-hidden sm:rounded-lg">
             <div className="flex justify-between items-center px-4 py-5 sm:px-6 border-b border-gray-200">
               <div>
@@ -2755,7 +2694,7 @@ export const Reports: React.FC = () => {
             <div className="flex justify-between items-center px-4 py-5 sm:px-6 border-b border-gray-200">
               <div>
                 <h3 className="text-lg leading-6 font-medium text-gray-900">Kilos/Ha para Solventar Costos</h3>
-                <p className="mt-1 text-sm text-gray-500">Costo/ha dividido por precio de venta de la fruta (por sector)</p>
+                <p className="mt-1 text-sm text-gray-500">Costo/ha dividido por precio de venta promedio del sector según Liquidaciones</p>
               </div>
               <button
                 type="button"
@@ -2763,10 +2702,21 @@ export const Reports: React.FC = () => {
                   if (!selectedCompany) return;
                   const rows = reportData.map((row) => {
                     const fruit = String(row.fruit_type || '').trim();
-                    const saleClp = fruit ? Number(fruitPrices[fruit] || 0) : 0;
                     const costHaClp = Number(row.cost_per_ha || 0);
+                    const sectorIncomes = incomeEntries.filter((i) =>
+                      i.sector_id === row.sector_id && i.category === 'Venta Fruta' && i.season === selectedSeason
+                    );
+                    const qtyKg = sectorIncomes.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
+                    const totalClp = sectorIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+                    const totalUsd = sectorIncomes.reduce((sum, i) => {
+                      const usd = Number(i.amount_usd || 0);
+                      if (usd > 0) return sum + usd;
+                      return sum + Number(i.quantity_kg || 0) * Number(i.price_per_kg || 0);
+                    }, 0);
+
+                    const saleClp = qtyKg > 0 ? totalClp / qtyKg : 0;
+                    const saleUsd = qtyKg > 0 ? (totalUsd > 0 ? totalUsd / qtyKg : saleClp / (usdExchangeRate || 1)) : 0;
                     const kgHa = saleClp > 0 ? costHaClp / saleClp : 0;
-                    const saleUsd = saleClp / (usdExchangeRate || 1);
                     const costHaUsd = costHaClp / (usdExchangeRate || 1);
                     const kgHaUsd = saleUsd > 0 ? costHaUsd / saleUsd : 0;
                     return {
@@ -2774,7 +2724,7 @@ export const Reports: React.FC = () => {
                       Sector: row.sector_name,
                       Fruta: fruit,
                       'Costo/Ha (CLP)': costHaClp,
-                      'Venta (CLP/Kg)': saleClp,
+                      'Venta (CLP/Kg)': Number(saleClp.toFixed(2)),
                       'Kg/Ha equilibrio (CLP)': Number(kgHa.toFixed(2)),
                       'Costo/Ha (USD)': Number(costHaUsd.toFixed(2)),
                       'Venta (USD/Kg)': Number(saleUsd.toFixed(4)),
@@ -2809,10 +2759,21 @@ export const Reports: React.FC = () => {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {reportData.map((row, index) => {
                     const fruit = String(row.fruit_type || '').trim();
-                    const saleClp = fruit ? Number(fruitPrices[fruit] || 0) : 0;
                     const costHaClp = Number(row.cost_per_ha || 0);
+                    const sectorIncomes = incomeEntries.filter((i) =>
+                      i.sector_id === row.sector_id && i.category === 'Venta Fruta' && i.season === selectedSeason
+                    );
+                    const qtyKg = sectorIncomes.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
+                    const totalClp = sectorIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+                    const totalUsd = sectorIncomes.reduce((sum, i) => {
+                      const usd = Number(i.amount_usd || 0);
+                      if (usd > 0) return sum + usd;
+                      return sum + Number(i.quantity_kg || 0) * Number(i.price_per_kg || 0);
+                    }, 0);
+
+                    const saleClp = qtyKg > 0 ? totalClp / qtyKg : 0;
+                    const saleUsd = qtyKg > 0 ? (totalUsd > 0 ? totalUsd / qtyKg : saleClp / (usdExchangeRate || 1)) : 0;
                     const kgHa = saleClp > 0 ? costHaClp / saleClp : 0;
-                    const saleUsd = saleClp / (usdExchangeRate || 1);
                     const costHaUsd = costHaClp / (usdExchangeRate || 1);
                     const kgHaUsd = saleUsd > 0 ? costHaUsd / saleUsd : 0;
                     return (
