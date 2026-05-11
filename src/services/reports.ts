@@ -25,6 +25,7 @@ async function fetchAllPages<T>(
 type ReportFieldRow = {
   id: string;
   name: string;
+  fruit_type?: string | null;
   sectors?: Array<{ id: string; name?: string; hectares?: number }>;
 };
 
@@ -78,7 +79,7 @@ async function fetchFuelConsumptionAll(params: { companyId: string }) {
 export async function loadReportsRawData(params: { companyId: string }) {
   const { data: fields, error: fieldsError } = await supabase
     .from('fields')
-    .select('id, name, sectors(id, name, hectares)')
+    .select('id, name, fruit_type, sectors(id, name, hectares)')
     .eq('company_id', params.companyId);
 
   if (fieldsError) throw fieldsError;

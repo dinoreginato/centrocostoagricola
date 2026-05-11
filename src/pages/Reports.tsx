@@ -10,11 +10,13 @@ import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { loadReportsRawData } from '../services/reports';
 import { exportDetailedSegmentedToXlsx, exportJsonToXlsx } from '../lib/excel';
+import { updateCompanyFruitPrices } from '../services/companies';
 
 interface ReportData {
   field_name: string;
   sector_name: string;
   sector_id: string; 
+  fruit_type?: string;
   hectares: number;
   total_cost: number;
   cost_per_ha: number;
@@ -120,7 +122,7 @@ const CHEMICAL_CATEGORIES = [
 ];
 
 export const Reports: React.FC = () => {
-  const { selectedCompany } = useCompany();
+  const { selectedCompany, refreshCompanies } = useCompany();
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'general' | 'costs_ha' | 'margin' | 'labors' | 'applications' | 'monthly' | 'categories' | 'pending' | 'overdue' | 'paid_payments' | 'fuel_machines' | 'chemicals' | 'stock_breaks' | 'detailed' | 'budget' | 'comparative'>('general');
   const [activeGroup, setActiveGroup] = useState<'general' | 'financial' | 'inventory' | 'comparative'>('general');
@@ -161,6 +163,7 @@ export const Reports: React.FC = () => {
   const [usdExchangeRate, setUsdExchangeRate] = useState<number>(950);
   const [distributeGeneralCosts, setDistributeGeneralCosts] = useState(false);
   const [pdfOrientation, setPdfOrientation] = useState<'portrait' | 'landscape'>('landscape'); // Default landscape
+  const [fruitPrices, setFruitPrices] = useState<Record<string, number>>({});
 
   // Display State
   const [reportData, setReportData] = useState<ReportData[]>([]);
@@ -241,6 +244,15 @@ export const Reports: React.FC = () => {
       loadRawData();
     }
   }, [selectedCompany, loadRawData]);
+
+  useEffect(() => {
+    const existing = (selectedCompany as any)?.fruit_prices;
+    if (existing && typeof existing === 'object') {
+      setFruitPrices(existing as Record<string, number>);
+      return;
+    }
+    setFruitPrices({});
+  }, [selectedCompany]);
 
   // Update presentation logic to support 4 slides for General tab
   useEffect(() => {
@@ -676,6 +688,7 @@ export const Reports: React.FC = () => {
           field_name: field.name,
           sector_name: sector.name,
           sector_id: sector.id,
+          fruit_type: String(field.fruit_type || ''),
           hectares: hectares,
           total_cost: totalCostGeneral, // Default for General Table
           cost_per_ha: hectares > 0 ? totalCostGeneral / hectares : 0, // Default for General Table
@@ -706,6 +719,20 @@ export const Reports: React.FC = () => {
     });
 
     setReportData(data);
+  };
+
+  const saveFruitPrices = async () => {
+    if (!selectedCompany) return;
+    const cleaned: Record<string, number> = {};
+    Object.entries(fruitPrices || {}).forEach(([k, v]) => {
+      const key = String(k || '').trim();
+      if (!key) return;
+      const n = Number(v);
+      if (Number.isFinite(n) && n > 0) cleaned[key] = n;
+    });
+    await updateCompanyFruitPrices({ companyId: selectedCompany.id, fruitPrices: cleaned });
+    await refreshCompanies();
+    toast('Precios guardados');
   };
 
   const processFinancialReports = () => {
@@ -2536,6 +2563,42 @@ export const Reports: React.FC = () => {
 
       {activeTab === 'costs_ha' && (
         <div className="space-y-6">
+          {(() => {
+            const fruits = Array.from(new Set(reportData.map((r) => String(r.fruit_type || '').trim()).filter(Boolean))).sort();
+            if (fruits.length === 0) return null;
+            return (
+              <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
+                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                  <div>
+                    <h3 className="text-lg font-medium text-gray-900">Precios de Venta por Fruta</h3>
+                    <p className="mt-1 text-sm text-gray-500">CLP/Kg por fruta para calcular kilos/ha de equilibrio</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void saveFruitPrices()}
+                    className="inline-flex items-center px-3 py-2 border border-transparent shadow-sm text-xs font-bold rounded text-white bg-green-600 hover:bg-green-700"
+                  >
+                    Guardar precios
+                  </button>
+                </div>
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {fruits.map((fruit) => (
+                    <div key={fruit} className="flex items-center justify-between gap-3 border border-gray-200 rounded-lg px-3 py-2">
+                      <div className="text-sm font-medium text-gray-900">{fruit}</div>
+                      <input
+                        type="number"
+                        value={fruitPrices[fruit] ?? ''}
+                        onChange={(e) => setFruitPrices((p) => ({ ...p, [fruit]: Number(e.target.value) }))}
+                        className="w-32 text-right bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-green-500 focus:border-green-500 block p-2"
+                        placeholder="CLP/Kg"
+                        min={0}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
           <div className="bg-white shadow overflow-hidden sm:rounded-lg">
             <div className="flex justify-between items-center px-4 py-5 sm:px-6 border-b border-gray-200">
               <div>
@@ -2684,6 +2747,90 @@ export const Reports: React.FC = () => {
                       );
                     })()
                   )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+            <div className="flex justify-between items-center px-4 py-5 sm:px-6 border-b border-gray-200">
+              <div>
+                <h3 className="text-lg leading-6 font-medium text-gray-900">Kilos/Ha para Solventar Costos</h3>
+                <p className="mt-1 text-sm text-gray-500">Costo/ha dividido por precio de venta de la fruta (por sector)</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!selectedCompany) return;
+                  const rows = reportData.map((row) => {
+                    const fruit = String(row.fruit_type || '').trim();
+                    const saleClp = fruit ? Number(fruitPrices[fruit] || 0) : 0;
+                    const costHaClp = Number(row.cost_per_ha || 0);
+                    const kgHa = saleClp > 0 ? costHaClp / saleClp : 0;
+                    const saleUsd = saleClp / (usdExchangeRate || 1);
+                    const costHaUsd = costHaClp / (usdExchangeRate || 1);
+                    const kgHaUsd = saleUsd > 0 ? costHaUsd / saleUsd : 0;
+                    return {
+                      Campo: row.field_name,
+                      Sector: row.sector_name,
+                      Fruta: fruit,
+                      'Costo/Ha (CLP)': costHaClp,
+                      'Venta (CLP/Kg)': saleClp,
+                      'Kg/Ha equilibrio (CLP)': Number(kgHa.toFixed(2)),
+                      'Costo/Ha (USD)': Number(costHaUsd.toFixed(2)),
+                      'Venta (USD/Kg)': Number(saleUsd.toFixed(4)),
+                      'Kg/Ha equilibrio (USD)': Number(kgHaUsd.toFixed(2))
+                    };
+                  });
+                  void exportJsonToXlsx({
+                    filename: `KilosHa_Equilibrio_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.xlsx`,
+                    sheetName: `Equilibrio_${selectedSeason}`,
+                    rows
+                  });
+                }}
+                className="inline-flex items-center px-3 py-2 border border-transparent shadow-sm text-xs font-bold rounded text-white bg-green-600 hover:bg-green-700"
+              >
+                <FileText className="mr-1.5 h-4 w-4" /> Excel
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sector/Campo</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fruta</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo/Ha (CLP)</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Venta (CLP/Kg)</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-blue-50">Kg/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo/Ha (USD)</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Venta (USD/Kg)</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-blue-50">Kg/Ha (USD)</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {reportData.map((row, index) => {
+                    const fruit = String(row.fruit_type || '').trim();
+                    const saleClp = fruit ? Number(fruitPrices[fruit] || 0) : 0;
+                    const costHaClp = Number(row.cost_per_ha || 0);
+                    const kgHa = saleClp > 0 ? costHaClp / saleClp : 0;
+                    const saleUsd = saleClp / (usdExchangeRate || 1);
+                    const costHaUsd = costHaClp / (usdExchangeRate || 1);
+                    const kgHaUsd = saleUsd > 0 ? costHaUsd / saleUsd : 0;
+                    return (
+                      <tr key={index} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">{row.sector_name}</div>
+                          <div className="text-xs text-gray-500">{row.field_name}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{fruit || '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{formatCLP(costHaClp)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{saleClp > 0 ? formatCLP(saleClp) : '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-700 bg-blue-50">{saleClp > 0 ? kgHa.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">${costHaUsd.toLocaleString('en-US', { maximumFractionDigits: 0 })}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{saleUsd > 0 ? `$${saleUsd.toFixed(2)}` : '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-700 bg-blue-50">{saleUsd > 0 ? kgHaUsd.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
