@@ -2531,6 +2531,10 @@ export const Reports: React.FC = () => {
               <button
                 type="button"
                 onClick={async () => {
+                  const totalInvoices = monthlyExpenses.reduce((sum, m) => sum + Number((m as any).total || 0), 0);
+                  const totalAllocated = reportData.reduce((sum, r) => sum + Number((r as any).total_cost || 0), 0);
+                  const unassigned = Math.max(0, totalInvoices - totalAllocated);
+                  const perSector = reportData.length > 0 ? unassigned / reportData.length : 0;
                   const rows = reportData.map((row) => {
                     const ha = Number(row.hectares || 1);
                     const sectorIncomes = incomeEntries.filter((i) =>
@@ -2540,7 +2544,8 @@ export const Reports: React.FC = () => {
                     const totalClp = sectorIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
                     const saleClp = qtyKg > 0 ? totalClp / qtyKg : 0;
                     const producedKgHa = qtyKg > 0 ? qtyKg / ha : 0;
-                    const requiredKgHa = saleClp > 0 ? Number(row.cost_per_ha || 0) / saleClp : 0;
+                    const costHaClp = Number(row.cost_per_ha || 0) + (perSector / ha);
+                    const requiredKgHa = saleClp > 0 ? costHaClp / saleClp : 0;
                     const diffKgHa = saleClp > 0 ? producedKgHa - requiredKgHa : 0;
 
                     return {
@@ -2548,7 +2553,7 @@ export const Reports: React.FC = () => {
                       Sector: row.sector_name,
                       Fruta: String(row.fruit_type || '').trim() || '-',
                       Has: Number(row.hectares || 0),
-                      'Costo/Ha (CLP)': Number(row.cost_per_ha || 0),
+                      'Costo/Ha (CLP)': Number(costHaClp || 0),
                       'Venta (CLP/Kg)': Number(saleClp.toFixed(2)),
                       'Prod/Ha (Kg)': Number(producedKgHa.toFixed(2)),
                       'Kg/Ha Requeridos': Number(requiredKgHa.toFixed(2)),
@@ -2581,6 +2586,10 @@ export const Reports: React.FC = () => {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {reportData.map((row, index) => {
+                    const totalInvoices = monthlyExpenses.reduce((sum, m) => sum + Number((m as any).total || 0), 0);
+                    const totalAllocated = reportData.reduce((sum, r) => sum + Number((r as any).total_cost || 0), 0);
+                    const unassigned = Math.max(0, totalInvoices - totalAllocated);
+                    const perSector = reportData.length > 0 ? unassigned / reportData.length : 0;
                     const ha = Number(row.hectares || 1);
                     const sectorIncomes = incomeEntries.filter((i) =>
                       i.sector_id === row.sector_id && i.category === 'Venta Fruta' && i.season === selectedSeason
@@ -2589,7 +2598,8 @@ export const Reports: React.FC = () => {
                     const totalClp = sectorIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
                     const saleClp = qtyKg > 0 ? totalClp / qtyKg : 0;
                     const producedKgHa = qtyKg > 0 ? qtyKg / ha : 0;
-                    const requiredKgHa = saleClp > 0 ? Number(row.cost_per_ha || 0) / saleClp : 0;
+                    const costHaClp = Number(row.cost_per_ha || 0) + (perSector / ha);
+                    const requiredKgHa = saleClp > 0 ? costHaClp / saleClp : 0;
                     const diffKgHa = saleClp > 0 ? producedKgHa - requiredKgHa : 0;
                     return (
                       <tr key={index} className="hover:bg-gray-50">
@@ -2598,7 +2608,7 @@ export const Reports: React.FC = () => {
                           <div className="text-xs text-gray-500">{row.field_name}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{String(row.fruit_type || '').trim() || '-'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{formatCLP(Number(row.cost_per_ha || 0))}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{formatCLP(costHaClp)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{saleClp > 0 ? formatCLP(saleClp) : '-'}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{qtyKg > 0 ? producedKgHa.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-700 bg-blue-50">
