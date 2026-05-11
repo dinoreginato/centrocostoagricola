@@ -232,6 +232,14 @@ export const Reports: React.FC = () => {
 
   const filteredOverdueInvoices = filteredPendingInvoices.filter((inv) => inv.days_overdue > 0);
 
+  const getUnassignedCompanyCostPerSector = () => {
+    const totalInvoices = monthlyExpenses.reduce((sum, m) => sum + Number((m as any).total || 0), 0);
+    const totalAllocated = reportData.reduce((sum, r) => sum + Number((r as any).total_cost || 0), 0);
+    const unassigned = Math.max(0, totalInvoices - totalAllocated);
+    const perSector = reportData.length > 0 ? unassigned / reportData.length : 0;
+    return { unassigned, perSector };
+  };
+
   const loadRawData = useCallback(() => {
     if (!selectedCompany) return;
     void loadRawDataImpl();
@@ -2061,16 +2069,8 @@ export const Reports: React.FC = () => {
                             <h3 className="text-lg leading-6 font-medium text-gray-900">Resumen por Sector</h3>
                             <p className="mt-1 text-sm text-gray-500">Kilos enviados y valores totales</p>
                         </div>
-                        <div className="mt-2 sm:mt-0 flex items-center">
-                            <label className="flex items-center space-x-2 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={distributeGeneralCosts}
-                                    onChange={(e) => setDistributeGeneralCosts(e.target.checked)}
-                                    className="form-checkbox h-4 w-4 text-green-600 transition duration-150 ease-in-out"
-                                />
-                                <span className="text-sm font-medium text-gray-700">Distribuir Gastos No Asignados (Proporcional a Has)</span>
-                            </label>
+                        <div className="mt-2 sm:mt-0 text-sm font-medium text-gray-700">
+                            Los gastos no asignados se distribuyen en partes iguales a todos los sectores.
                         </div>
                     </div>
                     <div className="overflow-x-auto">
@@ -2083,9 +2083,7 @@ export const Reports: React.FC = () => {
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ingresos (USD)</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ingresos (CLP)</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Directos (CLP)</th>
-                                    {distributeGeneralCosts && (
-                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Gral. (CLP)</th>
-                                    )}
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Gral. (CLP)</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Total (USD)</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Total (CLP)</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Balance (USD)</th>
@@ -2095,39 +2093,61 @@ export const Reports: React.FC = () => {
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {(() => {
-                                    // 0. Calculate General Distribution Factor
                                     const totalInvoices = monthlyExpenses.reduce((sum, m) => sum + m.total, 0);
                                     const totalAllocated = reportData.reduce((sum, r) => sum + r.total_cost, 0);
-                                    const totalHectares = reportData.reduce((sum, r) => sum + r.hectares, 0);
-                                    
-                                    // Unassigned costs = Total Invoices - Allocated Costs (Usage)
-                                    // If negative (usage > purchase), we assume 0 unassigned.
                                     const unassignedCost = Math.max(0, totalInvoices - totalAllocated);
-                                    const distributionFactor = (distributeGeneralCosts && totalHectares > 0) 
-                                        ? unassignedCost / totalHectares 
-                                        : 0;
+                                    const sectorCount = reportData.length;
+                                    const distributedPerSector = sectorCount > 0 ? unassignedCost / sectorCount : 0;
+                                    const sectorKeys = reportData.map((r) => r.sector_id);
 
-                                    // 1. Income Aggregation
-                                    const incomeMap = incomeEntries.reduce((acc, entry) => {
-                                        const key = entry.sector_id || 'general';
-                                        const name = entry.sectors ? `${entry.sectors.name} (${entry.fields?.name})` : (entry.fields?.name || 'Empresa General');
-                                        if (!acc[key]) acc[key] = { name, kg: 0, usd: 0, clp: 0 };
-                                        acc[key].kg += Number(entry.quantity_kg || 0);
-                                        acc[key].usd += Number(entry.amount_usd || 0);
-                                        acc[key].clp += Number(entry.amount || 0);
+                                    const incomeMap = sectorKeys.reduce((acc, key) => {
+                                        acc[key] = { name: '', kg: 0, usd: 0, clp: 0 };
                                         return acc;
-                                    }, {} as Record<string, { name: string, kg: number, usd: number, clp: number }>);
+                                    }, {} as Record<string, { name: string; kg: number; usd: number; clp: number }>);
+
+                                    const unassignedIncome = incomeEntries.reduce(
+                                        (acc, entry) => {
+                                            const key = entry.sector_id;
+                                            const kg = Number(entry.quantity_kg || 0);
+                                            const usd = Number(entry.amount_usd || 0);
+                                            const clp = Number(entry.amount || 0);
+
+                                            if (key && incomeMap[key]) {
+                                                incomeMap[key].kg += kg;
+                                                incomeMap[key].usd += usd;
+                                                incomeMap[key].clp += clp;
+                                                if (!incomeMap[key].name) {
+                                                    incomeMap[key].name = entry.sectors ? `${entry.sectors.name} (${entry.fields?.name})` : '';
+                                                }
+                                                return acc;
+                                            }
+
+                                            acc.kg += kg;
+                                            acc.usd += usd;
+                                            acc.clp += clp;
+                                            return acc;
+                                        },
+                                        { kg: 0, usd: 0, clp: 0 }
+                                    );
+
+                                    if (sectorCount > 0 && (unassignedIncome.kg || unassignedIncome.usd || unassignedIncome.clp)) {
+                                        const kgShare = unassignedIncome.kg / sectorCount;
+                                        const usdShare = unassignedIncome.usd / sectorCount;
+                                        const clpShare = unassignedIncome.clp / sectorCount;
+                                        sectorKeys.forEach((key) => {
+                                            incomeMap[key].kg += kgShare;
+                                            incomeMap[key].usd += usdShare;
+                                            incomeMap[key].clp += clpShare;
+                                        });
+                                    }
 
                                     // 2. Expense Aggregation (Direct Costs + Distributed)
                                     const expenseMap = reportData.reduce((acc, r) => {
-                                        // Direct Cost
                                         const direct = r.total_cost;
-                                        // Distributed Cost
-                                        const distributed = r.hectares * distributionFactor;
-                                        
+                                        const distributed = distributedPerSector;
                                         acc[r.sector_id] = {
-                                            direct: direct,
-                                            distributed: distributed,
+                                            direct,
+                                            distributed,
                                             total: direct + distributed,
                                             hectares: r.hectares
                                         };
@@ -2135,11 +2155,7 @@ export const Reports: React.FC = () => {
                                     }, {} as Record<string, { direct: number, distributed: number, total: number, hectares: number }>);
 
                                     // 3. Merge
-                                    const allKeysSet = new Set([...Object.keys(incomeMap), ...Object.keys(expenseMap)]);
-                                    if (unassignedCost > 0 && !distributeGeneralCosts) {
-                                        allKeysSet.add('general');
-                                    }
-                                    const allKeys = Array.from(allKeysSet);
+                                    const allKeys = sectorKeys;
                                     
                                     const rows = allKeys.map(key => {
                                         const inc = incomeMap[key] || { name: '', kg: 0, usd: 0, clp: 0 };
@@ -2147,32 +2163,10 @@ export const Reports: React.FC = () => {
                                         
                                         // Try to find name if missing in income
                                         let displayName = inc.name;
-                                        if (!displayName && key !== 'general') {
+                                        if (!displayName) {
                                             const r = reportData.find(d => d.sector_id === key);
                                             if (r) displayName = `${r.sector_name} (${r.field_name})`;
                                             else displayName = 'Sector Desconocido';
-                                        } else if (!displayName) {
-                                            displayName = 'Empresa General';
-                                        }
-
-                                        // If 'general' key exists and distribute is ON, its expenses (unassigned) are distributed to sectors, so they are 0 here.
-                                        // But wait, 'unassignedCost' is calculated globally.
-                                        // The 'general' row in this table usually comes from 'incomeEntries' with no sector.
-                                        // It should not show expenses if they are distributed.
-                                        
-                                        let finalExpense = expData.total;
-                                        
-                                        // If key is 'general' and we are NOT distributing, we should probably show the unassigned cost here?
-                                        // But 'expenseMap' only has keys from 'reportData' (sectors).
-                                        // So 'general' key in 'expenseMap' is undefined unless a sector is named 'general'.
-                                        
-                                        // If we are NOT distributing, the unassigned cost is simply not shown in sector rows.
-                                        // Should we show a "General / No Asignado" row?
-                                        // Yes, if there is income there, or if we want to balance the total.
-                                        
-                                        if (key === 'general' && !distributeGeneralCosts && unassignedCost > 0) {
-                                            // Show unassigned cost in General row if not distributed
-                                            finalExpense += unassignedCost;
                                         }
 
                                         return {
@@ -2183,8 +2177,8 @@ export const Reports: React.FC = () => {
                                             income: inc.clp,
                                             expenseDirect: expData.direct,
                                             expenseDistributed: expData.distributed,
-                                            expenseTotal: finalExpense,
-                                            balance: inc.clp - finalExpense
+                                            expenseTotal: expData.total,
+                                            balance: inc.clp - expData.total
                                         };
                                     }).sort((a, b) => b.income - a.income);
 
@@ -2205,9 +2199,7 @@ export const Reports: React.FC = () => {
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-700 font-medium">${row.usd.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(row.income)}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.expenseDirect)}</td>
-                                                    {distributeGeneralCosts && (
-                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-orange-600">{formatCLP(row.expenseDistributed)}</td>
-                                                    )}
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-orange-600">{formatCLP(row.expenseDistributed)}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-700 font-medium">${(row.expenseTotal / (usdExchangeRate || 1)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600 font-bold">{formatCLP(row.expenseTotal)}</td>
                                                     <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${row.balance >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
@@ -2228,9 +2220,7 @@ export const Reports: React.FC = () => {
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-700">${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalIncome)}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(totalExpenseDirect)}</td>
-                                                {distributeGeneralCosts && (
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-orange-600">{formatCLP(totalExpenseDistributed)}</td>
-                                                )}
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-orange-600">{formatCLP(totalExpenseDistributed)}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-700 font-medium">${(totalExpense / (usdExchangeRate || 1)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600 font-bold">{formatCLP(totalExpense)}</td>
                                                 <td className={`px-6 py-4 whitespace-nowrap text-sm text-right ${totalIncome - totalExpense >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
@@ -2550,6 +2540,18 @@ export const Reports: React.FC = () => {
                 onClick={async () => {
                   const rows = reportData.map((row) => {
                     const ha = row.hectares || 1;
+                    const { perSector } = getUnassignedCompanyCostPerSector();
+                    const costPerHaAdjusted = row.cost_per_ha + (perSector / ha);
+                    const producedKgHa = (Number(row.kg_produced || 0)) / ha;
+
+                    const sectorIncomes = incomeEntries.filter((i) =>
+                      i.sector_id === row.sector_id && i.category === 'Venta Fruta' && i.season === selectedSeason
+                    );
+                    const qtyKg = sectorIncomes.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
+                    const totalClp = sectorIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+                    const saleClp = qtyKg > 0 ? totalClp / qtyKg : 0;
+                    const kgHaEq = saleClp > 0 ? costPerHaAdjusted / saleClp : 0;
+                    const missingKgHa = saleClp > 0 ? Math.max(0, kgHaEq - producedKgHa) : 0;
                     return {
                       Campo: row.field_name,
                       Sector: row.sector_name,
@@ -2562,8 +2564,12 @@ export const Reports: React.FC = () => {
                       'Diésel/Ha': Number((row.fuel_cost_diesel / ha).toFixed(2)),
                       'Bencina/Ha': Number((row.fuel_cost_gasoline / ha).toFixed(2)),
                       'Otros/Ha': Number((row.general_cost / ha).toFixed(2)),
-                      'Total/Ha': Number(row.cost_per_ha.toFixed(2)),
-                      'Total (CLP)': Number(row.total_cost.toFixed(2))
+                      'Total/Ha': Number(costPerHaAdjusted.toFixed(2)),
+                      'Prod/Ha (Kg)': Number(producedKgHa.toFixed(2)),
+                      'Venta (CLP/Kg)': Number(saleClp.toFixed(2)),
+                      'Kg/Ha Eq': Number(kgHaEq.toFixed(2)),
+                      'Faltan Kg/Ha': Number(missingKgHa.toFixed(2)),
+                      'Total (CLP)': Number((row.total_cost + perSector).toFixed(2))
                     };
                   });
                   await exportJsonToXlsx({
@@ -2579,9 +2585,21 @@ export const Reports: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  const rows = [['Campo', 'Sector', 'Has', 'Aplic/Ha', 'Mano Obra/Ha', 'Personal/Ha', 'Maq/Ha', 'Riego/Ha', 'Diésel/Ha', 'Bencina/Ha', 'Otros/Ha', 'Total/Ha', 'Total (CLP)']];
+                  const rows = [['Campo', 'Sector', 'Has', 'Aplic/Ha', 'Mano Obra/Ha', 'Personal/Ha', 'Maq/Ha', 'Riego/Ha', 'Diésel/Ha', 'Bencina/Ha', 'Otros/Ha', 'Total/Ha', 'Prod/Ha (Kg)', 'Venta (CLP/Kg)', 'Kg/Ha Eq', 'Faltan Kg/Ha', 'Total (CLP)']];
                   reportData.forEach((row) => {
                     const ha = row.hectares || 1;
+                    const { perSector } = getUnassignedCompanyCostPerSector();
+                    const costPerHaAdjusted = row.cost_per_ha + (perSector / ha);
+                    const producedKgHa = (Number(row.kg_produced || 0)) / ha;
+
+                    const sectorIncomes = incomeEntries.filter((i) =>
+                      i.sector_id === row.sector_id && i.category === 'Venta Fruta' && i.season === selectedSeason
+                    );
+                    const qtyKg = sectorIncomes.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
+                    const totalClp = sectorIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+                    const saleClp = qtyKg > 0 ? totalClp / qtyKg : 0;
+                    const kgHaEq = saleClp > 0 ? costPerHaAdjusted / saleClp : 0;
+                    const missingKgHa = saleClp > 0 ? Math.max(0, kgHaEq - producedKgHa) : 0;
                     rows.push([
                       row.field_name,
                       row.sector_name,
@@ -2594,8 +2612,12 @@ export const Reports: React.FC = () => {
                       (row.fuel_cost_diesel / ha).toFixed(2),
                       (row.fuel_cost_gasoline / ha).toFixed(2),
                       (row.general_cost / ha).toFixed(2),
-                      row.cost_per_ha.toFixed(2),
-                      row.total_cost.toFixed(2),
+                      costPerHaAdjusted.toFixed(2),
+                      producedKgHa.toFixed(2),
+                      saleClp.toFixed(2),
+                      kgHaEq.toFixed(2),
+                      missingKgHa.toFixed(2),
+                      (row.total_cost + perSector).toFixed(2),
                     ]);
                   });
                   const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
@@ -2628,12 +2650,27 @@ export const Reports: React.FC = () => {
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Bencina/Ha</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Otros/Ha</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-blue-50">Total/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prod/Ha (Kg)</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Kg/Ha Eq</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Faltan Kg/Ha</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total (CLP)</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {reportData.map((row, index) => {
                     const ha = row.hectares || 1;
+                    const { perSector } = getUnassignedCompanyCostPerSector();
+                    const costPerHaAdjusted = row.cost_per_ha + (perSector / ha);
+                    const producedKgHa = (Number(row.kg_produced || 0)) / ha;
+
+                    const sectorIncomes = incomeEntries.filter((i) =>
+                      i.sector_id === row.sector_id && i.category === 'Venta Fruta' && i.season === selectedSeason
+                    );
+                    const qtyKg = sectorIncomes.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
+                    const totalClp = sectorIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+                    const saleClp = qtyKg > 0 ? totalClp / qtyKg : 0;
+                    const kgHaEq = saleClp > 0 ? costPerHaAdjusted / saleClp : 0;
+                    const missingKgHa = saleClp > 0 ? Math.max(0, kgHaEq - producedKgHa) : 0;
                     return (
                       <tr key={index} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -2649,8 +2686,11 @@ export const Reports: React.FC = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.fuel_cost_diesel / ha)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.fuel_cost_gasoline / ha)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.general_cost / ha)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-700 bg-blue-50">{formatCLP(row.cost_per_ha)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(row.total_cost)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-700 bg-blue-50">{formatCLP(costPerHaAdjusted)}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{producedKgHa.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-900">{saleClp > 0 ? kgHaEq.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-red-700">{saleClp > 0 ? missingKgHa.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(row.total_cost + perSector)}</td>
                       </tr>
                     );
                   })}
@@ -2666,7 +2706,19 @@ export const Reports: React.FC = () => {
                       const totalGasoline = reportData.reduce((sum, r) => sum + r.fuel_cost_gasoline, 0);
                       const totalGeneral = reportData.reduce((sum, r) => sum + r.general_cost, 0);
                       const totalCost = reportData.reduce((sum, r) => sum + r.total_cost, 0);
+                      const totalKgProduced = reportData.reduce((sum, r) => sum + Number(r.kg_produced || 0), 0);
+                      const { unassigned } = getUnassignedCompanyCostPerSector();
+                      const totalCostAdjusted = totalCost + unassigned;
                       const ha = totalHas || 1;
+                      const costPerHaAdjusted = totalCostAdjusted / ha;
+                      const producedKgHa = totalKgProduced / ha;
+
+                      const seasonIncomes = incomeEntries.filter((i) => i.category === 'Venta Fruta' && i.season === selectedSeason);
+                      const seasonQty = seasonIncomes.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
+                      const seasonClp = seasonIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
+                      const saleClp = seasonQty > 0 ? seasonClp / seasonQty : 0;
+                      const kgHaEq = saleClp > 0 ? costPerHaAdjusted / saleClp : 0;
+                      const missingKgHa = saleClp > 0 ? Math.max(0, kgHaEq - producedKgHa) : 0;
 
                       return (
                         <tr className="bg-gray-100 font-bold border-t-2 border-gray-300">
@@ -2680,8 +2732,11 @@ export const Reports: React.FC = () => {
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalDiesel / ha)}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalGasoline / ha)}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalGeneral / ha)}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-blue-800 bg-blue-100">{formatCLP(totalCost / ha)}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalCost)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-blue-800 bg-blue-100">{formatCLP(costPerHaAdjusted)}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{producedKgHa.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{saleClp > 0 ? kgHaEq.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-800">{saleClp > 0 ? missingKgHa.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalCostAdjusted)}</td>
                         </tr>
                       );
                     })()
@@ -2702,7 +2757,9 @@ export const Reports: React.FC = () => {
                   if (!selectedCompany) return;
                   const rows = reportData.map((row) => {
                     const fruit = String(row.fruit_type || '').trim();
-                    const costHaClp = Number(row.cost_per_ha || 0);
+                    const ha = Number(row.hectares || 1);
+                    const { perSector } = getUnassignedCompanyCostPerSector();
+                    const costHaClp = Number(row.cost_per_ha || 0) + (perSector / ha);
                     const sectorIncomes = incomeEntries.filter((i) =>
                       i.sector_id === row.sector_id && i.category === 'Venta Fruta' && i.season === selectedSeason
                     );
@@ -2759,7 +2816,9 @@ export const Reports: React.FC = () => {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {reportData.map((row, index) => {
                     const fruit = String(row.fruit_type || '').trim();
-                    const costHaClp = Number(row.cost_per_ha || 0);
+                    const ha = Number(row.hectares || 1);
+                    const { perSector } = getUnassignedCompanyCostPerSector();
+                    const costHaClp = Number(row.cost_per_ha || 0) + (perSector / ha);
                     const sectorIncomes = incomeEntries.filter((i) =>
                       i.sector_id === row.sector_id && i.category === 'Venta Fruta' && i.season === selectedSeason
                     );
