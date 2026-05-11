@@ -148,8 +148,7 @@ export async function loadApplicationsPageData(params: { companyId: string }): P
       .from('products')
       .select('*')
       .eq('company_id', params.companyId)
-      .neq('category', 'Archivado')
-      .gt('current_stock', 0),
+      .neq('category', 'Archivado'),
     supabase.rpc('get_company_applications_v2', { p_company_id: params.companyId }),
     supabase
       .from('invoice_items')

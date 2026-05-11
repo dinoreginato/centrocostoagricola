@@ -163,8 +163,7 @@ export async function loadApplicationOrdersPageData(params: {
       .from('products')
       .select('*')
       .eq('company_id', params.companyId)
-      .neq('category', 'Archivado')
-      .gt('current_stock', 0),
+      .neq('category', 'Archivado'),
     supabase.from('machines').select('id, name, type').eq('company_id', params.companyId).eq('is_active', true),
     supabase.from('workers').select('id, name, role').eq('company_id', params.companyId).eq('is_active', true),
     supabase.from('phytosanitary_programs').select('*').eq('company_id', params.companyId).order('created_at', { ascending: false })
