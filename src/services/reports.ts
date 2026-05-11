@@ -48,6 +48,15 @@ type ReportInvoiceRow = {
   [key: string]: any;
 };
 
+type CompanyAssignmentRow = {
+  assigned_amount: number;
+  assigned_date: string;
+};
+
+type CompanyLaborAssignmentRow = CompanyAssignmentRow & {
+  labor_type?: string | null;
+};
+
 async function fetchFuelConsumptionAll(params: { companyId: string }) {
   try {
     return await fetchAllPages<any>((from, to) =>
@@ -93,10 +102,14 @@ export async function loadReportsRawData(params: { companyId: string }) {
   const [
     applicationsRes,
     laborRes,
+    laborCompanyRes,
     workerCostsRes,
     fuelRes,
+    fuelCompanyRes,
     machineryRes,
+    machineryCompanyRes,
     irrigationRes,
+    irrigationCompanyRes,
     generalCostsRes,
     productsRes
   ] = await Promise.all([
@@ -106,16 +119,36 @@ export async function loadReportsRawData(params: { companyId: string }) {
     sectorIds.length
       ? supabase.from('labor_assignments').select('sector_id, assigned_amount, assigned_date, labor_type').in('sector_id', sectorIds)
       : emptyOk,
+    supabase
+      .from('labor_assignments')
+      .select('assigned_amount, assigned_date, labor_type, invoice_items!inner(invoices!inner(company_id))')
+      .eq('invoice_items.invoices.company_id', params.companyId)
+      .is('sector_id', null),
     sectorIds.length ? supabase.from('worker_costs').select('sector_id, amount, date').in('sector_id', sectorIds) : emptyOk,
     sectorIds.length
       ? supabase.from('fuel_assignments').select('sector_id, assigned_amount, assigned_date').in('sector_id', sectorIds)
       : emptyOk,
+    supabase
+      .from('fuel_assignments')
+      .select('assigned_amount, assigned_date, invoice_items!inner(invoices!inner(company_id))')
+      .eq('invoice_items.invoices.company_id', params.companyId)
+      .is('sector_id', null),
     sectorIds.length
       ? supabase.from('machinery_assignments').select('sector_id, assigned_amount, assigned_date').in('sector_id', sectorIds)
       : emptyOk,
+    supabase
+      .from('machinery_assignments')
+      .select('assigned_amount, assigned_date, invoice_items!inner(invoices!inner(company_id))')
+      .eq('invoice_items.invoices.company_id', params.companyId)
+      .is('sector_id', null),
     sectorIds.length
       ? supabase.from('irrigation_assignments').select('sector_id, assigned_amount, assigned_date').in('sector_id', sectorIds)
       : emptyOk,
+    supabase
+      .from('irrigation_assignments')
+      .select('assigned_amount, assigned_date, invoice_items!inner(invoices!inner(company_id))')
+      .eq('invoice_items.invoices.company_id', params.companyId)
+      .is('sector_id', null),
     sectorIds.length ? supabase.from('general_costs').select('sector_id, amount, date').in('sector_id', sectorIds) : emptyOk,
     supabase
       .from('products')
@@ -190,10 +223,27 @@ export async function loadReportsRawData(params: { companyId: string }) {
 
   const applications = safeData<ReportApplicationRow>(applicationsRes as any);
   const labor = safeData<any>(laborRes as any);
+  const laborCompany = safeData<CompanyLaborAssignmentRow>(laborCompanyRes as any).map((r: any) => ({
+    assigned_amount: Number(r.assigned_amount || 0),
+    assigned_date: String(r.assigned_date || ''),
+    labor_type: r.labor_type ?? null
+  }));
   const workerCosts = safeData<any>(workerCostsRes as any);
   const fuel = safeData<any>(fuelRes as any);
+  const fuelCompany = safeData<CompanyAssignmentRow>(fuelCompanyRes as any).map((r: any) => ({
+    assigned_amount: Number(r.assigned_amount || 0),
+    assigned_date: String(r.assigned_date || '')
+  }));
   const machinery = safeData<any>(machineryRes as any);
+  const machineryCompany = safeData<CompanyAssignmentRow>(machineryCompanyRes as any).map((r: any) => ({
+    assigned_amount: Number(r.assigned_amount || 0),
+    assigned_date: String(r.assigned_date || '')
+  }));
   const irrigation = safeData<any>(irrigationRes as any);
+  const irrigationCompany = safeData<CompanyAssignmentRow>(irrigationCompanyRes as any).map((r: any) => ({
+    assigned_amount: Number(r.assigned_amount || 0),
+    assigned_date: String(r.assigned_date || '')
+  }));
   const generalCosts = safeData<any>(generalCostsRes as any);
   const products = safeData<any>(productsRes as any);
 
@@ -214,11 +264,15 @@ export async function loadReportsRawData(params: { companyId: string }) {
     fields: typedFields,
     applications,
     labor,
+    laborCompany,
     workerCosts,
     fuel,
+    fuelCompany,
     fuelConsumption,
     machinery,
+    machineryCompany,
     irrigation,
+    irrigationCompany,
     generalCosts,
     incomeEntries,
     invoices,
