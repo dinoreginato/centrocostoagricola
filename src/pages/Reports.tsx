@@ -2749,7 +2749,7 @@ export const Reports: React.FC = () => {
             <div className="flex justify-between items-center px-4 py-5 sm:px-6 border-b border-gray-200">
               <div>
                 <h3 className="text-lg leading-6 font-medium text-gray-900">Kilos/Ha para Solventar Costos</h3>
-                <p className="mt-1 text-sm text-gray-500">Costo/ha dividido por precio de venta promedio del sector según Liquidaciones</p>
+                <p className="mt-1 text-sm text-gray-500">Compara Prod/Ha (Liquidaciones) vs Kg/Ha equilibrio (Costo/Ha ÷ Venta CLP/Kg) y muestra la diferencia</p>
               </div>
               <button
                 type="button"
@@ -2773,7 +2773,9 @@ export const Reports: React.FC = () => {
 
                     const saleClp = qtyKg > 0 ? totalClp / qtyKg : 0;
                     const saleUsd = qtyKg > 0 ? (totalUsd > 0 ? totalUsd / qtyKg : saleClp / (usdExchangeRate || 1)) : 0;
-                    const kgHa = saleClp > 0 ? costHaClp / saleClp : 0;
+                    const kgHaEq = saleClp > 0 ? costHaClp / saleClp : 0;
+                    const producedKgHa = qtyKg > 0 ? qtyKg / ha : 0;
+                    const diffKgHa = saleClp > 0 ? producedKgHa - kgHaEq : 0;
                     const costHaUsd = costHaClp / (usdExchangeRate || 1);
                     const kgHaUsd = saleUsd > 0 ? costHaUsd / saleUsd : 0;
                     return {
@@ -2782,7 +2784,9 @@ export const Reports: React.FC = () => {
                       Fruta: fruit,
                       'Costo/Ha (CLP)': costHaClp,
                       'Venta (CLP/Kg)': Number(saleClp.toFixed(2)),
-                      'Kg/Ha equilibrio (CLP)': Number(kgHa.toFixed(2)),
+                      'Prod/Ha (Kg)': Number(producedKgHa.toFixed(2)),
+                      'Kg/Ha equilibrio (CLP)': Number(kgHaEq.toFixed(2)),
+                      'Dif (Kg/Ha)': Number(diffKgHa.toFixed(2)),
                       'Costo/Ha (USD)': Number(costHaUsd.toFixed(2)),
                       'Venta (USD/Kg)': Number(saleUsd.toFixed(4)),
                       'Kg/Ha equilibrio (USD)': Number(kgHaUsd.toFixed(2))
@@ -2807,7 +2811,9 @@ export const Reports: React.FC = () => {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fruta</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo/Ha (CLP)</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Venta (CLP/Kg)</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-blue-50">Kg/Ha</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prod/Ha (Kg)</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-blue-50">Kg/Ha Eq</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Dif (Kg/Ha)</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo/Ha (USD)</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Venta (USD/Kg)</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-blue-50">Kg/Ha (USD)</th>
@@ -2832,7 +2838,9 @@ export const Reports: React.FC = () => {
 
                     const saleClp = qtyKg > 0 ? totalClp / qtyKg : 0;
                     const saleUsd = qtyKg > 0 ? (totalUsd > 0 ? totalUsd / qtyKg : saleClp / (usdExchangeRate || 1)) : 0;
-                    const kgHa = saleClp > 0 ? costHaClp / saleClp : 0;
+                    const kgHaEq = saleClp > 0 ? costHaClp / saleClp : 0;
+                    const producedKgHa = qtyKg > 0 ? qtyKg / ha : 0;
+                    const diffKgHa = saleClp > 0 ? producedKgHa - kgHaEq : 0;
                     const costHaUsd = costHaClp / (usdExchangeRate || 1);
                     const kgHaUsd = saleUsd > 0 ? costHaUsd / saleUsd : 0;
                     return (
@@ -2844,7 +2852,11 @@ export const Reports: React.FC = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{fruit || '-'}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{formatCLP(costHaClp)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{saleClp > 0 ? formatCLP(saleClp) : '-'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-700 bg-blue-50">{saleClp > 0 ? kgHa.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{qtyKg > 0 ? producedKgHa.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-700 bg-blue-50">{saleClp > 0 ? kgHaEq.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}</td>
+                        <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${diffKgHa >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                          {saleClp > 0 ? diffKgHa.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">${costHaUsd.toLocaleString('en-US', { maximumFractionDigits: 0 })}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{saleUsd > 0 ? `$${saleUsd.toFixed(2)}` : '-'}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-700 bg-blue-50">{saleUsd > 0 ? kgHaUsd.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}</td>
