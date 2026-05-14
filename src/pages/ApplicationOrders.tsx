@@ -208,6 +208,11 @@ export const ApplicationOrders: React.FC = () => {
     const ev = programEvents.find(e => e.id === eventId);
     if (!ev) return;
 
+    if (!ev.products || ev.products.length === 0) {
+      toast.error('Esta etapa no tiene productos asociados.');
+      return;
+    }
+
     setCurrentOrder(prev => ({
         ...prev,
         objective: ev.objective || prev.objective,
@@ -219,7 +224,7 @@ export const ApplicationOrders: React.FC = () => {
     const field = fields.find(f => f.id === currentOrder.field_id);
     const sector = field?.sectors.find(s => s.id === currentOrder.sector_id);
 
-    if (sector && ev.products && ev.products.length > 0) {
+    if (sector) {
         const newItems = ev.products.map((ep: any) => {
             let doseHa = 0;
             let dose100L = 0;
@@ -805,6 +810,10 @@ export const ApplicationOrders: React.FC = () => {
         {!isEditing && (
             <button
                 onClick={() => {
+                    if (fields.length === 0) {
+                      toast.error('No hay campos creados. Cree un campo y al menos un sector en la sección "Campos".');
+                      return;
+                    }
                     let prefs: any = null;
                     if (prefsKey) {
                       try {
@@ -926,7 +935,11 @@ export const ApplicationOrders: React.FC = () => {
                           value={currentOrder.field_id || ''}
                           onChange={e => {
                             const fieldId = e.target.value;
-                            const firstSector = fields.find((f) => f.id === fieldId)?.sectors?.[0];
+                            const field = fields.find((f) => f.id === fieldId);
+                            const firstSector = field?.sectors?.[0];
+                            if (fieldId && (!field?.sectors || field.sectors.length === 0)) {
+                              toast.error('Este campo no tiene sectores. Cree al menos uno en la sección "Campos".');
+                            }
                             setCurrentOrder({
                               ...currentOrder,
                               field_id: fieldId,

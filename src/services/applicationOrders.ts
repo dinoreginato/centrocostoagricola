@@ -163,8 +163,7 @@ export async function loadApplicationOrdersPageData(params: {
       .from('products')
       .select('*')
       .eq('company_id', params.companyId)
-      .neq('category', 'Archivado')
-      .gt('current_stock', 0),
+      .neq('category', 'Archivado'),
     supabase.from('machines').select('id, name, type').eq('company_id', params.companyId).eq('is_active', true),
     supabase.from('workers').select('id, name, role').eq('company_id', params.companyId).eq('is_active', true),
     supabase.from('phytosanitary_programs').select('*').eq('company_id', params.companyId).order('created_at', { ascending: false })
@@ -185,6 +184,7 @@ export async function loadApplicationOrdersPageData(params: {
       .select(
         `
         *,
+        phytosanitary_programs(name),
         products:program_event_products(
           *,
           product:products(*)
@@ -200,10 +200,14 @@ export async function loadApplicationOrdersPageData(params: {
     programEvents = (evData || []) as unknown as ProgramEventForOrder[];
   }
 
+  const rawProducts = (productsRes.data || []) as unknown as ProductRow[];
+  const filteredProducts = filterAgrochemicalProducts(rawProducts);
+  const products = filteredProducts.length > 0 ? filteredProducts : rawProducts;
+
   return {
     orders: mappedOrders,
     fields: (fieldsRes.data || []) as unknown as FieldWithSectors[],
-    products: filterAgrochemicalProducts((productsRes.data || []) as unknown as ProductRow[]),
+    products,
     machines: (machinesRes.data || []) as unknown as MachineRow[],
     workers: (workersRes.data || []) as unknown as WorkerRow[],
     programEvents

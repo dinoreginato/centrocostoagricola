@@ -148,8 +148,7 @@ export async function loadApplicationsPageData(params: { companyId: string }): P
       .from('products')
       .select('*')
       .eq('company_id', params.companyId)
-      .neq('category', 'Archivado')
-      .gt('current_stock', 0),
+      .neq('category', 'Archivado'),
     supabase.rpc('get_company_applications_v2', { p_company_id: params.companyId }),
     supabase
       .from('invoice_items')
@@ -200,9 +199,13 @@ export async function loadApplicationsPageData(params: { companyId: string }): P
     avgFuelPrice = totalCost / totalLiters;
   }
 
+  const rawProducts = (productsRes.data || []) as unknown as ApplicationProduct[];
+  const filteredProducts = filterAgrochemicalProducts(rawProducts);
+  const products = filteredProducts.length > 0 ? filteredProducts : rawProducts;
+
   return {
     fields: (fieldsRes.data || []) as unknown as ApplicationField[],
-    products: filterAgrochemicalProducts((productsRes.data || []) as unknown as ApplicationProduct[]),
+    products,
     applications: (appsRes.data || []) as ApplicationHistory[],
     avgFuelPrice
   };
