@@ -107,6 +107,7 @@ export const ApplicationOrders: React.FC = () => {
   const companyId = selectedCompany?.id ?? null;
   const [loading, setLoading] = useState(false);
   const canWrite = userRole !== 'viewer';
+  const [loadErrorShown, setLoadErrorShown] = useState(false);
   
   // PDF Preview State
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
@@ -158,6 +159,17 @@ export const ApplicationOrders: React.FC = () => {
   const machines = useMemo(() => (pageQuery.data?.machines || []) as Machine[], [pageQuery.data?.machines]);
   const workers = useMemo(() => (pageQuery.data?.workers || []) as Worker[], [pageQuery.data?.workers]);
   const programEvents = useMemo(() => (pageQuery.data?.programEvents || []) as any[], [pageQuery.data?.programEvents]);
+
+  useEffect(() => {
+    if (!pageQuery.isError) {
+      if (loadErrorShown) setLoadErrorShown(false);
+      return;
+    }
+    if (loadErrorShown) return;
+    const msg = (pageQuery.error as any)?.message ? String((pageQuery.error as any).message) : 'Error desconocido';
+    toast.error(`Error al cargar datos: ${msg}`);
+    setLoadErrorShown(true);
+  }, [loadErrorShown, pageQuery.error, pageQuery.isError]);
 
   const reloadData = async () => {
     if (!companyId) return;
@@ -802,6 +814,7 @@ export const ApplicationOrders: React.FC = () => {
 
   if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
   if (pageQuery.isLoading) return <div className="p-8">Cargando...</div>;
+  if (pageQuery.isError) return <div className="p-8">No se pudieron cargar los datos. Revise permisos/empresa seleccionada y reintente.</div>;
 
   return (
     <div className="space-y-6">
