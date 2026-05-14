@@ -535,9 +535,6 @@ export const Invoices: React.FC = () => {
         new Set((inv.invoice_items || []).map((it: any) => String(it?.category ?? 'Otros')).filter((c: string) => c.length > 0))
       ).join(', ');
 
-      const notes = String(inv.notes ?? '');
-      const notesShort = notes.length > 80 ? `${notes.slice(0, 77)}...` : notes;
-
       return [
         String(inv.invoice_number ?? ''),
         String(inv.supplier ?? ''),
@@ -547,13 +544,12 @@ export const Invoices: React.FC = () => {
         String(inv.status ?? ''),
         formatCLP(Number(inv.total_amount ?? 0)),
         categories,
-        notesShort,
       ];
     });
 
     autoTable(doc, {
       startY: 75,
-      head: [['Folio', 'Proveedor', 'RUT', 'Emisión', 'Vence', 'Estado', 'Total', 'Categorías', 'Notas']],
+      head: [['Folio', 'Proveedor', 'RUT', 'Emisión', 'Vence', 'Estado', 'Total', 'Categorías']],
       body,
       styles: { fontSize: 8, cellPadding: 3 },
       headStyles: { fillColor: [37, 99, 235] },
@@ -565,8 +561,7 @@ export const Invoices: React.FC = () => {
         4: { cellWidth: 60 },
         5: { cellWidth: 60 },
         6: { cellWidth: 70, halign: 'right' },
-        7: { cellWidth: 140 },
-        8: { cellWidth: 240 },
+        7: { cellWidth: 200 },
       },
     });
 
@@ -1044,38 +1039,32 @@ export const Invoices: React.FC = () => {
               throw e;
             }
 
-            try {
-              for (const item of inv.items) {
-                const itemMap = {
-                  name: item.descripcion || item.product_name,
-                  category: item.categoria || guessCategory(item.descripcion || item.product_name || ''),
-                  quantity: Number(item.cantidad || item.quantity || 0),
-                  unit: item.unidad ? (item.unidad.toLowerCase().startsWith('unid') ? 'un' : item.unidad) : 'un',
-                  price: Number(item.precio || item.precioUnit || item.unit_price || 0),
-                  total: Number(item.total || item.total_price || 0)
-                };
+            // 2. Process Items
+            for (const item of inv.items) {
+              const itemMap = {
+                name: item.descripcion || item.product_name,
+                category: item.categoria || guessCategory(item.descripcion || item.product_name || ''),
+                quantity: Number(item.cantidad || item.quantity || 0),
+                unit: item.unidad ? (item.unidad.toLowerCase().startsWith('unid') ? 'un' : item.unidad) : 'un',
+                price: Number(item.precio || item.precioUnit || item.unit_price || 0),
+                total: Number(item.total || item.total_price || 0)
+              };
 
-                const productId = await createOrFindProductByName({
-                  companyId: targetCompanyId,
-                  name: itemMap.name,
-                  category: itemMap.category,
-                  unit: itemMap.unit
-                });
+              const productId = await createOrFindProductByName({
+                companyId: targetCompanyId,
+                name: itemMap.name,
+                category: itemMap.category,
+                unit: itemMap.unit
+              });
 
-                await createInvoiceItemWithEffects({
-                  invoiceId,
-                  productId,
-                  quantity: itemMap.quantity,
-                  unitPrice: itemMap.price,
-                  totalPrice: itemMap.total,
-                  category: itemMap.category
-                });
-              }
-            } catch (e) {
-              try {
-                await rpcDeleteInvoiceForce({ invoiceId });
-              } catch {}
-              throw e;
+              await createInvoiceItemWithEffects({
+                invoiceId,
+                productId,
+                quantity: itemMap.quantity,
+                unitPrice: itemMap.price,
+                totalPrice: itemMap.total,
+                category: itemMap.category
+              });
             }
             successCount++;
           } catch (_err) {
@@ -1289,7 +1278,6 @@ export const Invoices: React.FC = () => {
     setLoading(true);
     try {
       let invoiceId = editingInvoiceId;
-      let createdNewInvoiceId: string | null = null;
       
       const total = calculateFinalTotal(); // Fix the reference to total
 
@@ -1572,11 +1560,9 @@ export const Invoices: React.FC = () => {
           }
           throw e;
         }
-        createdNewInvoiceId = invoiceId;
 
         // Process Items for NEW Invoice
-        try {
-          for (const item of items) {
+        for (const item of items) {
             let productId = item.product_id;
 
             if (productId === 'new' || !productId) {
@@ -1604,14 +1590,6 @@ export const Invoices: React.FC = () => {
               generalCosts: assignments.generalCosts,
               fuelAssignments: assignments.fuelAssignments
             });
-          }
-        } catch (e) {
-          if (createdNewInvoiceId) {
-            try {
-              await rpcDeleteInvoiceForce({ invoiceId: createdNewInvoiceId });
-            } catch {}
-          }
-          throw e;
         }
       }
 
@@ -1886,17 +1864,6 @@ export const Invoices: React.FC = () => {
                       <option value="Pagada">Pagada</option>
                       <option value="Anulada">Anulada</option>
                     </select>
-                  </div>
-
-                  <div className="md:col-span-4">
-                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Notas (Factura)</label>
-                    <textarea
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 transition-colors"
-                      placeholder="Ej: Confirmar OC / retención / fecha de pago / detalle importante para esta factura..."
-                      rows={2}
-                    />
                   </div>
                 </div>
               </div>

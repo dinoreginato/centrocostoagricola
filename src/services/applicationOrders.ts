@@ -157,7 +157,7 @@ export async function loadApplicationOrdersPageData(params: {
     } as ApplicationOrder;
   });
 
-  const [fieldsRes, productsRes, machinesRes, workersRes, progRes] = await Promise.all([
+  const [fieldsRes, productsRes, machinesRes, workersRes] = await Promise.all([
     supabase.from('fields').select('*, sectors(*)').eq('company_id', params.companyId),
     supabase
       .from('products')
@@ -166,43 +166,65 @@ export async function loadApplicationOrdersPageData(params: {
       .neq('category', 'Archivado'),
     supabase.from('machines').select('id, name, type').eq('company_id', params.companyId).eq('is_active', true),
     supabase.from('workers').select('id, name, role').eq('company_id', params.companyId).eq('is_active', true),
-    supabase.from('phytosanitary_programs').select('*').eq('company_id', params.companyId).order('created_at', { ascending: false })
   ]);
 
   if (fieldsRes.error) throw fieldsRes.error;
   if (productsRes.error) throw productsRes.error;
   if (machinesRes.error) throw machinesRes.error;
   if (workersRes.error) throw workersRes.error;
-  if (progRes.error) throw progRes.error;
 
   let programEvents: ProgramEventForOrder[] = [];
+  let progData: Array<{ id: string }> = [];
 
-  const progData = (progRes.data || []) as Array<{ id: string }>;
-  if (progData.length > 0) {
-    const { data: evData, error: evError } = await supabase
-      .from('program_events')
-      .select(
-        `
-        *,
-        products:program_event_products(
-          *,
-          product:products(*)
-        )
-      `
-      )
-      .in(
-        'program_id',
-        progData.map((p) => p.id)
-      );
+  try {
+    const { data: rawProgData, error: progError } = await supabase
+      .from('phytosanitary_programs')
+      .select('*')
+      .eq('company_id', params.companyId)
+      .order('created_at', { ascending: false });
 
-    if (evError) throw evError;
-    programEvents = (evData || []) as unknown as ProgramEventForOrder[];
+    if (!progError) {
+      progData = (rawProgData || []) as Array<{ id: string }>;
+    }
+  } catch (_e) {
+    void _e;
   }
+
+  if (progData.length > 0) {
+    try {
+      const { data: evData, error: evError } = await supabase
+        .from('program_events')
+        .select(
+          `
+          *,
+          phytosanitary_programs(name),
+          products:program_event_products(
+            *,
+            product:products(*)
+          )
+        `
+        )
+        .in(
+          'program_id',
+          progData.map((p) => p.id)
+        );
+
+      if (!evError) {
+        programEvents = (evData || []) as unknown as ProgramEventForOrder[];
+      }
+    } catch (_e) {
+      void _e;
+    }
+  }
+
+  const rawProducts = (productsRes.data || []) as unknown as ProductRow[];
+  const filteredProducts = filterAgrochemicalProducts(rawProducts);
+  const products = filteredProducts.length > 0 ? filteredProducts : rawProducts;
 
   return {
     orders: mappedOrders,
     fields: (fieldsRes.data || []) as unknown as FieldWithSectors[],
-    products: filterAgrochemicalProducts((productsRes.data || []) as unknown as ProductRow[]),
+    products,
     machines: (machinesRes.data || []) as unknown as MachineRow[],
     workers: (workersRes.data || []) as unknown as WorkerRow[],
     programEvents

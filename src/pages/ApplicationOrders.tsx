@@ -107,6 +107,7 @@ export const ApplicationOrders: React.FC = () => {
   const companyId = selectedCompany?.id ?? null;
   const [loading, setLoading] = useState(false);
   const canWrite = userRole !== 'viewer';
+  const [loadErrorShown, setLoadErrorShown] = useState(false);
   
   // PDF Preview State
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
@@ -159,6 +160,17 @@ export const ApplicationOrders: React.FC = () => {
   const workers = useMemo(() => (pageQuery.data?.workers || []) as Worker[], [pageQuery.data?.workers]);
   const programEvents = useMemo(() => (pageQuery.data?.programEvents || []) as any[], [pageQuery.data?.programEvents]);
 
+  useEffect(() => {
+    if (!pageQuery.isError) {
+      if (loadErrorShown) setLoadErrorShown(false);
+      return;
+    }
+    if (loadErrorShown) return;
+    const msg = (pageQuery.error as any)?.message ? String((pageQuery.error as any).message) : 'Error desconocido';
+    toast.error(`Error al cargar datos: ${msg}`);
+    setLoadErrorShown(true);
+  }, [loadErrorShown, pageQuery.error, pageQuery.isError]);
+
   const reloadData = async () => {
     if (!companyId) return;
     await queryClient.invalidateQueries({ queryKey: ['applicationOrdersPage', companyId] });
@@ -208,6 +220,11 @@ export const ApplicationOrders: React.FC = () => {
     const ev = programEvents.find(e => e.id === eventId);
     if (!ev) return;
 
+    if (!ev.products || ev.products.length === 0) {
+      toast.error('Esta etapa no tiene productos asociados.');
+      return;
+    }
+
     setCurrentOrder(prev => ({
         ...prev,
         objective: ev.objective || prev.objective,
@@ -219,7 +236,7 @@ export const ApplicationOrders: React.FC = () => {
     const field = fields.find(f => f.id === currentOrder.field_id);
     const sector = field?.sectors.find(s => s.id === currentOrder.sector_id);
 
-    if (sector && ev.products && ev.products.length > 0) {
+    if (sector) {
         const newItems = ev.products.map((ep: any) => {
             let doseHa = 0;
             let dose100L = 0;
@@ -797,6 +814,7 @@ export const ApplicationOrders: React.FC = () => {
 
   if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
   if (pageQuery.isLoading) return <div className="p-8">Cargando...</div>;
+  if (pageQuery.isError) return <div className="p-8">No se pudieron cargar los datos. Revise permisos/empresa seleccionada y reintente.</div>;
 
   return (
     <div className="space-y-6">
@@ -805,6 +823,10 @@ export const ApplicationOrders: React.FC = () => {
         {!isEditing && (
             <button
                 onClick={() => {
+                    if (fields.length === 0) {
+                      toast.error('No hay campos creados. Cree un campo y al menos un sector en la sección "Campos".');
+                      return;
+                    }
                     let prefs: any = null;
                     if (prefsKey) {
                       try {
@@ -926,7 +948,11 @@ export const ApplicationOrders: React.FC = () => {
                           value={currentOrder.field_id || ''}
                           onChange={e => {
                             const fieldId = e.target.value;
-                            const firstSector = fields.find((f) => f.id === fieldId)?.sectors?.[0];
+                            const field = fields.find((f) => f.id === fieldId);
+                            const firstSector = field?.sectors?.[0];
+                            if (fieldId && (!field?.sectors || field.sectors.length === 0)) {
+                              toast.error('Este campo no tiene sectores. Cree al menos uno en la sección "Campos".');
+                            }
                             setCurrentOrder({
                               ...currentOrder,
                               field_id: fieldId,
@@ -938,6 +964,11 @@ export const ApplicationOrders: React.FC = () => {
                           <option value="">Seleccione...</option>
                           {fields.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                       </select>
+                      {fields.length === 0 && (
+                        <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          No hay campos para esta empresa. Revise la empresa seleccionada arriba o cree campos/sectores en “Campos”.
+                        </div>
+                      )}
                   </div>
                   <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Sector</label>

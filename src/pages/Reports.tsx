@@ -9,7 +9,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { loadReportsRawData } from '../services/reports';
-import { exportDetailedSegmentedToXlsx, exportJsonToXlsx } from '../lib/excel';
+import { exportJsonToXlsx } from '../lib/excel';
 
 interface ReportData {
   field_name: string;
@@ -141,16 +141,11 @@ export const Reports: React.FC = () => {
   const [rawApplications, setRawApplications] = useState<any[]>([]);
   const [rawInvoices, setRawInvoices] = useState<any[]>([]);
   const [rawLabor, setRawLabor] = useState<any[]>([]); 
-  const [rawLaborCompany, setRawLaborCompany] = useState<any[]>([]);
   const [rawWorkerCosts, setRawWorkerCosts] = useState<any[]>([]); // New state
   const [rawFuel, setRawFuel] = useState<any[]>([]); 
-  const [rawFuelCompany, setRawFuelCompany] = useState<any[]>([]);
   const [rawFuelConsumption, setRawFuelConsumption] = useState<any[]>([]); // New: Fuel Consumption
-  const [rawApplicationItems, setRawApplicationItems] = useState<any[]>([]);
   const [rawMachinery, setRawMachinery] = useState<any[]>([]); 
-  const [rawMachineryCompany, setRawMachineryCompany] = useState<any[]>([]);
   const [rawIrrigation, setRawIrrigation] = useState<any[]>([]); 
-  const [rawIrrigationCompany, setRawIrrigationCompany] = useState<any[]>([]);
   const [rawGeneralCosts, setRawGeneralCosts] = useState<any[]>([]); // New state
   const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([]);
   const [rawProducts, setRawProducts] = useState<any[]>([]);
@@ -178,8 +173,6 @@ export const Reports: React.FC = () => {
   // Detailed Report Filters
   const [filterMonth, setFilterMonth] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
-  const [detailedSearch, setDetailedSearch] = useState<string>('');
-  const [detailedView, setDetailedView] = useState<'segmentado' | 'tabla'>('segmentado');
   // Chemical Report Filters
   const [filterChemicalCategory, setFilterChemicalCategory] = useState<string>('all');
 
@@ -295,7 +288,6 @@ export const Reports: React.FC = () => {
     rawWorkerCosts,
     rawFuel,
     rawFuelConsumption,
-    rawApplicationItems,
     rawMachinery,
     rawIrrigation,
     rawGeneralCosts,
@@ -309,7 +301,7 @@ export const Reports: React.FC = () => {
   useEffect(() => {
     // Only process if we have sectors/fields loaded, otherwise wait
     processReports();
-  }, [rawFields, rawApplications, rawInvoices, rawLabor, rawLaborCompany, rawWorkerCosts, rawFuel, rawFuelCompany, rawFuelConsumption, rawApplicationItems, rawMachinery, rawMachineryCompany, rawIrrigation, rawIrrigationCompany, rawGeneralCosts, rawProducts, incomeEntries, selectedSeason, processReports]);
+  }, [rawFields, rawApplications, rawInvoices, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawMachinery, rawIrrigation, rawGeneralCosts, rawProducts, incomeEntries, selectedSeason, processReports]);
 
   async function loadRawDataImpl() {
     if (!selectedCompany) return;
@@ -319,16 +311,11 @@ export const Reports: React.FC = () => {
       setRawFields(res.fields || []);
       setRawApplications(res.applications || []);
       setRawLabor(res.labor || []);
-      setRawLaborCompany((res as any).laborCompany || []);
       setRawWorkerCosts(res.workerCosts || []);
       setRawFuel(res.fuel || []);
-      setRawFuelCompany((res as any).fuelCompany || []);
       setRawFuelConsumption(res.fuelConsumption || []);
-      setRawApplicationItems((res as any).applicationItems || []);
       setRawMachinery(res.machinery || []);
-      setRawMachineryCompany((res as any).machineryCompany || []);
       setRawIrrigation(res.irrigation || []);
-      setRawIrrigationCompany((res as any).irrigationCompany || []);
       setRawGeneralCosts(res.generalCosts || []);
       setIncomeEntries(res.incomeEntries || []);
       setRawInvoices(res.invoices || []);
@@ -337,33 +324,6 @@ export const Reports: React.FC = () => {
       setAvailableSeasons(res.availableSeasons || []);
       if (res.availableSeasons && res.availableSeasons.length > 0 && !res.availableSeasons.includes(selectedSeason)) {
         setSelectedSeason(res.availableSeasons[0]);
-      } else {
-        const isCurrentDefaultSeason = selectedSeason === getSeasonFromDate(new Date());
-        if (isCurrentDefaultSeason) {
-          const hasDataInSelectedSeason =
-            (res.applications || []).some((a: any) => a?.application_date && isDateInSeason(String(a.application_date), selectedSeason)) ||
-            (res.invoices || []).some((i: any) => i?.invoice_date && isDateInSeason(String(i.invoice_date), selectedSeason));
-
-          if (!hasDataInSelectedSeason) {
-            const dataSeasons = new Set<string>();
-            (res.applications || []).forEach((a: any) => {
-              if (!a?.application_date) return;
-              const d = new Date(String(a.application_date));
-              if (!isNaN(d.getTime())) dataSeasons.add(getSeasonFromDate(d));
-            });
-            (res.invoices || []).forEach((i: any) => {
-              if (!i?.invoice_date) return;
-              const d = new Date(String(i.invoice_date));
-              if (!isNaN(d.getTime())) dataSeasons.add(getSeasonFromDate(d));
-            });
-
-            const preferred = Array.from(dataSeasons).sort().reverse()[0];
-            if (preferred && preferred !== selectedSeason) setSelectedSeason(preferred);
-          }
-        }
-      }
-      if ((res as any).warnings && Array.isArray((res as any).warnings) && (res as any).warnings.length > 0) {
-        toast.warning(`Algunas fuentes de datos no se pudieron cargar: ${(res as any).warnings[0]}`);
       }
 
     } catch {
@@ -503,37 +463,6 @@ export const Reports: React.FC = () => {
     const avgPriceDiesel = totalDieselLiters > 0 ? totalDieselCost / totalDieselLiters : 0;
     const avgPriceGasoline = totalGasLiters > 0 ? totalGasCost / totalGasLiters : 0;
 
-    const consumptionApplicationIds = new Set<string>();
-    rawFuelConsumption.forEach((c: any) => {
-      if (c?.application_id) consumptionApplicationIds.add(String(c.application_id));
-    });
-
-    const fuelFromApplicationsBySector = new Map<string, { diesel: number; gasoline: number }>();
-    rawApplicationItems.forEach((row: any) => {
-      const app = Array.isArray(row.applications) ? row.applications[0] : row.applications;
-      if (!app?.sector_id || !app?.application_date) return;
-
-      const appId = String(row.application_id || app.id || '');
-      if (appId && consumptionApplicationIds.has(appId)) return;
-
-      if (!isDateInSeason(String(app.application_date), selectedSeason)) return;
-
-      const product = Array.isArray(row.products) ? row.products[0] : row.products;
-      const cat = String(product?.category || '').toLowerCase().trim();
-      const name = String(product?.name || '').toLowerCase().trim();
-
-      const isDiesel = ['petroleo', 'diesel'].some((t) => cat.includes(t) || name.includes(t));
-      const isGasoline = ['bencina', 'gasolina', 'combustible'].some((t) => cat.includes(t) || name.includes(t));
-      if (!isDiesel && !isGasoline) return;
-
-      const sectorId = String(app.sector_id);
-      const curr = fuelFromApplicationsBySector.get(sectorId) || { diesel: 0, gasoline: 0 };
-      const cost = Number(row.total_cost || 0);
-      if (isDiesel && !name.includes('bencina') && !name.includes('gasolina')) curr.diesel += cost;
-      else curr.gasoline += cost;
-      fuelFromApplicationsBySector.set(sectorId, curr);
-    });
-
     // Filter apps by season
     const filteredApps = rawApplications.filter(app => {
       if (!app.application_date) return false;
@@ -542,11 +471,6 @@ export const Reports: React.FC = () => {
 
     // Filter labor by season
     const filteredLabor = rawLabor.filter(lab => {
-      if (!lab.assigned_date) return false;
-      return isDateInSeason(lab.assigned_date, selectedSeason);
-    });
-
-    const filteredLaborCompany = rawLaborCompany.filter(lab => {
       if (!lab.assigned_date) return false;
       return isDateInSeason(lab.assigned_date, selectedSeason);
     });
@@ -563,11 +487,6 @@ export const Reports: React.FC = () => {
       return isDateInSeason(item.assigned_date, selectedSeason);
     });
 
-    const filteredFuelCompany = rawFuelCompany.filter(item => {
-      if (!item.assigned_date) return false;
-      return isDateInSeason(item.assigned_date, selectedSeason);
-    });
-
     // Filter Fuel Consumption by season
     const filteredFuelConsumption = rawFuelConsumption.filter(item => {
       if (!item.date) return false; // column is 'date'
@@ -580,18 +499,8 @@ export const Reports: React.FC = () => {
       return isDateInSeason(item.assigned_date, selectedSeason);
     });
 
-    const filteredMachineryCompany = rawMachineryCompany.filter(item => {
-      if (!item.assigned_date) return false;
-      return isDateInSeason(item.assigned_date, selectedSeason);
-    });
-
     // Filter Irrigation by season
     const filteredIrrigation = rawIrrigation.filter(item => {
-      if (!item.assigned_date) return false;
-      return isDateInSeason(item.assigned_date, selectedSeason);
-    });
-
-    const filteredIrrigationCompany = rawIrrigationCompany.filter(item => {
       if (!item.assigned_date) return false;
       return isDateInSeason(item.assigned_date, selectedSeason);
     });
@@ -602,47 +511,16 @@ export const Reports: React.FC = () => {
       return isDateInSeason(item.date, selectedSeason);
     });
 
-    const sectorCountForDistribution = rawFields.reduce((sum, f) => sum + ((f.sectors || []).length), 0);
-    const companyFuelShare = sectorCountForDistribution > 0 ? filteredFuelCompany.reduce((sum, i) => sum + Number(i.assigned_amount || 0), 0) / sectorCountForDistribution : 0;
-    const companyMachineryShare =
-      sectorCountForDistribution > 0 ? filteredMachineryCompany.reduce((sum, i) => sum + Number(i.assigned_amount || 0), 0) / sectorCountForDistribution : 0;
-    const companyIrrigationShare =
-      sectorCountForDistribution > 0 ? filteredIrrigationCompany.reduce((sum, i) => sum + Number(i.assigned_amount || 0), 0) / sectorCountForDistribution : 0;
-
-    let companyLaborTotal = 0;
-    let companyLaborCosecha = 0;
-    let companyLaborPoda = 0;
-    let companyLaborRaleo = 0;
-    let companyLaborOtros = 0;
-
-    filteredLaborCompany.forEach((lab) => {
-      const amount = Number(lab.assigned_amount || 0);
-      companyLaborTotal += amount;
-      const type = String(lab.labor_type || '').toLowerCase();
-      if (type.includes('cosecha')) companyLaborCosecha += amount;
-      else if (type.includes('poda')) companyLaborPoda += amount;
-      else if (type.includes('raleo')) companyLaborRaleo += amount;
-      else companyLaborOtros += amount;
-    });
-
-    const companyLaborShare = sectorCountForDistribution > 0 ? companyLaborTotal / sectorCountForDistribution : 0;
-    const companyLaborCosechaShare = sectorCountForDistribution > 0 ? companyLaborCosecha / sectorCountForDistribution : 0;
-    const companyLaborPodaShare = sectorCountForDistribution > 0 ? companyLaborPoda / sectorCountForDistribution : 0;
-    const companyLaborRaleoShare = sectorCountForDistribution > 0 ? companyLaborRaleo / sectorCountForDistribution : 0;
-    const companyLaborOtrosShare = sectorCountForDistribution > 0 ? companyLaborOtros / sectorCountForDistribution : 0;
-
     const data: ReportData[] = [];
 
     rawFields.forEach(field => {
       field.sectors?.forEach((sector: any) => {
         // Costs
         const sectorApps = filteredApps.filter(app => app.sector_id === sector.id);
-        const sectorAppsTotal = sectorApps.reduce((sum, app) => sum + Number(app.total_cost), 0);
-        const fuelFromApps = fuelFromApplicationsBySector.get(String(sector.id)) || { diesel: 0, gasoline: 0 };
-        const appCost = Math.max(sectorAppsTotal - (fuelFromApps.diesel + fuelFromApps.gasoline), 0);
+        const appCost = sectorApps.reduce((sum, app) => sum + Number(app.total_cost), 0);
         
         const sectorLabor = filteredLabor.filter(lab => lab.sector_id === sector.id);
-        const laborCost = sectorLabor.reduce((sum, lab) => sum + Number(lab.assigned_amount), 0) + companyLaborShare;
+        const laborCost = sectorLabor.reduce((sum, lab) => sum + Number(lab.assigned_amount), 0);
         
         let labor_cosecha_cost = 0;
         let labor_poda_cost = 0;
@@ -662,10 +540,6 @@ export const Reports: React.FC = () => {
                 labor_otros_cost += amount;
             }
         });
-        labor_cosecha_cost += companyLaborCosechaShare;
-        labor_poda_cost += companyLaborPodaShare;
-        labor_raleo_cost += companyLaborRaleoShare;
-        labor_otros_cost += companyLaborOtrosShare;
 
         const sectorWorkers = filteredWorkerCosts.filter(w => w.sector_id === sector.id);
         const workerCost = sectorWorkers.reduce((sum, w) => sum + Number(w.amount), 0);
@@ -679,10 +553,6 @@ export const Reports: React.FC = () => {
         
         let fuelCostDiesel = fuelCostDirect;
         let fuelCostGasoline = 0;
-
-        fuelCostDiesel += fuelFromApps.diesel;
-        fuelCostGasoline += fuelFromApps.gasoline;
-        fuelCostDiesel += companyFuelShare;
 
         sectorFuelCons.forEach(item => {
             const activity = (item.activity || '').toLowerCase();
@@ -709,10 +579,10 @@ export const Reports: React.FC = () => {
         const fuelCost = fuelCostDiesel + fuelCostGasoline;
 
         const sectorMachinery = filteredMachinery.filter(item => item.sector_id === sector.id);
-        const machineryCost = sectorMachinery.reduce((sum, item) => sum + Number(item.assigned_amount), 0) + companyMachineryShare;
+        const machineryCost = sectorMachinery.reduce((sum, item) => sum + Number(item.assigned_amount), 0);
 
         const sectorIrrigation = filteredIrrigation.filter(item => item.sector_id === sector.id);
-        const irrigationCost = sectorIrrigation.reduce((sum, item) => sum + Number(item.assigned_amount), 0) + companyIrrigationShare;
+        const irrigationCost = sectorIrrigation.reduce((sum, item) => sum + Number(item.assigned_amount), 0);
 
         const sectorGeneral = filteredGeneral.filter(item => item.sector_id === sector.id);
         const generalCost = sectorGeneral.reduce((sum, item) => sum + Number(item.amount), 0);
@@ -739,7 +609,7 @@ export const Reports: React.FC = () => {
           field_name: field.name,
           sector_name: sector.name,
           sector_id: sector.id,
-          fruit_type: String(field.fruit_type || ''),
+          fruit_type: String((field as any).fruit_type || ''),
           hectares: hectares,
           total_cost: totalCostGeneral, // Default for General Table
           cost_per_ha: hectares > 0 ? totalCostGeneral / hectares : 0, // Default for General Table
@@ -1649,31 +1519,6 @@ export const Reports: React.FC = () => {
     setShowPreview(true);
   };
 
-  const exportPendingInvoicesExcel = async (rows: PendingInvoice[], filenamePrefix: string) => {
-    if (!selectedCompany) return;
-    if (!rows || rows.length === 0) {
-      toast('No hay facturas para exportar');
-      return;
-    }
-
-    const xlsxRows = rows.map((inv) => ({
-      Vencimiento: inv.due_date ? new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL') : '',
-      'Días vencida': Number(inv.days_overdue || 0),
-      Proveedor: String(inv.supplier || ''),
-      Categorías: (inv.categories || []).join(', '),
-      'N° Factura': String(inv.invoice_number || ''),
-      Monto: Number(inv.total_amount || 0),
-      Notas: String(inv.notes || '')
-    }));
-
-    const todayTag = new Date().toISOString().slice(0, 10);
-    await exportJsonToXlsx({
-      filename: `${filenamePrefix}_${selectedCompany.name.replace(/\s+/g, '_')}_${todayTag}.xlsx`,
-      sheetName: filenamePrefix,
-      rows: xlsxRows
-    });
-  };
-
   if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
   
   const getReportTitle = () => {
@@ -2123,8 +1968,16 @@ export const Reports: React.FC = () => {
                             <h3 className="text-lg leading-6 font-medium text-gray-900">Resumen por Sector</h3>
                             <p className="mt-1 text-sm text-gray-500">Kilos enviados y valores totales</p>
                         </div>
-                        <div className="mt-2 sm:mt-0 text-sm font-medium text-gray-700">
-                            Los gastos de Empresa General se distribuyen en partes iguales a todos los sectores.
+                        <div className="mt-2 sm:mt-0 flex items-center">
+                            <label className="flex items-center space-x-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={distributeGeneralCosts}
+                                    onChange={(e) => setDistributeGeneralCosts(e.target.checked)}
+                                    className="form-checkbox h-4 w-4 text-green-600 transition duration-150 ease-in-out"
+                                />
+                                <span className="text-sm font-medium text-gray-700">Distribuir Gastos No Asignados (Proporcional a Has)</span>
+                            </label>
                         </div>
                     </div>
                     <div className="overflow-x-auto">
@@ -2137,6 +1990,9 @@ export const Reports: React.FC = () => {
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ingresos (USD)</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ingresos (CLP)</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Directos (CLP)</th>
+                                    {distributeGeneralCosts && (
+                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Gral. (CLP)</th>
+                                    )}
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Total (USD)</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Total (CLP)</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Balance (USD)</th>
@@ -2146,57 +2002,39 @@ export const Reports: React.FC = () => {
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {(() => {
-                                    const sectorKeys = reportData.map((r) => r.sector_id);
+                                    // 0. Calculate General Distribution Factor
+                                    const totalInvoices = monthlyExpenses.reduce((sum, m) => sum + m.total, 0);
+                                    const totalAllocated = reportData.reduce((sum, r) => sum + r.total_cost, 0);
+                                    const totalHectares = reportData.reduce((sum, r) => sum + r.hectares, 0);
+                                    
+                                    // Unassigned costs = Total Invoices - Allocated Costs (Usage)
+                                    // If negative (usage > purchase), we assume 0 unassigned.
+                                    const unassignedCost = Math.max(0, totalInvoices - totalAllocated);
+                                    const distributionFactor = (distributeGeneralCosts && totalHectares > 0) 
+                                        ? unassignedCost / totalHectares 
+                                        : 0;
 
-                                    const incomeMap = sectorKeys.reduce((acc, key) => {
-                                        acc[key] = { name: '', kg: 0, usd: 0, clp: 0 };
+                                    // 1. Income Aggregation
+                                    const incomeMap = incomeEntries.reduce((acc, entry) => {
+                                        const key = entry.sector_id || 'general';
+                                        const name = entry.sectors ? `${entry.sectors.name} (${entry.fields?.name})` : (entry.fields?.name || 'Empresa General');
+                                        if (!acc[key]) acc[key] = { name, kg: 0, usd: 0, clp: 0 };
+                                        acc[key].kg += Number(entry.quantity_kg || 0);
+                                        acc[key].usd += Number(entry.amount_usd || 0);
+                                        acc[key].clp += Number(entry.amount || 0);
                                         return acc;
-                                    }, {} as Record<string, { name: string; kg: number; usd: number; clp: number }>);
-
-                                    const unassignedIncome = incomeEntries.reduce(
-                                        (acc, entry) => {
-                                            const key = entry.sector_id;
-                                            const kg = Number(entry.quantity_kg || 0);
-                                            const usd = Number(entry.amount_usd || 0);
-                                            const clp = Number(entry.amount || 0);
-
-                                            if (key && incomeMap[key]) {
-                                                incomeMap[key].kg += kg;
-                                                incomeMap[key].usd += usd;
-                                                incomeMap[key].clp += clp;
-                                                if (!incomeMap[key].name) {
-                                                    incomeMap[key].name = entry.sectors ? `${entry.sectors.name} (${entry.fields?.name})` : '';
-                                                }
-                                                return acc;
-                                            }
-
-                                            acc.kg += kg;
-                                            acc.usd += usd;
-                                            acc.clp += clp;
-                                            return acc;
-                                        },
-                                        { kg: 0, usd: 0, clp: 0 }
-                                    );
-
-                                    const sectorCount = sectorKeys.length;
-                                    if (sectorCount > 0 && (unassignedIncome.kg || unassignedIncome.usd || unassignedIncome.clp)) {
-                                        const kgShare = unassignedIncome.kg / sectorCount;
-                                        const usdShare = unassignedIncome.usd / sectorCount;
-                                        const clpShare = unassignedIncome.clp / sectorCount;
-                                        sectorKeys.forEach((key) => {
-                                            incomeMap[key].kg += kgShare;
-                                            incomeMap[key].usd += usdShare;
-                                            incomeMap[key].clp += clpShare;
-                                        });
-                                    }
+                                    }, {} as Record<string, { name: string, kg: number, usd: number, clp: number }>);
 
                                     // 2. Expense Aggregation (Direct Costs + Distributed)
                                     const expenseMap = reportData.reduce((acc, r) => {
+                                        // Direct Cost
                                         const direct = r.total_cost;
-                                        const distributed = 0;
+                                        // Distributed Cost
+                                        const distributed = r.hectares * distributionFactor;
+                                        
                                         acc[r.sector_id] = {
-                                            direct,
-                                            distributed,
+                                            direct: direct,
+                                            distributed: distributed,
                                             total: direct + distributed,
                                             hectares: r.hectares
                                         };
@@ -2204,7 +2042,11 @@ export const Reports: React.FC = () => {
                                     }, {} as Record<string, { direct: number, distributed: number, total: number, hectares: number }>);
 
                                     // 3. Merge
-                                    const allKeys = sectorKeys;
+                                    const allKeysSet = new Set([...Object.keys(incomeMap), ...Object.keys(expenseMap)]);
+                                    if (unassignedCost > 0 && !distributeGeneralCosts) {
+                                        allKeysSet.add('general');
+                                    }
+                                    const allKeys = Array.from(allKeysSet);
                                     
                                     const rows = allKeys.map(key => {
                                         const inc = incomeMap[key] || { name: '', kg: 0, usd: 0, clp: 0 };
@@ -2212,10 +2054,32 @@ export const Reports: React.FC = () => {
                                         
                                         // Try to find name if missing in income
                                         let displayName = inc.name;
-                                        if (!displayName) {
+                                        if (!displayName && key !== 'general') {
                                             const r = reportData.find(d => d.sector_id === key);
                                             if (r) displayName = `${r.sector_name} (${r.field_name})`;
                                             else displayName = 'Sector Desconocido';
+                                        } else if (!displayName) {
+                                            displayName = 'Empresa General';
+                                        }
+
+                                        // If 'general' key exists and distribute is ON, its expenses (unassigned) are distributed to sectors, so they are 0 here.
+                                        // But wait, 'unassignedCost' is calculated globally.
+                                        // The 'general' row in this table usually comes from 'incomeEntries' with no sector.
+                                        // It should not show expenses if they are distributed.
+                                        
+                                        let finalExpense = expData.total;
+                                        
+                                        // If key is 'general' and we are NOT distributing, we should probably show the unassigned cost here?
+                                        // But 'expenseMap' only has keys from 'reportData' (sectors).
+                                        // So 'general' key in 'expenseMap' is undefined unless a sector is named 'general'.
+                                        
+                                        // If we are NOT distributing, the unassigned cost is simply not shown in sector rows.
+                                        // Should we show a "General / No Asignado" row?
+                                        // Yes, if there is income there, or if we want to balance the total.
+                                        
+                                        if (key === 'general' && !distributeGeneralCosts && unassignedCost > 0) {
+                                            // Show unassigned cost in General row if not distributed
+                                            finalExpense += unassignedCost;
                                         }
 
                                         return {
@@ -2226,8 +2090,8 @@ export const Reports: React.FC = () => {
                                             income: inc.clp,
                                             expenseDirect: expData.direct,
                                             expenseDistributed: expData.distributed,
-                                            expenseTotal: expData.total,
-                                            balance: inc.clp - expData.total
+                                            expenseTotal: finalExpense,
+                                            balance: inc.clp - finalExpense
                                         };
                                     }).sort((a, b) => b.income - a.income);
 
@@ -2235,6 +2099,7 @@ export const Reports: React.FC = () => {
                                     const totalUsd = rows.reduce((sum, r) => sum + r.usd, 0);
                                     const totalIncome = rows.reduce((sum, r) => sum + r.income, 0);
                                     const totalExpenseDirect = rows.reduce((sum, r) => sum + r.expenseDirect, 0);
+                                    const totalExpenseDistributed = rows.reduce((sum, r) => sum + r.expenseDistributed, 0);
                                     const totalExpense = rows.reduce((sum, r) => sum + r.expenseTotal, 0);
 
                                     return (
@@ -2247,6 +2112,9 @@ export const Reports: React.FC = () => {
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-700 font-medium">${row.usd.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(row.income)}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.expenseDirect)}</td>
+                                                    {distributeGeneralCosts && (
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-orange-600">{formatCLP(row.expenseDistributed)}</td>
+                                                    )}
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-700 font-medium">${(row.expenseTotal / (usdExchangeRate || 1)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600 font-bold">{formatCLP(row.expenseTotal)}</td>
                                                     <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${row.balance >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
@@ -2267,6 +2135,9 @@ export const Reports: React.FC = () => {
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-700">${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalIncome)}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(totalExpenseDirect)}</td>
+                                                {distributeGeneralCosts && (
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-orange-600">{formatCLP(totalExpenseDistributed)}</td>
+                                                )}
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-700 font-medium">${(totalExpense / (usdExchangeRate || 1)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600 font-bold">{formatCLP(totalExpense)}</td>
                                                 <td className={`px-6 py-4 whitespace-nowrap text-sm text-right ${totalIncome - totalExpense >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
@@ -2416,48 +2287,7 @@ export const Reports: React.FC = () => {
                     <h3 className="text-lg leading-6 font-medium text-gray-900">Costos Generales y Producción ({selectedSeason})</h3>
                     <p className="mt-1 text-sm text-gray-500">Resumen por Sector incluyendo Labores y Aplicaciones</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const rows = reportData.map((row) => {
-                          const costUsd = row.total_cost / (usdExchangeRate || 1);
-                          const costPerHaUsd = row.cost_per_ha / (usdExchangeRate || 1);
-                          const costPerKgClp = (row.kg_produced || 0) > 0 ? row.total_cost / row.kg_produced! : 0;
-                          const costPerKgUsd = (row.kg_produced || 0) > 0 ? costUsd / row.kg_produced! : 0;
-                          return {
-                            Campo: row.field_name,
-                            Sector: row.sector_name,
-                            Has: row.hectares,
-                            'Prod. (Kg)': Number(row.kg_produced || 0),
-                            'Mano Obra': row.labor_cost,
-                            Personal: row.worker_cost,
-                            Aplicaciones: row.app_cost_only,
-                            Maquinaria: row.machinery_cost,
-                            Riego: row.irrigation_cost,
-                            'Petróleo': row.fuel_cost_diesel,
-                            'Bencina': row.fuel_cost_gasoline,
-                            Otros: row.general_cost,
-                            'Total (CLP)': row.total_cost,
-                            'Total (USD)': Number(costUsd.toFixed(2)),
-                            'Costo/Ha (CLP)': row.cost_per_ha,
-                            'Costo/Ha (USD)': Number(costPerHaUsd.toFixed(2)),
-                            'Costo/Kg (CLP)': Number(costPerKgClp.toFixed(2)),
-                            'Costo/Kg (USD)': Number(costPerKgUsd.toFixed(2))
-                          };
-                        });
-                        await exportJsonToXlsx({
-                          filename: `Costos_Generales_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.xlsx`,
-                          sheetName: `Costos_${selectedSeason}`,
-                          rows
-                        });
-                      }}
-                      className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700"
-                    >
-                      <FileText className="mr-1.5 h-4 w-4" /> Excel
-                    </button>
-                    <button
-                      type="button"
+                  <button
                       onClick={() => {
                           const rows = [['Campo', 'Sector', 'Has', 'Prod. (Kg)', 'Mano Obra', 'Personal', 'Aplicaciones', 'Maquinaria', 'Riego', 'Petróleo', 'Combustible (Bencina)', 'Otros', 'Total (CLP)', 'Total (USD)', 'Costo/Ha (CLP)', 'Costo/Ha (USD)', 'Costo/Kg (CLP)', 'Costo/Kg (USD)']];
                           reportData.forEach(row => {
@@ -2499,7 +2329,6 @@ export const Reports: React.FC = () => {
                   >
                       <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
                   </button>
-                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
@@ -2580,70 +2409,11 @@ export const Reports: React.FC = () => {
                 <h3 className="text-lg leading-6 font-medium text-gray-900">Costos por Hectárea ({selectedSeason})</h3>
                 <p className="mt-1 text-sm text-gray-500">Desglose por rubro (CLP/ha) y total por sector</p>
               </div>
-              <div className="flex items-center gap-2">
               <button
-                type="button"
-                onClick={async () => {
-                  const rows = reportData.map((row) => {
-                    const ha = row.hectares || 1;
-                    const costPerHaAdjusted = row.cost_per_ha;
-                    const producedKgHa = (Number(row.kg_produced || 0)) / ha;
-
-                    const sectorIncomes = incomeEntries.filter((i) =>
-                      i.sector_id === row.sector_id && i.category === 'Venta Fruta' && i.season === selectedSeason
-                    );
-                    const qtyKg = sectorIncomes.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
-                    const totalClp = sectorIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
-                    const saleClp = qtyKg > 0 ? totalClp / qtyKg : 0;
-                    const kgHaEq = saleClp > 0 ? costPerHaAdjusted / saleClp : 0;
-                    const missingKgHa = saleClp > 0 ? Math.max(0, kgHaEq - producedKgHa) : 0;
-                    return {
-                      Campo: row.field_name,
-                      Sector: row.sector_name,
-                      Has: row.hectares,
-                      'Aplic/Ha': Number((row.app_cost_only / ha).toFixed(2)),
-                      'Mano Obra/Ha': Number((row.labor_cost / ha).toFixed(2)),
-                      'Personal/Ha': Number((row.worker_cost / ha).toFixed(2)),
-                      'Maq/Ha': Number((row.machinery_cost / ha).toFixed(2)),
-                      'Riego/Ha': Number((row.irrigation_cost / ha).toFixed(2)),
-                      'Diésel/Ha': Number((row.fuel_cost_diesel / ha).toFixed(2)),
-                      'Bencina/Ha': Number((row.fuel_cost_gasoline / ha).toFixed(2)),
-                      'Otros/Ha': Number((row.general_cost / ha).toFixed(2)),
-                      'Total/Ha': Number(costPerHaAdjusted.toFixed(2)),
-                      'Prod/Ha (Kg)': Number(producedKgHa.toFixed(2)),
-                      'Venta (CLP/Kg)': Number(saleClp.toFixed(2)),
-                      'Kg/Ha Eq': Number(kgHaEq.toFixed(2)),
-                      'Faltan Kg/Ha': Number(missingKgHa.toFixed(2)),
-                      'Total (CLP)': Number((row.total_cost).toFixed(2))
-                    };
-                  });
-                  await exportJsonToXlsx({
-                    filename: `Costos_por_Ha_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.xlsx`,
-                    sheetName: `Ha_${selectedSeason}`,
-                    rows
-                  });
-                }}
-                className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700"
-              >
-                <FileText className="mr-1.5 h-4 w-4" /> Excel
-              </button>
-              <button
-                type="button"
                 onClick={() => {
-                  const rows = [['Campo', 'Sector', 'Has', 'Aplic/Ha', 'Mano Obra/Ha', 'Personal/Ha', 'Maq/Ha', 'Riego/Ha', 'Diésel/Ha', 'Bencina/Ha', 'Otros/Ha', 'Total/Ha', 'Prod/Ha (Kg)', 'Venta (CLP/Kg)', 'Kg/Ha Eq', 'Faltan Kg/Ha', 'Total (CLP)']];
+                  const rows = [['Campo', 'Sector', 'Has', 'Aplic/Ha', 'Mano Obra/Ha', 'Personal/Ha', 'Maq/Ha', 'Riego/Ha', 'Diésel/Ha', 'Bencina/Ha', 'Otros/Ha', 'Total/Ha', 'Total (CLP)']];
                   reportData.forEach((row) => {
                     const ha = row.hectares || 1;
-                    const costPerHaAdjusted = row.cost_per_ha;
-                    const producedKgHa = (Number(row.kg_produced || 0)) / ha;
-
-                    const sectorIncomes = incomeEntries.filter((i) =>
-                      i.sector_id === row.sector_id && i.category === 'Venta Fruta' && i.season === selectedSeason
-                    );
-                    const qtyKg = sectorIncomes.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
-                    const totalClp = sectorIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
-                    const saleClp = qtyKg > 0 ? totalClp / qtyKg : 0;
-                    const kgHaEq = saleClp > 0 ? costPerHaAdjusted / saleClp : 0;
-                    const missingKgHa = saleClp > 0 ? Math.max(0, kgHaEq - producedKgHa) : 0;
                     rows.push([
                       row.field_name,
                       row.sector_name,
@@ -2656,12 +2426,8 @@ export const Reports: React.FC = () => {
                       (row.fuel_cost_diesel / ha).toFixed(2),
                       (row.fuel_cost_gasoline / ha).toFixed(2),
                       (row.general_cost / ha).toFixed(2),
-                      costPerHaAdjusted.toFixed(2),
-                      producedKgHa.toFixed(2),
-                      saleClp.toFixed(2),
-                      kgHaEq.toFixed(2),
-                      missingKgHa.toFixed(2),
-                      (row.total_cost).toFixed(2),
+                      row.cost_per_ha.toFixed(2),
+                      row.total_cost.toFixed(2),
                     ]);
                   });
                   const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
@@ -2677,7 +2443,6 @@ export const Reports: React.FC = () => {
               >
                 <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
               </button>
-              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
@@ -2694,26 +2459,12 @@ export const Reports: React.FC = () => {
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Bencina/Ha</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Otros/Ha</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-blue-50">Total/Ha</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prod/Ha (Kg)</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Kg/Ha Eq</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Faltan Kg/Ha</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total (CLP)</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {reportData.map((row, index) => {
                     const ha = row.hectares || 1;
-                    const costPerHaAdjusted = row.cost_per_ha;
-                    const producedKgHa = (Number(row.kg_produced || 0)) / ha;
-
-                    const sectorIncomes = incomeEntries.filter((i) =>
-                      i.sector_id === row.sector_id && i.category === 'Venta Fruta' && i.season === selectedSeason
-                    );
-                    const qtyKg = sectorIncomes.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
-                    const totalClp = sectorIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
-                    const saleClp = qtyKg > 0 ? totalClp / qtyKg : 0;
-                    const kgHaEq = saleClp > 0 ? costPerHaAdjusted / saleClp : 0;
-                    const missingKgHa = saleClp > 0 ? Math.max(0, kgHaEq - producedKgHa) : 0;
                     return (
                       <tr key={index} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -2729,10 +2480,7 @@ export const Reports: React.FC = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.fuel_cost_diesel / ha)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.fuel_cost_gasoline / ha)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.general_cost / ha)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-700 bg-blue-50">{formatCLP(costPerHaAdjusted)}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{producedKgHa.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-900">{saleClp > 0 ? kgHaEq.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-red-700">{saleClp > 0 ? missingKgHa.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-700 bg-blue-50">{formatCLP(row.cost_per_ha)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(row.total_cost)}</td>
                       </tr>
                     );
@@ -2749,17 +2497,7 @@ export const Reports: React.FC = () => {
                       const totalGasoline = reportData.reduce((sum, r) => sum + r.fuel_cost_gasoline, 0);
                       const totalGeneral = reportData.reduce((sum, r) => sum + r.general_cost, 0);
                       const totalCost = reportData.reduce((sum, r) => sum + r.total_cost, 0);
-                      const totalKgProduced = reportData.reduce((sum, r) => sum + Number(r.kg_produced || 0), 0);
                       const ha = totalHas || 1;
-                      const costPerHaAdjusted = totalCost / ha;
-                      const producedKgHa = totalKgProduced / ha;
-
-                      const seasonIncomes = incomeEntries.filter((i) => i.category === 'Venta Fruta' && i.season === selectedSeason);
-                      const seasonQty = seasonIncomes.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
-                      const seasonClp = seasonIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
-                      const saleClp = seasonQty > 0 ? seasonClp / seasonQty : 0;
-                      const kgHaEq = saleClp > 0 ? costPerHaAdjusted / saleClp : 0;
-                      const missingKgHa = saleClp > 0 ? Math.max(0, kgHaEq - producedKgHa) : 0;
 
                       return (
                         <tr className="bg-gray-100 font-bold border-t-2 border-gray-300">
@@ -2773,10 +2511,7 @@ export const Reports: React.FC = () => {
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalDiesel / ha)}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalGasoline / ha)}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalGeneral / ha)}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-blue-800 bg-blue-100">{formatCLP(costPerHaAdjusted)}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{producedKgHa.toLocaleString('es-CL', { maximumFractionDigits: 0 })}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{saleClp > 0 ? kgHaEq.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-800">{saleClp > 0 ? missingKgHa.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-blue-800 bg-blue-100">{formatCLP(totalCost / ha)}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalCost)}</td>
                         </tr>
                       );
@@ -2786,55 +2521,48 @@ export const Reports: React.FC = () => {
               </table>
             </div>
           </div>
+
           <div className="bg-white shadow overflow-hidden sm:rounded-lg">
             <div className="flex justify-between items-center px-4 py-5 sm:px-6 border-b border-gray-200">
               <div>
                 <h3 className="text-lg leading-6 font-medium text-gray-900">Kilos/Ha para Solventar Costos</h3>
-                <p className="mt-1 text-sm text-gray-500">Compara Prod/Ha (Liquidaciones) vs Kg/Ha equilibrio (Costo/Ha ÷ Venta CLP/Kg) y muestra la diferencia</p>
+                <p className="mt-1 text-sm text-gray-500">Compara Prod/Ha (Liquidaciones) vs Kg/Ha requeridos (Costo/Ha ÷ Venta CLP/Kg)</p>
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  if (!selectedCompany) return;
+                onClick={async () => {
+                  const totalInvoices = monthlyExpenses.reduce((sum, m) => sum + Number((m as any).total || 0), 0);
+                  const totalAllocated = reportData.reduce((sum, r) => sum + Number((r as any).total_cost || 0), 0);
+                  const unassigned = Math.max(0, totalInvoices - totalAllocated);
+                  const perSector = reportData.length > 0 ? unassigned / reportData.length : 0;
                   const rows = reportData.map((row) => {
-                    const fruit = String(row.fruit_type || '').trim();
                     const ha = Number(row.hectares || 1);
-                    const costHaClp = Number(row.cost_per_ha || 0);
                     const sectorIncomes = incomeEntries.filter((i) =>
                       i.sector_id === row.sector_id && i.category === 'Venta Fruta' && i.season === selectedSeason
                     );
                     const qtyKg = sectorIncomes.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
                     const totalClp = sectorIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
-                    const totalUsd = sectorIncomes.reduce((sum, i) => {
-                      const usd = Number(i.amount_usd || 0);
-                      if (usd > 0) return sum + usd;
-                      return sum + Number(i.quantity_kg || 0) * Number(i.price_per_kg || 0);
-                    }, 0);
-
                     const saleClp = qtyKg > 0 ? totalClp / qtyKg : 0;
-                    const saleUsd = qtyKg > 0 ? (totalUsd > 0 ? totalUsd / qtyKg : saleClp / (usdExchangeRate || 1)) : 0;
-                    const kgHaEq = saleClp > 0 ? costHaClp / saleClp : 0;
                     const producedKgHa = qtyKg > 0 ? qtyKg / ha : 0;
-                    const diffKgHa = saleClp > 0 ? producedKgHa - kgHaEq : 0;
-                    const costHaUsd = costHaClp / (usdExchangeRate || 1);
-                    const kgHaUsd = saleUsd > 0 ? costHaUsd / saleUsd : 0;
+                    const costHaClp = Number(row.cost_per_ha || 0) + (perSector / ha);
+                    const requiredKgHa = saleClp > 0 ? costHaClp / saleClp : 0;
+                    const diffKgHa = saleClp > 0 ? producedKgHa - requiredKgHa : 0;
+
                     return {
                       Campo: row.field_name,
                       Sector: row.sector_name,
-                      Fruta: fruit,
-                      'Costo/Ha (CLP)': costHaClp,
+                      Fruta: String(row.fruit_type || '').trim() || '-',
+                      Has: Number(row.hectares || 0),
+                      'Costo/Ha (CLP)': Number(costHaClp || 0),
                       'Venta (CLP/Kg)': Number(saleClp.toFixed(2)),
                       'Prod/Ha (Kg)': Number(producedKgHa.toFixed(2)),
-                      'Kg/Ha equilibrio (CLP)': Number(kgHaEq.toFixed(2)),
-                      'Dif (Kg/Ha)': Number(diffKgHa.toFixed(2)),
-                      'Costo/Ha (USD)': Number(costHaUsd.toFixed(2)),
-                      'Venta (USD/Kg)': Number(saleUsd.toFixed(4)),
-                      'Kg/Ha equilibrio (USD)': Number(kgHaUsd.toFixed(2))
+                      'Kg/Ha Requeridos': Number(requiredKgHa.toFixed(2)),
+                      'Dif (Kg/Ha)': Number(diffKgHa.toFixed(2))
                     };
                   });
-                  void exportJsonToXlsx({
-                    filename: `KilosHa_Equilibrio_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.xlsx`,
-                    sheetName: `Equilibrio_${selectedSeason}`,
+                    await exportJsonToXlsx({
+                    filename: `KilosHa_SolventarCostos_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.xlsx`,
+                    sheetName: `Eq_${selectedSeason}`,
                     rows
                   });
                 }}
@@ -2852,53 +2580,43 @@ export const Reports: React.FC = () => {
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo/Ha (CLP)</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Venta (CLP/Kg)</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prod/Ha (Kg)</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-blue-50">Kg/Ha Eq</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-blue-50">Kg/Ha Requeridos</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Dif (Kg/Ha)</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costo/Ha (USD)</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Venta (USD/Kg)</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider bg-blue-50">Kg/Ha (USD)</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {reportData.map((row, index) => {
-                    const fruit = String(row.fruit_type || '').trim();
+                    const totalInvoices = monthlyExpenses.reduce((sum, m) => sum + Number((m as any).total || 0), 0);
+                    const totalAllocated = reportData.reduce((sum, r) => sum + Number((r as any).total_cost || 0), 0);
+                    const unassigned = Math.max(0, totalInvoices - totalAllocated);
+                    const perSector = reportData.length > 0 ? unassigned / reportData.length : 0;
                     const ha = Number(row.hectares || 1);
-                    const costHaClp = Number(row.cost_per_ha || 0);
                     const sectorIncomes = incomeEntries.filter((i) =>
                       i.sector_id === row.sector_id && i.category === 'Venta Fruta' && i.season === selectedSeason
                     );
                     const qtyKg = sectorIncomes.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
                     const totalClp = sectorIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
-                    const totalUsd = sectorIncomes.reduce((sum, i) => {
-                      const usd = Number(i.amount_usd || 0);
-                      if (usd > 0) return sum + usd;
-                      return sum + Number(i.quantity_kg || 0) * Number(i.price_per_kg || 0);
-                    }, 0);
-
                     const saleClp = qtyKg > 0 ? totalClp / qtyKg : 0;
-                    const saleUsd = qtyKg > 0 ? (totalUsd > 0 ? totalUsd / qtyKg : saleClp / (usdExchangeRate || 1)) : 0;
-                    const kgHaEq = saleClp > 0 ? costHaClp / saleClp : 0;
                     const producedKgHa = qtyKg > 0 ? qtyKg / ha : 0;
-                    const diffKgHa = saleClp > 0 ? producedKgHa - kgHaEq : 0;
-                    const costHaUsd = costHaClp / (usdExchangeRate || 1);
-                    const kgHaUsd = saleUsd > 0 ? costHaUsd / saleUsd : 0;
+                    const costHaClp = Number(row.cost_per_ha || 0) + (perSector / ha);
+                    const requiredKgHa = saleClp > 0 ? costHaClp / saleClp : 0;
+                    const diffKgHa = saleClp > 0 ? producedKgHa - requiredKgHa : 0;
                     return (
                       <tr key={index} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm font-medium text-gray-900">{row.sector_name}</div>
                           <div className="text-xs text-gray-500">{row.field_name}</div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{fruit || '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{String(row.fruit_type || '').trim() || '-'}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{formatCLP(costHaClp)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{saleClp > 0 ? formatCLP(saleClp) : '-'}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{qtyKg > 0 ? producedKgHa.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-700 bg-blue-50">{saleClp > 0 ? kgHaEq.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-700 bg-blue-50">
+                          {saleClp > 0 ? requiredKgHa.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}
+                        </td>
                         <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${diffKgHa >= 0 ? 'text-green-700' : 'text-red-700'}`}>
                           {saleClp > 0 ? diffKgHa.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">${costHaUsd.toLocaleString('en-US', { maximumFractionDigits: 0 })}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{saleUsd > 0 ? `$${saleUsd.toFixed(2)}` : '-'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-700 bg-blue-50">{saleUsd > 0 ? kgHaUsd.toLocaleString('es-CL', { maximumFractionDigits: 0 }) : '-'}</td>
                       </tr>
                     );
                   })}
@@ -2917,43 +2635,7 @@ export const Reports: React.FC = () => {
                 <h3 className="text-lg leading-6 font-medium text-gray-900">Rentabilidad Neta ({selectedSeason})</h3>
                 <p className="mt-1 text-sm text-gray-500">Ingresos estimados vs costos por sector</p>
               </div>
-              <div className="flex items-center gap-2">
               <button
-                type="button"
-                onClick={async () => {
-                  const { rows, totals } = getMarginRows();
-                  const out = rows.map((r) => ({
-                    Campo: r.field_name,
-                    Sector: r.sector_name,
-                    Has: r.hectares,
-                    'Ingresos (CLP)': Number(r.income.toFixed(2)),
-                    'Costos (CLP)': Number(r.cost.toFixed(2)),
-                    'Utilidad (CLP)': Number(r.profit.toFixed(2)),
-                    'Utilidad/Ha': Number(r.profit_per_ha.toFixed(2)),
-                    'Margen %': Number(r.margin_pct.toFixed(2))
-                  }));
-                  out.push({
-                    Campo: 'TOTAL',
-                    Sector: '',
-                    Has: totals.totalHa,
-                    'Ingresos (CLP)': Number(totals.totalIncome.toFixed(2)),
-                    'Costos (CLP)': Number(totals.totalCost.toFixed(2)),
-                    'Utilidad (CLP)': Number(totals.totalProfit.toFixed(2)),
-                    'Utilidad/Ha': Number(totals.totalProfitPerHa.toFixed(2)),
-                    'Margen %': Number(totals.totalMarginPct.toFixed(2))
-                  });
-                  await exportJsonToXlsx({
-                    filename: `Rentabilidad_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.xlsx`,
-                    sheetName: `Rent_${selectedSeason}`,
-                    rows: out
-                  });
-                }}
-                className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700"
-              >
-                <FileText className="mr-1.5 h-4 w-4" /> Excel
-              </button>
-              <button
-                type="button"
                 onClick={() => {
                   const { rows, totals } = getMarginRows();
                   const csvRows = [['Campo', 'Sector', 'Has', 'Ingresos (CLP)', 'Costos (CLP)', 'Utilidad (CLP)', 'Utilidad/Ha', 'Margen %']];
@@ -2983,7 +2665,6 @@ export const Reports: React.FC = () => {
               >
                 <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
               </button>
-              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
@@ -3264,39 +2945,7 @@ export const Reports: React.FC = () => {
                   <h3 className="text-lg leading-6 font-medium text-gray-900">Petróleo por Máquina ({selectedSeason})</h3>
                   <p className="mt-1 text-sm text-gray-500">Consumo registrado en bitácora (fuel_consumption)</p>
                 </div>
-                <div className="flex items-center gap-2">
                 <button
-                  type="button"
-                  onClick={async () => {
-                    const { rows, totals } = getFuelMachinesRows();
-                    const out = rows.map((r) => ({
-                      Máquina: r.machine_name,
-                      'L Diésel': Number(r.liters_diesel.toFixed(1)),
-                      'L Bencina': Number(r.liters_gasoline.toFixed(1)),
-                      'L Total': Number(r.liters_total.toFixed(1)),
-                      'Costo Total': Number(r.cost_total.toFixed(2)),
-                      'CLP/L': Number(r.avg_price.toFixed(2))
-                    }));
-                    out.push({
-                      Máquina: 'TOTAL',
-                      'L Diésel': Number(totals.liters_diesel.toFixed(1)),
-                      'L Bencina': Number(totals.liters_gasoline.toFixed(1)),
-                      'L Total': Number(totals.liters_total.toFixed(1)),
-                      'Costo Total': Number(totals.cost_total.toFixed(2)),
-                      'CLP/L': Number(totals.avg_price.toFixed(2))
-                    });
-                    await exportJsonToXlsx({
-                      filename: `Petroleo_por_Maquina_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.xlsx`,
-                      sheetName: `Fuel_${selectedSeason}`,
-                      rows: out
-                    });
-                  }}
-                  className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700"
-                >
-                  <FileText className="mr-1.5 h-4 w-4" /> Excel
-                </button>
-                <button
-                  type="button"
                   onClick={() => {
                     const { rows, totals } = getFuelMachinesRows();
                     const csvRows = [['Máquina', 'L Diésel', 'L Bencina', 'L Total', 'Costo Total', 'CLP/L']];
@@ -3324,7 +2973,6 @@ export const Reports: React.FC = () => {
                 >
                   <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
                 </button>
-                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
@@ -3385,43 +3033,7 @@ export const Reports: React.FC = () => {
                   <h3 className="text-lg leading-6 font-medium text-gray-900">Quiebres de Stock</h3>
                   <p className="mt-1 text-sm text-gray-500">Productos bajo stock mínimo (bodega local)</p>
                 </div>
-                <div className="flex items-center gap-2">
                 <button
-                  type="button"
-                  onClick={async () => {
-                    const { rows, totals } = getStockBreakRows();
-                    const out = rows.map((r) => ({
-                      Producto: r.name,
-                      Categoría: r.category,
-                      Unidad: r.unit,
-                      Stock: Number(r.current_stock.toFixed(2)),
-                      'Stock mínimo': Number(r.minimum_stock.toFixed(2)),
-                      Faltante: Number(r.deficit.toFixed(2)),
-                      'Costo Prom.': Number(r.average_cost.toFixed(2)),
-                      'Costo Reposición': Number(r.value.toFixed(2))
-                    }));
-                    out.push({
-                      Producto: 'TOTAL',
-                      Categoría: '',
-                      Unidad: '',
-                      Stock: 0,
-                      'Stock mínimo': 0,
-                      Faltante: Number(totals.deficit.toFixed(2)),
-                      'Costo Prom.': 0,
-                      'Costo Reposición': Number(totals.value.toFixed(2))
-                    });
-                    await exportJsonToXlsx({
-                      filename: `Quiebres_Stock_${selectedCompany.name.replace(/\s+/g, '_')}.xlsx`,
-                      sheetName: 'Quiebres',
-                      rows: out
-                    });
-                  }}
-                  className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700"
-                >
-                  <FileText className="mr-1.5 h-4 w-4" /> Excel
-                </button>
-                <button
-                  type="button"
                   onClick={() => {
                     const { rows, totals } = getStockBreakRows();
                     const csvRows = [['Producto', 'Categoría', 'Unidad', 'Stock', 'Mínimo', 'Faltante', 'Costo Prom.', 'Costo Reposición']];
@@ -3451,7 +3063,6 @@ export const Reports: React.FC = () => {
                 >
                   <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
                 </button>
-                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
@@ -3600,20 +3211,11 @@ export const Reports: React.FC = () => {
                             <h3 className="text-lg leading-6 font-medium text-gray-900">Facturas Pendientes de Pago</h3>
                             <p className="mt-1 text-sm text-gray-500">Facturas ingresadas sin marcar como "Pagada"</p>
                         </div>
-                        <div className="flex items-center justify-end gap-3 w-full lg:w-auto">
-                            <button
-                                type="button"
-                                onClick={() => void exportPendingInvoicesExcel(filteredPendingInvoices, 'Facturas_Pendientes')}
-                                className="inline-flex items-center px-3 py-2 border border-transparent shadow-sm text-xs font-bold rounded text-white bg-green-600 hover:bg-green-700"
-                            >
-                                <FileText className="mr-1.5 h-4 w-4" /> Excel
-                            </button>
-                            <div className="text-right bg-red-50 p-3 rounded-lg border border-red-100">
-                                <span className="text-sm font-medium text-red-800">Total Deuda Mostrada:</span>
-                                <span className="ml-2 text-2xl font-black text-red-600">
-                                    {formatCLP(filteredPendingInvoices.reduce((sum, inv) => sum + inv.total_amount, 0))}
-                                </span>
-                            </div>
+                        <div className="text-right bg-red-50 p-3 rounded-lg border border-red-100 w-full lg:w-auto">
+                            <span className="text-sm font-medium text-red-800">Total Deuda Mostrada:</span>
+                            <span className="ml-2 text-2xl font-black text-red-600">
+                                {formatCLP(filteredPendingInvoices.reduce((sum, inv) => sum + inv.total_amount, 0))}
+                            </span>
                         </div>
                     </div>
 
@@ -3775,20 +3377,11 @@ export const Reports: React.FC = () => {
                             <h3 className="text-lg leading-6 font-medium text-gray-900">Facturas Vencidas</h3>
                             <p className="mt-1 text-sm text-gray-500">Facturas pendientes con vencimiento anterior a hoy</p>
                         </div>
-                        <div className="flex items-center justify-end gap-3 w-full lg:w-auto">
-                            <button
-                                type="button"
-                                onClick={() => void exportPendingInvoicesExcel(filteredOverdueInvoices, 'Facturas_Vencidas')}
-                                className="inline-flex items-center px-3 py-2 border border-transparent shadow-sm text-xs font-bold rounded text-white bg-green-600 hover:bg-green-700"
-                            >
-                                <FileText className="mr-1.5 h-4 w-4" /> Excel
-                            </button>
-                            <div className="text-right bg-red-50 p-3 rounded-lg border border-red-100">
-                                <span className="text-sm font-medium text-red-800">Total Vencido Mostrado:</span>
-                                <span className="ml-2 text-2xl font-black text-red-600">
-                                    {formatCLP(filteredOverdueInvoices.reduce((sum, inv) => sum + inv.total_amount, 0))}
-                                </span>
-                            </div>
+                        <div className="text-right bg-red-50 p-3 rounded-lg border border-red-100 w-full lg:w-auto">
+                            <span className="text-sm font-medium text-red-800">Total Vencido Mostrado:</span>
+                            <span className="ml-2 text-2xl font-black text-red-600">
+                                {formatCLP(filteredOverdueInvoices.reduce((sum, inv) => sum + inv.total_amount, 0))}
+                            </span>
                         </div>
                     </div>
 
@@ -4129,7 +3722,7 @@ export const Reports: React.FC = () => {
           {/* 7. DETAILED REPORT */}
           {activeTab === 'detailed' && (
             <div className="space-y-6">
-                <div className="bg-white p-4 rounded-lg shadow border border-gray-200 flex flex-wrap gap-4 items-end">
+                <div className="bg-white p-4 rounded-lg shadow border border-gray-200 flex flex-wrap gap-4 items-center">
                     <div>
                         <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Filtrar por Mes</label>
                         <select 
@@ -4156,269 +3749,105 @@ export const Reports: React.FC = () => {
                             ))}
                         </select>
                     </div>
-                    <div className="flex-1 min-w-[240px]">
-                        <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Buscar</label>
-                        <input
-                            type="text"
-                            value={detailedSearch}
-                            onChange={(e) => setDetailedSearch(e.target.value)}
-                            placeholder="Proveedor, factura, detalle..."
-                            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                        />
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            type="button"
-                            onClick={() => setDetailedView('segmentado')}
-                            className={`px-3 py-2 rounded-md text-sm font-semibold border ${
-                                detailedView === 'segmentado'
-                                    ? 'bg-indigo-600 text-white border-indigo-600'
-                                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                            }`}
-                        >
-                            Segmentado
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setDetailedView('tabla')}
-                            className={`px-3 py-2 rounded-md text-sm font-semibold border ${
-                                detailedView === 'tabla'
-                                    ? 'bg-indigo-600 text-white border-indigo-600'
-                                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                            }`}
-                        >
-                            Tabla
-                        </button>
-                    </div>
                 </div>
 
                 <div className="flex justify-end mb-4">
                     <button
-                        onClick={async () => {
-                            const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-                            const baseRows = detailedReport
+                        onClick={() => {
+                            // Simple CSV export for detailed report
+                            const rows = [['Mes', 'Categoría', 'Fecha', 'Proveedor', 'N° Factura', 'Detalle', 'Monto (CLP)']];
+                            
+                            detailedReport
                                 .filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth)
-                                .flatMap((month) =>
+                                .forEach(month => {
                                     month.categories
                                         .filter(c => filterCategory === 'all' || c.name === filterCategory)
-                                        .flatMap((cat) =>
-                                            cat.items.map((item) => {
-                                                const date = item.date ? new Date(item.date + 'T12:00:00') : null;
-                                                const isoDate = date && !isNaN(date.getTime()) ? date.toLocaleDateString('en-CA') : '';
-                                                return {
-                                                    Mes: monthNames[month.monthIndex] || month.monthName,
-                                                    Categoría: cat.name,
-                                                    Fecha: isoDate,
-                                                    Proveedor: item.supplier,
-                                                    'N° Factura': item.invoiceNumber,
-                                                    Detalle: item.description,
-                                                    Monto: Number(item.total) || 0
-                                                };
-                                            })
-                                        )
-                                );
-
-                            const q = detailedSearch.trim().toLowerCase();
-                            const rows = q.length === 0
-                                ? baseRows
-                                : baseRows.filter((r) => {
-                                    const haystack = `${r.Mes} ${r.Categoría} ${r.Fecha} ${r.Proveedor} ${r['N° Factura']} ${r.Detalle}`.toLowerCase();
-                                    return haystack.includes(q);
+                                        .forEach(cat => {
+                                            cat.items.forEach(item => {
+                                                rows.push([
+                                                    month.monthName,
+                                                    cat.name,
+                                                    new Date(item.date + 'T12:00:00').toLocaleDateString('es-CL'),
+                                                    `"${item.supplier.replace(/"/g, '""')}"`,
+                                                    item.invoiceNumber,
+                                                    `"${item.description.replace(/"/g, '""')}"`,
+                                                    item.total.toString()
+                                                ]);
+                                            });
+                                        });
                                 });
-                            await exportDetailedSegmentedToXlsx({
-                                filename: `Reporte_Detallado_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.xlsx`,
-                                rows
-                            });
+
+                            const csvContent = "data:text/csv;charset=utf-8," + rows.map(e => e.join(",")).join("\n");
+                            const encodedUri = encodeURI(csvContent);
+                            const link = document.createElement("a");
+                            link.setAttribute("href", encodedUri);
+                            link.setAttribute("download", `Reporte_Detallado_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.csv`);
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
                         }}
                         className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
                     >
-                        <FileText className="mr-2 h-4 w-4" /> Descargar Excel (.xlsx)
+                        <FileText className="mr-2 h-4 w-4" /> Exportar a Excel (CSV)
                     </button>
                 </div>
 
-                {(() => {
-                    const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-                    const baseRows = detailedReport
-                        .filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth)
-                        .flatMap((month) =>
-                            month.categories
-                                .filter(c => filterCategory === 'all' || c.name === filterCategory)
-                                .flatMap((cat) =>
-                                    cat.items.map((item) => ({
-                                        monthIndex: month.monthIndex,
-                                        Mes: monthNames[month.monthIndex] || month.monthName,
-                                        Categoría: cat.name,
-                                        Fecha: item.date,
-                                        Proveedor: item.supplier,
-                                        'N° Factura': item.invoiceNumber,
-                                        Detalle: item.description,
-                                        Monto: Number(item.total) || 0
-                                    }))
-                                )
-                        )
-                        .sort((a, b) => (String(a.Fecha || '')).localeCompare(String(b.Fecha || '')) || (a.Proveedor || '').localeCompare(b.Proveedor || ''));
-
-                    const q = detailedSearch.trim().toLowerCase();
-                    const rows = q.length === 0
-                        ? baseRows
-                        : baseRows.filter((r) => {
-                            const haystack = `${r.Mes} ${r.Categoría} ${r.Fecha} ${r.Proveedor} ${r['N° Factura']} ${r.Detalle}`.toLowerCase();
-                            return haystack.includes(q);
-                        });
-
-                    const total = rows.reduce((sum, r) => sum + (Number(r.Monto) || 0), 0);
-
-                    if (rows.length === 0) {
-                        return (
-                            <div className="text-center py-10 text-gray-500 bg-white rounded-lg shadow border border-gray-200">
-                                No hay registros para los filtros seleccionados.
-                            </div>
-                        );
-                    }
-
-                    if (detailedView === 'segmentado') {
-                        const months = detailedReport
-                            .filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth)
-                            .map((month) => {
-                                const categories = month.categories
-                                    .filter(c => filterCategory === 'all' || c.name === filterCategory)
-                                    .map((cat) => {
-                                        const items = cat.items
-                                            .map((item) => ({
-                                                date: item.date,
-                                                supplier: item.supplier,
-                                                invoiceNumber: item.invoiceNumber,
-                                                description: item.description,
-                                                total: Number(item.total) || 0
-                                            }))
-                                            .filter((it) => {
-                                                if (q.length === 0) return true;
-                                                const haystack = `${monthNames[month.monthIndex] || month.monthName} ${cat.name} ${it.date} ${it.supplier} ${it.invoiceNumber} ${it.description}`.toLowerCase();
-                                                return haystack.includes(q);
-                                            })
-                                            .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')) || (a.supplier || '').localeCompare(b.supplier || ''));
-
-                                        const catTotal = items.reduce((s, it) => s + (Number(it.total) || 0), 0);
-                                        return { name: cat.name, total: catTotal, items };
-                                    })
-                                    .filter((c) => c.items.length > 0)
-                                    .sort((a, b) => b.total - a.total);
-
-                                const monthTotal = categories.reduce((s, c) => s + c.total, 0);
-                                return { monthIndex: month.monthIndex, monthName: monthNames[month.monthIndex] || month.monthName, total: monthTotal, categories };
-                            })
-                            .filter((m) => m.categories.length > 0);
-
-                        if (months.length === 0) {
-                            return (
-                                <div className="text-center py-10 text-gray-500 bg-white rounded-lg shadow border border-gray-200">
-                                    No hay registros para los filtros seleccionados.
-                                </div>
-                            );
-                        }
+                {detailedReport
+                    .filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth)
+                    .map(month => {
+                        const filteredCategories = month.categories.filter(c => filterCategory === 'all' || c.name === filterCategory);
+                        if (filteredCategories.length === 0) return null;
+                        const monthTotal = filteredCategories.reduce((sum, c) => sum + c.total, 0);
 
                         return (
-                            <div className="space-y-6">
-                                <div className="bg-white rounded-lg shadow border border-gray-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-                                    <div className="text-sm text-gray-600">
-                                        Filas: <span className="font-bold text-gray-900">{rows.length}</span>
-                                    </div>
-                                    <div className="text-sm text-gray-600">
-                                        Total: <span className="font-bold text-gray-900">{formatCLP(total)}</span>
-                                    </div>
+                            <div key={month.monthIndex} className="bg-white shadow overflow-hidden sm:rounded-lg">
+                                <div className="px-4 py-5 sm:px-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+                                    <h3 className="text-lg leading-6 font-medium text-gray-900">{month.monthName}</h3>
+                                    <span className="text-lg font-bold text-indigo-600">{formatCLP(monthTotal)}</span>
                                 </div>
-
-                                {months.map((m) => (
-                                    <div key={m.monthIndex} className="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
-                                        <div className="px-4 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-                                            <h3 className="text-lg font-semibold text-gray-900">{m.monthName}</h3>
-                                            <span className="text-lg font-bold text-indigo-600">{formatCLP(m.total)}</span>
+                                <div className="p-4 space-y-6">
+                                    {filteredCategories.map((cat, idx) => (
+                                        <div key={idx} className="border rounded-md overflow-hidden">
+                                            <div className="bg-gray-100 px-4 py-2 border-b flex justify-between">
+                                                <span className="font-semibold text-gray-700">{cat.name}</span>
+                                                <span className="font-bold text-gray-900">{formatCLP(cat.total)}</span>
+                                            </div>
+                                            <table className="min-w-full divide-y divide-gray-200">
+                                                <thead className="bg-gray-50">
+                                                    <tr>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Proveedor</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Factura</th>
+                                                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Detalle</th>
+                                                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Monto</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="bg-white divide-y divide-gray-200">
+                                                    {cat.items.map((item, i) => (
+                                                        <tr key={i}>
+                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">
+                                                                {new Date(item.date + 'T12:00:00').toLocaleDateString('es-CL')}
+                                                            </td>
+                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-900">{item.supplier}</td>
+                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-gray-500">{item.invoiceNumber}</td>
+                                                            <td className="px-4 py-2 text-xs text-gray-500 truncate max-w-xs">{item.description}</td>
+                                                            <td className="px-4 py-2 whitespace-nowrap text-xs text-right font-medium text-gray-900">{formatCLP(item.total)}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
                                         </div>
-                                        <div className="p-4 space-y-4">
-                                            {m.categories.map((cat) => (
-                                                <div key={cat.name} className="border border-gray-200 rounded-lg overflow-hidden">
-                                                    <div className="bg-gray-100 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
-                                                        <span className="font-semibold text-gray-800">{cat.name}</span>
-                                                        <span className="font-bold text-gray-900">{formatCLP(cat.total)}</span>
-                                                    </div>
-                                                    <div className="overflow-x-auto">
-                                                        <table className="min-w-full divide-y divide-gray-200">
-                                                            <thead className="bg-white">
-                                                                <tr>
-                                                                    <th className="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Fecha</th>
-                                                                    <th className="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Proveedor</th>
-                                                                    <th className="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Factura</th>
-                                                                    <th className="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Detalle</th>
-                                                                    <th className="px-4 py-2 text-right text-xs font-bold text-gray-500 uppercase">Monto</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody className="bg-white divide-y divide-gray-100">
-                                                                {cat.items.map((it, idx) => (
-                                                                    <tr key={`${cat.name}-${idx}`} className="hover:bg-gray-50">
-                                                                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">
-                                                                            {it.date ? new Date(String(it.date) + 'T12:00:00').toLocaleDateString('es-CL') : ''}
-                                                                        </td>
-                                                                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900 font-semibold">{it.supplier}</td>
-                                                                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{it.invoiceNumber}</td>
-                                                                        <td className="px-4 py-2 text-sm text-gray-600 max-w-[720px] whitespace-normal break-words">{it.description}</td>
-                                                                        <td className="px-4 py-2 whitespace-nowrap text-sm text-right font-bold text-gray-900">{formatCLP(it.total)}</td>
-                                                                    </tr>
-                                                                ))}
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
+                                    ))}
+                                </div>
                             </div>
                         );
-                    }
-
-                    return (
-                        <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
-                            <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
-                                <div className="text-sm text-gray-600">
-                                    Filas: <span className="font-bold text-gray-900">{rows.length}</span>
-                                </div>
-                                <div className="text-sm text-gray-600">
-                                    Total: <span className="font-bold text-gray-900">{formatCLP(total)}</span>
-                                </div>
-                            </div>
-                            <div className="overflow-x-auto">
-                                <table className="min-w-full divide-y divide-gray-200">
-                                    <thead className="bg-gray-50">
-                                        <tr>
-                                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Mes</th>
-                                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Categoría</th>
-                                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Fecha</th>
-                                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Proveedor</th>
-                                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Factura</th>
-                                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">Detalle</th>
-                                            <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 uppercase">Monto</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="bg-white divide-y divide-gray-100">
-                                        {rows.map((r, i) => (
-                                            <tr key={`${r.monthIndex}-${r['N° Factura']}-${i}`} className="hover:bg-gray-50">
-                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{r.Mes}</td>
-                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{r.Categoría}</td>
-                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">
-                                                    {r.Fecha ? new Date(String(r.Fecha) + 'T12:00:00').toLocaleDateString('es-CL') : ''}
-                                                </td>
-                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900 font-semibold">{r.Proveedor}</td>
-                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-600">{r['N° Factura']}</td>
-                                                <td className="px-4 py-2 text-sm text-gray-600 max-w-[520px] whitespace-normal break-words">{r.Detalle}</td>
-                                                <td className="px-4 py-2 whitespace-nowrap text-sm text-right font-bold text-gray-900">{formatCLP(r.Monto)}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    );
-                })()}
+                    })}
+                
+                {detailedReport.filter(m => filterMonth === 'all' || m.monthIndex.toString() === filterMonth).length === 0 && (
+                    <div className="text-center py-10 text-gray-500 bg-white rounded-lg shadow">
+                        No hay registros para los filtros seleccionados.
+                    </div>
+                )}
             </div>
           )}
         </div>

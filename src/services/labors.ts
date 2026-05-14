@@ -1,13 +1,5 @@
 import { supabase } from '../supabase/client';
 
-function normalize(value: unknown) {
-  return String(value || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim();
-}
-
 export async function fetchLaborAssignmentsSummary(params: { companyId: string }) {
   const assignmentMap = new Map<string, number>();
 
@@ -34,40 +26,27 @@ export async function fetchLaborAssignmentsSummary(params: { companyId: string }
 }
 
 export async function fetchPendingLaborItems(params: { companyId: string }) {
-  const pageSize = 5000;
-  let from = 0;
-  const items: any[] = [];
-
-  while (true) {
-    const { data, error } = await supabase
-      .from('invoice_items')
-      .select(
-        `
-        id, total_price, category,
-        created_at,
-        products (name),
-        invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
+  const { data: items, error } = await supabase
+    .from('invoice_items')
+    .select(
       `
-      )
-      .eq('invoices.company_id', params.companyId)
-      .or('category.ilike.%mano de obra%,category.ilike.%labores%')
-      .order('created_at', { ascending: false })
-      .order('id', { ascending: false })
-      .range(from, from + pageSize - 1);
+      id, total_price, category,
+      products (name),
+      invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage)
+    `
+    )
+    .eq('invoices.company_id', params.companyId)
+    .range(0, 9999);
 
-    if (error) throw error;
-    (data || []).forEach((r: any) => items.push(r));
-    if (!data || data.length < pageSize) break;
-    from += pageSize;
-    if (from >= 100000) break;
-  }
+  if (error) throw error;
 
-  const allowedCategoryKeywords = ['mano de obra', 'labores'];
+  const laborKeywords = ['mano de obra', 'labor', 'labores', 'servicio de labores', 'cosecha', 'poda', 'raleo', 'siembra'];
 
-  const filteredItems = items.filter((item: any) => {
+  const filteredItems = (items || []).filter((item: any) => {
     if (item.invoices?.company_id !== params.companyId) return false;
-    const cat = normalize(item.category);
-    return allowedCategoryKeywords.some((k) => cat.includes(k));
+    const cat = String(item.category || '').toLowerCase().trim();
+    const name = String(item.products?.name || '').toLowerCase().trim();
+    return laborKeywords.some((k) => cat.includes(k) || name.includes(k));
   });
 
   const assignmentMap = await fetchLaborAssignmentsSummary({ companyId: params.companyId });
@@ -93,7 +72,7 @@ export async function fetchPendingLaborItems(params: { companyId: string }) {
     const assigned = assignmentMap.get(String(item.id)) || 0;
     const remaining = total - assigned;
 
-    if (Math.abs(remaining) > 1) {
+    if (Math.abs(remaining) > 500) {
       pending.push({
         id: String(item.id),
         invoice_id: String(item.invoices.id),

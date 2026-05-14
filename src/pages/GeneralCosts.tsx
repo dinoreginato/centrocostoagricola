@@ -4,7 +4,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { LayoutList, ArrowRight, Save, Loader2, AlertCircle, Trash2 } from 'lucide-react';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
-import { deleteAllGeneralCostHistory, deleteGeneralCostAssignment, fetchGeneralCostsDiagnosis, fetchGeneralCostsHistory, fetchGeneralCostsHistoryByQuery, fetchPendingGeneralCosts, insertGeneralCostAssignments, updateGeneralCostAssignment } from '../services/generalCosts';
+import { deleteAllGeneralCostHistory, deleteGeneralCostAssignment, fetchGeneralCostsHistory, fetchPendingGeneralCosts, insertGeneralCostAssignments, updateGeneralCostAssignment } from '../services/generalCosts';
 
 interface GeneralCostItem {
   id: string; // invoice_item_id
@@ -75,12 +75,6 @@ export const GeneralCosts: React.FC = () => {
   // History State
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historySearch, setHistorySearch] = useState('');
-  const [pendingSearch, setPendingSearch] = useState('');
-  const [diagnosisOpen, setDiagnosisOpen] = useState(false);
-  const [diagnosisLoading, setDiagnosisLoading] = useState(false);
-  const [diagnosisRows, setDiagnosisRows] = useState<any[]>([]);
-  const [diagnosisInvoices, setDiagnosisInvoices] = useState<any[]>([]);
-  const [diagnosisAssignedByItemId, setDiagnosisAssignedByItemId] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (selectedCompany) {
@@ -128,10 +122,7 @@ export const GeneralCosts: React.FC = () => {
   const loadHistory = async () => {
     if (!selectedCompany) return;
     try {
-      const q = historySearch.trim();
-      const mapped = q
-        ? await fetchGeneralCostsHistoryByQuery({ companyId: selectedCompany.id, query: q })
-        : await fetchGeneralCostsHistory({ companyId: selectedCompany.id });
+      const mapped = await fetchGeneralCostsHistory({ companyId: selectedCompany.id });
       setHistory(mapped as any);
     } catch {
       toast.error('Error al cargar historial.');
@@ -139,45 +130,16 @@ export const GeneralCosts: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    if (!selectedCompany) return;
-    const t = window.setTimeout(() => {
-      loadHistory();
-    }, 350);
-    return () => window.clearTimeout(t);
-  }, [historySearch, selectedCompany?.id]);
-
-  const filteredHistory = history;
-
-  const filteredPendingCosts = pendingCosts.filter((p) => {
-    const q = pendingSearch.trim().toLowerCase();
-    if (!q) return true;
-    const invoice = String(p.invoice_number || '').toLowerCase();
-    const desc = String(p.description || '').toLowerCase();
-    const cat = String(p.category || '').toLowerCase();
-    return invoice.includes(q) || desc.includes(q) || cat.includes(q);
+  const filteredHistory = history.filter(h => {
+    if (!historySearch) return true;
+    const search = historySearch.toLowerCase();
+    const desc = (h.description || '').toLowerCase();
+    const cat = (h.category || '').toLowerCase();
+    const sector = (h.sectors?.name || '').toLowerCase();
+    const invoice = (h.invoice_items?.invoices?.invoice_number || '').toLowerCase();
+    
+    return desc.includes(search) || cat.includes(search) || sector.includes(search) || invoice.includes(search);
   });
-
-  const runDiagnosis = async () => {
-    if (!selectedCompany) return;
-    const q = pendingSearch.trim();
-    if (!q) return;
-    setDiagnosisLoading(true);
-    try {
-      const res = await fetchGeneralCostsDiagnosis({ companyId: selectedCompany.id, query: q });
-      setDiagnosisInvoices((res as any).invoices || []);
-      setDiagnosisRows((res as any).items || []);
-      setDiagnosisAssignedByItemId((res as any).assignedByItemId || {});
-      setDiagnosisOpen(true);
-    } catch {
-      setDiagnosisInvoices([]);
-      setDiagnosisRows([]);
-      setDiagnosisAssignedByItemId({});
-      setDiagnosisOpen(true);
-    } finally {
-      setDiagnosisLoading(false);
-    }
-  };
 
   const handleSelectCost = (cost: GeneralCostItem) => {
     setSelectedCostId(cost.id);
@@ -321,28 +283,12 @@ export const GeneralCosts: React.FC = () => {
                     <AlertCircle className="h-4 w-4 mr-2 text-yellow-500" />
                     Items Pendientes
                 </h3>
-                <input
-                    value={pendingSearch}
-                    onChange={(e) => setPendingSearch(e.target.value)}
-                    placeholder="Buscar por factura, categoría o nombre..."
-                    className="mt-3 w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:border-purple-500 focus:ring-purple-500"
-                />
-                <div className="mt-2 flex justify-end">
-                    <button
-                        type="button"
-                        onClick={runDiagnosis}
-                        disabled={diagnosisLoading || pendingSearch.trim().length === 0}
-                        className="text-xs font-semibold text-purple-700 disabled:text-gray-400"
-                    >
-                        {diagnosisLoading ? 'Buscando…' : 'Diagnosticar búsqueda'}
-                    </button>
-                </div>
             </div>
             <div className="divide-y divide-gray-200 dark:divide-gray-700 max-h-[600px] overflow-y-auto">
-                {filteredPendingCosts.length === 0 ? (
+                {pendingCosts.length === 0 ? (
                     <div className="p-8 text-center text-gray-500 dark:text-gray-400 text-sm">No hay items pendientes.</div>
                 ) : (
-                    filteredPendingCosts.map(item => (
+                    pendingCosts.map(item => (
                         <div 
                             key={item.id} 
                             onClick={() => handleSelectCost(item)}
@@ -365,47 +311,6 @@ export const GeneralCosts: React.FC = () => {
                     ))
                 )}
             </div>
-            {diagnosisOpen && (
-                <div className="border-t border-gray-200 dark:border-gray-700 p-3 text-xs text-gray-600 dark:text-gray-300">
-                    {diagnosisInvoices.length === 0 && diagnosisRows.length === 0 ? (
-                        <div>No se encontró esa factura/ítem en Facturas para esta empresa.</div>
-                    ) : (
-                        <div className="space-y-2">
-                            {diagnosisInvoices.length > 0 && (
-                                <div className="space-y-1">
-                                    <div className="font-bold text-gray-700 dark:text-gray-200">Facturas encontradas (por número)</div>
-                                    {diagnosisInvoices.slice(0, 5).map((inv, idx) => (
-                                        <div key={idx} className="text-gray-700 dark:text-gray-200">
-                                            #{inv?.invoice_number} · {inv?.supplier || ''} · {inv?.invoice_date ? new Date(inv.invoice_date).toLocaleDateString() : ''}
-                                        </div>
-                                    ))}
-                                    {diagnosisInvoices.length > 5 && (
-                                        <div className="text-gray-500 dark:text-gray-400">y {diagnosisInvoices.length - 5} más…</div>
-                                    )}
-                                </div>
-                            )}
-
-                            <div className="font-bold text-gray-700 dark:text-gray-200">Ítems encontrados (muestra parcial)</div>
-                            {diagnosisRows.slice(0, 8).map((r, idx) => {
-                                const assigned = diagnosisAssignedByItemId[String(r?.id)] || 0;
-                                return (
-                                    <div key={idx} className="flex flex-col gap-0.5">
-                                        <div>
-                                            #{r?.invoices?.invoice_number} · {r?.products?.name || 'Item'} · {r?.category || '-'}
-                                        </div>
-                                        <div className="text-gray-500 dark:text-gray-400">
-                                            Neto: {formatCLP(Number(r?.total_price) || 0)} · Asignado: {formatCLP(assigned)}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                            {diagnosisRows.length === 0 && diagnosisInvoices.length > 0 && (
-                                <div className="text-gray-500 dark:text-gray-400">La factura existe, pero no se encontraron ítems asociados.</div>
-                            )}
-                        </div>
-                    )}
-                </div>
-            )}
         </div>
 
         {/* Form */}

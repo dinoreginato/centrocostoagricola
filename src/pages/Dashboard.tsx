@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCLP } from '../lib/utils';
-import { exportJsonToXlsx } from '../lib/excel';
 import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X, Trash2, Layout, AlertCircle, Play, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, ShieldAlert } from 'lucide-react';
 import { 
   BarChart, 
@@ -848,37 +847,6 @@ export const Dashboard: React.FC = () => {
     }
   };
 
-  const exportUpcomingInvoicesExcel = async () => {
-    if (!selectedCompany) return;
-    const monthInvoices = upcomingInvoices
-      .filter((inv: any) => inv?.due_date && String(inv.due_date).slice(0, 7) === selectedInvoiceMonth)
-      .sort((a: any, b: any) => String(a.due_date).localeCompare(String(b.due_date)));
-
-    const list = selectedInvoiceIds.length > 0
-      ? monthInvoices.filter((inv: any) => selectedInvoiceIds.includes(inv.id))
-      : monthInvoices;
-
-    if (list.length === 0) {
-      toast('No hay facturas para exportar');
-      return;
-    }
-
-    const rows = list.map((inv: any) => ({
-      Folio: String(inv.invoice_number ?? ''),
-      Proveedor: String(inv.supplier ?? ''),
-      Vencimiento: String(inv.due_date ?? ''),
-      Total: Number(inv.total_amount ?? 0),
-      Estado: String(inv.status ?? ''),
-      Notas: String(inv.notes ?? '')
-    }));
-
-    await exportJsonToXlsx({
-      filename: `Facturas_por_Vencer_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedInvoiceMonth}.xlsx`,
-      sheetName: `Vence_${selectedInvoiceMonth}`,
-      rows
-    });
-  };
-
   if (loading) {
     return <div className="flex justify-center p-8">Cargando...</div>;
   }
@@ -1131,19 +1099,12 @@ export const Dashboard: React.FC = () => {
                         })}
                       </div>
 
-                      {invoiceMonthsExpanded && (
+                      {invoiceMonthsExpanded && canWrite && (
                         <div className="flex flex-wrap items-center justify-between gap-3 bg-white/60 border border-red-100 rounded-lg px-3 py-2">
                           <div className="text-xs font-semibold text-gray-700">
                             Seleccionadas: {selectedInvoiceIds.length}
                           </div>
                           <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => void exportUpcomingInvoicesExcel()}
-                              className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-bold bg-blue-600 text-white hover:bg-blue-700"
-                            >
-                              Excel
-                            </button>
                             <button
                               type="button"
                               onClick={() => setSelectedInvoiceIds([])}
@@ -1152,16 +1113,14 @@ export const Dashboard: React.FC = () => {
                             >
                               Limpiar
                             </button>
-                            {canWrite && (
-                              <button
-                                type="button"
-                                onClick={markSelectedInvoicesAsPaid}
-                                disabled={selectedInvoiceIds.length === 0}
-                                className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-bold bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
-                              >
-                                Marcar Pagadas
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              onClick={markSelectedInvoicesAsPaid}
+                              disabled={selectedInvoiceIds.length === 0}
+                              className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-bold bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                            >
+                              Marcar Pagadas
+                            </button>
                           </div>
                         </div>
                       )}
@@ -1178,11 +1137,7 @@ export const Dashboard: React.FC = () => {
                             {monthInvoices.map((inv: any) => (
                               <div
                                 key={inv.id}
-                                onClick={(e) => {
-                                  const el = e.target as HTMLElement | null;
-                                  if (el && el.closest('input[type="checkbox"]')) return;
-                                  openInvoiceDetail(inv.id);
-                                }}
+                                onClick={() => openInvoiceDetail(inv.id)}
                                 className="bg-white p-4 rounded-xl shadow-sm border border-red-100 flex flex-col justify-between h-full hover:shadow-md transition-all duration-200 cursor-pointer hover:-translate-y-1 relative overflow-hidden group"
                               >
                                 <div className="absolute top-0 left-0 w-1 h-full bg-red-500"></div>
@@ -1194,8 +1149,6 @@ export const Dashboard: React.FC = () => {
                                       checked={selectedInvoiceIds.includes(inv.id)}
                                       onClick={(e) => e.stopPropagation()}
                                       onMouseDown={(e) => e.stopPropagation()}
-                                      onPointerDown={(e) => e.stopPropagation()}
-                                      onTouchStart={(e) => e.stopPropagation()}
                                       onChange={(e) => {
                                         e.stopPropagation();
                                         toggleInvoiceSelected(inv.id);
@@ -2013,11 +1966,6 @@ export const Dashboard: React.FC = () => {
                     <div key={idx} className="bg-white p-8 rounded-2xl shadow-lg border-l-8 border-red-500 flex flex-col">
                       <div className="text-2xl font-bold text-slate-800 mb-2 truncate" title={inv.supplier}>{inv.supplier || 'Desconocido'}</div>
                       <div className="text-xl text-slate-500 mb-6">N° {inv.invoice_number}</div>
-                      {inv.notes && (
-                        <div className="text-sm text-slate-600 mb-6 max-h-16 overflow-hidden" title={inv.notes}>
-                          {inv.notes}
-                        </div>
-                      )}
                       <div className="flex justify-between items-end mt-auto pt-4 border-t border-slate-100">
                         <div>
                           <div className="text-sm text-slate-400 uppercase tracking-wider mb-1">Vencimiento</div>

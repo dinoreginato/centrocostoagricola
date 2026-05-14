@@ -72,155 +72,53 @@ type GeneralCostRaw = {
   invoice_items: GeneralCostHistoryItem['invoice_items'];
 };
 
-export async function fetchGeneralCostsDiagnosis(params: { companyId: string; query: string }) {
-  const q = String(params.query || '').trim();
-  if (!q) return { invoices: [], items: [], assignedByItemId: {} as Record<string, number> };
-
-  const { data: invoices, error: invError } = await supabase
-    .from('invoices')
-    .select('id, invoice_number, invoice_date, supplier, company_id, document_type, tax_percentage, exempt_amount, special_tax_amount, total_amount')
-    .eq('company_id', params.companyId)
-    .ilike('invoice_number', `%${q}%`)
-    .order('invoice_date', { ascending: false })
-    .range(0, 49);
-
-  if (invError) throw invError;
-
-  const { data: products, error: prodError } = await supabase
-    .from('products')
-    .select('id')
-    .eq('company_id', params.companyId)
-    .ilike('name', `%${q}%`)
-    .range(0, 49);
-
-  if (prodError) throw prodError;
-
-  const productIds = (products || []).map((p: any) => String(p.id));
-  const invoiceIds = Array.from(new Set((invoices || []).map((i: any) => String(i.id))));
-
-  const items: any[] = [];
-
-  if (invoiceIds.length > 0) {
-    const chunkSize = 200;
-    for (let i = 0; i < invoiceIds.length; i += chunkSize) {
-      const chunk = invoiceIds.slice(i, i + chunkSize);
-      const { data: invItems, error: invItemsError } = await supabase
-        .from('invoice_items')
-        .select('id, invoice_id, product_id, total_price, category, created_at, products(name, category), invoices!inner(id, invoice_number, invoice_date, company_id, document_type, tax_percentage, exempt_amount, special_tax_amount, total_amount)')
-        .in('invoice_id', chunk)
-        .eq('invoices.company_id', params.companyId)
-        .order('created_at', { ascending: false })
-        .range(0, 200);
-      if (invItemsError) throw invItemsError;
-      (invItems || []).forEach((r: any) => items.push(r));
-    }
-  }
-
-  if (productIds.length > 0) {
-    const chunkSize = 200;
-    for (let i = 0; i < productIds.length; i += chunkSize) {
-      const chunk = productIds.slice(i, i + chunkSize);
-      const { data: prodItems, error: prodItemsError } = await supabase
-        .from('invoice_items')
-        .select('id, invoice_id, product_id, total_price, category, created_at, products(name, category), invoices!inner(id, invoice_number, invoice_date, company_id, document_type, tax_percentage, exempt_amount, special_tax_amount, total_amount)')
-        .in('product_id', chunk)
-        .eq('invoices.company_id', params.companyId)
-        .order('created_at', { ascending: false })
-        .range(0, 200);
-      if (prodItemsError) throw prodItemsError;
-      (prodItems || []).forEach((r: any) => items.push(r));
-    }
-  }
-
-  const itemIds = Array.from(new Set(items.map((r) => String(r.id))));
-  const assignedByItemId: Record<string, number> = {};
-  if (itemIds.length > 0) {
-    const chunkSize = 200;
-    for (let i = 0; i < itemIds.length; i += chunkSize) {
-      const chunk = itemIds.slice(i, i + chunkSize);
-      const { data: gc, error: gcError } = await supabase.from('general_costs').select('invoice_item_id, amount').in('invoice_item_id', chunk);
-      if (gcError) throw gcError;
-      (gc || []).forEach((row: any) => {
-        const key = String(row.invoice_item_id);
-        assignedByItemId[key] = (assignedByItemId[key] || 0) + Number(row.amount || 0);
-      });
-    }
-  }
-
-  return { invoices: invoices || [], items, assignedByItemId };
-}
-
 export async function fetchPendingGeneralCosts(params: { companyId: string }) {
-  const pageSize = 5000;
-  let from = 0;
-  const items: GeneralCostInvoiceItemRow[] = [];
-  const invoiceSubtotals = new Map<string, number>();
-
-  while (true) {
-    const { data, error } = await supabase
-      .from('invoice_items')
-      .select(
-        `
-        id, total_price, category,
-        created_at,
-        products (name, category),
-        invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage, exempt_amount, special_tax_amount, total_amount)
+  const { data: items, error } = await supabase
+    .from('invoice_items')
+    .select(
       `
-      )
-      .eq('invoices.company_id', params.companyId)
-      .order('created_at', { ascending: false })
-      .order('id', { ascending: false })
-      .range(from, from + pageSize - 1);
+      id, total_price, category,
+      products (name, category),
+      invoices!inner (id, invoice_number, invoice_date, company_id, document_type, tax_percentage, exempt_amount, special_tax_amount, total_amount)
+    `
+    )
+    .eq('invoices.company_id', params.companyId)
+    .range(0, 9999);
 
-    if (error) throw error;
-    ((data || []) as unknown as GeneralCostInvoiceItemRow[]).forEach((r) => {
-      items.push(r);
-      const invId = String(r.invoices.id);
-      invoiceSubtotals.set(invId, (invoiceSubtotals.get(invId) || 0) + Number(r.total_price || 0));
-    });
-    if (!data || data.length < pageSize) break;
-    from += pageSize;
-    if (from >= 200000) break;
-  }
+  if (error) throw error;
 
-  const normalize = (value: unknown) =>
-    String(value || '')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .trim();
+  const CORE_EXCLUDED = [
+    'mano de obra',
+    'labores agricolas',
+    'labores agricolas',
+    'servicio de labores',
+    'petroleo',
+    'combustible',
+    'diesel',
+    'bencina',
+    'riego',
+    'agua',
+    'electricidad',
+    'maquinaria',
+    'arriendo maquinaria',
+    'repuesto',
+    'mantencion',
+    'quimicos',
+    'fertilizantes',
+    'pesticida',
+    'fungicida',
+    'herbicida',
+    'insecticida',
+    'semillas',
+    'plantas',
+    'plaguicida'
+  ];
 
-  const isExcludedFromDistribution = (cat: string) => {
-    if (!cat) return false;
-    const keywords = [
-      'mano de obra',
-      'labores',
-      'servicio de labores',
-      'petroleo',
-      'diesel',
-      'bencina',
-      'combustible',
-      'riego',
-      'agua',
-      'electricidad',
-      'maquinaria',
-      'arriendo maquinaria',
-      'repuesto',
-      'mantencion',
-      'quimic',
-      'fertiliz',
-      'pestic',
-      'fungic',
-      'herbic',
-      'insectic',
-      'plaguicid'
-    ];
-    return keywords.some((k) => cat.includes(k));
-  };
-
-  const filteredItems = items.filter((item) => {
-    const cat = normalize(item.category || item.products?.category || '');
-    return !isExcludedFromDistribution(cat);
+  const filteredItems = ((items || []) as unknown as GeneralCostInvoiceItemRow[]).filter((item) => {
+    const rawCat = item.category || item.products?.category || '';
+    const cat = String(rawCat).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const isCore = CORE_EXCLUDED.some((ex) => cat.includes(ex));
+    return !isCore;
   });
 
   const { data: assignments, error: assignmentError } = await supabase.rpc('get_general_costs_summary', { p_company_id: params.companyId });
@@ -229,6 +127,13 @@ export async function fetchPendingGeneralCosts(params: { companyId: string }) {
   const assignmentMap = new Map<string, number>();
   ((assignments || []) as unknown as GeneralCostSummaryRow[]).forEach((a) => {
     assignmentMap.set(String(a.invoice_item_id), Number(a.total_assigned || 0));
+  });
+
+  const invoiceSubtotals = new Map<string, number>();
+  ((items || []) as unknown as GeneralCostInvoiceItemRow[]).forEach((item) => {
+    const invId = String(item.invoices.id);
+    const currentSum = invoiceSubtotals.get(invId) || 0;
+    invoiceSubtotals.set(invId, currentSum + Number(item.total_price || 0));
   });
 
   const pending: PendingGeneralCostItem[] = [];
@@ -243,6 +148,7 @@ export async function fetchPendingGeneralCosts(params: { companyId: string }) {
     const itemNet = Number(item.total_price) || 0;
     const invId = String(item.invoices.id);
     const invoiceSubtotal = invoiceSubtotals.get(invId) || 0;
+
     const invoiceExempt = Number(item.invoices.exempt_amount) || 0;
     const invoiceSpecial = Number(item.invoices.special_tax_amount) || 0;
 
@@ -255,10 +161,9 @@ export async function fetchPendingGeneralCosts(params: { companyId: string }) {
 
     const total = isCreditNote ? -Math.abs(grossAmount) : Math.abs(grossAmount);
     const assigned = assignmentMap.get(String(item.id)) || 0;
-    let remaining = total - assigned;
-    if (!isCreditNote && remaining < 0) remaining = 0;
+    const remaining = total - assigned;
 
-    if (Math.abs(remaining) > 1) {
+    if (Math.abs(remaining) > 500) {
       pending.push({
         id: String(item.id),
         invoice_id: String(item.invoices.id),
@@ -291,108 +196,11 @@ export async function fetchGeneralCostsHistory(params: { companyId: string }) {
     )
     .eq('company_id', params.companyId)
     .order('date', { ascending: false })
-    .limit(5000);
+    .limit(500);
 
   if (error) throw error;
 
   const rows = (data || []) as unknown as GeneralCostRaw[];
-  return rows.map((d) => ({
-    id: d.id,
-    assigned_amount: d.amount,
-    assigned_date: d.date,
-    sector_id: d.sectors?.id,
-    invoice_item_id: d.invoice_item_id,
-    category: d.category,
-    description: d.description,
-    sectors: d.sectors,
-    invoice_items: d.invoice_items
-  })) as GeneralCostHistoryItem[];
-}
-
-export async function fetchGeneralCostsHistoryByQuery(params: { companyId: string; query: string }) {
-  const q = String(params.query || '').trim();
-  if (!q) return [] as GeneralCostHistoryItem[];
-
-  const { data: invoices, error: invError } = await supabase
-    .from('invoices')
-    .select('id')
-    .eq('company_id', params.companyId)
-    .ilike('invoice_number', `%${q}%`)
-    .range(0, 99);
-  if (invError) throw invError;
-
-  const { data: products, error: prodError } = await supabase
-    .from('products')
-    .select('id')
-    .eq('company_id', params.companyId)
-    .ilike('name', `%${q}%`)
-    .range(0, 99);
-  if (prodError) throw prodError;
-
-  const invoiceIds = Array.from(new Set((invoices || []).map((i: any) => String(i.id))));
-  const productIds = Array.from(new Set((products || []).map((p: any) => String(p.id))));
-
-  const itemIds: string[] = [];
-
-  if (invoiceIds.length > 0) {
-    const chunkSize = 200;
-    for (let i = 0; i < invoiceIds.length; i += chunkSize) {
-      const chunk = invoiceIds.slice(i, i + chunkSize);
-      const { data: invItems, error: invItemsError } = await supabase
-        .from('invoice_items')
-        .select('id, invoices!inner(company_id)')
-        .in('invoice_id', chunk)
-        .eq('invoices.company_id', params.companyId)
-        .range(0, 2000);
-      if (invItemsError) throw invItemsError;
-      (invItems || []).forEach((it: any) => itemIds.push(String(it.id)));
-    }
-  }
-
-  if (productIds.length > 0) {
-    const chunkSize = 200;
-    for (let i = 0; i < productIds.length; i += chunkSize) {
-      const chunk = productIds.slice(i, i + chunkSize);
-      const { data: prodItems, error: prodItemsError } = await supabase
-        .from('invoice_items')
-        .select('id, invoices!inner(company_id)')
-        .in('product_id', chunk)
-        .eq('invoices.company_id', params.companyId)
-        .range(0, 2000);
-      if (prodItemsError) throw prodItemsError;
-      (prodItems || []).forEach((it: any) => itemIds.push(String(it.id)));
-    }
-  }
-
-  if (itemIds.length === 0) return [] as GeneralCostHistoryItem[];
-
-  const uniqueItemIds = Array.from(new Set(itemIds));
-  const rows: GeneralCostRaw[] = [];
-  const chunkSize = 200;
-
-  for (let i = 0; i < uniqueItemIds.length; i += chunkSize) {
-    const chunk = uniqueItemIds.slice(i, i + chunkSize);
-    const { data, error } = await supabase
-      .from('general_costs')
-      .select(
-        `
-        id, amount, date, category, description, invoice_item_id,
-        sectors (name),
-        invoice_items (
-          products (name),
-          invoices (invoice_number)
-        )
-      `
-      )
-      .eq('company_id', params.companyId)
-      .in('invoice_item_id', chunk)
-      .order('date', { ascending: false })
-      .range(0, 5000);
-
-    if (error) throw error;
-    ((data || []) as unknown as GeneralCostRaw[]).forEach((r) => rows.push(r));
-  }
-
   return rows.map((d) => ({
     id: d.id,
     assigned_amount: d.amount,
