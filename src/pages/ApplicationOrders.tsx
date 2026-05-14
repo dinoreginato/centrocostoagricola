@@ -964,6 +964,11 @@ export const ApplicationOrders: React.FC = () => {
                           <option value="">Seleccione...</option>
                           {fields.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
                       </select>
+                      {fields.length === 0 && (
+                        <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          No hay campos para esta empresa. Revise la empresa seleccionada arriba o cree campos/sectores en “Campos”.
+                        </div>
+                      )}
                   </div>
                   <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Sector</label>
