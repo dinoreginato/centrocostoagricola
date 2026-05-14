@@ -26,6 +26,14 @@ interface FuelStockStats {
   currentStock: number;
 }
 
+interface FuelSeasonSummaryRow {
+  purchasedLiters: number;
+  purchasedCost: number;
+  avgPrice: number;
+  consumedLiters: number;
+  balance: number;
+}
+
 interface Sector {
   id: string;
   name: string;
@@ -56,6 +64,7 @@ export const Fuel: React.FC = () => {
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [fields, setFields] = useState<Field[]>([]);
   const [monthlySummary, setMonthlySummary] = useState<Record<string, { diesel: number; gas93: number; gas95: number }>>({});
+  const [seasonSummary, setSeasonSummary] = useState<Record<string, FuelSeasonSummaryRow>>({});
   
   // Tab State
   const [activeTab, setActiveTab] = useState<'diesel' | 'gasoline' | 'config'>('diesel');
@@ -160,6 +169,7 @@ export const Fuel: React.FC = () => {
     const result = await loadFuelStockAndLogs({ companyId: selectedCompany.id, activeTab: tab });
     setInvoices(result.fuelItems);
     setMonthlySummary(result.monthlySummary);
+    setSeasonSummary(result.seasonSummary || {});
     setLogs(result.logs);
     setStats(result.stats);
   };
@@ -533,6 +543,50 @@ export const Fuel: React.FC = () => {
                       {Object.keys(monthlySummary).length === 0 && (
                           <tr>
                               <td colSpan={5} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">No hay datos disponibles.</td>
+                          </tr>
+                      )}
+                  </tbody>
+              </table>
+          </div>
+      </div>
+
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Resumen por Temporada</h3>
+          </div>
+          <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-900">
+                      <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Temporada</th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Comprado</th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Consumido</th>
+                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Queda</th>
+                      </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                      {Object.keys(seasonSummary).sort().reverse().map((season) => {
+                          const row = seasonSummary[season];
+                          return (
+                              <tr key={season}>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
+                                      {season}
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-blue-600 font-bold">
+                                      {Number(row.purchasedLiters || 0).toLocaleString('es-CL')} L
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-orange-600 font-bold">
+                                      {Number(row.consumedLiters || 0).toLocaleString('es-CL')} L
+                                  </td>
+                                  <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${row.balance < 0 ? 'text-red-600' : 'text-indigo-600'}`}>
+                                      {Number(row.balance || 0).toLocaleString('es-CL')} L
+                                  </td>
+                              </tr>
+                          );
+                      })}
+                      {Object.keys(seasonSummary).length === 0 && (
+                          <tr>
+                              <td colSpan={4} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">No hay datos disponibles.</td>
                           </tr>
                       )}
                   </tbody>

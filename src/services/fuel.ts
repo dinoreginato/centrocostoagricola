@@ -1,4 +1,5 @@
 import { supabase } from '../supabase/client';
+import { getSeasonFromDate } from '../lib/seasonUtils';
 
 function round2(num: number) {
   return Math.round((num + Number.EPSILON) * 100) / 100;
@@ -50,6 +51,19 @@ export type FuelConsumptionInsert = {
 function pickFirst<T>(value: T | T[] | null | undefined): T | undefined {
   if (!value) return undefined;
   return Array.isArray(value) ? value[0] : value;
+}
+
+function getSeasonKey(dateStr: string | null | undefined): string | null {
+  if (!dateStr) return null;
+  const raw = String(dateStr).slice(0, 10);
+  const [yStr, mStr, dStr] = raw.split('-');
+  const y = Number(yStr);
+  const m = Number(mStr);
+  const d = Number(dStr);
+  if (!y || !m) return null;
+  const dt = new Date(y, m - 1, d || 2);
+  if (isNaN(dt.getTime())) return null;
+  return getSeasonFromDate(dt);
 }
 
 export async function fetchFuelInvoiceItems(params: { companyId: string }) {
@@ -172,10 +186,54 @@ export function computeFuelStock(params: {
 
   const totalConsumedLiters = round2(filteredConsumption.reduce((sum: number, log) => sum + Number(log.liters), 0));
 
+  const seasonSummary: Record<
+    string,
+    {
+      purchasedLiters: number;
+      purchasedCost: number;
+      avgPrice: number;
+      consumedLiters: number;
+      balance: number;
+    }
+  > = {};
+
+  fuelItems.forEach((item) => {
+    const inv = pickFirst(item.invoices);
+    const season = getSeasonKey(inv?.invoice_date);
+    if (!season) return;
+    if (!seasonSummary[season]) {
+      seasonSummary[season] = { purchasedLiters: 0, purchasedCost: 0, avgPrice: 0, consumedLiters: 0, balance: 0 };
+    }
+    const docType = String(inv?.document_type || '').toLowerCase();
+    const isNC = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
+    const qty = Number(item.quantity || 0);
+    const price = Number(item.total_price || 0);
+    const finalQty = isNC ? -Math.abs(qty) : qty;
+    const finalPrice = isNC ? -Math.abs(price) : price;
+    seasonSummary[season].purchasedLiters = round2(seasonSummary[season].purchasedLiters + finalQty);
+    seasonSummary[season].purchasedCost = seasonSummary[season].purchasedCost + finalPrice;
+  });
+
+  filteredConsumption.forEach((log) => {
+    const season = getSeasonKey(log.date);
+    if (!season) return;
+    if (!seasonSummary[season]) {
+      seasonSummary[season] = { purchasedLiters: 0, purchasedCost: 0, avgPrice: 0, consumedLiters: 0, balance: 0 };
+    }
+    seasonSummary[season].consumedLiters = round2(seasonSummary[season].consumedLiters + Number(log.liters || 0));
+  });
+
+  Object.keys(seasonSummary).forEach((season) => {
+    const row = seasonSummary[season];
+    row.avgPrice = row.purchasedLiters > 0 ? row.purchasedCost / row.purchasedLiters : 0;
+    row.balance = round2(row.purchasedLiters - row.consumedLiters);
+  });
+
   return {
     fuelItems,
     monthlySummary,
     logs: filteredConsumption,
+    seasonSummary,
     stats: {
       totalPurchasedLiters,
       totalPurchasedCost,
