@@ -165,7 +165,7 @@ export async function loadApplicationOrdersPageData(params: {
       .eq('company_id', params.companyId)
       .neq('category', 'Archivado'),
     supabase.from('machines').select('id, name, type').eq('company_id', params.companyId).eq('is_active', true),
-    supabase.from('workers').select('id, name, role').eq('company_id', params.companyId).eq('is_active', true),
+    supabase.from('workers').select('id, name, role').eq('company_id', params.companyId),
   ]);
 
   if (fieldsRes.error) throw fieldsRes.error;
