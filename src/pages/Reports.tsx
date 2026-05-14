@@ -326,8 +326,9 @@ export const Reports: React.FC = () => {
         setSelectedSeason(res.availableSeasons[0]);
       }
 
-    } catch {
-      toast.error('Error al cargar datos de reportes.');
+    } catch (e: any) {
+      const msg = e?.message ? String(e.message) : 'Error desconocido';
+      toast.error(`Error al cargar datos de reportes: ${msg}`);
     } finally {
       setLoading(false);
     }

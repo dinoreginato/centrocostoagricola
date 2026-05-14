@@ -22,7 +22,7 @@ type ReportInvoiceRow = {
 export async function loadReportsRawData(params: { companyId: string }) {
   const { data: fields, error: fieldsError } = await supabase
     .from('fields')
-    .select('id, name, fruit_type, sectors(id, name, hectares)')
+    .select('*, sectors(id, name, hectares)')
     .eq('company_id', params.companyId);
 
   if (fieldsError) throw fieldsError;
@@ -50,7 +50,7 @@ export async function loadReportsRawData(params: { companyId: string }) {
     supabase.from('fuel_assignments').select('sector_id, assigned_amount, assigned_date').in('sector_id', sectorIds),
     supabase
       .from('fuel_consumption')
-      .select('sector_id, estimated_price, date, activity, liters, machine_id, machine:machines(name, type)')
+      .select('sector_id, estimated_price, date, activity, liters')
       .eq('company_id', params.companyId),
     supabase.from('machinery_assignments').select('sector_id, assigned_amount, assigned_date').in('sector_id', sectorIds),
     supabase.from('irrigation_assignments').select('sector_id, assigned_amount, assigned_date').in('sector_id', sectorIds),
@@ -58,20 +58,11 @@ export async function loadReportsRawData(params: { companyId: string }) {
     supabase.from('income_entries').select('*, fields(name), sectors(name)').eq('company_id', params.companyId),
     supabase
       .from('invoices')
-      .select(
-        `
-        id, invoice_number, invoice_date, total_amount, supplier, status, due_date, document_type, notes,
-        tax_percentage, discount_amount, exempt_amount, special_tax_amount,
-        invoice_items (
-          id, category, total_price, quantity,
-          products (name, unit, category)
-        )
-      `
-      )
+      .select('*, invoice_items (id, category, total_price, quantity, products (name, unit, category))')
       .eq('company_id', params.companyId),
     supabase
       .from('products')
-      .select('id, name, unit, category, current_stock, minimum_stock, average_cost')
+      .select('*')
       .eq('company_id', params.companyId)
       .neq('category', 'Archivado')
   ]);
