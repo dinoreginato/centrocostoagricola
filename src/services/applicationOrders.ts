@@ -345,10 +345,84 @@ export async function createInventoryMovement(params: { payload: InventoryMoveme
   if (error) throw error;
 }
 
+type FuelInvoiceItemRow = {
+  quantity: number | null;
+  total_price: number | null;
+  category: string | null;
+  products?: { name?: string | null; unit?: string | null; category?: string | null } | { name?: string | null; unit?: string | null; category?: string | null }[] | null;
+  invoices?: { document_type?: string | null; company_id?: string | null } | { document_type?: string | null; company_id?: string | null }[] | null;
+};
+
+function pickFirst<T>(value: T | T[] | null | undefined): T | undefined {
+  if (!value) return undefined;
+  return Array.isArray(value) ? value[0] : value;
+}
+
+async function computeAvgFuelPriceFromInvoices(params: { companyId: string; type: string }) {
+  const { data, error } = await supabase
+    .from('invoice_items')
+    .select(
+      `
+      quantity, total_price, category,
+      products (name, unit, category),
+      invoices!inner (document_type, company_id)
+    `
+    )
+    .eq('invoices.company_id', params.companyId);
+
+  if (error) throw error;
+
+  const items = (data || []) as unknown as FuelInvoiceItemRow[];
+
+  const invalidUnits = ['un', 'unid', 'unidad', 'und', 'pieza', 'kit', 'juego', 'global', 'servicio', 'hrs', 'horas'];
+
+  const filtered = items.filter((item) => {
+    const product = pickFirst(item.products);
+    const cat = String(item.category || product?.category || '').toLowerCase().trim();
+    const productName = String(product?.name || '').toLowerCase();
+    const unit = String(product?.unit || '').toLowerCase().trim();
+
+    if (invalidUnits.includes(unit)) return false;
+
+    const isDiesel = ['petroleo', 'diesel'].some((t) => cat.includes(t) || productName.includes(t));
+    const isGasoline = ['bencina', 'gasolina', 'combustible'].some((t) => cat.includes(t) || productName.includes(t));
+
+    if (String(params.type).toLowerCase() === 'diesel') return isDiesel && !productName.includes('bencina') && !productName.includes('gasolina');
+    return isGasoline;
+  });
+
+  let totalLiters = 0;
+  let totalCost = 0;
+
+  filtered.forEach((item) => {
+    const inv = pickFirst(item.invoices);
+    const docType = String(inv?.document_type || '').toLowerCase();
+    const isNC = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
+    const qty = Number(item.quantity || 0);
+    const cost = Number(item.total_price || 0);
+    totalLiters += isNC ? -Math.abs(qty) : qty;
+    totalCost += isNC ? -Math.abs(cost) : cost;
+  });
+
+  if (totalLiters <= 0) return null;
+  return totalCost / totalLiters;
+}
+
 export async function getFuelStats(params: { companyId: string; type: string }) {
   const { data, error } = await supabase.rpc('get_fuel_stats', { p_company_id: params.companyId, p_type: params.type });
-  if (error) throw error;
-  return (data || []) as Array<{ avg_price?: number | null }>;
+  if (!error) return (data || []) as Array<{ avg_price?: number | null }>;
+
+  const msg = String((error as unknown as { message?: unknown } | null)?.message ?? '').toLowerCase();
+  if (msg.includes('could not find the function') || msg.includes('schema cache') || msg.includes('does not exist')) {
+    try {
+      const avg = await computeAvgFuelPriceFromInvoices({ companyId: params.companyId, type: params.type });
+      return [{ avg_price: avg }];
+    } catch {
+      return [{ avg_price: null }];
+    }
+  }
+
+  throw error;
 }
 
 export type FuelConsumptionInsert = {
