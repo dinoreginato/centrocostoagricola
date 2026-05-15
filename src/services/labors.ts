@@ -49,21 +49,9 @@ export async function fetchPendingLaborItems(params: { companyId: string }) {
 
   const laborCategorySet = new Set(
     [
-      'general',
-      'cosecha',
-      'poda',
-      'raleo',
-      'riego',
-      'aplicaciones',
-      'mantenimiento',
-      'plantacion',
-      'administracion',
-      'otros',
       'mano de obra',
+      'labores agricola',
       'labores agricolas',
-      'labor',
-      'labores',
-      'servicio de labores',
     ].map(normalize),
   );
 
