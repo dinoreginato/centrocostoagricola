@@ -364,7 +364,17 @@ export type FuelConsumptionInsert = {
 
 export async function createFuelConsumption(params: { payload: FuelConsumptionInsert }) {
   const { error } = await supabase.from('fuel_consumption').insert([params.payload]);
-  if (error) throw error;
+  if (!error) return;
+
+  const msg = String((error as unknown as { message?: unknown } | null)?.message ?? '');
+  if (params.payload.machine_id != null && msg.toLowerCase().includes('machine_id') && msg.toLowerCase().includes('does not exist')) {
+    const { machine_id: _machineId, ...fallback } = params.payload;
+    const { error: retryError } = await supabase.from('fuel_consumption').insert([fallback]);
+    if (retryError) throw retryError;
+    return;
+  }
+
+  throw error;
 }
 
 export async function markApplicationOrderCompleted(params: { orderId: string; completedDate: string }) {
