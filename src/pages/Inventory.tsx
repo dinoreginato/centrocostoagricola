@@ -361,6 +361,15 @@ export const Inventory: React.FC = () => {
     setAdjustNotes('');
   };
 
+  useEffect(() => {
+    if (!editingProduct) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') cancelEdit();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [editingProduct]);
+
   const searchOfficialForEdit = async (query: string) => {
       try {
         const data = await searchOfficialProducts({ query, limit: 5 });
@@ -453,6 +462,7 @@ export const Inventory: React.FC = () => {
       setAdjustQty(0);
       setAdjustNotes('');
       toast('Ajuste aplicado');
+      cancelEdit();
     } catch (error: any) {
       toast.error('Error al ajustar: ' + error.message);
     } finally {
@@ -1032,17 +1042,24 @@ export const Inventory: React.FC = () => {
 
       {/* Edit Modal */}
       {editingProduct && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full">
-            <div className="flex justify-between items-center mb-4">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+          onMouseDown={cancelEdit}
+        >
+          <div
+            className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-center px-4 py-3 border-b border-gray-200 dark:border-gray-700">
               <h3 className="text-lg font-bold">Editar Producto</h3>
               <button onClick={cancelEdit} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:text-gray-300">
                 <X className="h-6 w-6" />
               </button>
             </div>
             
-            <div className="space-y-4">
-              <div>
+            <div className="p-4 overflow-y-auto">
+              <div className="space-y-3">
+              <div className="relative">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nombre</label>
                 <div className="relative">
                   <input
@@ -1214,7 +1231,7 @@ export const Inventory: React.FC = () => {
                     disabled={loading}
                     className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center disabled:opacity-60"
                   >
-                    <Save className="h-4 w-4 mr-2" /> Aplicar Ajuste
+                    <Save className="h-4 w-4 mr-2" /> Aplicar y Cerrar
                   </button>
                 </div>
               </div>
@@ -1240,21 +1257,21 @@ export const Inventory: React.FC = () => {
                   />
                 </div>
               </div>
-
-              <div className="flex justify-end pt-4 gap-2">
-                <button
-                  onClick={cancelEdit}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleUpdateProduct}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center"
-                >
-                  <Save className="h-4 w-4 mr-2" /> Guardar
-                </button>
               </div>
+            </div>
+            <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+              <button
+                onClick={cancelEdit}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleUpdateProduct}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center"
+              >
+                <Save className="h-4 w-4 mr-2" /> Guardar
+              </button>
             </div>
           </div>
         </div>
