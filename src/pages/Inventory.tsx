@@ -582,17 +582,17 @@ export const Inventory: React.FC = () => {
   if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Bodega de Productos</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Gestión de inventario y costos promedio</p>
+          <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Bodega de Productos</h1>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Gestión de inventario y costos promedio</p>
         </div>
-        <div className="bg-white dark:bg-gray-800 px-4 py-2 rounded-lg shadow border border-gray-200 dark:border-gray-700 flex items-center space-x-2">
+        <div className="bg-white dark:bg-gray-800 px-3 py-1.5 rounded-lg shadow border border-gray-200 dark:border-gray-700 flex items-center space-x-2">
           {canWrite && (
             <button
                 onClick={handleMergeDuplicates}
-                className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 mr-2"
+                className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 mr-2"
                 title="Fusionar productos duplicados con el mismo nombre"
             >
                 <Package className="h-4 w-4 mr-2" />
@@ -601,7 +601,7 @@ export const Inventory: React.FC = () => {
           )}
           <button
               onClick={generateShoppingListPDF}
-              className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               title="Generar PDF con lista de productos bajo stock mínimo"
           >
               <ShoppingCart className="h-4 w-4 mr-2" />
@@ -610,7 +610,7 @@ export const Inventory: React.FC = () => {
           <button
               onClick={() => stockAuditMutation.mutate()}
               disabled={stockAuditMutation.isPending}
-              className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-amber-600 hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 ml-2 disabled:opacity-60"
+              className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md shadow-sm text-white bg-amber-600 hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 ml-2 disabled:opacity-60"
               title="Auditar stock vs entradas/salidas"
           >
               <AlertTriangle className="h-4 w-4 mr-2" />
@@ -626,7 +626,7 @@ export const Inventory: React.FC = () => {
           <button
               onClick={() => sagFileInputRef.current?.click()}
               disabled={!isSystemAdminQuery.data}
-              className={`text-sm font-medium flex items-center ${
+              className={`text-xs font-medium flex items-center ${
                 isSystemAdminQuery.data ? 'text-green-700 hover:text-green-800' : 'text-gray-400 cursor-not-allowed'
               }`}
               title={isSystemAdminQuery.data ? 'Importar Listado Oficial SAG (Excel)' : 'Solo el administrador del sistema puede importar SAG'}
@@ -635,20 +635,20 @@ export const Inventory: React.FC = () => {
               Importar SAG
           </button>
           <div className="h-4 w-px bg-gray-300 mx-2"></div>
-          <span className="text-sm text-gray-500 dark:text-gray-400">Valor Total Bodega:</span>
-          <span className="ml-2 text-lg font-bold text-green-700">{formatCLP(totalValue)}</span>
+          <span className="text-xs text-gray-500 dark:text-gray-400">Valor Total Bodega:</span>
+          <span className="ml-2 text-base font-bold text-green-700">{formatCLP(totalValue)}</span>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-sm flex flex-col sm:flex-row gap-4">
+      <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-sm flex flex-col sm:flex-row gap-3">
         <div className="flex-1 relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-5 w-5 text-gray-400" />
+          <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+            <Search className="h-4 w-4 text-gray-400" />
           </div>
           <input
             type="text"
-            className="block w-full pl-10 border-gray-300 dark:border-gray-600 rounded-md focus:ring-green-500 focus:border-green-500 sm:text-sm"
+            className="block w-full pl-9 border-gray-300 dark:border-gray-600 rounded-md focus:ring-green-500 focus:border-green-500 text-sm"
             placeholder="Buscar producto..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -656,7 +656,7 @@ export const Inventory: React.FC = () => {
         </div>
         <div className="sm:w-48">
           <select
-            className="block w-full border-gray-300 dark:border-gray-600 rounded-md focus:ring-green-500 focus:border-green-500 sm:text-sm"
+            className="block w-full border-gray-300 dark:border-gray-600 rounded-md focus:ring-green-500 focus:border-green-500 text-sm"
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
           >
@@ -708,29 +708,29 @@ export const Inventory: React.FC = () => {
       {/* Inventory Table */}
       <div className="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-lg">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-xs">
             <thead className="bg-gray-50 dark:bg-gray-900">
               <tr>
-                <th scope="col" className="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"></th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th scope="col" className="px-2 py-1.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider"></th>
+                <th scope="col" className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Producto
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th scope="col" className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Categoría
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th scope="col" className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Stock Actual
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th scope="col" className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Costo Promedio
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th scope="col" className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Valor Total
                 </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th scope="col" className="px-3 py-1.5 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Estado
                 </th>
-                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <th scope="col" className="px-3 py-1.5 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Acciones
                 </th>
               </tr>
@@ -738,18 +738,18 @@ export const Inventory: React.FC = () => {
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
               {inventoryQuery.isLoading ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-4 text-center">Cargando inventario...</td>
+                  <td colSpan={8} className="px-3 py-2 text-center">Cargando inventario...</td>
                 </tr>
               ) : filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                  <td colSpan={8} className="px-3 py-2 text-center text-gray-500 dark:text-gray-400">
                     No se encontraron productos.
                   </td>
                 </tr>
               ) : (
                 filteredProducts.map((product) => (
                   <tr key={product.id}>
-                    <td className="px-3 py-4 whitespace-nowrap">
+                    <td className="px-2 py-1.5 whitespace-nowrap">
                       {canWrite && (
                         <input
                           type="checkbox"
@@ -763,22 +763,22 @@ export const Inventory: React.FC = () => {
                         />
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-3 py-1.5 whitespace-nowrap">
                       <div className="flex items-center">
-                        <div className="flex-shrink-0 h-10 w-10 bg-green-100 rounded-full flex items-center justify-center">
-                          <Package className="h-5 w-5 text-green-600" />
+                        <div className="flex-shrink-0 h-7 w-7 bg-green-100 rounded-full flex items-center justify-center">
+                          <Package className="h-4 w-4 text-green-600" />
                         </div>
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{product.name}</div>
+                        <div className="ml-3">
+                          <div className="text-xs font-medium text-gray-900 dark:text-gray-100">{product.name}</div>
                           {product.active_ingredient && (
                               <div className="text-xs text-blue-600 font-medium">{product.active_ingredient}</div>
                           )}
-                          <div className="text-xs text-gray-500 dark:text-gray-400">Actualizado: {new Date(product.updated_at).toLocaleDateString()}</div>
+                          <div className="text-[10px] text-gray-500 dark:text-gray-400">Actualizado: {new Date(product.updated_at).toLocaleDateString()}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 capitalize">
+                    <td className="px-3 py-1.5 whitespace-nowrap">
+                      <span className="px-2 inline-flex text-xs leading-4 font-semibold rounded-full bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 capitalize">
                         {product.category}
                       </span>
                       {(product.lot_number || product.expiration_date) && (
@@ -792,44 +792,44 @@ export const Inventory: React.FC = () => {
                           </div>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900 dark:text-gray-100 font-medium">{product.current_stock}</div>
+                    <td className="px-3 py-1.5 whitespace-nowrap">
+                      <div className="text-xs text-gray-900 dark:text-gray-100 font-medium">{product.current_stock}</div>
                       <div className="text-xs text-gray-500 dark:text-gray-400">{product.unit}</div>
                       {product.minimum_stock > 0 && (
                           <div className="text-[10px] text-orange-500">Mín: {product.minimum_stock}</div>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900 dark:text-gray-100">{formatCLP(product.average_cost)}</div>
+                    <td className="px-3 py-1.5 whitespace-nowrap">
+                      <div className="text-xs text-gray-900 dark:text-gray-100">{formatCLP(product.average_cost)}</div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900 dark:text-gray-100 font-bold">
+                    <td className="px-3 py-1.5 whitespace-nowrap">
+                      <div className="text-xs text-gray-900 dark:text-gray-100 font-bold">
                         {formatCLP(product.current_stock * product.average_cost)}
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-3 py-1.5 whitespace-nowrap">
                       {product.current_stock <= 0 ? (
-                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                        <span className="px-2 inline-flex text-xs leading-4 font-semibold rounded-full bg-red-100 text-red-800">
                           Sin Stock
                         </span>
                       ) : product.minimum_stock > 0 && product.current_stock <= product.minimum_stock ? (
-                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800 flex items-center">
+                        <span className="px-2 inline-flex text-xs leading-4 font-semibold rounded-full bg-red-100 text-red-800 flex items-center">
                           <AlertTriangle className="h-3 w-3 mr-1" /> Crítico
                         </span>
                       ) : product.current_stock < 10 ? (
-                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800 flex items-center">
+                        <span className="px-2 inline-flex text-xs leading-4 font-semibold rounded-full bg-yellow-100 text-yellow-800 flex items-center">
                           <AlertTriangle className="h-3 w-3 mr-1" /> Bajo
                         </span>
                       ) : (
-                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                        <span className="px-2 inline-flex text-xs leading-4 font-semibold rounded-full bg-green-100 text-green-800">
                           Normal
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <td className="px-3 py-1.5 whitespace-nowrap text-right font-medium">
                       <button 
                         onClick={() => loadHistory(product)}
-                        className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:text-gray-100 mr-4"
+                        className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:text-gray-100 mr-2"
                         title="Ver Movimientos"
                       >
                         <History className="h-4 w-4" />
@@ -838,7 +838,7 @@ export const Inventory: React.FC = () => {
                         <>
                           <button 
                             onClick={() => startEdit(product)}
-                            className="text-blue-600 hover:text-blue-900 mr-4"
+                            className="text-blue-600 hover:text-blue-900 mr-2"
                             title="Editar"
                           >
                             <Edit className="h-4 w-4" />
