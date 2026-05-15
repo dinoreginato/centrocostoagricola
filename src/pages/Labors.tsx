@@ -22,16 +22,20 @@ const LABOR_TYPES = [
   'Otros'
 ];
 
-// Mapping of keywords to Labor Types for auto-detection
-const LABOR_KEYWORDS: Record<string, string[]> = {
-    'Cosecha': ['cosecha', 'recoleccion', 'recolección', 'picking', 'vendimia', 'cosech'],
-    'Poda': ['poda', 'pruning', 'recorte', 'despunte'],
-    'Raleo': ['raleo', 'thinning', 'entresaque', 'aclareo'],
-    'Riego': ['riego', 'irrigation', 'agua', 'regador'],
-    'Aplicaciones': ['aplicacion', 'fumigacion', 'pulverizacion', 'spray', 'tratamiento'],
-    'Mantenimiento': ['mantenimiento', 'reparacion', 'arreglo', 'taller', 'mantencion'],
-    'Plantación': ['plantacion', 'siembra', 'planting'],
-    'Administración': ['administracion', 'gestion', 'oficina', 'contabilidad'],
+const normalizeText = (v: string) =>
+  v
+    .toLowerCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+const resolveLaborTypeFromCategory = (category?: string | null) => {
+  const cat = normalizeText(String(category || ''));
+  const direct = LABOR_TYPES.find((t) => normalizeText(t) === cat);
+  if (direct) return direct;
+  if (!cat) return 'General';
+  if (cat === 'mano de obra' || cat === 'labores agricolas' || cat === 'labor' || cat === 'labores' || cat === 'servicio de labores') return 'General';
+  return 'General';
 };
 
 interface LaborItem {
@@ -40,6 +44,7 @@ interface LaborItem {
   invoice_number: string;
   date: string;
   description: string;
+  category?: string | null;
   total_amount: number;
   assigned_amount: number;
   remaining_amount: number;
@@ -195,27 +200,8 @@ export const Labors: React.FC = () => {
     setDistributeBy('sector');
     setAllocations([{ sector_id: '', amount: labor.remaining_amount }]);
     setFieldTotalAmount(labor.remaining_amount);
-    
-    // Improved auto-detection logic
-    const desc = labor.description.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    
-    let matchedType = 'General';
-    
-    // Check strict keywords first
-    for (const [type, keywords] of Object.entries(LABOR_KEYWORDS)) {
-        if (keywords.some(k => desc.includes(k))) {
-            matchedType = type;
-            break;
-        }
-    }
-    
-    // Fallback to simple matching if no keyword found
-    if (matchedType === 'General') {
-        const simpleMatch = LABOR_TYPES.find(t => t !== 'General' && desc.includes(t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")));
-        if (simpleMatch) matchedType = simpleMatch;
-    }
 
-    setLaborType(matchedType);
+    setLaborType(resolveLaborTypeFromCategory(labor.category));
   };
 
   const handleCloneAssignment = (assignment: HistoryItem) => {
@@ -424,7 +410,7 @@ export const Labors: React.FC = () => {
 
   const handleAutoClassifyHistory = async () => {
       if (!selectedCompany) return;
-      if (!confirm('¿Desea reclasificar automáticamente el historial de labores basado en las palabras clave? Esto actualizará las asignaciones que actualmente están como "General" o sin tipo.')) return;
+      if (!confirm('¿Desea reclasificar automáticamente el historial de labores basado en la categoría del ítem? Esto actualizará las asignaciones que actualmente están como "General" o sin tipo.')) return;
 
       setLoading(true);
       try {
@@ -441,21 +427,7 @@ export const Labors: React.FC = () => {
           // 2. Iterate and update
           // We process in parallel chunks for speed
           const updates = assignments.map(async (assignment: any) => {
-              const desc = (assignment.invoice_items?.products?.name || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-              let matchedType = null;
-
-              for (const [type, keywords] of Object.entries(LABOR_KEYWORDS)) {
-                  if (keywords.some(k => desc.includes(k))) {
-                      matchedType = type;
-                      break;
-                  }
-              }
-
-              // Also check simple match if keyword match failed
-              if (!matchedType) {
-                   const simpleMatch = LABOR_TYPES.find(t => t !== 'General' && desc.includes(t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")));
-                   if (simpleMatch) matchedType = simpleMatch;
-              }
+              const matchedType = resolveLaborTypeFromCategory(assignment.invoice_items?.category);
 
               if (matchedType && matchedType !== 'General') {
                   updatedCount++;
@@ -911,10 +883,10 @@ export const Labors: React.FC = () => {
                         <button
                             onClick={handleAutoClassifyHistory}
                             className="text-xs text-white bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded transition-colors whitespace-nowrap flex items-center"
-                            title="Reclasificar historial automáticamente"
+                            title="Reclasificar historial automáticamente según categoría"
                         >
                             <RefreshCw className="h-4 w-4 mr-1" />
-                            Auto-Clasificar
+                            Auto-Clasificar (Categoría)
                         </button>
                         <button
                             onClick={handleDeleteAllAssignments}

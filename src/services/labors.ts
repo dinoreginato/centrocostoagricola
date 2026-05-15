@@ -40,13 +40,37 @@ export async function fetchPendingLaborItems(params: { companyId: string }) {
 
   if (error) throw error;
 
-  const laborKeywords = ['mano de obra', 'labor', 'labores', 'servicio de labores', 'cosecha', 'poda', 'raleo', 'siembra'];
+  const normalize = (v: string) =>
+    v
+      .toLowerCase()
+      .trim()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+  const laborCategorySet = new Set(
+    [
+      'general',
+      'cosecha',
+      'poda',
+      'raleo',
+      'riego',
+      'aplicaciones',
+      'mantenimiento',
+      'plantacion',
+      'administracion',
+      'otros',
+      'mano de obra',
+      'labores agricolas',
+      'labor',
+      'labores',
+      'servicio de labores',
+    ].map(normalize),
+  );
 
   const filteredItems = (items || []).filter((item: any) => {
     if (item.invoices?.company_id !== params.companyId) return false;
-    const cat = String(item.category || '').toLowerCase().trim();
-    const name = String(item.products?.name || '').toLowerCase().trim();
-    return laborKeywords.some((k) => cat.includes(k) || name.includes(k));
+    const cat = normalize(String(item.category || ''));
+    return Boolean(cat) && laborCategorySet.has(cat);
   });
 
   const assignmentMap = await fetchLaborAssignmentsSummary({ companyId: params.companyId });
@@ -79,6 +103,7 @@ export async function fetchPendingLaborItems(params: { companyId: string }) {
         invoice_number: String(item.invoices.invoice_number),
         date: String(item.invoices.invoice_date),
         description: `${item.products?.name || 'Sin descripción'} ${isCreditNote ? '(NC)' : ''} [${item.invoices.document_type}]`,
+        category: item.category ?? null,
         total_amount: total,
         assigned_amount: assigned,
         remaining_amount: remaining
@@ -185,6 +210,7 @@ export async function fetchLaborAssignmentsForAutoClassify(params: { companyId: 
       `
       id, labor_type,
       invoice_items!inner (
+        category,
         products (name),
         invoices!inner (company_id)
       )
