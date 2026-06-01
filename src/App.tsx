@@ -28,6 +28,7 @@ const GeneralCosts = React.lazy(() => import('./pages/GeneralCosts').then(module
 const ChemicalCosts = React.lazy(() => import('./pages/ChemicalCosts').then(module => ({ default: module.ChemicalCosts })));
 const Incomes = React.lazy(() => import('./pages/Incomes').then(module => ({ default: module.Incomes })));
 const PhytosanitaryPrograms = React.lazy(() => import('./pages/PhytosanitaryPrograms').then(module => ({ default: module.PhytosanitaryPrograms })));
+const PurchaseOrders = React.lazy(() => import('./pages/PurchaseOrders').then(module => ({ default: module.PurchaseOrders })));
 
 const FallbackLoader = () => (
   <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -61,6 +62,7 @@ function App() {
                   <Route path="programas-fitosanitarios" element={<PhytosanitaryPrograms />} />
                   <Route path="aplicaciones" element={<Applications />} />
                   <Route path="ordenes-aplicacion" element={<ApplicationOrders />} />
+                  <Route path="ordenes-compra" element={<PurchaseOrders />} />
                   <Route path="otros-costos" element={<GeneralCosts />} />
                   <Route path="precios-quimicos" element={<ChemicalCosts />} />
                   <Route path="reportes" element={<Reports />} />
