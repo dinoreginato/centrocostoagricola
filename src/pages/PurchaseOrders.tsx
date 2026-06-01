@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileText, Plus, ShoppingCart, Trash2, X } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { useCompany } from '../contexts/CompanyContext';
 import { filterAgrochemicalProducts } from '../lib/agrochemicals';
 import { formatCLP } from '../lib/utils';
@@ -31,6 +32,9 @@ export const PurchaseOrders: React.FC = () => {
   const [orderDate, setOrderDate] = useState(() => new Date().toLocaleDateString('en-CA'));
   const [notes, setNotes] = useState('');
   const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfPreviewTitle, setPdfPreviewTitle] = useState('');
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
 
   const ordersQuery = useQuery({
     queryKey: ['purchaseOrders', companyId],
@@ -194,9 +198,17 @@ export const PurchaseOrders: React.FC = () => {
       doc.text(`Observaciones: ${selectedOrder.notes}`, 14, endY + 18, { maxWidth: 180 });
     }
 
-    const safeCompany = companyName.replace(/\s+/g, '_');
-    const safeDate = selectedOrder.order_date;
-    doc.save(`OC_${safeCompany}_${safeDate}.pdf`);
+    const title = `OC_${companyName}_${selectedOrder.order_date}`;
+    const url = String(doc.output('bloburl'));
+    setPdfPreviewTitle(title);
+    setPdfPreviewUrl(url);
+    setPdfPreviewOpen(true);
+  };
+
+  const handleClosePdfPreview = () => {
+    setPdfPreviewOpen(false);
+    if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+    setPdfPreviewUrl(null);
   };
 
   if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
@@ -205,6 +217,8 @@ export const PurchaseOrders: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <PdfPreviewModal isOpen={pdfPreviewOpen} onClose={handleClosePdfPreview} title={pdfPreviewTitle} pdfUrl={pdfPreviewUrl} />
+
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
@@ -270,7 +284,7 @@ export const PurchaseOrders: React.FC = () => {
                   className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                 >
                   <FileText className="h-4 w-4 mr-2" />
-                  PDF
+                  Ver PDF
                 </button>
                 {canWrite && (
                   <button
@@ -563,4 +577,3 @@ export const PurchaseOrders: React.FC = () => {
     </div>
   );
 };
-
