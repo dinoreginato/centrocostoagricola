@@ -101,6 +101,25 @@ const getConversionFactor = (fromUnit: string, toUnit: string): number => {
   return 1;
 };
 
+const formatQtyNumber = (value: number) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '0';
+  const abs = Math.abs(n);
+  const decimals = abs >= 100 ? 0 : abs >= 10 ? 1 : 2;
+  return n.toFixed(decimals).replace(/\.?0+$/, '');
+};
+
+const formatQty = (value: number, unit: string) => {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return `0 ${unit || ''}`.trim();
+  const from = normalizeUnit(unit);
+  const to = from === 'gr' || from === 'kg' ? 'kg' : from === 'cc' || from === 'l' ? 'l' : from;
+  const factor = getConversionFactor(from, to);
+  const converted = raw * factor;
+  const label = to === 'kg' ? 'Kg' : to === 'l' ? 'L' : unit || '';
+  return `${formatQtyNumber(converted)} ${label}`.trim();
+};
+
 export const ApplicationOrders: React.FC = () => {
   const { selectedCompany, userRole } = useCompany();
   const queryClient = useQueryClient();
@@ -159,6 +178,10 @@ export const ApplicationOrders: React.FC = () => {
   const machines = useMemo(() => (pageQuery.data?.machines || []) as Machine[], [pageQuery.data?.machines]);
   const workers = useMemo(() => (pageQuery.data?.workers || []) as Worker[], [pageQuery.data?.workers]);
   const programEvents = useMemo(() => (pageQuery.data?.programEvents || []) as any[], [pageQuery.data?.programEvents]);
+  const currentSelectedProduct = useMemo(
+    () => products.find((p) => p.id === currentItem.product_id) || null,
+    [products, currentItem.product_id],
+  );
 
   useEffect(() => {
     if (!pageQuery.isError) {
@@ -716,9 +739,9 @@ export const ApplicationOrders: React.FC = () => {
       const tableData = order.items?.map(item => [
           item.product_name,
           item.active_ingredient || '-',
-          item.dose_per_100l ? `${item.dose_per_100l} ${item.unit || 'L/Kg'}` : '-',
-          item.dose_per_hectare ? `${item.dose_per_hectare} ${item.unit || 'L/Kg'}` : '-',
-          `${item.total_quantity} ${item.unit || 'L/Kg'}`
+          item.dose_per_100l ? formatQty(item.dose_per_100l, item.unit || '') : '-',
+          item.dose_per_hectare ? formatQty(item.dose_per_hectare, item.unit || '') : '-',
+          formatQty(item.total_quantity, item.unit || '')
       ]) || [];
 
       autoTable(doc, {
@@ -1100,9 +1123,14 @@ export const ApplicationOrders: React.FC = () => {
                           {/* Equivalent Calculator Helper */}
                           {currentItem.dose_input_value > 0 && currentOrder.water_liters_per_hectare > 0 && (
                               <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-1 whitespace-nowrap" title="Equivalencia automática">
-                                  {currentItem.dose_input_type === 'hl' 
-                                      ? `≈ ${((currentItem.dose_input_value * currentOrder.water_liters_per_hectare) / 100).toFixed(2)} / Ha` 
-                                      : `≈ ${((currentItem.dose_input_value * 100) / currentOrder.water_liters_per_hectare).toFixed(2)} / 100L`}
+                                  {(() => {
+                                      const unit = currentItem.unit_override || currentSelectedProduct?.unit || '';
+                                      const eq =
+                                        currentItem.dose_input_type === 'hl'
+                                          ? (currentItem.dose_input_value * currentOrder.water_liters_per_hectare) / 100
+                                          : (currentItem.dose_input_value * 100) / currentOrder.water_liters_per_hectare;
+                                      return `≈ ${formatQty(eq, unit)} ${currentItem.dose_input_type === 'hl' ? '/ Ha' : '/ 100L'}`;
+                                  })()}
                               </div>
                           )}
                       </div>
@@ -1146,9 +1174,9 @@ export const ApplicationOrders: React.FC = () => {
                                       <div className="font-medium">{item.product_name}</div>
                                       <div className="text-xs text-gray-500 dark:text-gray-400">{item.active_ingredient}</div>
                                   </td>
-                                  <td className="px-3 py-2 text-sm">{item.dose_per_100l ? `${item.dose_per_100l} ${item.unit}` : '-'}</td>
-                                  <td className="px-3 py-2 text-sm">{item.dose_per_hectare} {item.unit}</td>
-                                  <td className="px-3 py-2 text-sm font-bold">{item.total_quantity} {item.unit}</td>
+                                  <td className="px-3 py-2 text-sm">{item.dose_per_100l ? formatQty(item.dose_per_100l, item.unit) : '-'}</td>
+                                  <td className="px-3 py-2 text-sm">{formatQty(item.dose_per_hectare, item.unit)}</td>
+                                  <td className="px-3 py-2 text-sm font-bold">{formatQty(item.total_quantity, item.unit)}</td>
                                   <td className="px-3 py-2 text-right">
                                       <button onClick={() => handleRemoveItem(idx)} className="text-red-600 hover:text-red-800">
                                           <Trash2 className="h-4 w-4" />
