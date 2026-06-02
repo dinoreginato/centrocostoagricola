@@ -109,6 +109,12 @@ const formatQtyNumber = (value: number) => {
   return n.toFixed(decimals).replace(/\.?0+$/, '');
 };
 
+const formatQtyNoConvert = (value: number, unit: string) => {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return `0 ${unit || ''}`.trim();
+  return `${formatQtyNumber(raw)} ${unit || ''}`.trim();
+};
+
 const formatQty = (value: number, unit: string) => {
   const raw = Number(value);
   if (!Number.isFinite(raw)) return `0 ${unit || ''}`.trim();
@@ -739,7 +745,7 @@ export const ApplicationOrders: React.FC = () => {
       const tableData = order.items?.map(item => [
           item.product_name,
           item.active_ingredient || '-',
-          item.dose_per_100l ? formatQty(item.dose_per_100l, item.unit || '') : '-',
+          item.dose_per_100l ? formatQtyNoConvert(item.dose_per_100l, item.unit || '') : '-',
           item.dose_per_hectare ? formatQty(item.dose_per_hectare, item.unit || '') : '-',
           formatQty(item.total_quantity, item.unit || '')
       ]) || [];
@@ -1129,7 +1135,9 @@ export const ApplicationOrders: React.FC = () => {
                                         currentItem.dose_input_type === 'hl'
                                           ? (currentItem.dose_input_value * currentOrder.water_liters_per_hectare) / 100
                                           : (currentItem.dose_input_value * 100) / currentOrder.water_liters_per_hectare;
-                                      return `≈ ${formatQty(eq, unit)} ${currentItem.dose_input_type === 'hl' ? '/ Ha' : '/ 100L'}`;
+                                      return `≈ ${
+                                        currentItem.dose_input_type === 'hl' ? formatQty(eq, unit) : formatQtyNoConvert(eq, unit)
+                                      } ${currentItem.dose_input_type === 'hl' ? '/ Ha' : '/ 100L'}`;
                                   })()}
                               </div>
                           )}
@@ -1174,7 +1182,7 @@ export const ApplicationOrders: React.FC = () => {
                                       <div className="font-medium">{item.product_name}</div>
                                       <div className="text-xs text-gray-500 dark:text-gray-400">{item.active_ingredient}</div>
                                   </td>
-                                  <td className="px-3 py-2 text-sm">{item.dose_per_100l ? formatQty(item.dose_per_100l, item.unit) : '-'}</td>
+                                  <td className="px-3 py-2 text-sm">{item.dose_per_100l ? formatQtyNoConvert(item.dose_per_100l, item.unit) : '-'}</td>
                                   <td className="px-3 py-2 text-sm">{formatQty(item.dose_per_hectare, item.unit)}</td>
                                   <td className="px-3 py-2 text-sm font-bold">{formatQty(item.total_quantity, item.unit)}</td>
                                   <td className="px-3 py-2 text-right">
