@@ -106,7 +106,9 @@ const formatQtyNumber = (value: number) => {
   if (!Number.isFinite(n)) return '0';
   const abs = Math.abs(n);
   const decimals = abs >= 100 ? 0 : abs >= 10 ? 1 : 2;
-  return n.toFixed(decimals).replace(/\.?0+$/, '');
+  const fixed = n.toFixed(decimals);
+  if (decimals === 0) return fixed;
+  return fixed.replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
 };
 
 const formatQtyNoConvert = (value: number, unit: string) => {
