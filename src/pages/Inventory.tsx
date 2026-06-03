@@ -608,23 +608,19 @@ export const Inventory: React.FC = () => {
         String(p.category || ''),
         String(p.unit || ''),
         Number(p.current_stock || 0).toFixed(2),
-        formatCLP(Number(p.average_cost || 0)),
-        formatCLP(Number(p.current_stock || 0) * Number(p.average_cost || 0)),
       ]);
 
       autoTable(doc, {
         startY: 100,
-        head: [['Producto', 'Categoría', 'Unidad', 'Stock', 'Costo Prom.', 'Valor']],
+        head: [['Producto', 'Categoría', 'Unidad', 'Stock']],
         body,
         styles: { fontSize: 8, cellPadding: 3 },
         headStyles: { fillColor: [22, 163, 74] },
         columnStyles: {
           0: { cellWidth: 170 },
-          1: { cellWidth: 90 },
-          2: { cellWidth: 45 },
-          3: { cellWidth: 55, halign: 'right' },
-          4: { cellWidth: 60, halign: 'right' },
-          5: { cellWidth: 60, halign: 'right' },
+          1: { cellWidth: 120 },
+          2: { cellWidth: 60 },
+          3: { cellWidth: 65, halign: 'right' },
         },
       });
 
