@@ -40,13 +40,22 @@ export async function fetchPendingLaborItems(params: { companyId: string }) {
 
   if (error) throw error;
 
-  const laborKeywords = ['mano de obra', 'labor', 'labores', 'servicio de labores', 'cosecha', 'poda', 'raleo', 'siembra'];
+  const normalizeText = (value: unknown) =>
+    String(value || '')
+      .toLowerCase()
+      .trim()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ');
+
+  const isLaborCategory = (category: unknown) => {
+    const cat = normalizeText(category);
+    return cat === 'mano de obra' || cat === 'labores agricola' || cat === 'labores agricolas';
+  };
 
   const filteredItems = (items || []).filter((item: any) => {
     if (item.invoices?.company_id !== params.companyId) return false;
-    const cat = String(item.category || '').toLowerCase().trim();
-    const name = String(item.products?.name || '').toLowerCase().trim();
-    return laborKeywords.some((k) => cat.includes(k) || name.includes(k));
+    return isLaborCategory(item.category);
   });
 
   const assignmentMap = await fetchLaborAssignmentsSummary({ companyId: params.companyId });
