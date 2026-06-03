@@ -6,6 +6,7 @@ import { formatCLP } from '../lib/utils';
 import { Package, Search, AlertTriangle, Edit, Trash2, X, Save, History, ArrowDownLeft, ArrowUpRight, Upload, ShoppingCart, Download } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { exportJsonToXlsx } from '../lib/excel';
 import { applyManualInventoryMovement, deleteOrArchiveInventoryProduct, fetchInventoryHistory, fetchInventoryProducts, fetchInventoryStockAudit, fetchPhytosanitaryPrograms, fetchProgramEventsForProjection, mergeDuplicateInventoryProducts, searchOfficialProducts, updateInventoryProduct, upsertOfficialProducts, type InventoryStockAuditRow } from '../services/inventory';
 
@@ -72,6 +73,10 @@ export const Inventory: React.FC = () => {
   const [viewingHistory, setViewingHistory] = useState<Product | null>(null);
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditRows, setAuditRows] = useState<InventoryStockAuditRow[]>([]);
+
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfPreviewTitle, setPdfPreviewTitle] = useState('');
 
   // SAG Import
   const sagFileInputRef = React.useRef<HTMLInputElement>(null);
@@ -568,6 +573,70 @@ export const Inventory: React.FC = () => {
     }
   };
 
+  const handleClosePdfPreview = () => {
+    setPdfPreviewOpen(false);
+    if (pdfPreviewUrl) URL.revokeObjectURL(pdfPreviewUrl);
+    setPdfPreviewUrl(null);
+  };
+
+  const generateStockReportPDF = async () => {
+    try {
+      const companyName = selectedCompany?.name || 'Empresa';
+      const dateTag = new Date().toISOString().slice(0, 10);
+      const title = `Stock_Bodega_${companyName}_${dateTag}`;
+
+      const inStock = products
+        .filter((p) => p.category !== 'Archivado')
+        .filter((p) => Number(p.current_stock || 0) > 0)
+        .sort((a, b) => String(a.category || '').localeCompare(String(b.category || '')) || String(a.name || '').localeCompare(String(b.name || '')));
+
+      if (inStock.length === 0) {
+        toast('No hay productos con stock para mostrar.');
+        return;
+      }
+
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+      doc.setFontSize(14);
+      doc.text('Stock en Bodega', 40, 40);
+      doc.setFontSize(10);
+      doc.text(`Empresa: ${companyName}`, 40, 58);
+      doc.text(`Fecha: ${new Date().toLocaleDateString('es-CL')}`, 40, 72);
+      doc.text(`Productos: ${inStock.length}`, 40, 86);
+
+      const body = inStock.map((p) => [
+        String(p.name || ''),
+        String(p.category || ''),
+        String(p.unit || ''),
+        Number(p.current_stock || 0).toFixed(2),
+        formatCLP(Number(p.average_cost || 0)),
+        formatCLP(Number(p.current_stock || 0) * Number(p.average_cost || 0)),
+      ]);
+
+      autoTable(doc, {
+        startY: 100,
+        head: [['Producto', 'Categoría', 'Unidad', 'Stock', 'Costo Prom.', 'Valor']],
+        body,
+        styles: { fontSize: 8, cellPadding: 3 },
+        headStyles: { fillColor: [22, 163, 74] },
+        columnStyles: {
+          0: { cellWidth: 170 },
+          1: { cellWidth: 90 },
+          2: { cellWidth: 45 },
+          3: { cellWidth: 55, halign: 'right' },
+          4: { cellWidth: 60, halign: 'right' },
+          5: { cellWidth: 60, halign: 'right' },
+        },
+      });
+
+      const url = String(doc.output('bloburl'));
+      setPdfPreviewTitle(title);
+      setPdfPreviewUrl(url);
+      setPdfPreviewOpen(true);
+    } catch (_err: any) {
+      toast.error('Error al generar PDF de stock.');
+    }
+  };
+
   const filteredProducts = products.filter(product => {
     // Exclude archived products unless we explicitly want to see them
     if (product.category === 'Archivado') return false;
@@ -583,6 +652,7 @@ export const Inventory: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <PdfPreviewModal isOpen={pdfPreviewOpen} onClose={handleClosePdfPreview} title={pdfPreviewTitle} pdfUrl={pdfPreviewUrl} />
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Bodega de Productos</h1>
@@ -606,6 +676,14 @@ export const Inventory: React.FC = () => {
           >
               <ShoppingCart className="h-4 w-4 mr-2" />
               Lista de Compras
+          </button>
+          <button
+              onClick={generateStockReportPDF}
+              className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 ml-2"
+              title="Ver PDF con productos que tienen stock"
+          >
+              <Download className="h-4 w-4 mr-2" />
+              Stock en PDF
           </button>
           <button
               onClick={() => stockAuditMutation.mutate()}
