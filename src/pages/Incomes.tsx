@@ -245,7 +245,7 @@ export function Incomes() {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">
-                    {income.category === 'Venta Fruta' ? `${getExportPct(income).toFixed(1)}%` : '-'}
+                    {income.category === 'Venta Fruta' ? `${getExportPct(income).toFixed(2)}%` : '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">
                     {income.category === 'Venta Fruta Jugo'
@@ -401,7 +401,7 @@ export function Incomes() {
                           type="number"
                           min="0"
                           max="100"
-                          step="0.1"
+                          step="0.01"
                           value={(editingIncome as any).export_percentage ?? 100}
                           onChange={(e) => {
                             const pct = Math.max(0, Math.min(100, Number(e.target.value)));
