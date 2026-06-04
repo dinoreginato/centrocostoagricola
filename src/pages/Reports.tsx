@@ -2312,7 +2312,7 @@ export const Reports: React.FC = () => {
                   </div>
                   <button
                       onClick={() => {
-                          const rows = [['Campo', 'Sector', 'Has', 'Prod. (Kg)', 'Kg Exportación', 'Precio Exportación (USD/Kg)', 'Kg Jugo/Pulpa', 'Precio Jugo/Pulpa (USD/Kg)', 'Mano Obra', 'Personal', 'Aplicaciones', 'Maquinaria', 'Riego', 'Petróleo', 'Combustible (Bencina)', 'Otros', 'Total (CLP)', 'Total (USD)', 'Costo/Ha (CLP)', 'Costo/Ha (USD)', 'Costo/Kg (CLP)', 'Costo/Kg (USD)']];
+                          const rows = [['Campo', 'Sector', 'Has', 'Prod. (Kg)', 'Kg Exportados', 'Precio Exportación (USD/Kg)', 'Kg Jugo/Pulpa', 'Precio Jugo/Pulpa (USD/Kg)', 'Mano Obra', 'Personal', 'Aplicaciones', 'Maquinaria', 'Riego', 'Petróleo', 'Combustible (Bencina)', 'Otros', 'Total (CLP)', 'Total (USD)', 'Costo/Ha (CLP)', 'Costo/Ha (USD)', 'Costo/Kg (CLP)', 'Costo/Kg (USD)']];
                           reportData.forEach(row => {
                               const costUsd = row.total_cost / (usdExchangeRate || 1);
                               const costPerHaUsd = row.cost_per_ha / (usdExchangeRate || 1);
@@ -2399,7 +2399,7 @@ export const Reports: React.FC = () => {
                                       <span className="font-medium text-gray-900">{(row.kg_produced || 0).toLocaleString('es-CL')} Kg</span>
                                       {Number(row.kg_export || 0) > 0 && (
                                         <span className="text-xs text-green-700 font-medium">
-                                          Exportación: {(row.kg_export || 0).toLocaleString('es-CL')} Kg · US$ {(row.price_export || 0).toFixed(2)}/Kg
+                                          Exportados: {(row.kg_export || 0).toLocaleString('es-CL')} Kg · US$ {(row.price_export || 0).toFixed(2)}/Kg
                                         </span>
                                       )}
                                       {Number(row.kg_jugo || 0) > 0 && (
