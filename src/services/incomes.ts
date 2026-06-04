@@ -12,6 +12,7 @@ export type IncomeEntry = {
   quantity_kg: number | null;
   amount_usd: number | null;
   price_per_kg: number | null;
+  price_clp_per_kg: number | null;
   season: string | null;
   fields?: { name: string } | null;
   sectors?: { name: string } | null;

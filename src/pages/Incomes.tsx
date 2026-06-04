@@ -17,6 +17,7 @@ interface Income {
   quantity_kg?: number;
   amount_usd?: number;
   price_per_kg?: number;
+  price_clp_per_kg?: number;
   season?: string;
   fields?: { name: string };
   sectors?: { name: string };
@@ -70,20 +71,29 @@ export function Incomes() {
     e.preventDefault();
     if (!selectedCompany) return;
 
+    const isJuice = (editingIncome.category || 'Venta Fruta') === 'Venta Fruta Jugo';
+    const clpPrice = Number(editingIncome.price_clp_per_kg) || 0;
+    const usdPrice = Number(editingIncome.price_per_kg) || 0;
+    const finalUsdPrice = isJuice ? (usdExchangeRate > 0 ? clpPrice / usdExchangeRate : 0) : usdPrice;
+    const qtyKg = Number(editingIncome.quantity_kg) || 0;
+    const finalAmountUsd = Number(editingIncome.amount_usd) || qtyKg * finalUsdPrice;
+    const finalAmountClp = Number(editingIncome.amount) || Math.round(finalAmountUsd * usdExchangeRate);
+
     setLoading(true);
     try {
         const payload = {
             company_id: selectedCompany.id,
             date: editingIncome.date,
             category: editingIncome.category || 'Venta Fruta',
-            amount: Number(editingIncome.amount),
+            amount: finalAmountClp,
             description: editingIncome.description,
             season: editingIncome.date ? getSeasonFromDate(new Date(editingIncome.date + 'T12:00:00')) : getSeasonFromDate(new Date()),
             field_id: editingIncome.field_id || null,
             sector_id: editingIncome.sector_id || null,
-            quantity_kg: Number(editingIncome.quantity_kg) || 0,
-            amount_usd: Number(editingIncome.amount_usd) || 0,
-            price_per_kg: Number(editingIncome.price_per_kg) || 0
+            quantity_kg: qtyKg,
+            amount_usd: finalAmountUsd,
+            price_per_kg: finalUsdPrice,
+            price_clp_per_kg: isJuice ? clpPrice : 0
         };
 
         await upsertIncomeEntry({ incomeId: (editingIncome as any).id, payload });
@@ -117,6 +127,7 @@ export function Incomes() {
           'Campo': h.fields?.name || 'General',
           'Sector': h.sectors?.name || '-',
           'Kilos (Kg)': h.quantity_kg || 0,
+          'Precio (CLP/Kg)': h.category === 'Venta Fruta Jugo' ? (h.price_clp_per_kg || 0) : 0,
           'Precio (US$/Kg)': h.price_per_kg || 0,
           'Total (USD)': h.amount_usd || 0,
           'Total (CLP)': h.amount
@@ -209,7 +220,9 @@ export function Incomes() {
                     {income.quantity_kg ? income.quantity_kg.toLocaleString('es-CL') + ' Kg' : '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">
-                    {income.price_per_kg ? `US$ ${income.price_per_kg}` : '-'}
+                    {income.category === 'Venta Fruta Jugo'
+                      ? (income.price_clp_per_kg ? `${formatCLP(income.price_clp_per_kg)} /Kg` : '-')
+                      : (income.price_per_kg ? `US$ ${income.price_per_kg}` : '-')}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-medium text-gray-900 dark:text-gray-100">
                     {formatCLP(income.amount)}
@@ -288,8 +301,11 @@ export function Incomes() {
                                 value={editingIncome.quantity_kg || ''}
                                 onChange={e => {
                                     const kg = Number(e.target.value);
-                                    const price = editingIncome.price_per_kg || 0;
-                                    const usdVal = kg * price;
+                                    const isJuice = (editingIncome.category || 'Venta Fruta') === 'Venta Fruta Jugo';
+                                    const priceUsd = isJuice
+                                      ? ((Number(editingIncome.price_clp_per_kg) || 0) / (usdExchangeRate || 1))
+                                      : (Number(editingIncome.price_per_kg) || 0);
+                                    const usdVal = kg * priceUsd;
                                     setEditingIncome({
                                         ...editingIncome, 
                                         quantity_kg: kg,
@@ -301,25 +317,35 @@ export function Incomes() {
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Precio Venta (USD/Kg)</label>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                              {(editingIncome.category || 'Venta Fruta') === 'Venta Fruta Jugo' ? 'Precio Venta (CLP/Kg)' : 'Precio Venta (USD/Kg)'}
+                            </label>
                             <input
                                 type="number"
                                 min="0"
                                 step="0.01"
-                                value={editingIncome.price_per_kg || ''}
+                                value={(editingIncome.category || 'Venta Fruta') === 'Venta Fruta Jugo' ? (editingIncome.price_clp_per_kg || '') : (editingIncome.price_per_kg || '')}
                                 onChange={e => {
-                                    const price = Number(e.target.value);
+                                    const isJuice = (editingIncome.category || 'Venta Fruta') === 'Venta Fruta Jugo';
+                                    const rawPrice = Number(e.target.value);
                                     const kg = editingIncome.quantity_kg || 0;
-                                    const usdVal = kg * price;
+                                    const priceUsd = isJuice ? (rawPrice / (usdExchangeRate || 1)) : rawPrice;
+                                    const usdVal = kg * priceUsd;
                                     setEditingIncome({
                                         ...editingIncome, 
-                                        price_per_kg: price,
+                                        price_per_kg: priceUsd,
+                                        price_clp_per_kg: isJuice ? rawPrice : 0,
                                         amount_usd: usdVal,
                                         amount: Math.round(usdVal * usdExchangeRate)
                                     });
                                 }}
                                 className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
                             />
+                            {(editingIncome.category || 'Venta Fruta') === 'Venta Fruta Jugo' && (
+                              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                Equivalente: US$ {(((Number(editingIncome.price_clp_per_kg) || 0) / (usdExchangeRate || 1))).toFixed(4)}/Kg
+                              </div>
+                            )}
                         </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
