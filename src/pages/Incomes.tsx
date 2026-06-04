@@ -43,7 +43,13 @@ export function Incomes() {
 
   const exportPctByKey = useMemo(() => {
     const normalize = (v: unknown) => String(v || '');
-    const keyOf = (income: Income) => `${normalize(income.date)}::${normalize(income.field_id)}::${normalize(income.sector_id)}`;
+    const keyOf = (income: Income) => {
+      const season = normalize(income.season) || (income.date ? getSeasonFromDate(new Date(`${income.date}T12:00:00`)) : '');
+      const sectorKey = normalize(income.sector_id);
+      const fieldKey = normalize(income.field_id);
+      const locKey = sectorKey ? `sector:${sectorKey}` : fieldKey ? `field:${fieldKey}` : 'company';
+      return `${season}::${locKey}`;
+    };
     const map = new Map<string, { totalKg: number; exportKg: number }>();
 
     incomes.forEach((inc) => {
@@ -64,7 +70,11 @@ export function Incomes() {
   }, [incomes]);
 
   const getExportPct = (income: Income) => {
-    const key = `${String(income.date || '')}::${String(income.field_id || '')}::${String(income.sector_id || '')}`;
+    const season = String(income.season || '') || (income.date ? getSeasonFromDate(new Date(`${income.date}T12:00:00`)) : '');
+    const sectorKey = String(income.sector_id || '');
+    const fieldKey = String(income.field_id || '');
+    const locKey = sectorKey ? `sector:${sectorKey}` : fieldKey ? `field:${fieldKey}` : 'company';
+    const key = `${season}::${locKey}`;
     return exportPctByKey.get(key) || 0;
   };
 
