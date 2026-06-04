@@ -1,5 +1,5 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Plus, Save, Loader2, AlertCircle, Trash2, Edit2, Download } from 'lucide-react';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
@@ -40,6 +40,33 @@ export function Incomes() {
 
   // Constants
   const [usdExchangeRate, setUsdExchangeRate] = useState<number>(950);
+
+  const exportPctByKey = useMemo(() => {
+    const normalize = (v: unknown) => String(v || '');
+    const keyOf = (income: Income) => `${normalize(income.date)}::${normalize(income.field_id)}::${normalize(income.sector_id)}`;
+    const map = new Map<string, { totalKg: number; exportKg: number }>();
+
+    incomes.forEach((inc) => {
+      if (inc.category !== 'Venta Fruta' && inc.category !== 'Venta Fruta Jugo') return;
+      const key = keyOf(inc);
+      const current = map.get(key) || { totalKg: 0, exportKg: 0 };
+      const qty = Number(inc.quantity_kg || 0);
+      current.totalKg += qty;
+      if (inc.category === 'Venta Fruta') current.exportKg += qty;
+      map.set(key, current);
+    });
+
+    const pct = new Map<string, number>();
+    map.forEach((v, k) => {
+      pct.set(k, v.totalKg > 0 ? (v.exportKg / v.totalKg) * 100 : 0);
+    });
+    return pct;
+  }, [incomes]);
+
+  const getExportPct = (income: Income) => {
+    const key = `${String(income.date || '')}::${String(income.field_id || '')}::${String(income.sector_id || '')}`;
+    return exportPctByKey.get(key) || 0;
+  };
 
   const loadData = useCallback(async () => {
     try {
@@ -127,6 +154,7 @@ export function Incomes() {
           'Campo': h.fields?.name || 'General',
           'Sector': h.sectors?.name || '-',
           'Kilos (Kg)': h.quantity_kg || 0,
+          '% Exportación': h.category === 'Venta Fruta' || h.category === 'Venta Fruta Jugo' ? Number(getExportPct(h).toFixed(2)) : 0,
           'Precio (CLP/Kg)': h.category === 'Venta Fruta Jugo' ? (h.price_clp_per_kg || 0) : 0,
           'Precio (US$/Kg)': h.price_per_kg || 0,
           'Total (USD)': h.amount_usd || 0,
@@ -192,6 +220,7 @@ export function Incomes() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Descripción</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Ubicación</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Kilos</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">% Export</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Precio</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total (CLP)</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Acciones</th>
@@ -218,6 +247,11 @@ export function Incomes() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">
                     {income.quantity_kg ? income.quantity_kg.toLocaleString('es-CL') + ' Kg' : '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">
+                    {(income.category === 'Venta Fruta' || income.category === 'Venta Fruta Jugo')
+                      ? `${getExportPct(income).toFixed(1)}%`
+                      : '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">
                     {income.category === 'Venta Fruta Jugo'
@@ -250,7 +284,7 @@ export function Incomes() {
               ))}
               {incomes.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                  <td colSpan={9} className="px-6 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
                     No hay liquidaciones ni ingresos registrados
                   </td>
                 </tr>
@@ -294,7 +328,13 @@ export function Incomes() {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Kilos (Kg)</label>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                              {(editingIncome.category || 'Venta Fruta') === 'Venta Fruta'
+                                ? 'Kilos a Exportadora (Kg)'
+                                : (editingIncome.category || 'Venta Fruta') === 'Venta Fruta Jugo'
+                                  ? 'Kilos a Jugo/Pulpa (Kg)'
+                                  : 'Kilos (Kg)'}
+                            </label>
                             <input
                                 type="number"
                                 min="0"
