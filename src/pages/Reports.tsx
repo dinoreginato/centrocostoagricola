@@ -116,6 +116,7 @@ interface IncomeEntry {
     quantity_kg?: number;
     amount_usd?: number;
     price_per_kg?: number;
+    export_percentage?: number;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#8dd1e1', '#a4de6c', '#d0ed57'];
@@ -600,10 +601,12 @@ export const Reports: React.FC = () => {
         const hectares = Number(sector.hectares);
 
         // Production from Income Entries
-        const calcEntryUsd = (i: any) => {
+        const getExportPct = (i: any) => Math.max(0, Math.min(100, Number(i.export_percentage ?? 0)));
+        const getExportKg = (i: any) => Number(i.quantity_kg || 0) * (getExportPct(i) / 100);
+        const calcEntryUsd = (i: any, kg: number) => {
           const byField = Number(i.amount_usd || 0);
           if (byField > 0) return byField;
-          return Number(i.quantity_kg || 0) * Number(i.price_per_kg || 0);
+          return kg * Number(i.price_per_kg || 0);
         };
 
         const sectorSalesExport = incomeEntries.filter(i =>
@@ -617,17 +620,19 @@ export const Reports: React.FC = () => {
           i.season === selectedSeason
         );
 
-        const kgExport = sectorSalesExport.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
-        const usdExport = sectorSalesExport.reduce((sum, i) => sum + calcEntryUsd(i), 0);
+        const kgSentExport = sectorSalesExport.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
+        const kgExport = sectorSalesExport.reduce((sum, i) => sum + getExportKg(i), 0);
+        const usdExport = sectorSalesExport.reduce((sum, i) => sum + calcEntryUsd(i, getExportKg(i)), 0);
         const priceExport = kgExport > 0 ? usdExport / kgExport : 0;
 
         const kgJugo = sectorSalesJugo.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
-        const usdJugo = sectorSalesJugo.reduce((sum, i) => sum + calcEntryUsd(i), 0);
+        const usdJugo = sectorSalesJugo.reduce((sum, i) => sum + calcEntryUsd(i, Number(i.quantity_kg || 0)), 0);
         const priceJugo = kgJugo > 0 ? usdJugo / kgJugo : 0;
 
-        const kgProduced = kgExport + kgJugo;
+        const kgProduced = kgSentExport + kgJugo;
         const totalIncomeUsd = usdExport + usdJugo;
-        const pricePerKg = kgProduced > 0 ? totalIncomeUsd / kgProduced : 0;
+        const kgSold = kgExport + kgJugo;
+        const pricePerKg = kgSold > 0 ? totalIncomeUsd / kgSold : 0;
         
         const budgetPerHa = Number(sector.budget) || 0;
         
@@ -651,7 +656,7 @@ export const Reports: React.FC = () => {
           income_usd_jugo: usdJugo,
           budget_per_ha: budgetPerHa,
           total_budget: budgetPerHa * hectares,
-          income_estimated: kgProduced * pricePerKg * (usdExchangeRate || 1), // New pre-calculated field
+          income_estimated: kgSold * pricePerKg * (usdExchangeRate || 1), // New pre-calculated field
           // Specific Costs
           app_cost_only: totalCostAppsOnly,
           app_cost_per_ha: hectares > 0 ? totalCostAppsOnly / hectares : 0,
@@ -2573,7 +2578,11 @@ export const Reports: React.FC = () => {
                       (i.category === 'Venta Fruta' || i.category === 'Venta Fruta Jugo') &&
                       i.season === selectedSeason
                     );
-                    const qtyKg = sectorIncomes.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
+                    const qtyKg = sectorIncomes.reduce((sum, i) => {
+                      const kg = Number(i.quantity_kg || 0);
+                      if (i.category === 'Venta Fruta') return sum + (kg * Math.max(0, Math.min(100, Number((i as any).export_percentage ?? 0)))) / 100;
+                      return sum + kg;
+                    }, 0);
                     const totalClp = sectorIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
                     const saleClp = qtyKg > 0 ? totalClp / qtyKg : 0;
                     const producedKgHa = qtyKg > 0 ? qtyKg / ha : 0;
@@ -2629,7 +2638,11 @@ export const Reports: React.FC = () => {
                       (i.category === 'Venta Fruta' || i.category === 'Venta Fruta Jugo') &&
                       i.season === selectedSeason
                     );
-                    const qtyKg = sectorIncomes.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
+                    const qtyKg = sectorIncomes.reduce((sum, i) => {
+                      const kg = Number(i.quantity_kg || 0);
+                      if (i.category === 'Venta Fruta') return sum + (kg * Math.max(0, Math.min(100, Number((i as any).export_percentage ?? 0)))) / 100;
+                      return sum + kg;
+                    }, 0);
                     const totalClp = sectorIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
                     const saleClp = qtyKg > 0 ? totalClp / qtyKg : 0;
                     const producedKgHa = qtyKg > 0 ? qtyKg / ha : 0;

@@ -18,6 +18,7 @@ interface Income {
   amount_usd?: number;
   price_per_kg?: number;
   price_clp_per_kg?: number;
+  export_percentage?: number;
   season?: string;
   fields?: { name: string };
   sectors?: { name: string };
@@ -41,41 +42,13 @@ export function Incomes() {
   // Constants
   const [usdExchangeRate, setUsdExchangeRate] = useState<number>(950);
 
-  const exportPctByKey = useMemo(() => {
-    const normalize = (v: unknown) => String(v || '');
-    const keyOf = (income: Income) => {
-      const season = normalize(income.season) || (income.date ? getSeasonFromDate(new Date(`${income.date}T12:00:00`)) : '');
-      const sectorKey = normalize(income.sector_id);
-      const fieldKey = normalize(income.field_id);
-      const locKey = sectorKey ? `sector:${sectorKey}` : fieldKey ? `field:${fieldKey}` : 'company';
-      return `${season}::${locKey}`;
-    };
-    const map = new Map<string, { totalKg: number; exportKg: number }>();
+  const getExportPct = (income: Income) => (income.category === 'Venta Fruta' ? Number(income.export_percentage || 0) : 0);
 
-    incomes.forEach((inc) => {
-      if (inc.category !== 'Venta Fruta' && inc.category !== 'Venta Fruta Jugo') return;
-      const key = keyOf(inc);
-      const current = map.get(key) || { totalKg: 0, exportKg: 0 };
-      const qty = Number(inc.quantity_kg || 0);
-      current.totalKg += qty;
-      if (inc.category === 'Venta Fruta') current.exportKg += qty;
-      map.set(key, current);
-    });
-
-    const pct = new Map<string, number>();
-    map.forEach((v, k) => {
-      pct.set(k, v.totalKg > 0 ? (v.exportKg / v.totalKg) * 100 : 0);
-    });
-    return pct;
-  }, [incomes]);
-
-  const getExportPct = (income: Income) => {
-    const season = String(income.season || '') || (income.date ? getSeasonFromDate(new Date(`${income.date}T12:00:00`)) : '');
-    const sectorKey = String(income.sector_id || '');
-    const fieldKey = String(income.field_id || '');
-    const locKey = sectorKey ? `sector:${sectorKey}` : fieldKey ? `field:${fieldKey}` : 'company';
-    const key = `${season}::${locKey}`;
-    return exportPctByKey.get(key) || 0;
+  const getExportKg = (income: Income) => {
+    if (income.category !== 'Venta Fruta') return 0;
+    const qty = Number(income.quantity_kg || 0);
+    const pct = Number(income.export_percentage || 0);
+    return (qty * pct) / 100;
   };
 
   const loadData = useCallback(async () => {
@@ -109,11 +82,15 @@ export function Incomes() {
     if (!selectedCompany) return;
 
     const isJuice = (editingIncome.category || 'Venta Fruta') === 'Venta Fruta Jugo';
+    const isExport = (editingIncome.category || 'Venta Fruta') === 'Venta Fruta';
     const clpPrice = Number(editingIncome.price_clp_per_kg) || 0;
     const usdPrice = Number(editingIncome.price_per_kg) || 0;
     const finalUsdPrice = isJuice ? (usdExchangeRate > 0 ? clpPrice / usdExchangeRate : 0) : usdPrice;
     const qtyKg = Number(editingIncome.quantity_kg) || 0;
-    const finalAmountUsd = Number(editingIncome.amount_usd) || qtyKg * finalUsdPrice;
+    const exportPct = isExport ? Math.max(0, Math.min(100, Number((editingIncome as any).export_percentage ?? 100))) : 0;
+    const exportKg = isExport ? (qtyKg * exportPct) / 100 : 0;
+    const baseKgForUsd = isExport ? exportKg : qtyKg;
+    const finalAmountUsd = Number(editingIncome.amount_usd) || baseKgForUsd * finalUsdPrice;
     const finalAmountClp = Number(editingIncome.amount) || Math.round(finalAmountUsd * usdExchangeRate);
 
     setLoading(true);
@@ -130,7 +107,8 @@ export function Incomes() {
             quantity_kg: qtyKg,
             amount_usd: finalAmountUsd,
             price_per_kg: finalUsdPrice,
-            price_clp_per_kg: isJuice ? clpPrice : 0
+            price_clp_per_kg: isJuice ? clpPrice : 0,
+            export_percentage: isExport ? exportPct : 0
         };
 
         await upsertIncomeEntry({ incomeId: (editingIncome as any).id, payload });
@@ -164,7 +142,8 @@ export function Incomes() {
           'Campo': h.fields?.name || 'General',
           'Sector': h.sectors?.name || '-',
           'Kilos (Kg)': h.quantity_kg || 0,
-          '% Exportación': h.category === 'Venta Fruta' || h.category === 'Venta Fruta Jugo' ? Number(getExportPct(h).toFixed(2)) : 0,
+          '% Exportado': h.category === 'Venta Fruta' ? Number(getExportPct(h).toFixed(2)) : 0,
+          'Kg Exportados': h.category === 'Venta Fruta' ? Number(getExportKg(h).toFixed(2)) : 0,
           'Precio (CLP/Kg)': h.category === 'Venta Fruta Jugo' ? (h.price_clp_per_kg || 0) : 0,
           'Precio (US$/Kg)': h.price_per_kg || 0,
           'Total (USD)': h.amount_usd || 0,
@@ -230,7 +209,7 @@ export function Incomes() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Descripción</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Ubicación</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Kilos</th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">% Export</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">% Exportado</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Precio</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total (CLP)</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Acciones</th>
@@ -256,12 +235,17 @@ export function Incomes() {
                     {income.fields?.name || 'General'} {income.sectors ? `(${income.sectors.name})` : ''}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">
-                    {income.quantity_kg ? income.quantity_kg.toLocaleString('es-CL') + ' Kg' : '-'}
+                    <div className="flex flex-col items-end gap-1">
+                      <span>{income.quantity_kg ? income.quantity_kg.toLocaleString('es-CL') + ' Kg' : '-'}</span>
+                      {income.category === 'Venta Fruta' && Number(income.quantity_kg || 0) > 0 && Number(income.export_percentage || 0) > 0 && (
+                        <span className="text-xs text-gray-500">
+                          Exportados: {getExportKg(income).toLocaleString('es-CL', { maximumFractionDigits: 0 })} Kg
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">
-                    {(income.category === 'Venta Fruta' || income.category === 'Venta Fruta Jugo')
-                      ? `${getExportPct(income).toFixed(1)}%`
-                      : '-'}
+                    {income.category === 'Venta Fruta' ? `${getExportPct(income).toFixed(1)}%` : '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100">
                     {income.category === 'Venta Fruta Jugo'
@@ -351,11 +335,15 @@ export function Incomes() {
                                 value={editingIncome.quantity_kg || ''}
                                 onChange={e => {
                                     const kg = Number(e.target.value);
-                                    const isJuice = (editingIncome.category || 'Venta Fruta') === 'Venta Fruta Jugo';
+                                    const category = editingIncome.category || 'Venta Fruta';
+                                    const isJuice = category === 'Venta Fruta Jugo';
+                                    const isExport = category === 'Venta Fruta';
+                                    const exportPct = isExport ? Math.max(0, Math.min(100, Number((editingIncome as any).export_percentage ?? 100))) : 0;
+                                    const baseKg = isExport ? (kg * exportPct) / 100 : kg;
                                     const priceUsd = isJuice
                                       ? ((Number(editingIncome.price_clp_per_kg) || 0) / (usdExchangeRate || 1))
                                       : (Number(editingIncome.price_per_kg) || 0);
-                                    const usdVal = kg * priceUsd;
+                                    const usdVal = baseKg * priceUsd;
                                     setEditingIncome({
                                         ...editingIncome, 
                                         quantity_kg: kg,
@@ -365,6 +353,11 @@ export function Incomes() {
                                 }}
                                 className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
                             />
+                            {(editingIncome.category || 'Venta Fruta') === 'Venta Fruta' && (
+                              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                Kg exportados: {((Number(editingIncome.quantity_kg) || 0) * (Math.max(0, Math.min(100, Number((editingIncome as any).export_percentage ?? 100))) / 100)).toLocaleString('es-CL', { maximumFractionDigits: 0 })} Kg
+                              </div>
+                            )}
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -377,10 +370,13 @@ export function Incomes() {
                                 value={(editingIncome.category || 'Venta Fruta') === 'Venta Fruta Jugo' ? (editingIncome.price_clp_per_kg || '') : (editingIncome.price_per_kg || '')}
                                 onChange={e => {
                                     const isJuice = (editingIncome.category || 'Venta Fruta') === 'Venta Fruta Jugo';
+                                    const isExport = (editingIncome.category || 'Venta Fruta') === 'Venta Fruta';
                                     const rawPrice = Number(e.target.value);
                                     const kg = editingIncome.quantity_kg || 0;
                                     const priceUsd = isJuice ? (rawPrice / (usdExchangeRate || 1)) : rawPrice;
-                                    const usdVal = kg * priceUsd;
+                                    const exportPct = isExport ? Math.max(0, Math.min(100, Number((editingIncome as any).export_percentage ?? 100))) : 0;
+                                    const baseKg = isExport ? (Number(kg) * exportPct) / 100 : Number(kg);
+                                    const usdVal = baseKg * priceUsd;
                                     setEditingIncome({
                                         ...editingIncome, 
                                         price_per_kg: priceUsd,
@@ -398,6 +394,32 @@ export function Incomes() {
                             )}
                         </div>
                     </div>
+                    {(editingIncome.category || 'Venta Fruta') === 'Venta Fruta' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">% Exportado (según exportadora)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                          value={(editingIncome as any).export_percentage ?? 100}
+                          onChange={(e) => {
+                            const pct = Math.max(0, Math.min(100, Number(e.target.value)));
+                            const kgSent = Number(editingIncome.quantity_kg) || 0;
+                            const exportKg = (kgSent * pct) / 100;
+                            const priceUsd = Number(editingIncome.price_per_kg) || 0;
+                            const usdVal = exportKg * priceUsd;
+                            setEditingIncome({
+                              ...editingIncome,
+                              export_percentage: pct,
+                              amount_usd: usdVal,
+                              amount: Math.round(usdVal * usdExchangeRate)
+                            } as any);
+                          }}
+                          className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
+                        />
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Total (USD)</label>
