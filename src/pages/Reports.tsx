@@ -159,7 +159,7 @@ export const Reports: React.FC = () => {
 
   // Settings State (USD, etc)
   const [usdExchangeRate, setUsdExchangeRate] = useState<number>(950);
-  const [distributeGeneralCosts, setDistributeGeneralCosts] = useState(false);
+  const [distributeGeneralCosts, setDistributeGeneralCosts] = useState(true);
   const [pdfOrientation, setPdfOrientation] = useState<'portrait' | 'landscape'>('landscape'); // Default landscape
 
   // Display State
@@ -1965,34 +1965,20 @@ export const Reports: React.FC = () => {
                 <div className="bg-white shadow overflow-hidden sm:rounded-lg">
                     <div className="px-4 py-5 sm:px-6 border-b border-gray-200 flex flex-col sm:flex-row justify-between items-start sm:items-center">
                         <div>
-                            <h3 className="text-lg leading-6 font-medium text-gray-900">Resumen por Sector</h3>
+                            <h3 className="text-lg leading-6 font-medium text-gray-900">Resumen por Campo</h3>
                             <p className="mt-1 text-sm text-gray-500">Kilos enviados y valores totales</p>
-                        </div>
-                        <div className="mt-2 sm:mt-0 flex items-center">
-                            <label className="flex items-center space-x-2 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={distributeGeneralCosts}
-                                    onChange={(e) => setDistributeGeneralCosts(e.target.checked)}
-                                    className="form-checkbox h-4 w-4 text-green-600 transition duration-150 ease-in-out"
-                                />
-                                <span className="text-sm font-medium text-gray-700">Distribuir Gastos No Asignados (Proporcional a Has)</span>
-                            </label>
                         </div>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sector / Campo</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Campo</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Has</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Kilos (Kg)</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ingresos (USD)</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ingresos (CLP)</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Directos (CLP)</th>
-                                    {distributeGeneralCosts && (
-                                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Gral. (CLP)</th>
-                                    )}
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Total (USD)</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gastos Total (CLP)</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Balance (USD)</th>
@@ -2002,85 +1988,75 @@ export const Reports: React.FC = () => {
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {(() => {
-                                    // 0. Calculate General Distribution Factor
                                     const totalInvoices = monthlyExpenses.reduce((sum, m) => sum + m.total, 0);
                                     const totalAllocated = reportData.reduce((sum, r) => sum + r.total_cost, 0);
                                     const totalHectares = reportData.reduce((sum, r) => sum + r.hectares, 0);
-                                    
-                                    // Unassigned costs = Total Invoices - Allocated Costs (Usage)
-                                    // If negative (usage > purchase), we assume 0 unassigned.
                                     const unassignedCost = Math.max(0, totalInvoices - totalAllocated);
-                                    const distributionFactor = (distributeGeneralCosts && totalHectares > 0) 
-                                        ? unassignedCost / totalHectares 
-                                        : 0;
+                                    const distributionFactor = totalHectares > 0 ? unassignedCost / totalHectares : 0;
 
-                                    // 1. Income Aggregation
+                                    const sectorToField = new Map<string, string>();
+                                    const fieldIdToField = new Map<string, string>();
+                                    (rawFields || []).forEach((f: any) => {
+                                        if (f?.id) fieldIdToField.set(String(f.id), String(f.name || ''));
+                                        (f?.sectors || []).forEach((s: any) => {
+                                            if (s?.id) sectorToField.set(String(s.id), String(f.name || ''));
+                                        });
+                                    });
+
+                                    let companyIncomeKg = 0;
+                                    let companyIncomeUsd = 0;
+                                    let companyIncomeClp = 0;
+
                                     const incomeMap = incomeEntries.reduce((acc, entry) => {
-                                        const key = entry.sector_id || 'general';
-                                        const name = entry.sectors ? `${entry.sectors.name} (${entry.fields?.name})` : (entry.fields?.name || 'Empresa General');
-                                        if (!acc[key]) acc[key] = { name, kg: 0, usd: 0, clp: 0 };
+                                        const fieldName =
+                                            (entry.field_id ? fieldIdToField.get(String(entry.field_id)) : null) ||
+                                            (entry.sector_id ? sectorToField.get(String(entry.sector_id)) : null) ||
+                                            String(entry.fields?.name || '');
+
+                                        if (!fieldName) {
+                                            companyIncomeKg += Number(entry.quantity_kg || 0);
+                                            companyIncomeUsd += Number(entry.amount_usd || 0);
+                                            companyIncomeClp += Number(entry.amount || 0);
+                                            return acc;
+                                        }
+
+                                        const key = fieldName;
+                                        if (!acc[key]) acc[key] = { name: fieldName, kg: 0, usd: 0, clp: 0 };
                                         acc[key].kg += Number(entry.quantity_kg || 0);
                                         acc[key].usd += Number(entry.amount_usd || 0);
                                         acc[key].clp += Number(entry.amount || 0);
                                         return acc;
                                     }, {} as Record<string, { name: string, kg: number, usd: number, clp: number }>);
 
-                                    // 2. Expense Aggregation (Direct Costs + Distributed)
                                     const expenseMap = reportData.reduce((acc, r) => {
-                                        // Direct Cost
-                                        const direct = r.total_cost;
-                                        // Distributed Cost
-                                        const distributed = r.hectares * distributionFactor;
-                                        
-                                        acc[r.sector_id] = {
-                                            direct: direct,
-                                            distributed: distributed,
-                                            total: direct + distributed,
-                                            hectares: r.hectares
+                                        const key = String(r.field_name || '');
+                                        if (!key) return acc;
+                                        const direct = Number(r.total_cost || 0);
+                                        const hectares = Number(r.hectares || 0);
+                                        const prev = acc[key] || { direct: 0, distributed: 0, total: 0, hectares: 0 };
+                                        const nextDirect = prev.direct + direct;
+                                        const nextHectares = prev.hectares + hectares;
+                                        const nextDistributed = nextHectares * distributionFactor;
+                                        acc[key] = {
+                                            direct: nextDirect,
+                                            distributed: nextDistributed,
+                                            total: nextDirect + nextDistributed,
+                                            hectares: nextHectares
                                         };
                                         return acc;
                                     }, {} as Record<string, { direct: number, distributed: number, total: number, hectares: number }>);
 
-                                    // 3. Merge
                                     const allKeysSet = new Set([...Object.keys(incomeMap), ...Object.keys(expenseMap)]);
-                                    if (unassignedCost > 0 && !distributeGeneralCosts) {
-                                        allKeysSet.add('general');
-                                    }
                                     const allKeys = Array.from(allKeysSet);
                                     
                                     const rows = allKeys.map(key => {
-                                        const inc = incomeMap[key] || { name: '', kg: 0, usd: 0, clp: 0 };
+                                        const inc = incomeMap[key] || { name: key, kg: 0, usd: 0, clp: 0 };
                                         const expData = expenseMap[key] || { direct: 0, distributed: 0, total: 0, hectares: 0 };
                                         
-                                        // Try to find name if missing in income
                                         let displayName = inc.name;
-                                        if (!displayName && key !== 'general') {
-                                            const r = reportData.find(d => d.sector_id === key);
-                                            if (r) displayName = `${r.sector_name} (${r.field_name})`;
-                                            else displayName = 'Sector Desconocido';
-                                        } else if (!displayName) {
-                                            displayName = 'Empresa General';
-                                        }
+                                        if (!displayName) displayName = key;
 
-                                        // If 'general' key exists and distribute is ON, its expenses (unassigned) are distributed to sectors, so they are 0 here.
-                                        // But wait, 'unassignedCost' is calculated globally.
-                                        // The 'general' row in this table usually comes from 'incomeEntries' with no sector.
-                                        // It should not show expenses if they are distributed.
-                                        
-                                        let finalExpense = expData.total;
-                                        
-                                        // If key is 'general' and we are NOT distributing, we should probably show the unassigned cost here?
-                                        // But 'expenseMap' only has keys from 'reportData' (sectors).
-                                        // So 'general' key in 'expenseMap' is undefined unless a sector is named 'general'.
-                                        
-                                        // If we are NOT distributing, the unassigned cost is simply not shown in sector rows.
-                                        // Should we show a "General / No Asignado" row?
-                                        // Yes, if there is income there, or if we want to balance the total.
-                                        
-                                        if (key === 'general' && !distributeGeneralCosts && unassignedCost > 0) {
-                                            // Show unassigned cost in General row if not distributed
-                                            finalExpense += unassignedCost;
-                                        }
+                                        const finalExpense = expData.total;
 
                                         return {
                                             name: displayName,
@@ -2094,6 +2070,22 @@ export const Reports: React.FC = () => {
                                             balance: inc.clp - finalExpense
                                         };
                                     }).sort((a, b) => b.income - a.income);
+
+                                    if (companyIncomeClp !== 0 || companyIncomeUsd !== 0 || companyIncomeKg !== 0) {
+                                        const keys = rows.map((r) => r.name);
+                                        const eligible = rows.filter((r) => r.hectares > 0);
+                                        const totalHas = eligible.reduce((sum, r) => sum + r.hectares, 0);
+                                        if (totalHas > 0 && keys.length > 0) {
+                                            rows.forEach((r) => {
+                                                if (r.hectares <= 0) return;
+                                                const ratio = r.hectares / totalHas;
+                                                r.kg += companyIncomeKg * ratio;
+                                                r.usd += companyIncomeUsd * ratio;
+                                                r.income += companyIncomeClp * ratio;
+                                                r.balance = r.income - r.expenseTotal;
+                                            });
+                                        }
+                                    }
 
                                     const totalKg = rows.reduce((sum, r) => sum + r.kg, 0);
                                     const totalUsd = rows.reduce((sum, r) => sum + r.usd, 0);
@@ -2112,9 +2104,6 @@ export const Reports: React.FC = () => {
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-700 font-medium">${row.usd.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(row.income)}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(row.expenseDirect)}</td>
-                                                    {distributeGeneralCosts && (
-                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-orange-600">{formatCLP(row.expenseDistributed)}</td>
-                                                    )}
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-700 font-medium">${(row.expenseTotal / (usdExchangeRate || 1)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600 font-bold">{formatCLP(row.expenseTotal)}</td>
                                                     <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${row.balance >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
@@ -2135,9 +2124,6 @@ export const Reports: React.FC = () => {
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-700">${totalUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totalIncome)}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-600">{formatCLP(totalExpenseDirect)}</td>
-                                                {distributeGeneralCosts && (
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-orange-600">{formatCLP(totalExpenseDistributed)}</td>
-                                                )}
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-700 font-medium">${(totalExpense / (usdExchangeRate || 1)).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600 font-bold">{formatCLP(totalExpense)}</td>
                                                 <td className={`px-6 py-4 whitespace-nowrap text-sm text-right ${totalIncome - totalExpense >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
