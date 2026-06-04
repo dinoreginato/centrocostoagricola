@@ -194,7 +194,7 @@ export function Incomes() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                      income.category === 'Venta Fruta' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                      income.category === 'Venta Fruta' || income.category === 'Venta Fruta Jugo' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
                     }`}>
                       {income.category}
                     </span>
@@ -274,6 +274,7 @@ export function Incomes() {
                             className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-green-500 focus:ring-green-500 sm:text-sm"
                         >
                             <option value="Venta Fruta">Venta Fruta / Exportación</option>
+                            <option value="Venta Fruta Jugo">Venta Fruta / Jugo-Pulpa</option>
                             <option value="Presupuesto">Presupuesto Asignado</option>
                             <option value="Otro Ingreso">Otro Ingreso</option>
                         </select>

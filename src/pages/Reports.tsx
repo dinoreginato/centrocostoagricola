@@ -41,6 +41,12 @@ interface ReportData {
   budget_per_ha: number;
   total_budget: number;
   price_per_kg: number;
+  kg_export?: number;
+  price_export?: number;
+  income_usd_export?: number;
+  kg_jugo?: number;
+  price_jugo?: number;
+  income_usd_jugo?: number;
   income_estimated: number;
 }
 
@@ -594,13 +600,33 @@ export const Reports: React.FC = () => {
         const hectares = Number(sector.hectares);
 
         // Production from Income Entries
-        const sectorIncomes = incomeEntries.filter(i => 
-            i.sector_id === sector.id && 
-            i.category === 'Venta Fruta' &&
-            i.season === selectedSeason
+        const calcEntryUsd = (i: any) => {
+          const byField = Number(i.amount_usd || 0);
+          if (byField > 0) return byField;
+          return Number(i.quantity_kg || 0) * Number(i.price_per_kg || 0);
+        };
+
+        const sectorSalesExport = incomeEntries.filter(i =>
+          i.sector_id === sector.id &&
+          i.category === 'Venta Fruta' &&
+          i.season === selectedSeason
         );
-        const kgProduced = sectorIncomes.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
-        const totalIncomeUsd = sectorIncomes.reduce((sum, i) => sum + (Number(i.quantity_kg || 0) * Number(i.price_per_kg || 0)), 0);
+        const sectorSalesJugo = incomeEntries.filter(i =>
+          i.sector_id === sector.id &&
+          i.category === 'Venta Fruta Jugo' &&
+          i.season === selectedSeason
+        );
+
+        const kgExport = sectorSalesExport.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
+        const usdExport = sectorSalesExport.reduce((sum, i) => sum + calcEntryUsd(i), 0);
+        const priceExport = kgExport > 0 ? usdExport / kgExport : 0;
+
+        const kgJugo = sectorSalesJugo.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
+        const usdJugo = sectorSalesJugo.reduce((sum, i) => sum + calcEntryUsd(i), 0);
+        const priceJugo = kgJugo > 0 ? usdJugo / kgJugo : 0;
+
+        const kgProduced = kgExport + kgJugo;
+        const totalIncomeUsd = usdExport + usdJugo;
         const pricePerKg = kgProduced > 0 ? totalIncomeUsd / kgProduced : 0;
         
         const budgetPerHa = Number(sector.budget) || 0;
@@ -617,6 +643,12 @@ export const Reports: React.FC = () => {
           application_count: sectorApps.length,
           kg_produced: kgProduced,
           price_per_kg: pricePerKg,
+          kg_export: kgExport,
+          price_export: priceExport,
+          income_usd_export: usdExport,
+          kg_jugo: kgJugo,
+          price_jugo: priceJugo,
+          income_usd_jugo: usdJugo,
           budget_per_ha: budgetPerHa,
           total_budget: budgetPerHa * hectares,
           income_estimated: kgProduced * pricePerKg * (usdExchangeRate || 1), // New pre-calculated field
@@ -2275,7 +2307,7 @@ export const Reports: React.FC = () => {
                   </div>
                   <button
                       onClick={() => {
-                          const rows = [['Campo', 'Sector', 'Has', 'Prod. (Kg)', 'Mano Obra', 'Personal', 'Aplicaciones', 'Maquinaria', 'Riego', 'Petróleo', 'Combustible (Bencina)', 'Otros', 'Total (CLP)', 'Total (USD)', 'Costo/Ha (CLP)', 'Costo/Ha (USD)', 'Costo/Kg (CLP)', 'Costo/Kg (USD)']];
+                          const rows = [['Campo', 'Sector', 'Has', 'Prod. (Kg)', 'Kg Exportación', 'Precio Exportación (USD/Kg)', 'Kg Jugo/Pulpa', 'Precio Jugo/Pulpa (USD/Kg)', 'Mano Obra', 'Personal', 'Aplicaciones', 'Maquinaria', 'Riego', 'Petróleo', 'Combustible (Bencina)', 'Otros', 'Total (CLP)', 'Total (USD)', 'Costo/Ha (CLP)', 'Costo/Ha (USD)', 'Costo/Kg (CLP)', 'Costo/Kg (USD)']];
                           reportData.forEach(row => {
                               const costUsd = row.total_cost / (usdExchangeRate || 1);
                               const costPerHaUsd = row.cost_per_ha / (usdExchangeRate || 1);
@@ -2286,6 +2318,10 @@ export const Reports: React.FC = () => {
                                   row.sector_name,
                                   row.hectares.toString(),
                                   (row.kg_produced || 0).toString(),
+                                  String(row.kg_export || 0),
+                                  String(row.price_export || 0),
+                                  String(row.kg_jugo || 0),
+                                  String(row.price_jugo || 0),
                                   row.labor_cost.toString(),
                                   row.worker_cost.toString(),
                                   row.app_cost_only.toString(),
@@ -2356,7 +2392,16 @@ export const Reports: React.FC = () => {
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-right bg-green-50">
                                   <div className="flex flex-col items-end gap-1">
                                       <span className="font-medium text-gray-900">{(row.kg_produced || 0).toLocaleString('es-CL')} Kg</span>
-                                      {row.price_per_kg > 0 && <span className="text-xs text-green-600 font-medium">US$ {row.price_per_kg.toFixed(2)}/Kg</span>}
+                                      {Number(row.kg_export || 0) > 0 && (
+                                        <span className="text-xs text-green-700 font-medium">
+                                          Exportación: {(row.kg_export || 0).toLocaleString('es-CL')} Kg · US$ {(row.price_export || 0).toFixed(2)}/Kg
+                                        </span>
+                                      )}
+                                      {Number(row.kg_jugo || 0) > 0 && (
+                                        <span className="text-xs text-emerald-700 font-medium">
+                                          Jugo/Pulpa: {(row.kg_jugo || 0).toLocaleString('es-CL')} Kg · US$ {(row.price_jugo || 0).toFixed(2)}/Kg
+                                        </span>
+                                      )}
                                   </div>
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-xs text-right text-gray-600">{formatCLP(row.labor_cost)}</td>
@@ -2524,7 +2569,9 @@ export const Reports: React.FC = () => {
                   const rows = reportData.map((row) => {
                     const ha = Number(row.hectares || 1);
                     const sectorIncomes = incomeEntries.filter((i) =>
-                      i.sector_id === row.sector_id && i.category === 'Venta Fruta' && i.season === selectedSeason
+                      i.sector_id === row.sector_id &&
+                      (i.category === 'Venta Fruta' || i.category === 'Venta Fruta Jugo') &&
+                      i.season === selectedSeason
                     );
                     const qtyKg = sectorIncomes.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
                     const totalClp = sectorIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
@@ -2578,7 +2625,9 @@ export const Reports: React.FC = () => {
                     const perSector = reportData.length > 0 ? unassigned / reportData.length : 0;
                     const ha = Number(row.hectares || 1);
                     const sectorIncomes = incomeEntries.filter((i) =>
-                      i.sector_id === row.sector_id && i.category === 'Venta Fruta' && i.season === selectedSeason
+                      i.sector_id === row.sector_id &&
+                      (i.category === 'Venta Fruta' || i.category === 'Venta Fruta Jugo') &&
+                      i.season === selectedSeason
                     );
                     const qtyKg = sectorIncomes.reduce((sum, i) => sum + Number(i.quantity_kg || 0), 0);
                     const totalClp = sectorIncomes.reduce((sum, i) => sum + Number(i.amount || 0), 0);
