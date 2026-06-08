@@ -1,12 +1,15 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
-import { Users, UserPlus, Trash2, Briefcase, Loader2, Download } from 'lucide-react';
+import { Users, UserPlus, Trash2, Briefcase, Loader2, Download, RefreshCcw, Upload } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
 import { createWorker, deleteWorker, deleteWorkerCost, fetchWorkerCosts, fetchWorkers, insertWorkerCosts } from '../services/workers';
+import { calculatePayrollChile } from '../lib/payrollChile';
+import { importXlsxToJson } from '../lib/excel';
+import { createPayrollRateProposal, createWorkerPayrollRun, fetchPayrollRateProposals, fetchPayrollRatesForMonth, updatePayrollRateProposalStatus, upsertPayrollRates } from '../services/payroll';
 
 interface Worker {
   id: string;
@@ -74,6 +77,34 @@ export const Workers: React.FC = () => {
   const [workerName, setWorkerName] = useState('');
   const [laborType, setLaborType] = useState('');
 
+  const [payrollTab, setPayrollTab] = useState<'individual' | 'masivo' | 'parametros'>('individual');
+  const [payrollMonth, setPayrollMonth] = useState(new Date().toLocaleDateString('en-CA').slice(0, 7));
+  const payrollMonthStart = useMemo(() => `${payrollMonth}-01`, [payrollMonth]);
+
+  const [payrollDistributeBy, setPayrollDistributeBy] = useState<'sector' | 'field' | 'company'>('sector');
+  const [payrollSectorId, setPayrollSectorId] = useState('');
+  const [payrollFieldId, setPayrollFieldId] = useState('');
+  const [payrollWorkerId, setPayrollWorkerId] = useState('');
+  const [payrollGrossImponible, setPayrollGrossImponible] = useState<number | ''>('');
+  const [payrollContractType, setPayrollContractType] = useState<'indefinite' | 'fixed_term' | 'work'>('indefinite');
+  const [payrollAfpCommissionRate, setPayrollAfpCommissionRate] = useState<number | ''>('');
+  const [payrollHealthType, setPayrollHealthType] = useState<'fonasa' | 'isapre'>('fonasa');
+  const [payrollHealthPlanAmount, setPayrollHealthPlanAmount] = useState<number | ''>('');
+  const [payrollMutualRate, setPayrollMutualRate] = useState<number | ''>('');
+  const [payrollResult, setPayrollResult] = useState<ReturnType<typeof calculatePayrollChile> | null>(null);
+  const [payrollSaving, setPayrollSaving] = useState(false);
+
+  const [payrollRatesDraft, setPayrollRatesDraft] = useState<Record<string, number>>({});
+  const [payrollRatesLoading, setPayrollRatesLoading] = useState(false);
+
+  const [payrollProposals, setPayrollProposals] = useState<any[]>([]);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanResult, setScanResult] = useState<any | null>(null);
+
+  const [bulkFileRows, setBulkFileRows] = useState<Array<Record<string, unknown>>>([]);
+  const [bulkRows, setBulkRows] = useState<Array<{ workerId: string; grossImponible: number; contractType: 'indefinite' | 'fixed_term' | 'work'; afpCommissionRate: number; healthType: 'fonasa' | 'isapre'; healthPlanAmount: number; mutualRate: number }>>([]);
+  const [bulkErrors, setBulkErrors] = useState<string[]>([]);
+
   const loadWorkers = useCallback(async () => {
       if (!selectedCompany) return;
       const data = await fetchWorkers({ companyId: selectedCompany.id });
@@ -97,22 +128,60 @@ export const Workers: React.FC = () => {
     setCosts(data || []);
   }, [selectedCompany]);
 
+  const loadPayrollRates = useCallback(async () => {
+    if (!selectedCompany) return;
+    setPayrollRatesLoading(true);
+    try {
+      const rows = await fetchPayrollRatesForMonth({ companyId: selectedCompany.id, monthStart: payrollMonthStart });
+      const sorted = [...rows].sort((a: any, b: any) => {
+        const da = String(a.effective_from || '');
+        const db = String(b.effective_from || '');
+        if (da !== db) return db.localeCompare(da);
+        const pa = a.company_id ? 0 : 1;
+        const pb = b.company_id ? 0 : 1;
+        return pa - pb;
+      });
+      const map: Record<string, number> = {};
+      sorted.forEach((r: any) => {
+        const code = String(r.code || '');
+        if (!code) return;
+        if (map[code] !== undefined) return;
+        map[code] = Number(r.value || 0);
+      });
+      setPayrollRatesDraft(map);
+    } finally {
+      setPayrollRatesLoading(false);
+    }
+  }, [payrollMonthStart, selectedCompany]);
+
+  const loadPayrollProposals = useCallback(async () => {
+    if (!selectedCompany) return;
+    const data = await fetchPayrollRateProposals({ companyId: selectedCompany.id });
+    setPayrollProposals(data || []);
+  }, [selectedCompany]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      await Promise.all([loadWorkers(), loadSectorsAndFields(), loadCosts()]);
+      await Promise.all([loadWorkers(), loadSectorsAndFields(), loadCosts(), loadPayrollRates(), loadPayrollProposals()]);
     } catch {
       toast.error('Error al cargar trabajadores.');
     } finally {
       setLoading(false);
     }
-  }, [loadCosts, loadSectorsAndFields, loadWorkers]);
+  }, [loadCosts, loadPayrollProposals, loadPayrollRates, loadSectorsAndFields, loadWorkers]);
 
   useEffect(() => {
     if (selectedCompany) {
       void loadData();
     }
   }, [selectedCompany, loadData]);
+
+  useEffect(() => {
+    if (selectedCompany) {
+      void loadPayrollRates();
+    }
+  }, [loadPayrollRates, selectedCompany]);
 
   const handleCreateWorker = async (e: React.FormEvent) => {
       e.preventDefault();
@@ -342,6 +411,463 @@ export const Workers: React.FC = () => {
     doc.save(`Planilla_Pagos_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
+  const payrollRateFields = useMemo(
+    () => [
+      { code: 'UF_CLP', name: 'UF (CLP)', kind: 'amount', payer: 'system' },
+      { code: 'TOPE_AFP_UF', name: 'Tope AFP/Salud (UF)', kind: 'cap_uf', payer: 'system' },
+      { code: 'TOPE_AFC_UF', name: 'Tope Cesantía (UF)', kind: 'cap_uf', payer: 'system' },
+      { code: 'SIS_EMP_RATE', name: 'SIS (Empleador) %', kind: 'rate', payer: 'employer' },
+      { code: 'SANNA_EMP_RATE', name: 'SANNA (Empleador) %', kind: 'rate', payer: 'employer' },
+      { code: 'MUTUAL_EMP_RATE', name: 'Mutual (Empleador) %', kind: 'rate', payer: 'employer' },
+      { code: 'REFORMA_EMP_RATE', name: 'Reforma (Empleador) %', kind: 'rate', payer: 'employer' },
+      { code: 'AFC_WORKER_INDEF_RATE', name: 'AFC Trabajador indefinido %', kind: 'rate', payer: 'worker' },
+      { code: 'AFC_EMP_INDEF_RATE', name: 'AFC Empleador indefinido %', kind: 'rate', payer: 'employer' },
+      { code: 'AFC_WORKER_FIXED_RATE', name: 'AFC Trabajador plazo fijo/obra %', kind: 'rate', payer: 'worker' },
+      { code: 'AFC_EMP_FIXED_RATE', name: 'AFC Empleador plazo fijo/obra %', kind: 'rate', payer: 'employer' },
+      { code: 'AFP_MANDATORY_RATE', name: 'AFP Obligatoria %', kind: 'rate', payer: 'worker' },
+      { code: 'SALUD_FONASA_RATE', name: 'Salud Fonasa %', kind: 'rate', payer: 'worker' },
+      { code: 'SALUD_ISAPRE_MIN_RATE', name: 'Salud Isapre mín. %', kind: 'rate', payer: 'worker' }
+    ],
+    []
+  );
+
+  const handleScanPayrollRates = async () => {
+    setScanLoading(true);
+    try {
+      const url = `/api/payroll/scan?effective_from=${encodeURIComponent(payrollMonthStart)}`;
+      const r = await fetch(url);
+      const data = await r.json();
+      if (!r.ok) throw new Error(data?.error || 'Error al buscar actualización');
+      setScanResult(data);
+      toast('Propuesta cargada');
+    } catch (e: any) {
+      toast.error(String(e?.message || e));
+    } finally {
+      setScanLoading(false);
+    }
+  };
+
+  const handleCreateProposalFromScan = async () => {
+    if (!selectedCompany || !scanResult) return;
+    try {
+      await createPayrollRateProposal({
+        companyId: selectedCompany.id,
+        effectiveFrom: payrollMonthStart,
+        sources: scanResult.sources || [],
+        proposedItems: scanResult.items || []
+      });
+      setScanResult(null);
+      await loadPayrollProposals();
+      toast('Propuesta guardada');
+    } catch (e: any) {
+      toast.error(String(e?.message || e));
+    }
+  };
+
+  const handleApplyProposal = async (proposal: any) => {
+    if (!selectedCompany) return;
+    const items = Array.isArray(proposal?.proposed_items) ? proposal.proposed_items : [];
+    if (items.length === 0) {
+      toast('La propuesta no tiene ítems');
+      return;
+    }
+    try {
+      await upsertPayrollRates({
+        rows: items.map((i: any) => ({
+          company_id: selectedCompany.id,
+          code: String(i.code || ''),
+          name: String(i.name || i.code || ''),
+          kind: String(i.kind || 'rate'),
+          payer: String(i.payer || 'system'),
+          value: Number(i.value || 0),
+          effective_from: String(i.effective_from || proposal.effective_from),
+          source_url: String(i.source_url || '') || null,
+          source_note: null
+        }))
+      });
+      await updatePayrollRateProposalStatus({ proposalId: proposal.id, status: 'applied' });
+      await Promise.all([loadPayrollRates(), loadPayrollProposals()]);
+      toast('Parámetros actualizados');
+    } catch (e: any) {
+      toast.error(String(e?.message || e));
+    }
+  };
+
+  const handleDismissProposal = async (proposal: any) => {
+    if (!proposal?.id) return;
+    try {
+      await updatePayrollRateProposalStatus({ proposalId: proposal.id, status: 'dismissed' });
+      await loadPayrollProposals();
+      toast('Propuesta descartada');
+    } catch (e: any) {
+      toast.error(String(e?.message || e));
+    }
+  };
+
+  const handleSavePayrollRatesDraft = async () => {
+    if (!selectedCompany) return;
+    try {
+      await upsertPayrollRates({
+        rows: payrollRateFields.map((f: any) => ({
+          company_id: selectedCompany.id,
+          code: f.code,
+          name: f.name,
+          kind: f.kind,
+          payer: f.payer,
+          value: Number(payrollRatesDraft[f.code] || 0),
+          effective_from: payrollMonthStart,
+          source_url: null,
+          source_note: null
+        }))
+      });
+      await loadPayrollRates();
+      toast('Parámetros guardados');
+    } catch (e: any) {
+      toast.error(String(e?.message || e));
+    }
+  };
+
+  const getPayrollDistributionSectors = () => {
+    if (payrollDistributeBy === 'company') return sectors;
+    if (payrollDistributeBy === 'field') return sectors.filter((s) => s.field_id === payrollFieldId);
+    return sectors.filter((s) => s.id === payrollSectorId);
+  };
+
+  const buildDistributedWorkerCostRows = (params: { workerId: string; date: string; description: string; amount: number }) => {
+    if (!selectedCompany) return [];
+    const totalAmount = Number(params.amount || 0);
+    if (payrollDistributeBy === 'sector') {
+      return [
+        {
+          company_id: selectedCompany.id,
+          worker_id: params.workerId,
+          date: params.date,
+          description: params.description,
+          amount: totalAmount,
+          sector_id: payrollSectorId
+        }
+      ];
+    }
+
+    const distSectors = getPayrollDistributionSectors();
+    const totalHa = distSectors.reduce((sum, s) => sum + Number(s.hectares), 0);
+    if (totalHa <= 0) return [];
+
+    return distSectors.map((s) => ({
+      company_id: selectedCompany.id,
+      worker_id: params.workerId,
+      date: params.date,
+      description: params.description,
+      amount: (Number(s.hectares) / totalHa) * totalAmount,
+      sector_id: s.id
+    }));
+  };
+
+  const handleCalculatePayroll = () => {
+    const gross = Number(payrollGrossImponible || 0);
+    if (!payrollWorkerId || gross <= 0) {
+      toast('Seleccione trabajador y sueldo imponible');
+      return;
+    }
+    const result = calculatePayrollChile({
+      input: {
+        month: payrollMonthStart,
+        grossImponible: gross,
+        contractType: payrollContractType,
+        afpCommissionRate: Number(payrollAfpCommissionRate || 0),
+        healthType: payrollHealthType,
+        healthPlanAmount: Number(payrollHealthPlanAmount || 0),
+        mutualRate: Number(payrollMutualRate || 0)
+      },
+      rates: payrollRatesDraft
+    });
+    setPayrollResult(result);
+  };
+
+  const handleRegisterPayrollIndividual = async () => {
+    if (!selectedCompany) return;
+    if (!payrollResult) {
+      toast('Primero calcula la previsión');
+      return;
+    }
+    if (payrollDistributeBy === 'sector' && !payrollSectorId) {
+      toast('Seleccione un sector');
+      return;
+    }
+    if (payrollDistributeBy === 'field' && !payrollFieldId) {
+      toast('Seleccione un campo');
+      return;
+    }
+
+    const gross = Number(payrollGrossImponible || 0);
+    if (!payrollWorkerId || gross <= 0) return;
+
+    setPayrollSaving(true);
+    try {
+      const date = payrollMonthStart;
+      const monthLabel = payrollMonth;
+      const rowsToInsert: any[] = [];
+
+      rowsToInsert.push(
+        ...buildDistributedWorkerCostRows({
+          workerId: payrollWorkerId,
+          date,
+          description: `Sueldo Imponible ${monthLabel}`,
+          amount: gross
+        })
+      );
+
+      payrollResult.items
+        .filter((i) => i.payer === 'employer')
+        .forEach((i) => {
+          rowsToInsert.push(
+            ...buildDistributedWorkerCostRows({
+              workerId: payrollWorkerId,
+              date,
+              description: `Previsión ${monthLabel} - ${i.name}`,
+              amount: i.amount
+            })
+          );
+        });
+
+      if (rowsToInsert.length === 0) {
+        toast('No hay hectáreas definidas para distribuir en el destino seleccionado.');
+        return;
+      }
+
+      await insertWorkerCosts({ rows: rowsToInsert });
+
+      const healthRate =
+        payrollHealthType === 'fonasa'
+          ? Number(payrollRatesDraft.SALUD_FONASA_RATE || 7)
+          : Number(payrollRatesDraft.SALUD_ISAPRE_MIN_RATE || 7);
+
+      await createWorkerPayrollRun({
+        run: {
+          company_id: selectedCompany.id,
+          worker_id: payrollWorkerId,
+          month: payrollMonthStart,
+          field_id: payrollDistributeBy === 'field' ? payrollFieldId : null,
+          sector_id: payrollDistributeBy === 'sector' ? payrollSectorId : null,
+          gross_imponible: gross,
+          contract_type: payrollContractType,
+          afp_name: null,
+          afp_commission_rate: Number(payrollAfpCommissionRate || 0),
+          health_type: payrollHealthType,
+          health_rate: healthRate,
+          health_plan_amount: Number(payrollHealthPlanAmount || 0),
+          mutual_rate: Number(payrollMutualRate || 0)
+        },
+        items: payrollResult.items.map((i) => ({
+          run_id: '',
+          company_id: selectedCompany.id,
+          payer: i.payer,
+          code: i.code,
+          name: i.name,
+          rate: i.rate,
+          base_amount: i.baseAmount,
+          amount: i.amount,
+          sort_order: i.sortOrder
+        }))
+      });
+
+      await loadCosts();
+      toast('Previsión registrada');
+    } catch (e: any) {
+      toast.error(String(e?.message || e));
+    } finally {
+      setPayrollSaving(false);
+    }
+  };
+
+  const parseContractType = (v: unknown): 'indefinite' | 'fixed_term' | 'work' => {
+    const t = String(v || '').toLowerCase().trim();
+    if (t.includes('plazo')) return 'fixed_term';
+    if (t.includes('obra')) return 'work';
+    if (t.includes('fijo')) return 'fixed_term';
+    return 'indefinite';
+  };
+
+  const parseHealthType = (v: unknown): 'fonasa' | 'isapre' => {
+    const t = String(v || '').toLowerCase().trim();
+    if (t.includes('isap')) return 'isapre';
+    return 'fonasa';
+  };
+
+  const handleBulkFile = async (file: File) => {
+    try {
+      const rows = await importXlsxToJson({ file, maxRows: 2000 });
+      setBulkFileRows(rows);
+      const errors: string[] = [];
+      const out: any[] = [];
+      const findWorkerId = (name: string) => {
+        const n = name.toLowerCase().trim();
+        const w = workers.find((x) => x.name.toLowerCase().trim() === n);
+        return w?.id || '';
+      };
+
+      rows.forEach((r, idx) => {
+        const workerName = String((r as any).Trabajador ?? (r as any).trabajador ?? (r as any).Nombre ?? (r as any).nombre ?? '').trim();
+        const gross = Number((r as any).Imponible ?? (r as any).imponible ?? 0);
+        if (!workerName) {
+          errors.push(`Fila ${idx + 2}: falta Trabajador`);
+          return;
+        }
+        const workerId = findWorkerId(workerName);
+        if (!workerId) {
+          errors.push(`Fila ${idx + 2}: trabajador no encontrado (${workerName})`);
+          return;
+        }
+        if (!Number.isFinite(gross) || gross <= 0) {
+          errors.push(`Fila ${idx + 2}: imponible inválido`);
+          return;
+        }
+
+        const contractType = parseContractType((r as any).Contrato ?? (r as any).contrato ?? '');
+        const afpCommissionRate = Number((r as any).ComisionAFP ?? (r as any).comisionAFP ?? (r as any).comision_afp ?? 0);
+        const healthType = parseHealthType((r as any).Salud ?? (r as any).salud ?? '');
+        const healthPlanAmount = Number((r as any).PlanSalud ?? (r as any).planSalud ?? (r as any).plan_salud ?? 0);
+        const mutualRate = Number((r as any).Mutual ?? (r as any).mutual ?? 0);
+
+        out.push({
+          workerId,
+          grossImponible: gross,
+          contractType,
+          afpCommissionRate: Number.isFinite(afpCommissionRate) ? afpCommissionRate : 0,
+          healthType,
+          healthPlanAmount: Number.isFinite(healthPlanAmount) ? healthPlanAmount : 0,
+          mutualRate: Number.isFinite(mutualRate) ? mutualRate : 0
+        });
+      });
+
+      setBulkRows(out);
+      setBulkErrors(errors);
+      toast(errors.length > 0 ? 'Carga con observaciones' : 'Archivo cargado');
+    } catch (e: any) {
+      toast.error(String(e?.message || e));
+    }
+  };
+
+  const handleRegisterPayrollBulk = async () => {
+    if (!selectedCompany) return;
+    if (bulkRows.length === 0) {
+      toast('No hay filas para registrar');
+      return;
+    }
+    if (payrollDistributeBy === 'sector' && !payrollSectorId) {
+      toast('Seleccione un sector');
+      return;
+    }
+    if (payrollDistributeBy === 'field' && !payrollFieldId) {
+      toast('Seleccione un campo');
+      return;
+    }
+    setPayrollSaving(true);
+    try {
+      const monthLabel = payrollMonth;
+      const date = payrollMonthStart;
+      const costsRows: any[] = [];
+      const runPayloads: any[] = [];
+
+      for (const row of bulkRows) {
+        const result = calculatePayrollChile({
+          input: {
+            month: payrollMonthStart,
+            grossImponible: row.grossImponible,
+            contractType: row.contractType,
+            afpCommissionRate: row.afpCommissionRate,
+            healthType: row.healthType,
+            healthPlanAmount: row.healthPlanAmount,
+            mutualRate: row.mutualRate
+          },
+          rates: payrollRatesDraft
+        });
+
+        costsRows.push(
+          ...buildDistributedWorkerCostRows({
+            workerId: row.workerId,
+            date,
+            description: `Sueldo Imponible ${monthLabel}`,
+            amount: row.grossImponible
+          })
+        );
+
+        result.items
+          .filter((i) => i.payer === 'employer')
+          .forEach((i) => {
+            costsRows.push(
+              ...buildDistributedWorkerCostRows({
+                workerId: row.workerId,
+                date,
+                description: `Previsión ${monthLabel} - ${i.name}`,
+                amount: i.amount
+              })
+            );
+          });
+
+        const healthRate =
+          row.healthType === 'fonasa'
+            ? Number(payrollRatesDraft.SALUD_FONASA_RATE || 7)
+            : Number(payrollRatesDraft.SALUD_ISAPRE_MIN_RATE || 7);
+
+        runPayloads.push({
+          run: {
+            company_id: selectedCompany.id,
+            worker_id: row.workerId,
+            month: payrollMonthStart,
+            field_id: payrollDistributeBy === 'field' ? payrollFieldId : null,
+            sector_id: payrollDistributeBy === 'sector' ? payrollSectorId : null,
+            gross_imponible: row.grossImponible,
+            contract_type: row.contractType,
+            afp_name: null,
+            afp_commission_rate: row.afpCommissionRate,
+            health_type: row.healthType,
+            health_rate: healthRate,
+            health_plan_amount: row.healthPlanAmount,
+            mutual_rate: row.mutualRate
+          },
+          items: result.items.map((i) => ({
+            run_id: '',
+            company_id: selectedCompany.id,
+            payer: i.payer,
+            code: i.code,
+            name: i.name,
+            rate: i.rate,
+            base_amount: i.baseAmount,
+            amount: i.amount,
+            sort_order: i.sortOrder
+          }))
+        });
+      }
+
+      if (costsRows.length === 0) {
+        toast('No hay hectáreas definidas para distribuir en el destino seleccionado.');
+        return;
+      }
+
+      const runWithConcurrencyLimit = async (limit: number, tasks: Array<() => Promise<unknown>>) => {
+        const pool = new Array(Math.max(1, limit)).fill(0).map(async () => {
+          while (tasks.length > 0) {
+            const t = tasks.shift();
+            if (!t) return;
+            await t();
+          }
+        });
+        await Promise.all(pool);
+      };
+
+      const tasks = runPayloads.map((p) => () => createWorkerPayrollRun(p));
+      await runWithConcurrencyLimit(5, tasks);
+      await insertWorkerCosts({ rows: costsRows });
+      await loadCosts();
+      toast('Previsión masiva registrada');
+    } catch (e: any) {
+      toast.error(String(e?.message || e));
+    } finally {
+      setPayrollSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -411,6 +937,642 @@ export const Workers: React.FC = () => {
               </form>
           </div>
       )}
+
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Previsión (Chile)</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Calcula aportes por ley chilena y registra los costos del empleador en líneas separadas.
+            </p>
+          </div>
+          <div className="flex items-end gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Mes</label>
+              <input
+                type="month"
+                value={payrollMonth}
+                onChange={(e) => setPayrollMonth(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => void loadPayrollRates()}
+              disabled={payrollRatesLoading}
+              className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-50"
+            >
+              <RefreshCcw className={`mr-2 h-4 w-4 ${payrollRatesLoading ? 'animate-spin' : ''}`} />
+              Recargar parámetros
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 border-b border-gray-200 dark:border-gray-700">
+          <nav className="-mb-px flex space-x-6">
+            <button
+              type="button"
+              onClick={() => setPayrollTab('individual')}
+              className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
+                payrollTab === 'individual'
+                  ? 'border-indigo-500 text-indigo-600'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
+              }`}
+            >
+              Individual
+            </button>
+            <button
+              type="button"
+              onClick={() => setPayrollTab('masivo')}
+              className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
+                payrollTab === 'masivo'
+                  ? 'border-indigo-500 text-indigo-600'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
+              }`}
+            >
+              Masivo
+            </button>
+            <button
+              type="button"
+              onClick={() => setPayrollTab('parametros')}
+              className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
+                payrollTab === 'parametros'
+                  ? 'border-indigo-500 text-indigo-600'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
+              }`}
+            >
+              Parámetros
+            </button>
+          </nav>
+        </div>
+
+        {payrollTab !== 'parametros' && (
+          <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Asignar A</label>
+              <div className="mt-1 flex rounded-md shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setPayrollDistributeBy('sector')}
+                  className={`relative inline-flex items-center px-4 py-2 rounded-l-md border text-sm font-medium focus:z-10 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 ${
+                    payrollDistributeBy === 'sector'
+                      ? 'bg-indigo-600 border-indigo-600 text-white'
+                      : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900'
+                  }`}
+                >
+                  Un Sector
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPayrollDistributeBy('field')}
+                  className={`-ml-px relative inline-flex items-center px-4 py-2 border text-sm font-medium focus:z-10 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 ${
+                    payrollDistributeBy === 'field'
+                      ? 'bg-indigo-600 border-indigo-600 text-white'
+                      : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900'
+                  }`}
+                >
+                  Todo un Campo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPayrollDistributeBy('company')}
+                  className={`-ml-px relative inline-flex items-center px-4 py-2 rounded-r-md border text-sm font-medium focus:z-10 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 ${
+                    payrollDistributeBy === 'company'
+                      ? 'bg-indigo-600 border-indigo-600 text-white'
+                      : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900'
+                  }`}
+                >
+                  Empresa General
+                </button>
+              </div>
+            </div>
+
+            {payrollDistributeBy === 'sector' ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Sector Destino</label>
+                <select
+                  value={payrollSectorId}
+                  onChange={(e) => setPayrollSectorId(e.target.value)}
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                >
+                  <option value="">Seleccione Sector...</option>
+                  {sectors.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : payrollDistributeBy === 'field' ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Campo Destino</label>
+                <select
+                  value={payrollFieldId}
+                  onChange={(e) => setPayrollFieldId(e.target.value)}
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                >
+                  <option value="">Seleccione Campo...</option>
+                  {fields.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Se distribuye proporcionalmente por hectárea.</p>
+              </div>
+            ) : (
+              <div className="flex items-end">
+                <div className="w-full p-2 bg-indigo-50 border border-indigo-200 rounded text-sm text-indigo-700">
+                  Se distribuye proporcionalmente entre todos los campos y sectores.
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {payrollTab === 'individual' && (
+          <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Trabajador</label>
+                <select
+                  value={payrollWorkerId}
+                  onChange={(e) => setPayrollWorkerId(e.target.value)}
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                >
+                  <option value="">Seleccione...</option>
+                  {workers.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name} ({w.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Sueldo imponible (CLP)</label>
+                <input
+                  type="number"
+                  value={payrollGrossImponible}
+                  onChange={(e) => setPayrollGrossImponible(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  placeholder="0"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Contrato</label>
+                  <select
+                    value={payrollContractType}
+                    onChange={(e) => setPayrollContractType(e.target.value as any)}
+                    className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  >
+                    <option value="indefinite">Indefinido</option>
+                    <option value="fixed_term">Plazo fijo</option>
+                    <option value="work">Por obra</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Comisión AFP (%)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={payrollAfpCommissionRate}
+                    onChange={(e) => setPayrollAfpCommissionRate(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Salud</label>
+                  <select
+                    value={payrollHealthType}
+                    onChange={(e) => setPayrollHealthType(e.target.value as any)}
+                    className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  >
+                    <option value="fonasa">Fonasa</option>
+                    <option value="isapre">Isapre</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Plan Isapre (CLP)</label>
+                  <input
+                    type="number"
+                    value={payrollHealthPlanAmount}
+                    onChange={(e) => setPayrollHealthPlanAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    placeholder="0"
+                    disabled={payrollHealthType !== 'isapre'}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Mutual (%)</label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={payrollMutualRate}
+                  onChange={(e) => setPayrollMutualRate(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  placeholder="0"
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleCalculatePayroll}
+                  disabled={payrollSaving || payrollRatesLoading}
+                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {payrollRatesLoading ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : null}
+                  Calcular
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleRegisterPayrollIndividual()}
+                  disabled={payrollSaving || !payrollResult}
+                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                >
+                  {payrollSaving ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : null}
+                  Registrar previsión
+                </button>
+              </div>
+
+              {Number(payrollRatesDraft.UF_CLP || 0) <= 0 && (
+                <div className="p-3 rounded-md bg-yellow-50 border border-yellow-200 text-sm text-yellow-800">
+                  Falta UF para convertir topes en UF. Puedes cargarla en Parámetros.
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+                <div className="text-sm text-gray-700 dark:text-gray-200 font-medium">Resumen</div>
+                {payrollResult ? (
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                    <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Base AFP/Salud</div>
+                      <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollResult.baseAfpSalud)}</div>
+                    </div>
+                    <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Base Cesantía</div>
+                      <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollResult.baseAfc)}</div>
+                    </div>
+                    <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Descuentos trabajador</div>
+                      <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollResult.workerDeductions)}</div>
+                    </div>
+                    <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Aportes empleador</div>
+                      <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollResult.employerContrib)}</div>
+                    </div>
+                    <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 sm:col-span-2">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Costo total empleador (imponible + aportes)</div>
+                      <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollResult.employerTotalCost)}</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">Completa los datos y presiona Calcular.</div>
+                )}
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+                <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                  <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Detalle</div>
+                  {payrollResult ? (
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      Neto trabajador: {formatCLP(Number(payrollGrossImponible || 0) - payrollResult.workerDeductions)}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-900">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Paga</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Concepto</th>
+                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Tasa</th>
+                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Base</th>
+                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Monto</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                      {(payrollResult?.items || []).map((i) => (
+                        <tr key={`${i.payer}-${i.code}`}>
+                          <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
+                            {i.payer === 'worker' ? 'Trabajador' : 'Empleador'}
+                          </td>
+                          <td className="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{i.name}</td>
+                          <td className="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{Number(i.rate || 0).toFixed(2)}%</td>
+                          <td className="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{formatCLP(i.baseAmount)}</td>
+                          <td className="px-4 py-2 text-sm text-right font-semibold text-gray-900 dark:text-gray-100">{formatCLP(i.amount)}</td>
+                        </tr>
+                      ))}
+                      {!payrollResult && (
+                        <tr>
+                          <td colSpan={5} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                            Sin cálculo.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {payrollTab === 'masivo' && (
+          <div className="mt-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                Columnas sugeridas: Trabajador, Imponible, Contrato, ComisionAFP, Salud, PlanSalud, Mutual
+              </div>
+              <label className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 cursor-pointer">
+                <Upload className="mr-2 h-4 w-4" />
+                Cargar Excel
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void handleBulkFile(f);
+                  }}
+                />
+              </label>
+            </div>
+
+            {bulkErrors.length > 0 && (
+              <div className="p-3 rounded-md bg-red-50 border border-red-200 text-sm text-red-700">
+                <div className="font-medium mb-1">Observaciones</div>
+                <ul className="list-disc pl-5 space-y-1">
+                  {bulkErrors.slice(0, 10).map((e) => (
+                    <li key={e}>{e}</li>
+                  ))}
+                </ul>
+                {bulkErrors.length > 10 && <div className="mt-2">... y {bulkErrors.length - 10} más</div>}
+              </div>
+            )}
+
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+              <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Previsualización</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400">
+                  Filas válidas: {bulkRows.length} / Archivo: {bulkFileRows.length}
+                </div>
+              </div>
+              <div className="overflow-x-auto max-h-[420px]">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Trabajador</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Imponible</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Contrato</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Com. AFP</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Salud</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Plan</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Mutual</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {bulkRows.map((r, idx) => (
+                      <tr key={`${r.workerId}-${idx}`}>
+                        <td className="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">
+                          {workers.find((w) => w.id === r.workerId)?.name || r.workerId}
+                        </td>
+                        <td className="px-4 py-2 text-sm text-right text-gray-900 dark:text-gray-100">{formatCLP(r.grossImponible)}</td>
+                        <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">{r.contractType}</td>
+                        <td className="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{Number(r.afpCommissionRate || 0).toFixed(2)}%</td>
+                        <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">{r.healthType}</td>
+                        <td className="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{formatCLP(Number(r.healthPlanAmount || 0))}</td>
+                        <td className="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{Number(r.mutualRate || 0).toFixed(4)}%</td>
+                      </tr>
+                    ))}
+                    {bulkRows.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                          Carga un archivo para ver filas.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => void handleRegisterPayrollBulk()}
+                disabled={payrollSaving || bulkRows.length === 0}
+                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
+              >
+                {payrollSaving ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : null}
+                Registrar masivo
+              </button>
+            </div>
+          </div>
+        )}
+
+        {payrollTab === 'parametros' && (
+          <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+              <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Parámetros del mes</div>
+                <button
+                  type="button"
+                  onClick={() => void handleSavePayrollRatesDraft()}
+                  disabled={payrollRatesLoading}
+                  className="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  Guardar
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-900">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Código</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Nombre</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {payrollRateFields.map((f: any) => (
+                      <tr key={f.code}>
+                        <td className="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{f.code}</td>
+                        <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">{f.name}</td>
+                        <td className="px-4 py-2 text-sm text-right">
+                          <input
+                            type="number"
+                            step={f.code === 'UF_CLP' ? '1' : f.kind === 'rate' ? '0.0001' : '0.01'}
+                            value={(payrollRatesDraft as any)[f.code] ?? ''}
+                            onChange={(e) =>
+                              setPayrollRatesDraft((prev) => ({
+                                ...prev,
+                                [f.code]: e.target.value === '' ? 0 : Number(e.target.value)
+                              }))
+                            }
+                            className="w-40 text-right rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                    {payrollRateFields.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                          Sin parámetros.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 border border-gray-200 dark:border-gray-700">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Buscar actualización</div>
+                  <button
+                    type="button"
+                    onClick={() => void handleScanPayrollRates()}
+                    disabled={scanLoading}
+                    className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 disabled:opacity-50"
+                  >
+                    {scanLoading ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <RefreshCcw className="mr-2 h-4 w-4" />}
+                    Buscar
+                  </button>
+                </div>
+
+                {scanResult ? (
+                  <div className="mt-3 space-y-3">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      Fuentes: {(scanResult.sources || []).length}
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead className="bg-gray-50 dark:bg-gray-900">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Código</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Nombre</th>
+                            <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Valor</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                          {(scanResult.items || []).map((i: any) => (
+                            <tr key={String(i.code || '')}>
+                              <td className="px-3 py-2 text-sm text-gray-900 dark:text-gray-100">{String(i.code || '')}</td>
+                              <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">{String(i.name || '')}</td>
+                              <td className="px-3 py-2 text-sm text-right text-gray-900 dark:text-gray-100">{Number(i.value || 0)}</td>
+                            </tr>
+                          ))}
+                          {(scanResult.items || []).length === 0 && (
+                            <tr>
+                              <td colSpan={3} className="px-3 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                                Sin ítems detectados.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setScanResult(null)}
+                        className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
+                      >
+                        Cerrar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleCreateProposalFromScan()}
+                        className="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700"
+                      >
+                        Crear propuesta
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">Busca en internet y genera una propuesta para aprobar.</div>
+                )}
+              </div>
+
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+                <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                  <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Propuestas</div>
+                  <button
+                    type="button"
+                    onClick={() => void loadPayrollProposals()}
+                    className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
+                  >
+                    Recargar
+                  </button>
+                </div>
+                <div className="overflow-x-auto max-h-[340px]">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Mes</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Estado</th>
+                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Ítems</th>
+                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                      {payrollProposals
+                        .filter((p: any) => String(p.status || '') === 'proposed')
+                        .map((p: any) => (
+                          <tr key={p.id}>
+                            <td className="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">{String(p.effective_from || '')}</td>
+                            <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">{String(p.status || '')}</td>
+                            <td className="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">
+                              {Array.isArray(p.proposed_items) ? p.proposed_items.length : 0}
+                            </td>
+                            <td className="px-4 py-2 text-sm text-right">
+                              <div className="inline-flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleApplyProposal(p)}
+                                  className="inline-flex items-center px-3 py-1.5 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700"
+                                >
+                                  Aplicar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleDismissProposal(p)}
+                                  className="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
+                                >
+                                  Descartar
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      {payrollProposals.filter((p: any) => String(p.status || '') === 'proposed').length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                            Sin propuestas pendientes.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Cost Registration Form */}
