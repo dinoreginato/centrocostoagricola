@@ -87,6 +87,7 @@ export const Workers: React.FC = () => {
   const [payrollWorkerId, setPayrollWorkerId] = useState('');
   const [payrollGrossImponible, setPayrollGrossImponible] = useState<number | ''>('');
   const [payrollContractType, setPayrollContractType] = useState<'indefinite' | 'fixed_term' | 'work'>('indefinite');
+  const [payrollAfpName, setPayrollAfpName] = useState('');
   const [payrollAfpCommissionRate, setPayrollAfpCommissionRate] = useState<number | ''>('');
   const [payrollHealthType, setPayrollHealthType] = useState<'fonasa' | 'isapre'>('fonasa');
   const [payrollHealthPlanAmount, setPayrollHealthPlanAmount] = useState<number | ''>('');
@@ -102,8 +103,34 @@ export const Workers: React.FC = () => {
   const [scanResult, setScanResult] = useState<any | null>(null);
 
   const [bulkFileRows, setBulkFileRows] = useState<Array<Record<string, unknown>>>([]);
-  const [bulkRows, setBulkRows] = useState<Array<{ workerId: string; grossImponible: number; contractType: 'indefinite' | 'fixed_term' | 'work'; afpCommissionRate: number; healthType: 'fonasa' | 'isapre'; healthPlanAmount: number; mutualRate: number }>>([]);
+  const [bulkRows, setBulkRows] = useState<Array<{ workerId: string; grossImponible: number; contractType: 'indefinite' | 'fixed_term' | 'work'; afpName: string; afpCommissionRate: number; healthType: 'fonasa' | 'isapre'; healthPlanAmount: number; mutualRate: number }>>([]);
   const [bulkErrors, setBulkErrors] = useState<string[]>([]);
+
+  const afpOptions = useMemo(
+    () => [
+      { value: 'capital', label: 'Capital', rateCode: 'AFP_CAPITAL_COMMISSION_RATE', aliases: ['capital', 'afp capital'] },
+      { value: 'cuprum', label: 'Cuprum', rateCode: 'AFP_CUPRUM_COMMISSION_RATE', aliases: ['cuprum', 'afp cuprum'] },
+      { value: 'habitat', label: 'Habitat', rateCode: 'AFP_HABITAT_COMMISSION_RATE', aliases: ['habitat', 'hábitat', 'afp habitat', 'afp hábitat'] },
+      { value: 'modelo', label: 'Modelo', rateCode: 'AFP_MODELO_COMMISSION_RATE', aliases: ['modelo', 'afp modelo'] },
+      { value: 'planvital', label: 'PlanVital', rateCode: 'AFP_PLANVITAL_COMMISSION_RATE', aliases: ['planvital', 'plan vital', 'afp planvital', 'afp plan vital'] },
+      { value: 'provida', label: 'ProVida', rateCode: 'AFP_PROVIDA_COMMISSION_RATE', aliases: ['provida', 'pro vida', 'afp provida', 'afp pro vida'] },
+      { value: 'uno', label: 'Uno', rateCode: 'AFP_UNO_COMMISSION_RATE', aliases: ['uno', 'afp uno'] }
+    ],
+    []
+  );
+
+  const defaultPayrollRates = useMemo(
+    () => ({
+      AFP_CAPITAL_COMMISSION_RATE: 1.44,
+      AFP_CUPRUM_COMMISSION_RATE: 1.44,
+      AFP_HABITAT_COMMISSION_RATE: 1.27,
+      AFP_MODELO_COMMISSION_RATE: 0.58,
+      AFP_PLANVITAL_COMMISSION_RATE: 1.16,
+      AFP_PROVIDA_COMMISSION_RATE: 1.45,
+      AFP_UNO_COMMISSION_RATE: 0.46
+    }),
+    []
+  );
 
   const loadWorkers = useCallback(async () => {
       if (!selectedCompany) return;
@@ -141,18 +168,20 @@ export const Workers: React.FC = () => {
         const pb = b.company_id ? 0 : 1;
         return pa - pb;
       });
-      const map: Record<string, number> = {};
+      const map: Record<string, number> = { ...defaultPayrollRates };
+      const seenCodes = new Set<string>();
       sorted.forEach((r: any) => {
         const code = String(r.code || '');
         if (!code) return;
-        if (map[code] !== undefined) return;
+        if (seenCodes.has(code)) return;
         map[code] = Number(r.value || 0);
+        seenCodes.add(code);
       });
       setPayrollRatesDraft(map);
     } finally {
       setPayrollRatesLoading(false);
     }
-  }, [payrollMonthStart, selectedCompany]);
+  }, [defaultPayrollRates, payrollMonthStart, selectedCompany]);
 
   const loadPayrollProposals = useCallback(async () => {
     if (!selectedCompany) return;
@@ -182,6 +211,12 @@ export const Workers: React.FC = () => {
       void loadPayrollRates();
     }
   }, [loadPayrollRates, selectedCompany]);
+
+  useEffect(() => {
+    if (!payrollAfpName) return;
+    const rate = getAfpCommissionRateByName(payrollAfpName);
+    setPayrollAfpCommissionRate(rate);
+  }, [getAfpCommissionRateByName, payrollAfpName]);
 
   const handleCreateWorker = async (e: React.FormEvent) => {
       e.preventDefault();
@@ -426,9 +461,48 @@ export const Workers: React.FC = () => {
       { code: 'AFC_EMP_FIXED_RATE', name: 'AFC Empleador plazo fijo/obra %', kind: 'rate', payer: 'employer' },
       { code: 'AFP_MANDATORY_RATE', name: 'AFP Obligatoria %', kind: 'rate', payer: 'worker' },
       { code: 'SALUD_FONASA_RATE', name: 'Salud Fonasa %', kind: 'rate', payer: 'worker' },
-      { code: 'SALUD_ISAPRE_MIN_RATE', name: 'Salud Isapre mín. %', kind: 'rate', payer: 'worker' }
+      { code: 'SALUD_ISAPRE_MIN_RATE', name: 'Salud Isapre mín. %', kind: 'rate', payer: 'worker' },
+      ...afpOptions.map((afp) => ({
+        code: afp.rateCode,
+        name: `Comisión AFP ${afp.label} %`,
+        kind: 'rate',
+        payer: 'worker'
+      }))
     ],
-    []
+    [afpOptions]
+  );
+
+  const getAfpCommissionRateByName = useCallback(
+    (afpName: string) => {
+      const option = afpOptions.find((afp) => afp.value === afpName);
+      if (!option) return 0;
+      return Number(payrollRatesDraft[option.rateCode] || 0);
+    },
+    [afpOptions, payrollRatesDraft]
+  );
+
+  const normalizeAfpName = useCallback(
+    (value: unknown) => {
+      const normalized = String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (!normalized) return '';
+      const found = afpOptions.find((afp) =>
+        afp.aliases.some(
+          (alias) =>
+            alias
+              .toLowerCase()
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .trim() === normalized
+        )
+      );
+      return found?.value || '';
+    },
+    [afpOptions]
   );
 
   const handleScanPayrollRates = async () => {
@@ -651,7 +725,7 @@ export const Workers: React.FC = () => {
           sector_id: payrollDistributeBy === 'sector' ? payrollSectorId : null,
           gross_imponible: gross,
           contract_type: payrollContractType,
-          afp_name: null,
+          afp_name: payrollAfpName || null,
           afp_commission_rate: Number(payrollAfpCommissionRate || 0),
           health_type: payrollHealthType,
           health_rate: healthRate,
@@ -724,7 +798,13 @@ export const Workers: React.FC = () => {
         }
 
         const contractType = parseContractType((r as any).Contrato ?? (r as any).contrato ?? '');
-        const afpCommissionRate = Number((r as any).ComisionAFP ?? (r as any).comisionAFP ?? (r as any).comision_afp ?? 0);
+        const afpNameRaw = (r as any).AFP ?? (r as any).afp ?? (r as any).Administradora ?? (r as any).administradora ?? '';
+        const afpName = normalizeAfpName(afpNameRaw);
+        const afpCommissionInput = Number((r as any).ComisionAFP ?? (r as any).comisionAFP ?? (r as any).comision_afp ?? 0);
+        const afpCommissionRate =
+          Number.isFinite(afpCommissionInput) && afpCommissionInput > 0
+            ? afpCommissionInput
+            : getAfpCommissionRateByName(afpName);
         const healthType = parseHealthType((r as any).Salud ?? (r as any).salud ?? '');
         const healthPlanAmount = Number((r as any).PlanSalud ?? (r as any).planSalud ?? (r as any).plan_salud ?? 0);
         const mutualRate = Number((r as any).Mutual ?? (r as any).mutual ?? 0);
@@ -733,6 +813,7 @@ export const Workers: React.FC = () => {
           workerId,
           grossImponible: gross,
           contractType,
+          afpName,
           afpCommissionRate: Number.isFinite(afpCommissionRate) ? afpCommissionRate : 0,
           healthType,
           healthPlanAmount: Number.isFinite(healthPlanAmount) ? healthPlanAmount : 0,
@@ -819,7 +900,7 @@ export const Workers: React.FC = () => {
             sector_id: payrollDistributeBy === 'sector' ? payrollSectorId : null,
             gross_imponible: row.grossImponible,
             contract_type: row.contractType,
-            afp_name: null,
+            afp_name: row.afpName || null,
             afp_commission_rate: row.afpCommissionRate,
             health_type: row.healthType,
             health_rate: healthRate,
