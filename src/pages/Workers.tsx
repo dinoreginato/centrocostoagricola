@@ -212,12 +212,6 @@ export const Workers: React.FC = () => {
     }
   }, [loadPayrollRates, selectedCompany]);
 
-  useEffect(() => {
-    if (!payrollAfpName) return;
-    const rate = getAfpCommissionRateByName(payrollAfpName);
-    setPayrollAfpCommissionRate(rate);
-  }, [getAfpCommissionRateByName, payrollAfpName]);
-
   const handleCreateWorker = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!newWorkerName || !selectedCompany) return;
@@ -504,6 +498,12 @@ export const Workers: React.FC = () => {
     },
     [afpOptions]
   );
+
+  useEffect(() => {
+    if (!payrollAfpName) return;
+    const rate = getAfpCommissionRateByName(payrollAfpName);
+    setPayrollAfpCommissionRate(rate);
+  }, [getAfpCommissionRateByName, payrollAfpName]);
 
   const handleScanPayrollRates = async () => {
     setScanLoading(true);
@@ -1215,6 +1215,24 @@ export const Workers: React.FC = () => {
                   </select>
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">AFP</label>
+                  <select
+                    value={payrollAfpName}
+                    onChange={(e) => setPayrollAfpName(e.target.value)}
+                    className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  >
+                    <option value="">Seleccione AFP...</option>
+                    {afpOptions.map((afp) => (
+                      <option key={afp.value} value={afp.value}>
+                        {afp.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Comisión AFP (%)</label>
                   <input
                     type="number"
@@ -1224,10 +1242,12 @@ export const Workers: React.FC = () => {
                     className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                     placeholder="0"
                   />
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {payrollAfpName
+                      ? `Se completa automáticamente según ${afpOptions.find((afp) => afp.value === payrollAfpName)?.label || 'la AFP seleccionada'}, pero puedes ajustarla si cambió.`
+                      : 'Puedes seleccionar una AFP para completar la comisión automáticamente.'}
+                  </p>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Salud</label>
                   <select
@@ -1374,7 +1394,7 @@ export const Workers: React.FC = () => {
           <div className="mt-6 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="text-sm text-gray-500 dark:text-gray-400">
-                Columnas sugeridas: Trabajador, Imponible, Contrato, ComisionAFP, Salud, PlanSalud, Mutual
+                Columnas sugeridas: Trabajador, Imponible, Contrato, AFP, ComisionAFP, Salud, PlanSalud, Mutual
               </div>
               <label className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 cursor-pointer">
                 <Upload className="mr-2 h-4 w-4" />
@@ -1417,6 +1437,7 @@ export const Workers: React.FC = () => {
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Trabajador</th>
                       <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Imponible</th>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Contrato</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">AFP</th>
                       <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Com. AFP</th>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Salud</th>
                       <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Plan</th>
@@ -1431,6 +1452,9 @@ export const Workers: React.FC = () => {
                         </td>
                         <td className="px-4 py-2 text-sm text-right text-gray-900 dark:text-gray-100">{formatCLP(r.grossImponible)}</td>
                         <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">{r.contractType}</td>
+                        <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
+                          {afpOptions.find((afp) => afp.value === r.afpName)?.label || '-'}
+                        </td>
                         <td className="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{Number(r.afpCommissionRate || 0).toFixed(2)}%</td>
                         <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">{r.healthType}</td>
                         <td className="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{formatCLP(Number(r.healthPlanAmount || 0))}</td>
@@ -1439,7 +1463,7 @@ export const Workers: React.FC = () => {
                     ))}
                     {bulkRows.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                        <td colSpan={8} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
                           Carga un archivo para ver filas.
                         </td>
                       </tr>
