@@ -49,6 +49,12 @@ const isoToMindicadorDate = (iso) => {
   return `${d}-${m}-${y}`;
 };
 
+const isMonthOnOrAfter = (value, target) => {
+  const safeValue = String(value || '').slice(0, 7);
+  const safeTarget = String(target || '').slice(0, 7);
+  return safeValue >= safeTarget;
+};
+
 const getAfpCommissionFromText = (text, afpLabel) => {
   const safe = afpLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const raw = extractFirst(text, [
@@ -86,6 +92,22 @@ export default async function handler(req, res) {
       {
         url: 'https://www.tvn.cl/publireportajes/la-comision-afp-explicada-facil-como-influye-en-tu-sueldo-mes-a-mes',
         label: 'TVN - Tabla de comisiones AFP (referencia pública)',
+      },
+      {
+        url: 'https://www.afc.cl/empleadores/pagos-y-dudas-sobre-cotizaciones/cotizaciones-cuanto-y-como-se-paga/',
+        label: 'AFC - Cotizaciones y Seguro de Cesantía',
+      },
+      {
+        url: 'https://www.chileatiende.gob.cl/fichas/130987-aportes-del-empleador-al-sistema-de-pensiones',
+        label: 'ChileAtiende - Aportes del empleador al Sistema de Pensiones',
+      },
+      {
+        url: 'https://www.chileatiende.gob.cl/fichas/130459-seguro-social-previsional-ssp',
+        label: 'ChileAtiende - Seguro Social',
+      },
+      {
+        url: 'https://chileatiende.gob.cl/fichas/130455-cotizacion-con-rentabilidad-protegida-crp',
+        label: 'ChileAtiende - CRP',
       }
     ];
 
@@ -271,8 +293,79 @@ export default async function handler(req, res) {
         value: 3,
         effective_from: effectiveFrom,
         source_url: sources[0].url
+      },
+      {
+        code: 'AFC_EMP_CIC_INDEF_RATE',
+        name: 'Cesantía Cuenta Individual empleador indefinido',
+        kind: 'rate',
+        payer: 'employer',
+        value: 1.6,
+        effective_from: effectiveFrom,
+        source_url: 'https://www.afc.cl/empleadores/pagos-y-dudas-sobre-cotizaciones/cotizaciones-cuanto-y-como-se-paga/'
+      },
+      {
+        code: 'AFC_EMP_FCS_INDEF_RATE',
+        name: 'Fondo Solidario Cesantía empleador indefinido',
+        kind: 'rate',
+        payer: 'employer',
+        value: 0.8,
+        effective_from: effectiveFrom,
+        source_url: 'https://www.afc.cl/empleadores/pagos-y-dudas-sobre-cotizaciones/cotizaciones-cuanto-y-como-se-paga/'
+      },
+      {
+        code: 'AFC_EMP_CIC_FIXED_RATE',
+        name: 'Cesantía Cuenta Individual empleador plazo fijo/obra',
+        kind: 'rate',
+        payer: 'employer',
+        value: 2.8,
+        effective_from: effectiveFrom,
+        source_url: 'https://www.afc.cl/empleadores/pagos-y-dudas-sobre-cotizaciones/cotizaciones-cuanto-y-como-se-paga/'
+      },
+      {
+        code: 'AFC_EMP_FCS_FIXED_RATE',
+        name: 'Fondo Solidario Cesantía empleador plazo fijo/obra',
+        kind: 'rate',
+        payer: 'employer',
+        value: 0.2,
+        effective_from: effectiveFrom,
+        source_url: 'https://www.afc.cl/empleadores/pagos-y-dudas-sobre-cotizaciones/cotizaciones-cuanto-y-como-se-paga/'
       }
     );
+
+    if (isMonthOnOrAfter(effectiveFrom, '2025-08')) {
+      items.push(
+        {
+          code: 'SEGURO_SOCIAL_AFP_EMP_RATE',
+          name: 'Seguro Social - Cuenta individual AFP',
+          kind: 'rate',
+          payer: 'employer',
+          value: 0.1,
+          effective_from: effectiveFrom,
+          source_url: 'https://www.chileatiende.gob.cl/fichas/130987-aportes-del-empleador-al-sistema-de-pensiones'
+        },
+        {
+          code: 'SEGURO_SOCIAL_EMP_RATE',
+          name: 'Seguro Social Previsional',
+          kind: 'rate',
+          payer: 'employer',
+          value: 0.9,
+          effective_from: effectiveFrom,
+          source_url: 'https://www.chileatiende.gob.cl/fichas/130987-aportes-del-empleador-al-sistema-de-pensiones'
+        }
+      );
+    }
+
+    if (isMonthOnOrAfter(effectiveFrom, '2026-08')) {
+      items.push({
+        code: 'CRP_EMP_RATE',
+        name: 'Cotización con Rentabilidad Protegida',
+        kind: 'rate',
+        payer: 'employer',
+        value: isMonthOnOrAfter(effectiveFrom, '2027-08') ? 1.5 : 0.9,
+        effective_from: effectiveFrom,
+        source_url: 'https://chileatiende.gob.cl/fichas/130455-cotizacion-con-rentabilidad-protegida-crp'
+      });
+    }
 
     const sis = parseNumberCL(sisRaw);
     if (sis !== null) {

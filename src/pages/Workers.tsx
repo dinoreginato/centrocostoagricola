@@ -95,6 +95,12 @@ export const Workers: React.FC = () => {
     { id: 'nonimp_2', label: 'Movilización', amount: '' }
   ]);
   const [payrollContractType, setPayrollContractType] = useState<'indefinite' | 'fixed_term' | 'work'>('indefinite');
+  const [payrollWorkerGender, setPayrollWorkerGender] = useState<'male' | 'female' | 'unspecified'>('unspecified');
+  const [payrollWorkerBirthDate, setPayrollWorkerBirthDate] = useState('');
+  const [payrollWorkerIsPensioner, setPayrollWorkerIsPensioner] = useState(false);
+  const [payrollWorkerPensionType, setPayrollWorkerPensionType] = useState<'old_age' | 'disability_total' | 'disability_partial' | 'other'>('old_age');
+  const [payrollWorkerVoluntaryAfp, setPayrollWorkerVoluntaryAfp] = useState(false);
+  const [payrollWorkerArt69Exempt, setPayrollWorkerArt69Exempt] = useState(false);
   const [payrollAfpName, setPayrollAfpName] = useState('');
   const [payrollAfpCommissionRate, setPayrollAfpCommissionRate] = useState<number | ''>('');
   const [payrollHealthType, setPayrollHealthType] = useState<'fonasa' | 'isapre'>('fonasa');
@@ -122,6 +128,12 @@ export const Workers: React.FC = () => {
       nonImponibles: number;
       grossImponible: number;
       contractType: 'indefinite' | 'fixed_term' | 'work';
+      workerGender: 'male' | 'female' | 'unspecified';
+      workerBirthDate: string;
+      workerIsPensioner: boolean;
+      workerPensionType: 'old_age' | 'disability_total' | 'disability_partial' | 'other';
+      workerVoluntaryAfp: boolean;
+      workerArt69Exempt: boolean;
       afpName: string;
       afpCommissionRate: number;
       healthType: 'fonasa' | 'isapre';
@@ -196,29 +208,40 @@ export const Workers: React.FC = () => {
   );
 
   const defaultPayrollRates = useMemo(
-    () => ({
-      IMM_CLP: 539000,
-      AFP_MANDATORY_RATE: 10,
-      SALUD_FONASA_RATE: 7,
-      SALUD_ISAPRE_MIN_RATE: 7,
-      SALUD_CCAF_RATE: 4.2,
-      SALUD_CCAF_FONASA_RATE: 2.8,
-      GRAT_LEGAL_RATE: 25,
-      GRAT_LEGAL_TOPE_IMM_ANNUAL: 4.75,
-      AFC_WORKER_INDEF_RATE: 0.6,
-      AFC_EMP_INDEF_RATE: 2.4,
-      AFC_WORKER_FIXED_RATE: 0,
-      AFC_EMP_FIXED_RATE: 3,
-      REFORMA_EMP_RATE: 0,
-      AFP_CAPITAL_COMMISSION_RATE: 1.44,
-      AFP_CUPRUM_COMMISSION_RATE: 1.44,
-      AFP_HABITAT_COMMISSION_RATE: 1.27,
-      AFP_MODELO_COMMISSION_RATE: 0.58,
-      AFP_PLANVITAL_COMMISSION_RATE: 1.16,
-      AFP_PROVIDA_COMMISSION_RATE: 1.45,
-      AFP_UNO_COMMISSION_RATE: 0.46
-    }),
-    []
+    () => {
+      const hasSeguroSocial = payrollMonthStart >= '2025-08-01';
+      const crpRate = payrollMonthStart >= '2027-08-01' ? 1.5 : payrollMonthStart >= '2026-08-01' ? 0.9 : 0;
+      return {
+        IMM_CLP: 539000,
+        AFP_MANDATORY_RATE: 10,
+        SALUD_FONASA_RATE: 7,
+        SALUD_ISAPRE_MIN_RATE: 7,
+        SALUD_CCAF_RATE: 4.2,
+        SALUD_CCAF_FONASA_RATE: 2.8,
+        GRAT_LEGAL_RATE: 25,
+        GRAT_LEGAL_TOPE_IMM_ANNUAL: 4.75,
+        AFC_WORKER_INDEF_RATE: 0.6,
+        AFC_WORKER_FIXED_RATE: 0,
+        AFC_EMP_INDEF_RATE: 2.4,
+        AFC_EMP_FIXED_RATE: 3,
+        AFC_EMP_CIC_INDEF_RATE: 1.6,
+        AFC_EMP_FCS_INDEF_RATE: 0.8,
+        AFC_EMP_CIC_FIXED_RATE: 2.8,
+        AFC_EMP_FCS_FIXED_RATE: 0.2,
+        SEGURO_SOCIAL_AFP_EMP_RATE: hasSeguroSocial ? 0.1 : 0,
+        SEGURO_SOCIAL_EMP_RATE: hasSeguroSocial ? 0.9 : 0,
+        CRP_EMP_RATE: crpRate,
+        REFORMA_EMP_RATE: 0,
+        AFP_CAPITAL_COMMISSION_RATE: 1.44,
+        AFP_CUPRUM_COMMISSION_RATE: 1.44,
+        AFP_HABITAT_COMMISSION_RATE: 1.27,
+        AFP_MODELO_COMMISSION_RATE: 0.58,
+        AFP_PLANVITAL_COMMISSION_RATE: 1.16,
+        AFP_PROVIDA_COMMISSION_RATE: 1.45,
+        AFP_UNO_COMMISSION_RATE: 0.46
+      };
+    },
+    [payrollMonthStart]
   );
 
   const loadWorkers = useCallback(async () => {
@@ -540,11 +563,16 @@ export const Workers: React.FC = () => {
       { code: 'SIS_EMP_RATE', name: 'SIS (Empleador) %', kind: 'rate', payer: 'employer' },
       { code: 'SANNA_EMP_RATE', name: 'SANNA (Empleador) %', kind: 'rate', payer: 'employer' },
       { code: 'MUTUAL_EMP_RATE', name: 'Mutual (Empleador) %', kind: 'rate', payer: 'employer' },
-      { code: 'REFORMA_EMP_RATE', name: 'Reforma (Empleador) %', kind: 'rate', payer: 'employer' },
       { code: 'AFC_WORKER_INDEF_RATE', name: 'AFC Trabajador indefinido %', kind: 'rate', payer: 'worker' },
-      { code: 'AFC_EMP_INDEF_RATE', name: 'AFC Empleador indefinido %', kind: 'rate', payer: 'employer' },
       { code: 'AFC_WORKER_FIXED_RATE', name: 'AFC Trabajador plazo fijo/obra %', kind: 'rate', payer: 'worker' },
-      { code: 'AFC_EMP_FIXED_RATE', name: 'AFC Empleador plazo fijo/obra %', kind: 'rate', payer: 'employer' },
+      { code: 'AFC_EMP_CIC_INDEF_RATE', name: 'Cesantía CIC empleador indefinido %', kind: 'rate', payer: 'employer' },
+      { code: 'AFC_EMP_FCS_INDEF_RATE', name: 'Fondo Solidario empleador indefinido %', kind: 'rate', payer: 'employer' },
+      { code: 'AFC_EMP_CIC_FIXED_RATE', name: 'Cesantía CIC empleador plazo fijo/obra %', kind: 'rate', payer: 'employer' },
+      { code: 'AFC_EMP_FCS_FIXED_RATE', name: 'Fondo Solidario empleador plazo fijo/obra %', kind: 'rate', payer: 'employer' },
+      { code: 'SEGURO_SOCIAL_AFP_EMP_RATE', name: 'Seguro Social cuenta AFP %', kind: 'rate', payer: 'employer' },
+      { code: 'SEGURO_SOCIAL_EMP_RATE', name: 'Seguro Social Previsional %', kind: 'rate', payer: 'employer' },
+      { code: 'CRP_EMP_RATE', name: 'CRP %', kind: 'rate', payer: 'employer' },
+      { code: 'REFORMA_EMP_RATE', name: 'Reforma (legacy) %', kind: 'rate', payer: 'employer' },
       { code: 'AFP_MANDATORY_RATE', name: 'AFP Obligatoria %', kind: 'rate', payer: 'worker' },
       { code: 'SALUD_FONASA_RATE', name: 'Salud Fonasa %', kind: 'rate', payer: 'worker' },
       { code: 'SALUD_ISAPRE_MIN_RATE', name: 'Salud Isapre mín. %', kind: 'rate', payer: 'worker' },
@@ -759,6 +787,12 @@ export const Workers: React.FC = () => {
         month: payrollMonthStart,
         grossImponible: gross,
         contractType: payrollContractType,
+        workerBirthDate: payrollWorkerBirthDate || null,
+        workerGender: payrollWorkerGender,
+        workerIsPensioner: payrollWorkerIsPensioner,
+        workerPensionType: payrollWorkerIsPensioner ? payrollWorkerPensionType : undefined,
+        workerVoluntaryAfpAfterLegalAge: payrollWorkerVoluntaryAfp,
+        workerArt69Exempt: payrollWorkerArt69Exempt,
         afpCommissionRate: Number(payrollAfpCommissionRate || 0),
         healthType: payrollHealthType,
         healthPlanAmount: Number(payrollHealthPlanAmount || 0),
@@ -888,7 +922,13 @@ export const Workers: React.FC = () => {
           health_plan_amount: Number(payrollHealthPlanAmount || 0),
           ccaf_enabled: payrollCcafEnabled,
           ccaf_name: payrollCcafEnabled ? getCcafLabel(payrollCcafName) : null,
-          mutual_rate: Number(payrollMutualRate || 0)
+          mutual_rate: Number(payrollMutualRate || 0),
+          worker_birth_date: payrollWorkerBirthDate || null,
+          worker_gender: payrollWorkerGender,
+          worker_is_pensioner: payrollWorkerIsPensioner,
+          worker_pension_type: payrollWorkerIsPensioner ? payrollWorkerPensionType : null,
+          worker_art69_exempt: payrollWorkerArt69Exempt,
+          worker_voluntary_afp: payrollWorkerVoluntaryAfp
         },
         items: payrollResult.items.map((i) => ({
           run_id: '',
@@ -924,6 +964,58 @@ export const Workers: React.FC = () => {
     const t = String(v || '').toLowerCase().trim();
     if (t.includes('isap')) return 'isapre';
     return 'fonasa';
+  };
+
+  const parseGender = (v: unknown): 'male' | 'female' | 'unspecified' => {
+    const t = String(v || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+    if (['m', 'masculino', 'hombre', 'male'].includes(t)) return 'male';
+    if (['f', 'femenino', 'mujer', 'female'].includes(t)) return 'female';
+    return 'unspecified';
+  };
+
+  const parseBooleanCell = (v: unknown) => {
+    const t = String(v || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+    return ['1', 'si', 'sí', 'true', 'x', 'yes', 'y', 'activo'].includes(t);
+  };
+
+  const parsePensionType = (v: unknown): 'old_age' | 'disability_total' | 'disability_partial' | 'other' => {
+    const t = String(v || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+    if (t.includes('vejez')) return 'old_age';
+    if (t.includes('invalidez total')) return 'disability_total';
+    if (t.includes('invalidez parcial')) return 'disability_partial';
+    return 'other';
+  };
+
+  const parseBirthDate = (v: unknown) => {
+    if (!v) return '';
+    if (typeof v === 'object' && v !== null && 'result' in (v as any)) {
+      return parseBirthDate((v as any).result);
+    }
+    if (v instanceof Date && !Number.isNaN(v.getTime())) {
+      return v.toISOString().slice(0, 10);
+    }
+    const raw = String(v).trim();
+    if (!raw) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
+      const [d, m, y] = raw.split('/');
+      return `${y}-${m}-${d}`;
+    }
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return parsed.toISOString().slice(0, 10);
   };
 
   const handleBulkFile = async (file: File) => {
@@ -1004,6 +1096,47 @@ export const Workers: React.FC = () => {
         }
 
         const contractType = parseContractType((r as any).Contrato ?? (r as any).contrato ?? '');
+        const workerGender = parseGender((r as any).Sexo ?? (r as any).sexo ?? (r as any).Genero ?? (r as any).género ?? (r as any).genero ?? '');
+        const workerBirthDate = parseBirthDate(
+          (r as any).FechaNacimiento ??
+            (r as any).fechaNacimiento ??
+            (r as any).fecha_nacimiento ??
+            (r as any).Nacimiento ??
+            (r as any).nacimiento ??
+            ''
+        );
+        const workerIsPensioner = parseBooleanCell(
+          (r as any).Pensionado ??
+            (r as any).pensionado ??
+            (r as any).EsPensionado ??
+            (r as any).esPensionado ??
+            (r as any).es_pensionado ??
+            ''
+        );
+        const workerPensionType = parsePensionType(
+          (r as any).TipoPension ??
+            (r as any).tipoPension ??
+            (r as any).tipo_pension ??
+            (r as any).Pension ??
+            (r as any).pension ??
+            ''
+        );
+        const workerVoluntaryAfp = parseBooleanCell(
+          (r as any).CotizacionVoluntariaAFP ??
+            (r as any).cotizacionVoluntariaAFP ??
+            (r as any).cotizacion_voluntaria_afp ??
+            (r as any).MantieneAFP ??
+            (r as any).mantieneAFP ??
+            ''
+        );
+        const workerArt69Exempt = parseBooleanCell(
+          (r as any).ExencionArt69 ??
+            (r as any).exencionArt69 ??
+            (r as any).exencion_art69 ??
+            (r as any).Art69 ??
+            (r as any).art69 ??
+            ''
+        );
         const afpNameRaw = (r as any).AFP ?? (r as any).afp ?? (r as any).Administradora ?? (r as any).administradora ?? '';
         const afpName = normalizeAfpName(afpNameRaw);
         const afpCommissionInput = Number((r as any).ComisionAFP ?? (r as any).comisionAFP ?? (r as any).comision_afp ?? 0);
@@ -1029,6 +1162,12 @@ export const Workers: React.FC = () => {
           nonImponibles: Number.isFinite(nonImponiblesTotal) ? nonImponiblesTotal : 0,
           grossImponible: gross,
           contractType,
+          workerGender,
+          workerBirthDate,
+          workerIsPensioner,
+          workerPensionType,
+          workerVoluntaryAfp,
+          workerArt69Exempt,
           afpName,
           afpCommissionRate: Number.isFinite(afpCommissionRate) ? afpCommissionRate : 0,
           healthType,
@@ -1072,6 +1211,12 @@ export const Workers: React.FC = () => {
             month: payrollMonthStart,
             grossImponible: row.grossImponible,
             contractType: row.contractType,
+            workerBirthDate: row.workerBirthDate || null,
+            workerGender: row.workerGender,
+            workerIsPensioner: row.workerIsPensioner,
+            workerPensionType: row.workerIsPensioner ? row.workerPensionType : undefined,
+            workerVoluntaryAfpAfterLegalAge: row.workerVoluntaryAfp,
+            workerArt69Exempt: row.workerArt69Exempt,
             afpCommissionRate: row.afpCommissionRate,
             healthType: row.healthType,
             healthPlanAmount: row.healthPlanAmount,
@@ -1157,7 +1302,13 @@ export const Workers: React.FC = () => {
             health_plan_amount: row.healthPlanAmount,
             ccaf_enabled: payrollCcafEnabled,
             ccaf_name: payrollCcafEnabled ? getCcafLabel(payrollCcafName) : null,
-            mutual_rate: row.mutualRate
+            mutual_rate: row.mutualRate,
+            worker_birth_date: row.workerBirthDate || null,
+            worker_gender: row.workerGender,
+            worker_is_pensioner: row.workerIsPensioner,
+            worker_pension_type: row.workerIsPensioner ? row.workerPensionType : null,
+            worker_art69_exempt: row.workerArt69Exempt,
+            worker_voluntary_afp: row.workerVoluntaryAfp
           },
           items: result.items.map((i) => ({
             run_id: '',
@@ -1675,6 +1826,92 @@ export const Workers: React.FC = () => {
                 </div>
               </div>
 
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+                <div>
+                  <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Condición previsional</div>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    Sirve para aplicar exenciones por edad legal, pensión, art. 69 y Seguro Social Previsional.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Sexo</label>
+                    <select
+                      value={payrollWorkerGender}
+                      onChange={(e) => setPayrollWorkerGender(e.target.value as 'male' | 'female' | 'unspecified')}
+                      className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    >
+                      <option value="unspecified">No especificado</option>
+                      <option value="male">Hombre</option>
+                      <option value="female">Mujer</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha de nacimiento</label>
+                    <input
+                      type="date"
+                      value={payrollWorkerBirthDate}
+                      onChange={(e) => setPayrollWorkerBirthDate(e.target.value)}
+                      className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={payrollWorkerIsPensioner}
+                      onChange={(e) => setPayrollWorkerIsPensioner(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    La persona ya está pensionada
+                  </label>
+                  <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input
+                      type="checkbox"
+                      checked={payrollWorkerVoluntaryAfp}
+                      onChange={(e) => setPayrollWorkerVoluntaryAfp(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    Mantiene cotización AFP voluntaria
+                  </label>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tipo de pensión</label>
+                    <select
+                      value={payrollWorkerPensionType}
+                      onChange={(e) =>
+                        setPayrollWorkerPensionType(
+                          e.target.value as 'old_age' | 'disability_total' | 'disability_partial' | 'other'
+                        )
+                      }
+                      className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                      disabled={!payrollWorkerIsPensioner}
+                    >
+                      <option value="old_age">Vejez</option>
+                      <option value="disability_total">Invalidez total</option>
+                      <option value="disability_partial">Invalidez parcial</option>
+                      <option value="other">Otra</option>
+                    </select>
+                  </div>
+                  <div className="flex items-end">
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={payrollWorkerArt69Exempt}
+                        onChange={(e) => setPayrollWorkerArt69Exempt(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      Acogida a exención art. 69
+                    </label>
+                  </div>
+                </div>
+                <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+                  AFP y SIS se eximen por edad legal o pensión de vejez/invalidez total. El Seguro Social se exime a los 65 años, por pensión de vejez/invalidez total, y en mujeres de 60 a 64 años solo si está acogida al art. 69.
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Comisión AFP (%)</label>
@@ -1793,35 +2030,63 @@ export const Workers: React.FC = () => {
               <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
                 <div className="text-sm text-gray-700 dark:text-gray-200 font-medium">Resumen</div>
                 {payrollResult ? (
-                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                    <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
-                      <div className="text-xs text-gray-500 dark:text-gray-400">Imponible antes gratificación</div>
-                      <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollImponibleBeforeGratification)}</div>
+                  <div className="mt-3 space-y-3 text-sm">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Imponible antes gratificación</div>
+                        <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollImponibleBeforeGratification)}</div>
+                      </div>
+                      <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Gratificación legal</div>
+                        <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollLegalGratificationAmount)}</div>
+                      </div>
+                      <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Base AFP/Salud</div>
+                        <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollResult.baseAfpSalud)}</div>
+                      </div>
+                      <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Base Cesantía</div>
+                        <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollResult.baseAfc)}</div>
+                      </div>
+                      <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Descuentos trabajador</div>
+                        <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollResult.workerDeductions)}</div>
+                      </div>
+                      <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Aportes empleador</div>
+                        <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollResult.employerContrib)}</div>
+                      </div>
+                      <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 sm:col-span-2">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Costo total empleador (imponible + aportes)</div>
+                        <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollResult.employerTotalCost)}</div>
+                      </div>
                     </div>
-                    <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
-                      <div className="text-xs text-gray-500 dark:text-gray-400">Gratificación legal</div>
-                      <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollLegalGratificationAmount)}</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Edad calculada al mes</div>
+                        <div className="font-semibold text-gray-900 dark:text-gray-100">
+                          {payrollResult.context.ageYears === null ? 'Sin dato' : `${payrollResult.context.ageYears} años`}
+                        </div>
+                      </div>
+                      <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Reglas aplicadas</div>
+                        <div className="font-semibold text-gray-900 dark:text-gray-100">
+                          {[
+                            payrollResult.context.afpExempt ? 'AFP exenta' : 'AFP normal',
+                            payrollResult.context.sisExempt ? 'SIS exento' : 'SIS normal',
+                            payrollResult.context.afcExempt ? 'Cesantía exenta' : 'Cesantía normal',
+                            payrollResult.context.sspExempt ? 'Seguro Social exento' : 'Seguro Social normal'
+                          ].join(' · ')}
+                        </div>
+                      </div>
                     </div>
-                    <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
-                      <div className="text-xs text-gray-500 dark:text-gray-400">Base AFP/Salud</div>
-                      <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollResult.baseAfpSalud)}</div>
-                    </div>
-                    <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
-                      <div className="text-xs text-gray-500 dark:text-gray-400">Base Cesantía</div>
-                      <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollResult.baseAfc)}</div>
-                    </div>
-                    <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
-                      <div className="text-xs text-gray-500 dark:text-gray-400">Descuentos trabajador</div>
-                      <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollResult.workerDeductions)}</div>
-                    </div>
-                    <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
-                      <div className="text-xs text-gray-500 dark:text-gray-400">Aportes empleador</div>
-                      <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollResult.employerContrib)}</div>
-                    </div>
-                    <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 sm:col-span-2">
-                      <div className="text-xs text-gray-500 dark:text-gray-400">Costo total empleador (imponible + aportes)</div>
-                      <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollResult.employerTotalCost)}</div>
-                    </div>
+                    {payrollResult.notes.length > 0 && (
+                      <div className="rounded-md bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+                        {payrollResult.notes.map((note) => (
+                          <div key={note}>- {note}</div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">Completa los datos y presiona Calcular.</div>
@@ -1879,7 +2144,7 @@ export const Workers: React.FC = () => {
           <div className="mt-6 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="text-sm text-gray-500 dark:text-gray-400">
-                Columnas sugeridas: Trabajador, SueldoBase, BonosImponibles, GratificacionLegal opcional, Imponible opcional, NoImponibles (o Colacion+Movilizacion), Contrato, AFP, ComisionAFP, Salud, PlanSalud, Mutual
+                Columnas sugeridas: Trabajador, SueldoBase, BonosImponibles, GratificacionLegal opcional, Imponible opcional, NoImponibles (o Colacion+Movilizacion), Contrato, Sexo, FechaNacimiento, Pensionado, TipoPension, CotizacionVoluntariaAFP, ExencionArt69, AFP, ComisionAFP, Salud, PlanSalud, Mutual
               </div>
               <label className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 cursor-pointer">
                 <Upload className="mr-2 h-4 w-4" />
@@ -1929,6 +2194,7 @@ export const Workers: React.FC = () => {
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Contrato</th>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">AFP</th>
                       <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Com. AFP</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Perfil legal</th>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Salud</th>
                       <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Plan</th>
                       <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Mutual</th>
@@ -1953,6 +2219,17 @@ export const Workers: React.FC = () => {
                           {afpOptions.find((afp) => afp.value === r.afpName)?.label || '-'}
                         </td>
                         <td className="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{Number(r.afpCommissionRate || 0).toFixed(2)}%</td>
+                        <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
+                          {[
+                            r.workerBirthDate ? r.workerBirthDate : 'Sin fecha',
+                            r.workerGender === 'male' ? 'H' : r.workerGender === 'female' ? 'M' : 'S/E',
+                            r.workerIsPensioner ? `Pensionado: ${r.workerPensionType}` : 'No pensionado',
+                            r.workerVoluntaryAfp ? 'AFP voluntaria' : null,
+                            r.workerArt69Exempt ? 'Art. 69' : null
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </td>
                         <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">{r.healthType}</td>
                         <td className="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{formatCLP(Number(r.healthPlanAmount || 0))}</td>
                         <td className="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{Number(r.mutualRate || 0).toFixed(4)}%</td>
@@ -1960,7 +2237,7 @@ export const Workers: React.FC = () => {
                     ))}
                     {bulkRows.length === 0 && (
                       <tr>
-                        <td colSpan={13} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                        <td colSpan={14} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
                           Carga un archivo para ver filas.
                         </td>
                       </tr>

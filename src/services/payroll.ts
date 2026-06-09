@@ -99,6 +99,12 @@ export type WorkerPayrollRunInsert = {
   ccaf_enabled?: boolean;
   ccaf_name?: string | null;
   mutual_rate: number;
+  worker_birth_date?: string | null;
+  worker_gender?: 'male' | 'female' | 'unspecified';
+  worker_is_pensioner?: boolean;
+  worker_pension_type?: 'old_age' | 'disability_total' | 'disability_partial' | 'other' | null;
+  worker_art69_exempt?: boolean;
+  worker_voluntary_afp?: boolean;
 };
 
 export type WorkerPayrollItemInsert = {
