@@ -183,6 +183,33 @@ export default async function handler(req, res) {
 
     items.push(
       {
+        code: 'IMM_CLP',
+        name: 'Ingreso Mínimo Mensual (CLP)',
+        kind: 'amount',
+        payer: 'system',
+        value: 539000,
+        effective_from: effectiveFrom,
+        source_url: sources[0].url
+      },
+      {
+        code: 'GRAT_LEGAL_RATE',
+        name: 'Gratificación legal Art. 50',
+        kind: 'rate',
+        payer: 'worker',
+        value: 25,
+        effective_from: effectiveFrom,
+        source_url: sources[0].url
+      },
+      {
+        code: 'GRAT_LEGAL_TOPE_IMM_ANNUAL',
+        name: 'Tope gratificación anual (IMM)',
+        kind: 'amount',
+        payer: 'system',
+        value: 4.75,
+        effective_from: effectiveFrom,
+        source_url: sources[0].url
+      },
+      {
         code: 'AFP_MANDATORY_RATE',
         name: 'AFP Obligatoria',
         kind: 'rate',

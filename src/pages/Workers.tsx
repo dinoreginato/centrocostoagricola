@@ -89,6 +89,7 @@ export const Workers: React.FC = () => {
   const [payrollImponibleBonuses, setPayrollImponibleBonuses] = useState<Array<{ id: string; label: string; amount: number | '' }>>([
     { id: 'bonus_1', label: '', amount: '' }
   ]);
+  const [payrollLegalGratificationEnabled, setPayrollLegalGratificationEnabled] = useState(true);
   const [payrollNonImponibles, setPayrollNonImponibles] = useState<Array<{ id: string; label: string; amount: number | '' }>>([
     { id: 'nonimp_1', label: 'Colación', amount: '' },
     { id: 'nonimp_2', label: 'Movilización', amount: '' }
@@ -117,6 +118,7 @@ export const Workers: React.FC = () => {
       workerId: string;
       baseSalary: number;
       imponibleBonuses: number;
+      legalGratification: number;
       nonImponibles: number;
       grossImponible: number;
       contractType: 'indefinite' | 'fixed_term' | 'work';
@@ -129,11 +131,36 @@ export const Workers: React.FC = () => {
   >([]);
   const [bulkErrors, setBulkErrors] = useState<string[]>([]);
 
-  const payrollImponibleTotal = useMemo(() => {
+  const payrollImponibleBeforeGratification = useMemo(() => {
     const base = Number(payrollBaseSalary || 0);
     const bonuses = payrollImponibleBonuses.reduce((sum, b) => sum + Number(b.amount || 0), 0);
     return Math.max(0, base + bonuses);
   }, [payrollBaseSalary, payrollImponibleBonuses]);
+
+  const calculateLegalGratification = useCallback(
+    (imponibleBase: number) => {
+      if (!payrollLegalGratificationEnabled) return 0;
+      const base = Math.max(0, Number(imponibleBase || 0));
+      if (base <= 0) return 0;
+      const rate = Number(payrollRatesDraft.GRAT_LEGAL_RATE || 25);
+      const imm = Number(payrollRatesDraft.IMM_CLP || 539000);
+      const topeImmAnnual = Number(payrollRatesDraft.GRAT_LEGAL_TOPE_IMM_ANNUAL || 4.75);
+      const raw = (base * rate) / 100;
+      const monthlyCap = imm > 0 && topeImmAnnual > 0 ? (imm * topeImmAnnual) / 12 : raw;
+      return Math.max(0, Math.round(Math.min(raw, monthlyCap)));
+    },
+    [payrollLegalGratificationEnabled, payrollRatesDraft.GRAT_LEGAL_RATE, payrollRatesDraft.GRAT_LEGAL_TOPE_IMM_ANNUAL, payrollRatesDraft.IMM_CLP]
+  );
+
+  const payrollLegalGratificationAmount = useMemo(
+    () => calculateLegalGratification(payrollImponibleBeforeGratification),
+    [calculateLegalGratification, payrollImponibleBeforeGratification]
+  );
+
+  const payrollImponibleTotal = useMemo(
+    () => Math.max(0, payrollImponibleBeforeGratification + payrollLegalGratificationAmount),
+    [payrollImponibleBeforeGratification, payrollLegalGratificationAmount]
+  );
 
   const payrollNonImponibleTotal = useMemo(
     () => payrollNonImponibles.reduce((sum, b) => sum + Number(b.amount || 0), 0),
@@ -170,11 +197,14 @@ export const Workers: React.FC = () => {
 
   const defaultPayrollRates = useMemo(
     () => ({
+      IMM_CLP: 539000,
       AFP_MANDATORY_RATE: 10,
       SALUD_FONASA_RATE: 7,
       SALUD_ISAPRE_MIN_RATE: 7,
       SALUD_CCAF_RATE: 4.2,
       SALUD_CCAF_FONASA_RATE: 2.8,
+      GRAT_LEGAL_RATE: 25,
+      GRAT_LEGAL_TOPE_IMM_ANNUAL: 4.75,
       AFC_WORKER_INDEF_RATE: 0.6,
       AFC_EMP_INDEF_RATE: 2.4,
       AFC_WORKER_FIXED_RATE: 0,
@@ -501,7 +531,10 @@ export const Workers: React.FC = () => {
 
   const payrollRateFields = useMemo(
     () => [
+      { code: 'IMM_CLP', name: 'Ingreso Mínimo Mensual (CLP)', kind: 'amount', payer: 'system' },
       { code: 'UF_CLP', name: 'UF (CLP)', kind: 'amount', payer: 'system' },
+      { code: 'GRAT_LEGAL_RATE', name: 'Gratificación legal Art. 50 %', kind: 'rate', payer: 'worker' },
+      { code: 'GRAT_LEGAL_TOPE_IMM_ANNUAL', name: 'Tope gratificación anual (IMM)', kind: 'amount', payer: 'system' },
       { code: 'TOPE_AFP_UF', name: 'Tope AFP/Salud (UF)', kind: 'cap_uf', payer: 'system' },
       { code: 'TOPE_AFC_UF', name: 'Tope Cesantía (UF)', kind: 'cap_uf', payer: 'system' },
       { code: 'SIS_EMP_RATE', name: 'SIS (Empleador) %', kind: 'rate', payer: 'employer' },
@@ -760,7 +793,8 @@ export const Workers: React.FC = () => {
     const nonImponibles = payrollNonImponibles
       .map((b) => ({ label: String(b.label || '').trim(), amount: Number(b.amount || 0) }))
       .filter((b) => Number.isFinite(b.amount) && b.amount > 0);
-    const gross = Math.max(0, base + bonuses.reduce((sum, b) => sum + b.amount, 0));
+    const gratification = Number(payrollLegalGratificationAmount || 0);
+    const gross = Math.max(0, base + bonuses.reduce((sum, b) => sum + b.amount, 0) + gratification);
     if (!payrollWorkerId || gross <= 0) return;
 
     setPayrollSaving(true);
@@ -790,6 +824,17 @@ export const Workers: React.FC = () => {
           })
         );
       });
+
+      if (gratification > 0) {
+        rowsToInsert.push(
+          ...buildDistributedWorkerCostRows({
+            workerId: payrollWorkerId,
+            date,
+            description: `Gratificación legal ${monthLabel}`,
+            amount: gratification
+          })
+        );
+      }
 
       nonImponibles.forEach((b) => {
         rowsToInsert.push(
@@ -926,7 +971,24 @@ export const Workers: React.FC = () => {
             ? nonImponibles
             : (Number.isFinite(colacion) ? colacion : 0) + (Number.isFinite(movilizacion) ? movilizacion : 0);
         const grossFromImponible = Number((r as any).Imponible ?? (r as any).imponible ?? 0);
-        const gross = Number.isFinite(grossFromImponible) && grossFromImponible > 0 ? grossFromImponible : baseSalary + imponibleBonuses;
+        const gratificationInput = Number(
+          (r as any).GratificacionLegal ??
+            (r as any).gratificacionLegal ??
+            (r as any).gratificacion_legal ??
+            (r as any).GratificaciónLegal ??
+            (r as any).gratificaciónLegal ??
+            0
+        );
+        const hasImponibleColumn = Number.isFinite(grossFromImponible) && grossFromImponible > 0;
+        const legalGratification =
+          hasImponibleColumn
+            ? Number.isFinite(gratificationInput) && gratificationInput > 0
+              ? gratificationInput
+              : 0
+            : Number.isFinite(gratificationInput) && gratificationInput > 0
+              ? gratificationInput
+              : calculateLegalGratification(baseSalary + imponibleBonuses);
+        const gross = hasImponibleColumn ? grossFromImponible : baseSalary + imponibleBonuses + legalGratification;
         if (!workerName) {
           errors.push(`Fila ${idx + 2}: falta Trabajador`);
           return;
@@ -955,14 +1017,15 @@ export const Workers: React.FC = () => {
 
         const baseOut = Number.isFinite(baseSalary) ? baseSalary : 0;
         const bonusOut = Number.isFinite(imponibleBonuses) ? imponibleBonuses : 0;
-        const hasImponibleColumn = Number.isFinite(grossFromImponible) && grossFromImponible > 0;
         const finalBase = hasImponibleColumn && baseOut + bonusOut <= 0 ? gross : baseOut;
         const finalBonuses = hasImponibleColumn && baseOut + bonusOut <= 0 ? 0 : bonusOut;
+        const finalGratification = hasImponibleColumn && baseOut + bonusOut <= 0 ? 0 : legalGratification;
 
         out.push({
           workerId,
           baseSalary: finalBase,
           imponibleBonuses: finalBonuses,
+          legalGratification: Number.isFinite(finalGratification) ? finalGratification : 0,
           nonImponibles: Number.isFinite(nonImponiblesTotal) ? nonImponiblesTotal : 0,
           grossImponible: gross,
           contractType,
@@ -1036,6 +1099,16 @@ export const Workers: React.FC = () => {
               date,
               description: `Bonos imponibles ${monthLabel}`,
               amount: Number(row.imponibleBonuses || 0)
+            })
+          );
+        }
+        if (Number(row.legalGratification || 0) > 0) {
+          costsRows.push(
+            ...buildDistributedWorkerCostRows({
+              workerId: row.workerId,
+              date,
+              description: `Gratificación legal ${monthLabel}`,
+              amount: Number(row.legalGratification || 0)
             })
           );
         }
@@ -1391,6 +1464,37 @@ export const Workers: React.FC = () => {
                     />
                   </div>
                 </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Imponible antes de gratificación</label>
+                    <input
+                      type="number"
+                      value={payrollImponibleBeforeGratification}
+                      readOnly
+                      className="mt-1 block w-full rounded-md border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 shadow-sm sm:text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Gratificación legal</label>
+                    <input
+                      type="number"
+                      value={payrollLegalGratificationAmount}
+                      readOnly
+                      className="mt-1 block w-full rounded-md border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 shadow-sm sm:text-sm"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={payrollLegalGratificationEnabled}
+                        onChange={(e) => setPayrollLegalGratificationEnabled(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      Aplicar gratificación legal Art. 50
+                    </label>
+                  </div>
+                </div>
 
                 <div>
                   <div className="flex items-center justify-between">
@@ -1513,6 +1617,10 @@ export const Workers: React.FC = () => {
                   <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
                     Los no imponibles no afectan AFP/Salud/AFC, pero sí forman parte del total pagado.
                   </p>
+                </div>
+
+                <div className="p-3 rounded-md bg-blue-50 border border-blue-200 text-sm text-blue-800">
+                  La gratificación legal Art. 50 se calcula sobre las remuneraciones imponibles del mes previas a la gratificación, con tope anual de 4,75 IMM prorrateado mensualmente.
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1687,6 +1795,14 @@ export const Workers: React.FC = () => {
                 {payrollResult ? (
                   <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                     <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Imponible antes gratificación</div>
+                      <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollImponibleBeforeGratification)}</div>
+                    </div>
+                    <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Gratificación legal</div>
+                      <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollLegalGratificationAmount)}</div>
+                    </div>
+                    <div className="p-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
                       <div className="text-xs text-gray-500 dark:text-gray-400">Base AFP/Salud</div>
                       <div className="font-semibold text-gray-900 dark:text-gray-100">{formatCLP(payrollResult.baseAfpSalud)}</div>
                     </div>
@@ -1763,7 +1879,7 @@ export const Workers: React.FC = () => {
           <div className="mt-6 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="text-sm text-gray-500 dark:text-gray-400">
-                Columnas sugeridas: Trabajador, SueldoBase, BonosImponibles (o Imponible), NoImponibles (o Colacion+Movilizacion), Contrato, AFP, ComisionAFP, Salud, PlanSalud, Mutual
+                Columnas sugeridas: Trabajador, SueldoBase, BonosImponibles, GratificacionLegal opcional, Imponible opcional, NoImponibles (o Colacion+Movilizacion), Contrato, AFP, ComisionAFP, Salud, PlanSalud, Mutual
               </div>
               <label className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 cursor-pointer">
                 <Upload className="mr-2 h-4 w-4" />
@@ -1806,6 +1922,7 @@ export const Workers: React.FC = () => {
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Trabajador</th>
                       <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Base</th>
                       <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Bonos</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Gratificación</th>
                       <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Imponible</th>
                       <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">No imponible</th>
                       <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Total</th>
@@ -1825,6 +1942,7 @@ export const Workers: React.FC = () => {
                         </td>
                         <td className="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{formatCLP(Number(r.baseSalary || 0))}</td>
                         <td className="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{formatCLP(Number(r.imponibleBonuses || 0))}</td>
+                        <td className="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{formatCLP(Number(r.legalGratification || 0))}</td>
                         <td className="px-4 py-2 text-sm text-right text-gray-900 dark:text-gray-100">{formatCLP(r.grossImponible)}</td>
                         <td className="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{formatCLP(Number(r.nonImponibles || 0))}</td>
                         <td className="px-4 py-2 text-sm text-right font-semibold text-gray-900 dark:text-gray-100">
@@ -1842,7 +1960,7 @@ export const Workers: React.FC = () => {
                     ))}
                     {bulkRows.length === 0 && (
                       <tr>
-                        <td colSpan={12} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                        <td colSpan={13} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
                           Carga un archivo para ver filas.
                         </td>
                       </tr>
