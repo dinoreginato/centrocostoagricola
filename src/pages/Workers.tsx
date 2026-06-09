@@ -91,6 +91,8 @@ export const Workers: React.FC = () => {
   const [payrollAfpCommissionRate, setPayrollAfpCommissionRate] = useState<number | ''>('');
   const [payrollHealthType, setPayrollHealthType] = useState<'fonasa' | 'isapre'>('fonasa');
   const [payrollHealthPlanAmount, setPayrollHealthPlanAmount] = useState<number | ''>('');
+  const [payrollCcafEnabled, setPayrollCcafEnabled] = useState(false);
+  const [payrollCcafName, setPayrollCcafName] = useState('');
   const [payrollMutualRate, setPayrollMutualRate] = useState<number | ''>('');
   const [payrollResult, setPayrollResult] = useState<ReturnType<typeof calculatePayrollChile> | null>(null);
   const [payrollSaving, setPayrollSaving] = useState(false);
@@ -124,6 +126,8 @@ export const Workers: React.FC = () => {
       AFP_MANDATORY_RATE: 10,
       SALUD_FONASA_RATE: 7,
       SALUD_ISAPRE_MIN_RATE: 7,
+      SALUD_CCAF_RATE: 4.2,
+      SALUD_CCAF_FONASA_RATE: 2.8,
       AFC_WORKER_INDEF_RATE: 0.6,
       AFC_EMP_INDEF_RATE: 2.4,
       AFC_WORKER_FIXED_RATE: 0,
@@ -464,6 +468,8 @@ export const Workers: React.FC = () => {
       { code: 'AFP_MANDATORY_RATE', name: 'AFP Obligatoria %', kind: 'rate', payer: 'worker' },
       { code: 'SALUD_FONASA_RATE', name: 'Salud Fonasa %', kind: 'rate', payer: 'worker' },
       { code: 'SALUD_ISAPRE_MIN_RATE', name: 'Salud Isapre mín. %', kind: 'rate', payer: 'worker' },
+      { code: 'SALUD_CCAF_RATE', name: 'Caja Compensación (de 7% Salud) %', kind: 'rate', payer: 'worker' },
+      { code: 'SALUD_CCAF_FONASA_RATE', name: 'Fonasa (de 7% Salud con CCAF) %', kind: 'rate', payer: 'worker' },
       ...afpOptions.map((afp) => ({
         code: afp.rateCode,
         name: `Comisión AFP ${afp.label} %`,
@@ -666,7 +672,9 @@ export const Workers: React.FC = () => {
         afpCommissionRate: Number(payrollAfpCommissionRate || 0),
         healthType: payrollHealthType,
         healthPlanAmount: Number(payrollHealthPlanAmount || 0),
-        mutualRate: Number(payrollMutualRate || 0)
+        mutualRate: Number(payrollMutualRate || 0),
+        ccafEnabled: payrollCcafEnabled,
+        ccafName: payrollCcafName
       },
       rates: payrollRatesDraft
     });
@@ -874,7 +882,9 @@ export const Workers: React.FC = () => {
             afpCommissionRate: row.afpCommissionRate,
             healthType: row.healthType,
             healthPlanAmount: row.healthPlanAmount,
-            mutualRate: row.mutualRate
+            mutualRate: row.mutualRate,
+            ccafEnabled: payrollCcafEnabled,
+            ccafName: payrollCcafName
           },
           rates: payrollRatesDraft
         });
@@ -1273,6 +1283,35 @@ export const Workers: React.FC = () => {
                     <option value="fonasa">Fonasa</option>
                     <option value="isapre">Isapre</option>
                   </select>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Caja de Compensación</label>
+                  <div className="mt-1 flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={payrollCcafEnabled}
+                      onChange={(e) => setPayrollCcafEnabled(e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500"
+                      disabled={payrollHealthType !== 'fonasa'}
+                    />
+                    <span className={`text-sm ${payrollHealthType !== 'fonasa' ? 'text-gray-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                      Empresa afiliada a CCAF (aplica solo si Salud = Fonasa)
+                    </span>
+                  </div>
+                  {payrollCcafEnabled && payrollHealthType === 'fonasa' && (
+                    <div className="mt-2">
+                      <input
+                        type="text"
+                        value={payrollCcafName}
+                        onChange={(e) => setPayrollCcafName(e.target.value)}
+                        placeholder="Ej: Los Andes / La Araucana / 18 / Gabriela Mistral"
+                        className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                      />
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Se desglosa el 7% de salud en Caja (4,2%) + Fonasa (2,8%) según parámetros del mes.
+                      </p>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Plan Isapre (CLP)</label>

@@ -11,6 +11,8 @@ export type PayrollInput = {
   healthType: 'fonasa' | 'isapre';
   healthPlanAmount: number;
   mutualRate: number;
+  ccafEnabled?: boolean;
+  ccafName?: string;
 };
 
 export type PayrollItem = {
@@ -59,6 +61,8 @@ export function calculatePayrollChile(params: { input: PayrollInput; rates: Reco
 
   const afpMandatoryRate = getRate(rates, 'AFP_MANDATORY_RATE', 10);
   const healthRate = params.input.healthType === 'fonasa' ? getRate(rates, 'SALUD_FONASA_RATE', 7) : getRate(rates, 'SALUD_ISAPRE_MIN_RATE', 7);
+  const ccafRate = getRate(rates, 'SALUD_CCAF_RATE', 4.2);
+  const ccafFonasaRate = getRate(rates, 'SALUD_CCAF_FONASA_RATE', 2.8);
 
   const afcWorkerRate =
     params.input.contractType === 'indefinite' ? getRate(rates, 'AFC_WORKER_INDEF_RATE', 0.6) : getRate(rates, 'AFC_WORKER_FIXED_RATE', 0);
@@ -91,15 +95,47 @@ export function calculatePayrollChile(params: { input: PayrollInput; rates: Reco
 
   const saludBaseAmount = roundCLP((baseAfpSalud * healthRate) / 100);
   const salud = params.input.healthType === 'isapre' ? roundCLP(Math.max(saludBaseAmount, Number(params.input.healthPlanAmount || 0))) : saludBaseAmount;
-  items.push({
-    payer: 'worker',
-    code: 'SALUD',
-    name: params.input.healthType === 'isapre' ? 'Salud (Isapre)' : 'Salud (Fonasa)',
-    rate: healthRate,
-    baseAmount: baseAfpSalud,
-    amount: salud,
-    sortOrder: 20
-  });
+
+  const useCcaf =
+    params.input.healthType === 'fonasa' &&
+    Boolean(params.input.ccafEnabled) &&
+    ccafRate > 0 &&
+    ccafFonasaRate > 0 &&
+    Math.abs(ccafRate + ccafFonasaRate - healthRate) < 0.001;
+
+  if (useCcaf) {
+    const ccafAmount = roundCLP((baseAfpSalud * ccafRate) / 100);
+    const fonasaAmount = roundCLP((baseAfpSalud * ccafFonasaRate) / 100);
+    const nameSuffix = params.input.ccafName ? ` (${params.input.ccafName})` : '';
+    items.push({
+      payer: 'worker',
+      code: 'SALUD_CCAF',
+      name: `Caja de Compensación${nameSuffix}`,
+      rate: ccafRate,
+      baseAmount: baseAfpSalud,
+      amount: ccafAmount,
+      sortOrder: 20
+    });
+    items.push({
+      payer: 'worker',
+      code: 'SALUD_FONASA',
+      name: 'Fonasa',
+      rate: ccafFonasaRate,
+      baseAmount: baseAfpSalud,
+      amount: fonasaAmount,
+      sortOrder: 21
+    });
+  } else {
+    items.push({
+      payer: 'worker',
+      code: 'SALUD',
+      name: params.input.healthType === 'isapre' ? 'Salud (Isapre)' : 'Salud (Fonasa)',
+      rate: healthRate,
+      baseAmount: baseAfpSalud,
+      amount: salud,
+      sortOrder: 20
+    });
+  }
 
   const afcWorker = roundCLP((baseAfc * afcWorkerRate) / 100);
   if (afcWorkerRate > 0) {
@@ -144,4 +180,3 @@ export function calculatePayrollChile(params: { input: PayrollInput; rates: Reco
     items: items.sort((a, b) => a.sortOrder - b.sortOrder)
   };
 }
-
