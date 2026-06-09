@@ -5,6 +5,12 @@ export type Worker = {
   company_id: string;
   name: string;
   role: string;
+  birth_date?: string | null;
+  gender?: 'male' | 'female' | 'unspecified';
+  is_pensioner?: boolean;
+  pension_type?: 'old_age' | 'disability_total' | 'disability_partial' | 'other' | null;
+  voluntary_afp_after_legal_age?: boolean;
+  art69_exempt?: boolean;
 };
 
 export type WorkerCost = {
@@ -43,12 +49,55 @@ export async function fetchWorkerCosts(params: { companyId: string }): Promise<W
   return (data || []) as unknown as WorkerCost[];
 }
 
-export async function createWorker(params: { companyId: string; name: string; role: string }) {
+export async function createWorker(params: {
+  companyId: string;
+  name: string;
+  role: string;
+  birthDate?: string | null;
+  gender?: 'male' | 'female' | 'unspecified';
+  isPensioner?: boolean;
+  pensionType?: 'old_age' | 'disability_total' | 'disability_partial' | 'other' | null;
+  voluntaryAfpAfterLegalAge?: boolean;
+  art69Exempt?: boolean;
+}) {
   const { error } = await supabase.from('workers').insert({
     company_id: params.companyId,
     name: params.name,
-    role: params.role
+    role: params.role,
+    birth_date: params.birthDate || null,
+    gender: params.gender || 'unspecified',
+    is_pensioner: Boolean(params.isPensioner),
+    pension_type: params.isPensioner ? params.pensionType || 'old_age' : null,
+    voluntary_afp_after_legal_age: Boolean(params.voluntaryAfpAfterLegalAge),
+    art69_exempt: Boolean(params.art69Exempt)
   });
+  if (error) throw error;
+}
+
+export async function updateWorker(params: {
+  workerId: string;
+  name: string;
+  role: string;
+  birthDate?: string | null;
+  gender?: 'male' | 'female' | 'unspecified';
+  isPensioner?: boolean;
+  pensionType?: 'old_age' | 'disability_total' | 'disability_partial' | 'other' | null;
+  voluntaryAfpAfterLegalAge?: boolean;
+  art69Exempt?: boolean;
+}) {
+  const { error } = await supabase
+    .from('workers')
+    .update({
+      name: params.name,
+      role: params.role,
+      birth_date: params.birthDate || null,
+      gender: params.gender || 'unspecified',
+      is_pensioner: Boolean(params.isPensioner),
+      pension_type: params.isPensioner ? params.pensionType || 'old_age' : null,
+      voluntary_afp_after_legal_age: Boolean(params.voluntaryAfpAfterLegalAge),
+      art69_exempt: Boolean(params.art69Exempt)
+    })
+    .eq('id', params.workerId);
   if (error) throw error;
 }
 

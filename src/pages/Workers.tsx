@@ -2,11 +2,11 @@ import { toast } from 'sonner';
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
-import { Users, UserPlus, Trash2, Briefcase, Loader2, Download, RefreshCcw, Upload } from 'lucide-react';
+import { Users, UserPlus, Trash2, Briefcase, Loader2, Download, RefreshCcw, Upload, Pencil } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
-import { createWorker, deleteWorker, deleteWorkerCost, fetchWorkerCosts, fetchWorkers, insertWorkerCosts } from '../services/workers';
+import { createWorker, deleteWorker, deleteWorkerCost, fetchWorkerCosts, fetchWorkers, insertWorkerCosts, updateWorker } from '../services/workers';
 import { calculatePayrollChile } from '../lib/payrollChile';
 import { importXlsxToJson } from '../lib/excel';
 import { createPayrollRateProposal, createWorkerPayrollRun, fetchPayrollRateProposals, fetchPayrollRatesForMonth, updatePayrollRateProposalStatus, upsertPayrollRates } from '../services/payroll';
@@ -15,6 +15,12 @@ interface Worker {
   id: string;
   name: string;
   role: string;
+  birth_date?: string | null;
+  gender?: 'male' | 'female' | 'unspecified';
+  is_pensioner?: boolean;
+  pension_type?: 'old_age' | 'disability_total' | 'disability_partial' | 'other' | null;
+  voluntary_afp_after_legal_age?: boolean;
+  art69_exempt?: boolean;
 }
 
 interface WorkerCost {
@@ -58,8 +64,15 @@ export const Workers: React.FC = () => {
   
   // Worker Form State
   const [showWorkerForm, setShowWorkerForm] = useState(false);
+  const [editingWorkerId, setEditingWorkerId] = useState<string | null>(null);
   const [newWorkerName, setNewWorkerName] = useState('');
   const [newWorkerRole, setNewWorkerRole] = useState('');
+  const [newWorkerBirthDate, setNewWorkerBirthDate] = useState('');
+  const [newWorkerGender, setNewWorkerGender] = useState<'male' | 'female' | 'unspecified'>('unspecified');
+  const [newWorkerIsPensioner, setNewWorkerIsPensioner] = useState(false);
+  const [newWorkerPensionType, setNewWorkerPensionType] = useState<'old_age' | 'disability_total' | 'disability_partial' | 'other'>('old_age');
+  const [newWorkerVoluntaryAfp, setNewWorkerVoluntaryAfp] = useState(false);
+  const [newWorkerArt69Exempt, setNewWorkerArt69Exempt] = useState(false);
 
   // Cost Form State
   const [distributeBy, setDistributeBy] = useState<'sector' | 'field' | 'company'>('sector');
@@ -330,17 +343,69 @@ export const Workers: React.FC = () => {
 
       setLoading(true);
       try {
-          await createWorker({ companyId: selectedCompany.id, name: newWorkerName, role: newWorkerRole });
-          
+          const payload = {
+            name: newWorkerName,
+            role: newWorkerRole,
+            birthDate: newWorkerBirthDate || null,
+            gender: newWorkerGender,
+            isPensioner: newWorkerIsPensioner,
+            pensionType: newWorkerIsPensioner ? newWorkerPensionType : null,
+            voluntaryAfpAfterLegalAge: newWorkerVoluntaryAfp,
+            art69Exempt: newWorkerArt69Exempt
+          } as const;
+
+          if (editingWorkerId) {
+            await updateWorker({ workerId: editingWorkerId, ...payload });
+          } else {
+            await createWorker({ companyId: selectedCompany.id, ...payload });
+          }
+
+          setEditingWorkerId(null);
           setNewWorkerName('');
           setNewWorkerRole('');
+          setNewWorkerBirthDate('');
+          setNewWorkerGender('unspecified');
+          setNewWorkerIsPensioner(false);
+          setNewWorkerPensionType('old_age');
+          setNewWorkerVoluntaryAfp(false);
+          setNewWorkerArt69Exempt(false);
           setShowWorkerForm(false);
-          loadWorkers();
+          await loadWorkers();
       } catch (error: any) {
           toast.error('Error: ' + error.message);
       } finally {
           setLoading(false);
       }
+  };
+
+  const resetWorkerForm = () => {
+    setEditingWorkerId(null);
+    setNewWorkerName('');
+    setNewWorkerRole('');
+    setNewWorkerBirthDate('');
+    setNewWorkerGender('unspecified');
+    setNewWorkerIsPensioner(false);
+    setNewWorkerPensionType('old_age');
+    setNewWorkerVoluntaryAfp(false);
+    setNewWorkerArt69Exempt(false);
+  };
+
+  const openCreateWorkerForm = () => {
+    resetWorkerForm();
+    setShowWorkerForm(true);
+  };
+
+  const openEditWorkerForm = (worker: Worker) => {
+    setEditingWorkerId(worker.id);
+    setNewWorkerName(worker.name || '');
+    setNewWorkerRole(worker.role || '');
+    setNewWorkerBirthDate(worker.birth_date || '');
+    setNewWorkerGender(worker.gender || 'unspecified');
+    setNewWorkerIsPensioner(Boolean(worker.is_pensioner));
+    setNewWorkerPensionType((worker.pension_type as 'old_age' | 'disability_total' | 'disability_partial' | 'other' | null) || 'old_age');
+    setNewWorkerVoluntaryAfp(Boolean(worker.voluntary_afp_after_legal_age));
+    setNewWorkerArt69Exempt(Boolean(worker.art69_exempt));
+    setShowWorkerForm(true);
   };
 
   const handleDeleteWorker = async (id: string) => {
@@ -643,6 +708,18 @@ export const Workers: React.FC = () => {
     if (!Number.isFinite(v) || v <= 0) return;
     setPayrollMutualRate(v);
   }, [payrollMutualRate, payrollRatesDraft.MUTUAL_EMP_RATE]);
+
+  useEffect(() => {
+    if (!payrollWorkerId) return;
+    const worker = workers.find((w) => w.id === payrollWorkerId);
+    if (!worker) return;
+    setPayrollWorkerBirthDate(worker.birth_date || '');
+    setPayrollWorkerGender(worker.gender || 'unspecified');
+    setPayrollWorkerIsPensioner(Boolean(worker.is_pensioner));
+    setPayrollWorkerPensionType((worker.pension_type as 'old_age' | 'disability_total' | 'disability_partial' | 'other' | null) || 'old_age');
+    setPayrollWorkerVoluntaryAfp(Boolean(worker.voluntary_afp_after_legal_age));
+    setPayrollWorkerArt69Exempt(Boolean(worker.art69_exempt));
+  }, [payrollWorkerId, workers]);
 
   const handleScanPayrollRates = async () => {
     setScanLoading(true);
@@ -1371,7 +1448,7 @@ export const Workers: React.FC = () => {
                 Planilla Pagos PDF
             </button>
             <button
-                onClick={() => setShowWorkerForm(!showWorkerForm)}
+                onClick={openCreateWorkerForm}
                 className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
             >
                 <UserPlus className="mr-2 h-5 w-5" />
@@ -1383,9 +1460,12 @@ export const Workers: React.FC = () => {
       {/* New Worker Form Modal/Inline */}
       {showWorkerForm && (
           <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border border-indigo-100">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">Agregar Trabajador</h3>
-              <form onSubmit={handleCreateWorker} className="flex gap-4 items-end">
-                  <div className="flex-1">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
+                {editingWorkerId ? 'Editar Trabajador' : 'Agregar Trabajador'}
+              </h3>
+              <form onSubmit={handleCreateWorker} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Nombre Completo</label>
                       <input
                           type="text"
@@ -1394,8 +1474,8 @@ export const Workers: React.FC = () => {
                           onChange={e => setNewWorkerName(e.target.value)}
                           className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                       />
-                  </div>
-                  <div className="flex-1">
+                    </div>
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Cargo / Rol</label>
                       <input
                           type="text"
@@ -1403,21 +1483,105 @@ export const Workers: React.FC = () => {
                           onChange={e => setNewWorkerRole(e.target.value)}
                           className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                       />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha de nacimiento</label>
+                      <input
+                        type="date"
+                        value={newWorkerBirthDate}
+                        onChange={e => setNewWorkerBirthDate(e.target.value)}
+                        className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Sexo</label>
+                      <select
+                        value={newWorkerGender}
+                        onChange={e => setNewWorkerGender(e.target.value as 'male' | 'female' | 'unspecified')}
+                        className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                      >
+                        <option value="unspecified">No especificado</option>
+                        <option value="male">Hombre</option>
+                        <option value="female">Mujer</option>
+                      </select>
+                    </div>
                   </div>
-                  <button
+
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Perfil previsional base</div>
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Estos datos se usarán para autocompletar la previsión mensual al seleccionar el trabajador.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <input
+                          type="checkbox"
+                          checked={newWorkerIsPensioner}
+                          onChange={e => setNewWorkerIsPensioner(e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        Está pensionado/a
+                      </label>
+                      <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <input
+                          type="checkbox"
+                          checked={newWorkerVoluntaryAfp}
+                          onChange={e => setNewWorkerVoluntaryAfp(e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        Mantiene AFP voluntaria
+                      </label>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tipo de pensión</label>
+                        <select
+                          value={newWorkerPensionType}
+                          onChange={e =>
+                            setNewWorkerPensionType(
+                              e.target.value as 'old_age' | 'disability_total' | 'disability_partial' | 'other'
+                            )
+                          }
+                          disabled={!newWorkerIsPensioner}
+                          className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        >
+                          <option value="old_age">Vejez</option>
+                          <option value="disability_total">Invalidez total</option>
+                          <option value="disability_partial">Invalidez parcial</option>
+                          <option value="other">Otra</option>
+                        </select>
+                      </div>
+                      <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:items-end">
+                        <input
+                          type="checkbox"
+                          checked={newWorkerArt69Exempt}
+                          onChange={e => setNewWorkerArt69Exempt(e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        Acogido/a a exención art. 69
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 justify-end">
+                    <button
                       type="submit"
                       disabled={loading}
                       className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700"
-                  >
-                      Guardar
-                  </button>
-                  <button
+                    >
+                      {editingWorkerId ? 'Guardar cambios' : 'Guardar'}
+                    </button>
+                    <button
                       type="button"
-                      onClick={() => setShowWorkerForm(false)}
+                      onClick={() => {
+                        resetWorkerForm();
+                        setShowWorkerForm(false);
+                      }}
                       className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
-                  >
+                    >
                       Cancelar
-                  </button>
+                    </button>
+                  </div>
               </form>
           </div>
       )}
@@ -2738,10 +2902,36 @@ export const Workers: React.FC = () => {
                             <div>
                                 <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{w.name}</p>
                                 <p className="text-sm text-gray-500 dark:text-gray-400">{w.role}</p>
+                                <p className="text-xs text-gray-400 dark:text-gray-500">
+                                  {[
+                                    w.birth_date || 'Sin fecha nac.',
+                                    w.gender === 'male' ? 'Hombre' : w.gender === 'female' ? 'Mujer' : 'Sexo no esp.',
+                                    w.is_pensioner
+                                      ? `Pensionado: ${
+                                          w.pension_type === 'old_age'
+                                            ? 'Vejez'
+                                            : w.pension_type === 'disability_total'
+                                              ? 'Inv. total'
+                                              : w.pension_type === 'disability_partial'
+                                                ? 'Inv. parcial'
+                                                : 'Otra'
+                                        }`
+                                      : 'No pensionado',
+                                    w.voluntary_afp_after_legal_age ? 'AFP voluntaria' : null,
+                                    w.art69_exempt ? 'Art. 69' : null
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                                </p>
                             </div>
-                            <button onClick={() => handleDeleteWorker(w.id)} className="text-gray-400 hover:text-red-600">
-                                <Trash2 className="h-4 w-4" />
-                            </button>
+                            <div className="flex items-center gap-3">
+                                <button onClick={() => openEditWorkerForm(w)} className="text-gray-400 hover:text-indigo-600">
+                                    <Pencil className="h-4 w-4" />
+                                </button>
+                                <button onClick={() => handleDeleteWorker(w.id)} className="text-gray-400 hover:text-red-600">
+                                    <Trash2 className="h-4 w-4" />
+                                </button>
+                            </div>
                         </li>
                     ))}
                     {workers.length === 0 && (
