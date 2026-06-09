@@ -96,6 +96,8 @@ export type WorkerPayrollRunInsert = {
   health_type: 'fonasa' | 'isapre';
   health_rate: number;
   health_plan_amount: number;
+  ccaf_enabled?: boolean;
+  ccaf_name?: string | null;
   mutual_rate: number;
 };
 
@@ -124,4 +126,3 @@ export async function createWorkerPayrollRun(params: { run: WorkerPayrollRunInse
 
   return runId;
 }
-

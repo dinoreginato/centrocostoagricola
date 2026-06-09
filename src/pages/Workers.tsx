@@ -92,7 +92,7 @@ export const Workers: React.FC = () => {
   const [payrollHealthType, setPayrollHealthType] = useState<'fonasa' | 'isapre'>('fonasa');
   const [payrollHealthPlanAmount, setPayrollHealthPlanAmount] = useState<number | ''>('');
   const [payrollCcafEnabled, setPayrollCcafEnabled] = useState(false);
-  const [payrollCcafName, setPayrollCcafName] = useState('');
+  const [payrollCcafName, setPayrollCcafName] = useState('los_andes');
   const [payrollMutualRate, setPayrollMutualRate] = useState<number | ''>('');
   const [payrollResult, setPayrollResult] = useState<ReturnType<typeof calculatePayrollChile> | null>(null);
   const [payrollSaving, setPayrollSaving] = useState(false);
@@ -117,6 +117,16 @@ export const Workers: React.FC = () => {
       { value: 'planvital', label: 'PlanVital', rateCode: 'AFP_PLANVITAL_COMMISSION_RATE', aliases: ['planvital', 'plan vital', 'afp planvital', 'afp plan vital'] },
       { value: 'provida', label: 'ProVida', rateCode: 'AFP_PROVIDA_COMMISSION_RATE', aliases: ['provida', 'pro vida', 'afp provida', 'afp pro vida'] },
       { value: 'uno', label: 'Uno', rateCode: 'AFP_UNO_COMMISSION_RATE', aliases: ['uno', 'afp uno'] }
+    ],
+    []
+  );
+
+  const ccafOptions = useMemo(
+    () => [
+      { value: 'los_andes', label: 'Los Andes' },
+      { value: 'la_araucana', label: 'La Araucana' },
+      { value: '18_de_septiembre', label: '18 de Septiembre' },
+      { value: 'gabriela_mistral', label: 'Gabriela Mistral' }
     ],
     []
   );
@@ -489,6 +499,11 @@ export const Workers: React.FC = () => {
     [afpOptions, payrollRatesDraft]
   );
 
+  const getCcafLabel = useCallback(
+    (ccafName: string) => ccafOptions.find((ccaf) => ccaf.value === ccafName)?.label || ccafName || '',
+    [ccafOptions]
+  );
+
   const normalizeAfpName = useCallback(
     (value: unknown) => {
       const normalized = String(value || '')
@@ -518,6 +533,11 @@ export const Workers: React.FC = () => {
     const rate = getAfpCommissionRateByName(payrollAfpName);
     setPayrollAfpCommissionRate(rate);
   }, [getAfpCommissionRateByName, payrollAfpName]);
+
+  useEffect(() => {
+    if (payrollCcafName) return;
+    setPayrollCcafName('los_andes');
+  }, [payrollCcafName]);
 
   useEffect(() => {
     if (payrollMutualRate !== '') return;
@@ -674,7 +694,7 @@ export const Workers: React.FC = () => {
         healthPlanAmount: Number(payrollHealthPlanAmount || 0),
         mutualRate: Number(payrollMutualRate || 0),
         ccafEnabled: payrollCcafEnabled,
-        ccafName: payrollCcafName
+        ccafName: getCcafLabel(payrollCcafName)
       },
       rates: payrollRatesDraft
     });
@@ -753,6 +773,8 @@ export const Workers: React.FC = () => {
           health_type: payrollHealthType,
           health_rate: healthRate,
           health_plan_amount: Number(payrollHealthPlanAmount || 0),
+          ccaf_enabled: payrollCcafEnabled,
+          ccaf_name: payrollCcafEnabled ? getCcafLabel(payrollCcafName) : null,
           mutual_rate: Number(payrollMutualRate || 0)
         },
         items: payrollResult.items.map((i) => ({
@@ -884,7 +906,7 @@ export const Workers: React.FC = () => {
             healthPlanAmount: row.healthPlanAmount,
             mutualRate: row.mutualRate,
             ccafEnabled: payrollCcafEnabled,
-            ccafName: payrollCcafName
+            ccafName: getCcafLabel(payrollCcafName)
           },
           rates: payrollRatesDraft
         });
@@ -930,6 +952,8 @@ export const Workers: React.FC = () => {
             health_type: row.healthType,
             health_rate: healthRate,
             health_plan_amount: row.healthPlanAmount,
+            ccaf_enabled: payrollCcafEnabled,
+            ccaf_name: payrollCcafEnabled ? getCcafLabel(payrollCcafName) : null,
             mutual_rate: row.mutualRate
           },
           items: result.items.map((i) => ({
@@ -1300,15 +1324,19 @@ export const Workers: React.FC = () => {
                   </div>
                   {payrollCcafEnabled && payrollHealthType === 'fonasa' && (
                     <div className="mt-2">
-                      <input
-                        type="text"
+                      <select
                         value={payrollCcafName}
                         onChange={(e) => setPayrollCcafName(e.target.value)}
-                        placeholder="Ej: Los Andes / La Araucana / 18 / Gabriela Mistral"
                         className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                      />
+                      >
+                        {ccafOptions.map((ccaf) => (
+                          <option key={ccaf.value} value={ccaf.value}>
+                            {ccaf.label}
+                          </option>
+                        ))}
+                      </select>
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        Se desglosa el 7% de salud en Caja (4,2%) + Fonasa (2,8%) según parámetros del mes.
+                        Se desglosa el 7% de salud en Caja (4,2%) + Fonasa (2,8%) según parámetros del mes. Por defecto queda `Los Andes`.
                       </p>
                     </div>
                   )}
