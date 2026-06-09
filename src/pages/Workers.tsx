@@ -85,7 +85,10 @@ export const Workers: React.FC = () => {
   const [payrollSectorId, setPayrollSectorId] = useState('');
   const [payrollFieldId, setPayrollFieldId] = useState('');
   const [payrollWorkerId, setPayrollWorkerId] = useState('');
-  const [payrollGrossImponible, setPayrollGrossImponible] = useState<number | ''>('');
+  const [payrollBaseSalary, setPayrollBaseSalary] = useState<number | ''>('');
+  const [payrollImponibleBonuses, setPayrollImponibleBonuses] = useState<Array<{ id: string; label: string; amount: number | '' }>>([
+    { id: 'bonus_1', label: '', amount: '' }
+  ]);
   const [payrollContractType, setPayrollContractType] = useState<'indefinite' | 'fixed_term' | 'work'>('indefinite');
   const [payrollAfpName, setPayrollAfpName] = useState('');
   const [payrollAfpCommissionRate, setPayrollAfpCommissionRate] = useState<number | ''>('');
@@ -105,8 +108,27 @@ export const Workers: React.FC = () => {
   const [scanResult, setScanResult] = useState<any | null>(null);
 
   const [bulkFileRows, setBulkFileRows] = useState<Array<Record<string, unknown>>>([]);
-  const [bulkRows, setBulkRows] = useState<Array<{ workerId: string; grossImponible: number; contractType: 'indefinite' | 'fixed_term' | 'work'; afpName: string; afpCommissionRate: number; healthType: 'fonasa' | 'isapre'; healthPlanAmount: number; mutualRate: number }>>([]);
+  const [bulkRows, setBulkRows] = useState<
+    Array<{
+      workerId: string;
+      baseSalary: number;
+      imponibleBonuses: number;
+      grossImponible: number;
+      contractType: 'indefinite' | 'fixed_term' | 'work';
+      afpName: string;
+      afpCommissionRate: number;
+      healthType: 'fonasa' | 'isapre';
+      healthPlanAmount: number;
+      mutualRate: number;
+    }>
+  >([]);
   const [bulkErrors, setBulkErrors] = useState<string[]>([]);
+
+  const payrollImponibleTotal = useMemo(() => {
+    const base = Number(payrollBaseSalary || 0);
+    const bonuses = payrollImponibleBonuses.reduce((sum, b) => sum + Number(b.amount || 0), 0);
+    return Math.max(0, base + bonuses);
+  }, [payrollBaseSalary, payrollImponibleBonuses]);
 
   const afpOptions = useMemo(
     () => [
@@ -679,9 +701,9 @@ export const Workers: React.FC = () => {
   };
 
   const handleCalculatePayroll = () => {
-    const gross = Number(payrollGrossImponible || 0);
+    const gross = Number(payrollImponibleTotal || 0);
     if (!payrollWorkerId || gross <= 0) {
-      toast('Seleccione trabajador y sueldo imponible');
+      toast('Seleccione trabajador e ingrese sueldo base/bonos imponibles');
       return;
     }
     const result = calculatePayrollChile({
@@ -716,7 +738,11 @@ export const Workers: React.FC = () => {
       return;
     }
 
-    const gross = Number(payrollGrossImponible || 0);
+    const base = Number(payrollBaseSalary || 0);
+    const bonuses = payrollImponibleBonuses
+      .map((b) => ({ label: String(b.label || '').trim(), amount: Number(b.amount || 0) }))
+      .filter((b) => Number.isFinite(b.amount) && b.amount > 0);
+    const gross = Math.max(0, base + bonuses.reduce((sum, b) => sum + b.amount, 0));
     if (!payrollWorkerId || gross <= 0) return;
 
     setPayrollSaving(true);
@@ -725,14 +751,27 @@ export const Workers: React.FC = () => {
       const monthLabel = payrollMonth;
       const rowsToInsert: any[] = [];
 
-      rowsToInsert.push(
-        ...buildDistributedWorkerCostRows({
-          workerId: payrollWorkerId,
-          date,
-          description: `Sueldo Imponible ${monthLabel}`,
-          amount: gross
-        })
-      );
+      if (base > 0) {
+        rowsToInsert.push(
+          ...buildDistributedWorkerCostRows({
+            workerId: payrollWorkerId,
+            date,
+            description: `Sueldo base ${monthLabel}`,
+            amount: base
+          })
+        );
+      }
+
+      bonuses.forEach((b) => {
+        rowsToInsert.push(
+          ...buildDistributedWorkerCostRows({
+            workerId: payrollWorkerId,
+            date,
+            description: b.label ? `Bono imponible ${monthLabel} - ${b.label}` : `Bono imponible ${monthLabel}`,
+            amount: b.amount
+          })
+        );
+      });
 
       payrollResult.items
         .filter((i) => i.payer === 'employer')
@@ -827,7 +866,24 @@ export const Workers: React.FC = () => {
 
       rows.forEach((r, idx) => {
         const workerName = String((r as any).Trabajador ?? (r as any).trabajador ?? (r as any).Nombre ?? (r as any).nombre ?? '').trim();
-        const gross = Number((r as any).Imponible ?? (r as any).imponible ?? 0);
+        const baseSalary = Number(
+          (r as any).SueldoBase ??
+            (r as any).sueldoBase ??
+            (r as any).sueldo_base ??
+            (r as any).Base ??
+            (r as any).base ??
+            0
+        );
+        const imponibleBonuses = Number(
+          (r as any).BonosImponibles ??
+            (r as any).bonosImponibles ??
+            (r as any).bonos_imponibles ??
+            (r as any).Bonos ??
+            (r as any).bonos ??
+            0
+        );
+        const grossFromImponible = Number((r as any).Imponible ?? (r as any).imponible ?? 0);
+        const gross = Number.isFinite(grossFromImponible) && grossFromImponible > 0 ? grossFromImponible : baseSalary + imponibleBonuses;
         if (!workerName) {
           errors.push(`Fila ${idx + 2}: falta Trabajador`);
           return;
@@ -838,7 +894,7 @@ export const Workers: React.FC = () => {
           return;
         }
         if (!Number.isFinite(gross) || gross <= 0) {
-          errors.push(`Fila ${idx + 2}: imponible inválido`);
+          errors.push(`Fila ${idx + 2}: imponible inválido (usa Imponible o SueldoBase+BonosImponibles)`);
           return;
         }
 
@@ -854,8 +910,16 @@ export const Workers: React.FC = () => {
         const healthPlanAmount = Number((r as any).PlanSalud ?? (r as any).planSalud ?? (r as any).plan_salud ?? 0);
         const mutualRate = Number((r as any).Mutual ?? (r as any).mutual ?? 0);
 
+        const baseOut = Number.isFinite(baseSalary) ? baseSalary : 0;
+        const bonusOut = Number.isFinite(imponibleBonuses) ? imponibleBonuses : 0;
+        const hasImponibleColumn = Number.isFinite(grossFromImponible) && grossFromImponible > 0;
+        const finalBase = hasImponibleColumn && baseOut + bonusOut <= 0 ? gross : baseOut;
+        const finalBonuses = hasImponibleColumn && baseOut + bonusOut <= 0 ? 0 : bonusOut;
+
         out.push({
           workerId,
+          baseSalary: finalBase,
+          imponibleBonuses: finalBonuses,
           grossImponible: gross,
           contractType,
           afpName,
@@ -911,14 +975,26 @@ export const Workers: React.FC = () => {
           rates: payrollRatesDraft
         });
 
-        costsRows.push(
-          ...buildDistributedWorkerCostRows({
-            workerId: row.workerId,
-            date,
-            description: `Sueldo Imponible ${monthLabel}`,
-            amount: row.grossImponible
-          })
-        );
+        if (Number(row.baseSalary || 0) > 0) {
+          costsRows.push(
+            ...buildDistributedWorkerCostRows({
+              workerId: row.workerId,
+              date,
+              description: `Sueldo base ${monthLabel}`,
+              amount: Number(row.baseSalary || 0)
+            })
+          );
+        }
+        if (Number(row.imponibleBonuses || 0) > 0) {
+          costsRows.push(
+            ...buildDistributedWorkerCostRows({
+              workerId: row.workerId,
+              date,
+              description: `Bonos imponibles ${monthLabel}`,
+              amount: Number(row.imponibleBonuses || 0)
+            })
+          );
+        }
 
         result.items
           .filter((i) => i.payer === 'employer')
@@ -1239,15 +1315,88 @@ export const Workers: React.FC = () => {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Sueldo imponible (CLP)</label>
-                <input
-                  type="number"
-                  value={payrollGrossImponible}
-                  onChange={(e) => setPayrollGrossImponible(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                  placeholder="0"
-                />
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Sueldo base (CLP)</label>
+                    <input
+                      type="number"
+                      value={payrollBaseSalary}
+                      onChange={(e) => setPayrollBaseSalary(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Total imponible (calculado)</label>
+                    <input
+                      type="number"
+                      value={payrollImponibleTotal}
+                      readOnly
+                      className="mt-1 block w-full rounded-md border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 shadow-sm sm:text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Bonos imponibles</label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPayrollImponibleBonuses((prev) => [
+                          ...prev,
+                          { id: `bonus_${Date.now()}`, label: '', amount: '' }
+                        ])
+                      }
+                      className="text-sm text-indigo-600 hover:text-indigo-700"
+                    >
+                      Agregar bono
+                    </button>
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    {payrollImponibleBonuses.map((b) => (
+                      <div key={b.id} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
+                        <div className="sm:col-span-7">
+                          <input
+                            type="text"
+                            value={b.label}
+                            onChange={(e) =>
+                              setPayrollImponibleBonuses((prev) =>
+                                prev.map((x) => (x.id === b.id ? { ...x, label: e.target.value } : x))
+                              )
+                            }
+                            placeholder="Ej: Bono producción"
+                            className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                          />
+                        </div>
+                        <div className="sm:col-span-4">
+                          <input
+                            type="number"
+                            value={b.amount}
+                            onChange={(e) =>
+                              setPayrollImponibleBonuses((prev) =>
+                                prev.map((x) => (x.id === b.id ? { ...x, amount: e.target.value === '' ? '' : Number(e.target.value) } : x))
+                              )
+                            }
+                            placeholder="0"
+                            className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                          />
+                        </div>
+                        <div className="sm:col-span-1 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setPayrollImponibleBonuses((prev) => prev.filter((x) => x.id !== b.id))}
+                            className="text-gray-400 hover:text-red-600"
+                            disabled={payrollImponibleBonuses.length <= 1}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1430,7 +1579,7 @@ export const Workers: React.FC = () => {
                   <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Detalle</div>
                   {payrollResult ? (
                     <div className="text-xs text-gray-500 dark:text-gray-400">
-                      Neto trabajador: {formatCLP(Number(payrollGrossImponible || 0) - payrollResult.workerDeductions)}
+                      Neto trabajador: {formatCLP(Number(payrollImponibleTotal || 0) - payrollResult.workerDeductions)}
                     </div>
                   ) : null}
                 </div>
@@ -1476,7 +1625,7 @@ export const Workers: React.FC = () => {
           <div className="mt-6 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="text-sm text-gray-500 dark:text-gray-400">
-                Columnas sugeridas: Trabajador, Imponible, Contrato, AFP, ComisionAFP, Salud, PlanSalud, Mutual
+                Columnas sugeridas: Trabajador, SueldoBase, BonosImponibles (o Imponible), Contrato, AFP, ComisionAFP, Salud, PlanSalud, Mutual
               </div>
               <label className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 cursor-pointer">
                 <Upload className="mr-2 h-4 w-4" />
@@ -1517,6 +1666,8 @@ export const Workers: React.FC = () => {
                   <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0">
                     <tr>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Trabajador</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Base</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Bonos</th>
                       <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Imponible</th>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Contrato</th>
                       <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">AFP</th>
@@ -1532,6 +1683,8 @@ export const Workers: React.FC = () => {
                         <td className="px-4 py-2 text-sm text-gray-900 dark:text-gray-100">
                           {workers.find((w) => w.id === r.workerId)?.name || r.workerId}
                         </td>
+                        <td className="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{formatCLP(Number(r.baseSalary || 0))}</td>
+                        <td className="px-4 py-2 text-sm text-right text-gray-500 dark:text-gray-400">{formatCLP(Number(r.imponibleBonuses || 0))}</td>
                         <td className="px-4 py-2 text-sm text-right text-gray-900 dark:text-gray-100">{formatCLP(r.grossImponible)}</td>
                         <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">{r.contractType}</td>
                         <td className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
@@ -1545,7 +1698,7 @@ export const Workers: React.FC = () => {
                     ))}
                     {bulkRows.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                        <td colSpan={10} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
                           Carga un archivo para ver filas.
                         </td>
                       </tr>
