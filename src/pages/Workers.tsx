@@ -121,6 +121,14 @@ export const Workers: React.FC = () => {
 
   const defaultPayrollRates = useMemo(
     () => ({
+      AFP_MANDATORY_RATE: 10,
+      SALUD_FONASA_RATE: 7,
+      SALUD_ISAPRE_MIN_RATE: 7,
+      AFC_WORKER_INDEF_RATE: 0.6,
+      AFC_EMP_INDEF_RATE: 2.4,
+      AFC_WORKER_FIXED_RATE: 0,
+      AFC_EMP_FIXED_RATE: 3,
+      REFORMA_EMP_RATE: 0,
       AFP_CAPITAL_COMMISSION_RATE: 1.44,
       AFP_CUPRUM_COMMISSION_RATE: 1.44,
       AFP_HABITAT_COMMISSION_RATE: 1.27,
@@ -504,6 +512,13 @@ export const Workers: React.FC = () => {
     const rate = getAfpCommissionRateByName(payrollAfpName);
     setPayrollAfpCommissionRate(rate);
   }, [getAfpCommissionRateByName, payrollAfpName]);
+
+  useEffect(() => {
+    if (payrollMutualRate !== '') return;
+    const v = Number(payrollRatesDraft.MUTUAL_EMP_RATE || 0);
+    if (!Number.isFinite(v) || v <= 0) return;
+    setPayrollMutualRate(v);
+  }, [payrollMutualRate, payrollRatesDraft.MUTUAL_EMP_RATE]);
 
   const handleScanPayrollRates = async () => {
     setScanLoading(true);
