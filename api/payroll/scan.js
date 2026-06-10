@@ -84,6 +84,25 @@ const getSpanishMonthName = (iso, format = 'capitalized') => {
   return format === 'capitalized' ? name.charAt(0).toUpperCase() + name.slice(1) : name;
 };
 
+const getMonthNumber = (iso) => {
+  const value = String(iso || '').slice(0, 7);
+  const month = Number(value.split('-')[1]);
+  return Number.isFinite(month) && month >= 1 && month <= 12 ? month : null;
+};
+
+const getYearNumber = (iso) => {
+  const value = String(iso || '').slice(0, 4);
+  const year = Number(value);
+  return Number.isFinite(year) && year >= 2000 && year <= 2100 ? year : null;
+};
+
+const buildNgulamIndicatorsUrl = (effectiveFrom) => {
+  const month = getMonthNumber(effectiveFrom);
+  const year = getYearNumber(effectiveFrom);
+  if (!month || !year) return 'https://www.ngulam.cl/wPortal/Recursos/Previred.php';
+  return `https://www.ngulam.cl/wPortal/Recursos/Previred.php?mes=${month}&anio=${year}`;
+};
+
 const buildPreviredIndicatorCandidates = (effectiveFrom) => {
   const monthCandidates = [effectiveFrom, addMonths(effectiveFrom, -1)].filter(Boolean);
   const seen = new Set();
@@ -141,6 +160,10 @@ export default async function handler(req, res) {
       {
         url: 'https://www.previred.com/indicadores-previsionales/',
         label: 'Previred - Indicadores previsionales',
+      },
+      {
+        url: buildNgulamIndicatorsUrl(effectiveFrom),
+        label: 'Indicadores previsionales (Previred) - espejo',
       },
       ...buildPreviredIndicatorCandidates(effectiveFrom),
       {
@@ -210,15 +233,27 @@ export default async function handler(req, res) {
     );
 
     const combinedText = sourceResults.map((s) => stripHtml(s.text || '')).join('\n');
+    const indicatorSource =
+      sourceResults.find(
+        (s) =>
+          s.ok &&
+          (String(s.url || '').includes('previred.com/indicadores-previsionales') ||
+            String(s.url || '').includes('ngulam.cl/wPortal/Recursos/Previred.php')) &&
+          /Indicadores\s+Previsionales/i.test(stripHtml(s.text || ''))
+      ) || null;
+    const indicatorText = indicatorSource ? stripHtml(indicatorSource.text || '') : '';
+    const indicatorUrl = indicatorSource?.url || sources[0].url;
 
-    const topeAfpUfRaw = extractFirst(combinedText, [
+    const topeAfpUfRaw = extractFirst(indicatorText || combinedText, [
       /Tope imponible AFP:\s*([0-9]+(?:[.,][0-9]+)?)\s*UF/i,
       /Tope imponible\s*AFP\s*[:\-]\s*([0-9]+(?:[.,][0-9]+)?)\s*UF/i,
+      /\|\s*\*{0,2}AFP\*{0,2}\s*\|\s*([0-9]+(?:[.,][0-9]+)?)\s*\|/i,
     ]);
 
-    const topeAfcUfRaw = extractFirst(combinedText, [
+    const topeAfcUfRaw = extractFirst(indicatorText || combinedText, [
       /Tope imponible Seguro Cesant[ií]a:\s*([0-9]+(?:[.,][0-9]+)?)\s*UF/i,
       /Tope imponible\s*Seguro\s*Cesant[ií]a\s*[:\-]\s*([0-9]+(?:[.,][0-9]+)?)\s*UF/i,
+      /\|\s*\*{0,2}Seguro\s+de\s+Cesant[ií]a\*{0,2}\s*\|\s*([0-9]+(?:[.,][0-9]+)?)\s*\|/i,
     ]);
 
     const sisPatterns = [
@@ -230,6 +265,7 @@ export default async function handler(req, res) {
       /desde\s+abril\s+de\s+2026[^0-9%]{0,120}tasa\s+vigente\s+del\s+SIS[^0-9%]{0,40}([0-9]+(?:[.,][0-9]+)?)\s*%/i
     ];
     const sisPriorityTexts = [
+      indicatorText,
       sourceResults
         .filter((s) => String(s.url || '').includes('previred.com'))
         .map((s) => stripHtml(s.text || ''))
@@ -246,6 +282,46 @@ export default async function handler(req, res) {
       /equivalente\s+al\s+([0-9]+(?:[.,][0-9]+)?)\s*%\s+de\s+las\s+remuneraciones\s+imponibles/i,
       /monto\s+es\s+de\s+un\s+([0-9]+(?:[.,][0-9]+)?)\s*%\s+de\s+las\s+remuneraciones\s+imponibles/i,
       /LEY\s+SANNA[^0-9%]{0,40}([0-9]+(?:[.,][0-9]+)?)\s*%/i,
+    ]);
+
+    const immRaw = extractFirst(indicatorText || combinedText, [
+      /Trabajadores\s+dependientes\s+e\s+independientes[^0-9$]{0,40}\$\s*([0-9.]+)\b/i,
+      /Ingreso\s+M[ií]nimo\s+Mensual[^0-9$]{0,40}\$\s*([0-9.]+)\b/i,
+    ]);
+    const utmRaw = extractFirst(indicatorText || combinedText, [
+      /Unidad\s+Tributaria\s+Mensual\s*\(UTM\)[^0-9$]{0,40}\$\s*([0-9.]+)\b/i,
+      /\bUTM\b[^0-9$]{0,40}\$\s*([0-9.]+)\b/i,
+    ]);
+    const utaRaw = extractFirst(indicatorText || combinedText, [
+      /Unidad\s+Tributaria\s+Anual\s*\(UTA\)[^0-9$]{0,40}\$\s*([0-9.]+)\b/i,
+      /\bUTA\b[^0-9$]{0,40}\$\s*([0-9.]+)\b/i,
+    ]);
+
+    const saludCcafRaw = extractFirst(indicatorText || combinedText, [
+      /\bCCAF\b[^0-9%]{0,40}([0-9]+(?:[.,][0-9]+)?)\s*%\s*R\.?I\.?/i,
+      /\bCCAF\b[^0-9%]{0,40}([0-9]+(?:[.,][0-9]+)?)\s*%/i
+    ]);
+    const saludFonasaCcafRaw = extractFirst(indicatorText || combinedText, [
+      /\bFONASA\b[^0-9%]{0,40}([0-9]+(?:[.,][0-9]+)?)\s*%\s*R\.?I\.?/i,
+      /\bFONASA\b[^0-9%]{0,40}([0-9]+(?:[.,][0-9]+)?)\s*%/i
+    ]);
+
+    const afcEmpIndefRaw = extractFirst(indicatorText || combinedText, [
+      /Contrato\s+Plazo\s+Indefinido[^0-9%]{0,80}([0-9]+(?:[.,][0-9]+)?)\s*%\s*R\.?I\.?/i
+    ]);
+    const afcWorkerIndefRaw = extractFirst(indicatorText || combinedText, [
+      /Contrato\s+Plazo\s+Indefinido[^0-9%]{0,140}[|·\s]+([0-9]+(?:[.,][0-9]+)?)\s*%\s*R\.?I\.?/i
+    ]);
+    const afcEmpFixedRaw = extractFirst(indicatorText || combinedText, [
+      /Contrato\s+Plazo\s+Fijo[^0-9%]{0,80}([0-9]+(?:[.,][0-9]+)?)\s*%\s*R\.?I\.?/i
+    ]);
+    const afcWorkerFixedRaw = extractFirst(indicatorText || combinedText, [
+      /Contrato\s+Plazo\s+Fijo[^0-9%]{0,140}[|·\s]+([0-9]+(?:[.,][0-9]+)?)\s*%\s*R\.?I\.?/i
+    ]);
+
+    const seguroSocialRaw = extractFirst(indicatorText || combinedText, [
+      /Seguro\s+Social[\s\S]{0,80}Expectativa\s+de\s+Vida[^0-9%]{0,40}([0-9]+(?:[.,][0-9]+)?)\s*%/i,
+      /Expectativa\s+de\s+Vida[^0-9%]{0,40}([0-9]+(?:[.,][0-9]+)?)\s*%/i
     ]);
 
     const items = [];
@@ -279,7 +355,7 @@ export default async function handler(req, res) {
         payer: 'system',
         value: topeAfpUf,
         effective_from: effectiveFrom,
-        source_url: sourceResults.find((s) => s.ok)?.url || sources[0].url,
+        source_url: indicatorUrl,
       });
     }
 
@@ -292,9 +368,20 @@ export default async function handler(req, res) {
         payer: 'system',
         value: topeAfcUf,
         effective_from: effectiveFrom,
-        source_url: sourceResults.find((s) => s.ok)?.url || sources[0].url,
+        source_url: indicatorUrl,
       });
     }
+
+    const imm = parseNumberCL(immRaw);
+    const utm = parseNumberCL(utmRaw);
+    const uta = parseNumberCL(utaRaw);
+    const saludCcaf = parseNumberCL(saludCcafRaw);
+    const saludFonasaCcaf = parseNumberCL(saludFonasaCcafRaw);
+    const afcEmpIndef = parseNumberCL(afcEmpIndefRaw);
+    const afcWorkerIndef = parseNumberCL(afcWorkerIndefRaw);
+    const afcEmpFixed = parseNumberCL(afcEmpFixedRaw);
+    const afcWorkerFixed = parseNumberCL(afcWorkerFixedRaw);
+    const seguroSocial = parseNumberCL(seguroSocialRaw);
 
     items.push(
       {
@@ -302,10 +389,36 @@ export default async function handler(req, res) {
         name: 'Ingreso Mínimo Mensual (CLP)',
         kind: 'amount',
         payer: 'system',
-        value: 539000,
+        value: imm !== null ? imm : 539000,
         effective_from: effectiveFrom,
-        source_url: sources[0].url
+        source_url: indicatorUrl
       },
+      ...(utm !== null
+        ? [
+            {
+              code: 'UTM_CLP',
+              name: 'UTM (CLP)',
+              kind: 'amount',
+              payer: 'system',
+              value: utm,
+              effective_from: effectiveFrom,
+              source_url: indicatorUrl
+            }
+          ]
+        : []),
+      ...(uta !== null
+        ? [
+            {
+              code: 'UTA_CLP',
+              name: 'UTA (CLP)',
+              kind: 'amount',
+              payer: 'system',
+              value: uta,
+              effective_from: effectiveFrom,
+              source_url: indicatorUrl
+            }
+          ]
+        : []),
       {
         code: 'GRAT_LEGAL_RATE',
         name: 'Gratificación legal Art. 50',
@@ -351,41 +464,63 @@ export default async function handler(req, res) {
         effective_from: effectiveFrom,
         source_url: sources[0].url
       },
+      ...(saludCcaf !== null && saludFonasaCcaf !== null && Math.abs(saludCcaf + saludFonasaCcaf - 7) < 0.001
+        ? [
+            {
+              code: 'SALUD_CCAF_RATE',
+              name: 'Salud - Caja de Compensación (CCAF)',
+              kind: 'rate',
+              payer: 'worker',
+              value: saludCcaf,
+              effective_from: effectiveFrom,
+              source_url: indicatorUrl
+            },
+            {
+              code: 'SALUD_CCAF_FONASA_RATE',
+              name: 'Salud - Fonasa (vía CCAF)',
+              kind: 'rate',
+              payer: 'worker',
+              value: saludFonasaCcaf,
+              effective_from: effectiveFrom,
+              source_url: indicatorUrl
+            }
+          ]
+        : []),
       {
         code: 'AFC_WORKER_INDEF_RATE',
         name: 'AFC Trabajador indefinido',
         kind: 'rate',
         payer: 'worker',
-        value: 0.6,
+        value: afcWorkerIndef !== null ? afcWorkerIndef : 0.6,
         effective_from: effectiveFrom,
-        source_url: sources[0].url
+        source_url: indicatorUrl
       },
       {
         code: 'AFC_EMP_INDEF_RATE',
         name: 'AFC Empleador indefinido',
         kind: 'rate',
         payer: 'employer',
-        value: 2.4,
+        value: afcEmpIndef !== null ? afcEmpIndef : 2.4,
         effective_from: effectiveFrom,
-        source_url: sources[0].url
+        source_url: indicatorUrl
       },
       {
         code: 'AFC_WORKER_FIXED_RATE',
         name: 'AFC Trabajador plazo fijo/obra',
         kind: 'rate',
         payer: 'worker',
-        value: 0,
+        value: afcWorkerFixed !== null ? afcWorkerFixed : 0,
         effective_from: effectiveFrom,
-        source_url: sources[0].url
+        source_url: indicatorUrl
       },
       {
         code: 'AFC_EMP_FIXED_RATE',
         name: 'AFC Empleador plazo fijo/obra',
         kind: 'rate',
         payer: 'employer',
-        value: 3,
+        value: afcEmpFixed !== null ? afcEmpFixed : 3,
         effective_from: effectiveFrom,
-        source_url: sources[0].url
+        source_url: indicatorUrl
       },
       {
         code: 'AFC_EMP_CIC_INDEF_RATE',
@@ -441,9 +576,9 @@ export default async function handler(req, res) {
           name: 'Seguro Social Previsional',
           kind: 'rate',
           payer: 'employer',
-          value: 0.9,
+          value: seguroSocial !== null ? seguroSocial : 0.9,
           effective_from: effectiveFrom,
-          source_url: 'https://www.chileatiende.gob.cl/fichas/130987-aportes-del-empleador-al-sistema-de-pensiones'
+          source_url: seguroSocial !== null ? indicatorUrl : 'https://www.chileatiende.gob.cl/fichas/130987-aportes-del-empleador-al-sistema-de-pensiones'
         }
       );
     }
@@ -466,8 +601,10 @@ export default async function handler(req, res) {
     }
     if (sis !== null) {
       const sisSource =
+        (indicatorSource && /SIS/i.test(indicatorText) ? indicatorSource : null) ||
         findFirstSourceWithPatterns(sourceResults, sisPatterns.map((pattern) => new RegExp(pattern.source, pattern.flags.replace('g', '')))) ||
         sourceResults.find((s) => String(s.url || '').includes('previred.com')) ||
+        sourceResults.find((s) => String(s.url || '').includes('ngulam.cl/wPortal/Recursos/Previred.php')) ||
         sourceResults.find((s) => String(s.url || '').includes('spensiones.gob.cl')) ||
         sourceResults.find((s) => s.ok) ||
         sources[0];
