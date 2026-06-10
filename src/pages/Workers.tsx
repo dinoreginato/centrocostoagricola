@@ -52,6 +52,46 @@ interface Field {
     total_hectares: number;
 }
 
+type WorkerCostSummary = {
+  worker: Worker;
+  count: number;
+  lastDate: string | null;
+  total: number;
+  payroll: number;
+  remuneration: number;
+  manual: number;
+};
+
+const buildWorkerCostSummary = (worker: Worker, workerCosts: WorkerCost[]): WorkerCostSummary => {
+  const totals = workerCosts.reduce(
+    (acc, cost) => {
+      const description = String(cost.description || '');
+      const amount = Number(cost.amount || 0);
+      if (description.startsWith('Previsión ')) {
+        acc.payroll += amount;
+      } else if (
+        description.startsWith('Sueldo Imponible ') ||
+        description.startsWith('Gratificación legal ') ||
+        description.startsWith('No imponible ')
+      ) {
+        acc.remuneration += amount;
+      } else {
+        acc.manual += amount;
+      }
+      acc.total += amount;
+      return acc;
+    },
+    { total: 0, payroll: 0, remuneration: 0, manual: 0 }
+  );
+
+  return {
+    worker,
+    count: workerCosts.length,
+    lastDate: workerCosts[0]?.date || null,
+    ...totals
+  };
+};
+
 export const Workers: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
@@ -65,6 +105,7 @@ export const Workers: React.FC = () => {
   // Worker Form State
   const [workersMainTab, setWorkersMainTab] = useState<'trabajadores' | 'costos'>('trabajadores');
   const [workerWorkspaceId, setWorkerWorkspaceId] = useState('');
+  const [workerSummaryMonth, setWorkerSummaryMonth] = useState(new Date().toLocaleDateString('en-CA').slice(0, 7));
   const [showWorkerForm, setShowWorkerForm] = useState(false);
   const [editingWorkerId, setEditingWorkerId] = useState<string | null>(null);
   const [newWorkerName, setNewWorkerName] = useState('');
@@ -199,38 +240,21 @@ export const Workers: React.FC = () => {
     [payrollImponibleTotal, payrollNonImponibleTotal]
   );
 
-  const workerCostSummaries = useMemo(() => {
-    return workers.map((worker) => {
-      const workerCosts = costs.filter((cost) => cost.worker_id === worker.id);
-      const totals = workerCosts.reduce(
-        (acc, cost) => {
-          const description = String(cost.description || '');
-          const amount = Number(cost.amount || 0);
-          if (description.startsWith('Previsión ')) {
-            acc.payroll += amount;
-          } else if (
-            description.startsWith('Sueldo Imponible ') ||
-            description.startsWith('Gratificación legal ') ||
-            description.startsWith('No imponible ')
-          ) {
-            acc.remuneration += amount;
-          } else {
-            acc.manual += amount;
-          }
-          acc.total += amount;
-          return acc;
-        },
-        { total: 0, payroll: 0, remuneration: 0, manual: 0 }
-      );
+  const workerCostSummaries = useMemo(
+    () => workers.map((worker) => buildWorkerCostSummary(worker, costs.filter((cost) => cost.worker_id === worker.id))),
+    [costs, workers]
+  );
 
-      return {
-        worker,
-        count: workerCosts.length,
-        lastDate: workerCosts[0]?.date || null,
-        ...totals
-      };
-    });
-  }, [costs, workers]);
+  const workerMonthlyCostSummaries = useMemo(
+    () =>
+      workers.map((worker) =>
+        buildWorkerCostSummary(
+          worker,
+          costs.filter((cost) => cost.worker_id === worker.id && String(cost.date || '').slice(0, 7) === workerSummaryMonth)
+        )
+      ),
+    [costs, workerSummaryMonth, workers]
+  );
 
   const activeWorker = useMemo(
     () => workers.find((worker) => worker.id === workerWorkspaceId) || null,
@@ -256,6 +280,27 @@ export const Workers: React.FC = () => {
       }
     );
   }, [activeWorker, workerCostSummaries]);
+
+  const activeWorkerMonthCostSummary = useMemo(() => {
+    if (!activeWorker) return null;
+    return (
+      workerMonthlyCostSummaries.find((summary) => summary.worker.id === activeWorker.id) || {
+        worker: activeWorker,
+        count: 0,
+        lastDate: null,
+        total: 0,
+        payroll: 0,
+        remuneration: 0,
+        manual: 0
+      }
+    );
+  }, [activeWorker, workerMonthlyCostSummaries]);
+
+  const workerSummaryMonthLabel = useMemo(() => {
+    const parsed = new Date(`${workerSummaryMonth}-01T12:00:00`);
+    if (Number.isNaN(parsed.getTime())) return workerSummaryMonth;
+    return parsed.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
+  }, [workerSummaryMonth]);
 
   const afpOptions = useMemo(
     () => [
@@ -1655,12 +1700,25 @@ export const Workers: React.FC = () => {
       <div className="space-y-6">
         <div className="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-6">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Costo por trabajador</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Selecciona una ficha para ingresar remuneraciones, previsión y revisar el costo total.</p>
+            <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 space-y-3">
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Costo por trabajador</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Selecciona una ficha para ingresar remuneraciones, previsión y revisar el costo total.</p>
+              </div>
+              <div>
+                <label className="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Mes resumido</label>
+                <input
+                  type="month"
+                  value={workerSummaryMonth}
+                  onChange={(e) => setWorkerSummaryMonth(e.target.value)}
+                  className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                />
+              </div>
             </div>
             <div className="max-h-[560px] overflow-y-auto divide-y divide-gray-200 dark:divide-gray-700">
               {workerCostSummaries.map((summary) => {
+                const monthSummary =
+                  workerMonthlyCostSummaries.find((item) => item.worker.id === summary.worker.id) || buildWorkerCostSummary(summary.worker, []);
                 const isActive = summary.worker.id === workerWorkspaceId;
                 return (
                   <button
@@ -1679,22 +1737,22 @@ export const Workers: React.FC = () => {
                         <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{summary.worker.role || 'Sin cargo'}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{formatCLP(summary.total)}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">{summary.count} movimientos</p>
+                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{formatCLP(monthSummary.total)}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{formatCLP(summary.total)} acumulado</p>
                       </div>
                     </div>
                     <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                       <div className="rounded-md bg-gray-50 dark:bg-gray-900 px-2 py-2">
-                        <div className="text-gray-500 dark:text-gray-400">Remuner.</div>
-                        <div className="font-medium text-gray-900 dark:text-gray-100">{formatCLP(summary.remuneration)}</div>
+                        <div className="text-gray-500 dark:text-gray-400">Mes</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{monthSummary.count} mov.</div>
                       </div>
                       <div className="rounded-md bg-gray-50 dark:bg-gray-900 px-2 py-2">
-                        <div className="text-gray-500 dark:text-gray-400">Previsión</div>
-                        <div className="font-medium text-gray-900 dark:text-gray-100">{formatCLP(summary.payroll)}</div>
+                        <div className="text-gray-500 dark:text-gray-400">Previsión mes</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{formatCLP(monthSummary.payroll)}</div>
                       </div>
                       <div className="rounded-md bg-gray-50 dark:bg-gray-900 px-2 py-2">
-                        <div className="text-gray-500 dark:text-gray-400">Manual</div>
-                        <div className="font-medium text-gray-900 dark:text-gray-100">{formatCLP(summary.manual)}</div>
+                        <div className="text-gray-500 dark:text-gray-400">Acumulado</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{summary.count} mov.</div>
                       </div>
                     </div>
                     <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
@@ -1730,33 +1788,83 @@ export const Workers: React.FC = () => {
                         .join(' · ')}
                     </p>
                   </div>
-                  <div className="rounded-lg bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900 px-4 py-3">
-                    <div className="text-xs uppercase tracking-wide text-indigo-600 dark:text-indigo-300">Costo total trabajador</div>
-                    <div className="mt-1 text-2xl font-semibold text-indigo-700 dark:text-indigo-200">
-                      {formatCLP(activeWorkerCostSummary?.total || 0)}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-full lg:min-w-[460px]">
+                    <div className="rounded-lg bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900 px-4 py-3">
+                      <div className="text-xs uppercase tracking-wide text-indigo-600 dark:text-indigo-300">Costo del mes</div>
+                      <div className="mt-1 text-2xl font-semibold text-indigo-700 dark:text-indigo-200">
+                        {formatCLP(activeWorkerMonthCostSummary?.total || 0)}
+                      </div>
+                      <div className="mt-1 text-xs text-indigo-600/80 dark:text-indigo-300/80">
+                        {workerSummaryMonthLabel} · {activeWorkerMonthCostSummary?.count || 0} registros
+                      </div>
                     </div>
-                    <div className="mt-1 text-xs text-indigo-600/80 dark:text-indigo-300/80">
-                      {activeWorkerCostSummary?.count || 0} registros acumulados
+                    <div className="rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-4 py-3">
+                      <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Costo acumulado</div>
+                      <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                        {formatCLP(activeWorkerCostSummary?.total || 0)}
+                      </div>
+                      <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {activeWorkerCostSummary?.count || 0} registros acumulados
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 gap-3">
-                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                    <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Remuneración</div>
-                    <div className="mt-2 text-lg font-semibold text-gray-900 dark:text-gray-100">{formatCLP(activeWorkerCostSummary?.remuneration || 0)}</div>
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  <div className="rounded-lg border border-indigo-100 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-950/20 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-indigo-600 dark:text-indigo-300">Mes seleccionado</div>
+                        <div className="mt-1 text-sm font-medium text-indigo-700 dark:text-indigo-200">{workerSummaryMonthLabel}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-indigo-600/80 dark:text-indigo-300/80">Total</div>
+                        <div className="text-lg font-semibold text-indigo-700 dark:text-indigo-200">{formatCLP(activeWorkerMonthCostSummary?.total || 0)}</div>
+                      </div>
+                    </div>
+                    <div className="mt-4 grid grid-cols-3 gap-3">
+                      <div className="rounded-lg bg-white dark:bg-gray-900 border border-indigo-100 dark:border-indigo-900 p-3">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Remuneración</div>
+                        <div className="mt-1 font-semibold text-gray-900 dark:text-gray-100">{formatCLP(activeWorkerMonthCostSummary?.remuneration || 0)}</div>
+                      </div>
+                      <div className="rounded-lg bg-white dark:bg-gray-900 border border-indigo-100 dark:border-indigo-900 p-3">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Previsión</div>
+                        <div className="mt-1 font-semibold text-gray-900 dark:text-gray-100">{formatCLP(activeWorkerMonthCostSummary?.payroll || 0)}</div>
+                      </div>
+                      <div className="rounded-lg bg-white dark:bg-gray-900 border border-indigo-100 dark:border-indigo-900 p-3">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Manual</div>
+                        <div className="mt-1 font-semibold text-gray-900 dark:text-gray-100">{formatCLP(activeWorkerMonthCostSummary?.manual || 0)}</div>
+                      </div>
+                    </div>
                   </div>
+
                   <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                    <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Previsión</div>
-                    <div className="mt-2 text-lg font-semibold text-gray-900 dark:text-gray-100">{formatCLP(activeWorkerCostSummary?.payroll || 0)}</div>
-                  </div>
-                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                    <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Costos manuales</div>
-                    <div className="mt-2 text-lg font-semibold text-gray-900 dark:text-gray-100">{formatCLP(activeWorkerCostSummary?.manual || 0)}</div>
-                  </div>
-                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                    <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Último movimiento</div>
-                    <div className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Acumulado</div>
+                        <div className="mt-1 text-sm font-medium text-gray-900 dark:text-gray-100">Histórico completo del trabajador</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Total</div>
+                        <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{formatCLP(activeWorkerCostSummary?.total || 0)}</div>
+                      </div>
+                    </div>
+                    <div className="mt-4 grid grid-cols-3 gap-3">
+                      <div className="rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-3">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Remuneración</div>
+                        <div className="mt-1 font-semibold text-gray-900 dark:text-gray-100">{formatCLP(activeWorkerCostSummary?.remuneration || 0)}</div>
+                      </div>
+                      <div className="rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-3">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Previsión</div>
+                        <div className="mt-1 font-semibold text-gray-900 dark:text-gray-100">{formatCLP(activeWorkerCostSummary?.payroll || 0)}</div>
+                      </div>
+                      <div className="rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-3">
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Manual</div>
+                        <div className="mt-1 font-semibold text-gray-900 dark:text-gray-100">{formatCLP(activeWorkerCostSummary?.manual || 0)}</div>
+                      </div>
+                    </div>
+                    <div className="mt-4 text-xs text-gray-500 dark:text-gray-400">
+                      Último movimiento:{' '}
                       {activeWorkerCostSummary?.lastDate
                         ? new Date(activeWorkerCostSummary.lastDate + 'T12:00:00').toLocaleDateString('es-CL')
                         : 'Sin registros'}
@@ -3035,7 +3143,7 @@ export const Workers: React.FC = () => {
                         </p>
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
-                        Total Mostrado: {formatCLP(activeWorkerCostSummary?.total || 0)}
+                        Total acumulado: {formatCLP(activeWorkerCostSummary?.total || 0)}
                     </div>
                 </div>
                 <div className="overflow-x-auto max-h-[600px]">
