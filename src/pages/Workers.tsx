@@ -1432,34 +1432,76 @@ export const Workers: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
-                <Briefcase className="mr-2 h-8 w-8 text-indigo-600" />
-                Trabajadores de Planta
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Gestión de personal fijo y sus costos</p>
+      <div className="sticky top-0 z-30 -mx-2 px-2 pt-1 pb-4 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur supports-[backdrop-filter]:bg-gray-50/80 dark:supports-[backdrop-filter]:bg-gray-900/80 space-y-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+                  <Briefcase className="mr-2 h-8 w-8 text-indigo-600" />
+                  Trabajadores de Planta
+              </h1>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Gestión de personal fijo y sus costos</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+              <button
+                  onClick={generatePayrollPDF}
+                  className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                  <Download className="mr-2 h-5 w-5" />
+                  Planilla Pagos PDF
+              </button>
+              <button
+                  onClick={openCreateWorkerForm}
+                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
+              >
+                  <UserPlus className="mr-2 h-5 w-5" />
+                  Nuevo Trabajador
+              </button>
+          </div>
         </div>
-        <div className="flex gap-2">
-            <button
-                onClick={generatePayrollPDF}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-            >
-                <Download className="mr-2 h-5 w-5" />
-                Planilla Pagos PDF
-            </button>
-            <button
-                onClick={openCreateWorkerForm}
-                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
-            >
-                <UserPlus className="mr-2 h-5 w-5" />
-                Nuevo Trabajador
-            </button>
+
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700">
+          <div className="px-6 pt-4 border-b border-gray-200 dark:border-gray-700">
+            <nav className="-mb-px flex space-x-6 overflow-x-auto">
+              <button
+                type="button"
+                onClick={() => setWorkersMainTab('trabajadores')}
+                className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
+                  workersMainTab === 'trabajadores'
+                    ? 'border-indigo-500 text-indigo-600'
+                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
+                }`}
+              >
+                Trabajadores
+              </button>
+              <button
+                type="button"
+                onClick={() => setWorkersMainTab('costos')}
+                className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
+                  workersMainTab === 'costos'
+                    ? 'border-indigo-500 text-indigo-600'
+                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
+                }`}
+              >
+                Costos
+              </button>
+              <button
+                type="button"
+                onClick={() => setWorkersMainTab('prevision')}
+                className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
+                  workersMainTab === 'prevision'
+                    ? 'border-indigo-500 text-indigo-600'
+                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
+                }`}
+              >
+                Previsión
+              </button>
+            </nav>
+          </div>
         </div>
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
-        <div className="px-6 pt-4 border-b border-gray-200 dark:border-gray-700">
+        <div className="hidden px-6 pt-4 border-b border-gray-200 dark:border-gray-700">
           <nav className="-mb-px flex space-x-6">
             <button
               type="button"
