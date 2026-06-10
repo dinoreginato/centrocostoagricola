@@ -106,6 +106,7 @@ export const Workers: React.FC = () => {
   const [workersMainTab, setWorkersMainTab] = useState<'trabajadores' | 'costos'>('trabajadores');
   const [workerWorkspaceId, setWorkerWorkspaceId] = useState('');
   const [workerSummaryMonth, setWorkerSummaryMonth] = useState(new Date().toLocaleDateString('en-CA').slice(0, 7));
+  const [workerHistoryView, setWorkerHistoryView] = useState<'month' | 'all'>('month');
   const [showWorkerForm, setShowWorkerForm] = useState(false);
   const [editingWorkerId, setEditingWorkerId] = useState<string | null>(null);
   const [newWorkerName, setNewWorkerName] = useState('');
@@ -264,6 +265,21 @@ export const Workers: React.FC = () => {
   const activeWorkerCosts = useMemo(
     () => (workerWorkspaceId ? costs.filter((cost) => cost.worker_id === workerWorkspaceId) : costs),
     [costs, workerWorkspaceId]
+  );
+
+  const activeWorkerMonthCosts = useMemo(
+    () => activeWorkerCosts.filter((cost) => String(cost.date || '').slice(0, 7) === workerSummaryMonth),
+    [activeWorkerCosts, workerSummaryMonth]
+  );
+
+  const displayedWorkerCosts = useMemo(
+    () => (workerHistoryView === 'month' ? activeWorkerMonthCosts : activeWorkerCosts),
+    [activeWorkerCosts, activeWorkerMonthCosts, workerHistoryView]
+  );
+
+  const displayedWorkerCostsTotal = useMemo(
+    () => displayedWorkerCosts.reduce((sum, cost) => sum + Number(cost.amount || 0), 0),
+    [displayedWorkerCosts]
   );
 
   const activeWorkerCostSummary = useMemo(() => {
@@ -3135,15 +3151,42 @@ export const Workers: React.FC = () => {
         {/* Right: History Log */}
         <div className="lg:col-span-2 space-y-6">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-col gap-3 lg:flex-row lg:justify-between lg:items-center">
                     <div>
                         <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Historial del trabajador</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400">
                           {activeWorker ? `${activeWorker.name} (${activeWorker.role || 'Sin cargo'})` : 'Sin trabajador seleccionado'}
                         </p>
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                        Total acumulado: {formatCLP(activeWorkerCostSummary?.total || 0)}
+                    <div className="flex items-center gap-3">
+                        <div className="inline-flex rounded-md shadow-sm">
+                            <button
+                                type="button"
+                                onClick={() => setWorkerHistoryView('month')}
+                                className={`px-3 py-2 text-sm font-medium rounded-l-md border ${
+                                    workerHistoryView === 'month'
+                                        ? 'bg-indigo-600 border-indigo-600 text-white'
+                                        : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'
+                                }`}
+                            >
+                                Solo mes
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setWorkerHistoryView('all')}
+                                className={`px-3 py-2 text-sm font-medium rounded-r-md border -ml-px ${
+                                    workerHistoryView === 'all'
+                                        ? 'bg-indigo-600 border-indigo-600 text-white'
+                                        : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'
+                                }`}
+                            >
+                                Histórico
+                            </button>
+                        </div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400 text-right">
+                            {workerHistoryView === 'month' ? `Total mes ${workerSummaryMonthLabel}: ` : 'Total acumulado: '}
+                            {formatCLP(displayedWorkerCostsTotal)}
+                        </div>
                     </div>
                 </div>
                 <div className="overflow-x-auto max-h-[600px]">
@@ -3159,7 +3202,7 @@ export const Workers: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                            {activeWorkerCosts.map(cost => (
+                            {displayedWorkerCosts.map(cost => (
                                 <tr key={cost.id}>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                         {new Date(cost.date + 'T12:00:00').toLocaleDateString()}
@@ -3189,9 +3232,13 @@ export const Workers: React.FC = () => {
                                     </td>
                                 </tr>
                             ))}
-                            {activeWorkerCosts.length === 0 && (
+                            {displayedWorkerCosts.length === 0 && (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">No hay registros para este trabajador.</td>
+                                    <td colSpan={6} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                                      {workerHistoryView === 'month'
+                                        ? 'No hay registros para este trabajador en el mes seleccionado.'
+                                        : 'No hay registros para este trabajador.'}
+                                    </td>
                                 </tr>
                             )}
                         </tbody>
