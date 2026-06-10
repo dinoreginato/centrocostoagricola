@@ -2069,7 +2069,9 @@ export const Workers: React.FC = () => {
         </p>
       </div>
 
-      <div className={`${workerWorkspacePanel === 'prevision' ? 'block' : 'hidden'} bg-white dark:bg-gray-800 rounded-lg shadow p-6`}>
+      <div className={`${workerWorkspacePanel === 'prevision' ? 'fixed inset-0 z-50' : 'hidden'}`}>
+        <div className="absolute inset-0 bg-black/40" onClick={() => setWorkerWorkspacePanel('resumen')} />
+        <div className="absolute inset-y-0 right-0 w-full max-w-5xl overflow-y-auto bg-white dark:bg-gray-800 shadow-xl border-l border-gray-200 dark:border-gray-700 p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Previsión del trabajador</h3>
@@ -2078,6 +2080,13 @@ export const Workers: React.FC = () => {
             </p>
           </div>
           <div className="flex items-end gap-3">
+            <button
+              type="button"
+              onClick={() => setWorkerWorkspacePanel('resumen')}
+              className="inline-flex items-center justify-center p-2 rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-900"
+            >
+              <X className="h-5 w-5" />
+            </button>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Mes</label>
               <input
@@ -3101,6 +3110,7 @@ export const Workers: React.FC = () => {
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
           )}
@@ -3108,7 +3118,23 @@ export const Workers: React.FC = () => {
     </div>
 
       {workersMainTab === 'costos' && (
-      <div className={`${workerWorkspacePanel === 'manual' || workerWorkspacePanel === 'historial' ? 'grid' : 'hidden'} grid-cols-1 lg:grid-cols-3 gap-6`}>
+      <div className={`${workerWorkspacePanel === 'manual' || workerWorkspacePanel === 'historial' ? 'fixed inset-0 z-50' : 'hidden'}`}>
+        <div className="absolute inset-0 bg-black/40" onClick={() => setWorkerWorkspacePanel('resumen')} />
+        <div className="absolute inset-y-0 right-0 w-full max-w-6xl overflow-y-auto bg-white dark:bg-gray-800 shadow-xl border-l border-gray-200 dark:border-gray-700 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-lg font-medium text-gray-900 dark:text-gray-100">
+              {workerWorkspacePanel === 'manual' ? 'Costo manual' : 'Historial'}
+            </div>
+            <button
+              type="button"
+              onClick={() => setWorkerWorkspacePanel('resumen')}
+              className="inline-flex items-center justify-center p-2 rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-900"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Cost Registration Form */}
         <div className={`${workerWorkspacePanel === 'manual' ? 'block lg:col-span-1' : 'hidden'} bg-white dark:bg-gray-800 rounded-lg shadow p-6`}>
             <div className="flex items-center justify-between mb-4 border-b pb-2">
@@ -3438,6 +3464,8 @@ export const Workers: React.FC = () => {
             </div>
             
         </div>
+        </div>
+      </div>
       </div>
       )}
 
