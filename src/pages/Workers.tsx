@@ -2,7 +2,7 @@ import { toast } from 'sonner';
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
-import { Users, UserPlus, Trash2, Briefcase, Loader2, Download, RefreshCcw, Upload, Pencil } from 'lucide-react';
+import { Users, UserPlus, Trash2, Briefcase, Loader2, Download, RefreshCcw, Upload, Pencil, X } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
@@ -63,6 +63,7 @@ export const Workers: React.FC = () => {
   const [fields, setFields] = useState<Field[]>([]);
   
   // Worker Form State
+  const [workersMainTab, setWorkersMainTab] = useState<'trabajadores' | 'costos' | 'prevision'>('trabajadores');
   const [showWorkerForm, setShowWorkerForm] = useState(false);
   const [editingWorkerId, setEditingWorkerId] = useState<string | null>(null);
   const [newWorkerName, setNewWorkerName] = useState('');
@@ -1457,135 +1458,102 @@ export const Workers: React.FC = () => {
         </div>
       </div>
 
-      {/* New Worker Form Modal/Inline */}
-      {showWorkerForm && (
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border border-indigo-100">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-4">
-                {editingWorkerId ? 'Editar Trabajador' : 'Agregar Trabajador'}
-              </h3>
-              <form onSubmit={handleCreateWorker} className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Nombre Completo</label>
-                      <input
-                          type="text"
-                          required
-                          value={newWorkerName}
-                          onChange={e => setNewWorkerName(e.target.value)}
-                          className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Cargo / Rol</label>
-                      <input
-                          type="text"
-                          value={newWorkerRole}
-                          onChange={e => setNewWorkerRole(e.target.value)}
-                          className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha de nacimiento</label>
-                      <input
-                        type="date"
-                        value={newWorkerBirthDate}
-                        onChange={e => setNewWorkerBirthDate(e.target.value)}
-                        className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Sexo</label>
-                      <select
-                        value={newWorkerGender}
-                        onChange={e => setNewWorkerGender(e.target.value as 'male' | 'female' | 'unspecified')}
-                        className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                      >
-                        <option value="unspecified">No especificado</option>
-                        <option value="male">Hombre</option>
-                        <option value="female">Mujer</option>
-                      </select>
-                    </div>
-                  </div>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
+        <div className="px-6 pt-4 border-b border-gray-200 dark:border-gray-700">
+          <nav className="-mb-px flex space-x-6">
+            <button
+              type="button"
+              onClick={() => setWorkersMainTab('trabajadores')}
+              className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
+                workersMainTab === 'trabajadores'
+                  ? 'border-indigo-500 text-indigo-600'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
+              }`}
+            >
+              Trabajadores
+            </button>
+            <button
+              type="button"
+              onClick={() => setWorkersMainTab('costos')}
+              className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
+                workersMainTab === 'costos'
+                  ? 'border-indigo-500 text-indigo-600'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
+              }`}
+            >
+              Costos
+            </button>
+            <button
+              type="button"
+              onClick={() => setWorkersMainTab('prevision')}
+              className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
+                workersMainTab === 'prevision'
+                  ? 'border-indigo-500 text-indigo-600'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
+              }`}
+            >
+              Previsión
+            </button>
+          </nav>
+        </div>
 
-                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
-                    <div>
-                      <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Perfil previsional base</div>
-                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                        Estos datos se usarán para autocompletar la previsión mensual al seleccionar el trabajador.
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                        <input
-                          type="checkbox"
-                          checked={newWorkerIsPensioner}
-                          onChange={e => setNewWorkerIsPensioner(e.target.checked)}
-                          className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500"
-                        />
-                        Está pensionado/a
-                      </label>
-                      <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                        <input
-                          type="checkbox"
-                          checked={newWorkerVoluntaryAfp}
-                          onChange={e => setNewWorkerVoluntaryAfp(e.target.checked)}
-                          className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500"
-                        />
-                        Mantiene AFP voluntaria
-                      </label>
+        <div className="p-6">
+          {workersMainTab === 'trabajadores' && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Personal Registrado</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Edita la ficha una vez y se autocompleta en previsión.</p>
+                </div>
+              </div>
+              <div className="max-h-[650px] overflow-y-auto">
+                <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {workers.map((w) => (
+                    <li key={w.id} className="px-6 py-4 flex items-center justify-between">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tipo de pensión</label>
-                        <select
-                          value={newWorkerPensionType}
-                          onChange={e =>
-                            setNewWorkerPensionType(
-                              e.target.value as 'old_age' | 'disability_total' | 'disability_partial' | 'other'
-                            )
-                          }
-                          disabled={!newWorkerIsPensioner}
-                          className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                        >
-                          <option value="old_age">Vejez</option>
-                          <option value="disability_total">Invalidez total</option>
-                          <option value="disability_partial">Invalidez parcial</option>
-                          <option value="other">Otra</option>
-                        </select>
+                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{w.name}</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{w.role}</p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500">
+                          {[
+                            w.birth_date || 'Sin fecha nac.',
+                            w.gender === 'male' ? 'Hombre' : w.gender === 'female' ? 'Mujer' : 'Sexo no esp.',
+                            w.is_pensioner
+                              ? `Pensionado: ${
+                                  w.pension_type === 'old_age'
+                                    ? 'Vejez'
+                                    : w.pension_type === 'disability_total'
+                                      ? 'Inv. total'
+                                      : w.pension_type === 'disability_partial'
+                                        ? 'Inv. parcial'
+                                        : 'Otra'
+                                }`
+                              : 'No pensionado',
+                            w.voluntary_afp_after_legal_age ? 'AFP voluntaria' : null,
+                            w.art69_exempt ? 'Art. 69' : null
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </p>
                       </div>
-                      <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:items-end">
-                        <input
-                          type="checkbox"
-                          checked={newWorkerArt69Exempt}
-                          onChange={e => setNewWorkerArt69Exempt(e.target.checked)}
-                          className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500"
-                        />
-                        Acogido/a a exención art. 69
-                      </label>
-                    </div>
-                  </div>
+                      <div className="flex items-center gap-3">
+                        <button onClick={() => openEditWorkerForm(w)} className="text-gray-400 hover:text-indigo-600">
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => handleDeleteWorker(w.id)} className="text-gray-400 hover:text-red-600">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                  {workers.length === 0 && (
+                    <li className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">No hay trabajadores registrados.</li>
+                  )}
+                </ul>
+              </div>
+            </div>
+          )}
 
-                  <div className="flex gap-3 justify-end">
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700"
-                    >
-                      {editingWorkerId ? 'Guardar cambios' : 'Guardar'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        resetWorkerForm();
-                        setShowWorkerForm(false);
-                      }}
-                      className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-              </form>
-          </div>
-      )}
-
+          {workersMainTab === 'prevision' && (
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -2616,7 +2584,11 @@ export const Workers: React.FC = () => {
           </div>
         )}
       </div>
+          )}
+        </div>
+      </div>
 
+      {workersMainTab === 'costos' && (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Cost Registration Form */}
         <div className="lg:col-span-1 bg-white dark:bg-gray-800 rounded-lg shadow p-6">
@@ -2891,56 +2863,152 @@ export const Workers: React.FC = () => {
                 </div>
             </div>
             
-            {/* Workers List Mini */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                    <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Personal Registrado</h3>
-                </div>
-                <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-                    {workers.map(w => (
-                        <li key={w.id} className="px-6 py-4 flex items-center justify-between">
-                            <div>
-                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{w.name}</p>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">{w.role}</p>
-                                <p className="text-xs text-gray-400 dark:text-gray-500">
-                                  {[
-                                    w.birth_date || 'Sin fecha nac.',
-                                    w.gender === 'male' ? 'Hombre' : w.gender === 'female' ? 'Mujer' : 'Sexo no esp.',
-                                    w.is_pensioner
-                                      ? `Pensionado: ${
-                                          w.pension_type === 'old_age'
-                                            ? 'Vejez'
-                                            : w.pension_type === 'disability_total'
-                                              ? 'Inv. total'
-                                              : w.pension_type === 'disability_partial'
-                                                ? 'Inv. parcial'
-                                                : 'Otra'
-                                        }`
-                                      : 'No pensionado',
-                                    w.voluntary_afp_after_legal_age ? 'AFP voluntaria' : null,
-                                    w.art69_exempt ? 'Art. 69' : null
-                                  ]
-                                    .filter(Boolean)
-                                    .join(' · ')}
-                                </p>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <button onClick={() => openEditWorkerForm(w)} className="text-gray-400 hover:text-indigo-600">
-                                    <Pencil className="h-4 w-4" />
-                                </button>
-                                <button onClick={() => handleDeleteWorker(w.id)} className="text-gray-400 hover:text-red-600">
-                                    <Trash2 className="h-4 w-4" />
-                                </button>
-                            </div>
-                        </li>
-                    ))}
-                    {workers.length === 0 && (
-                        <li className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">No hay trabajadores registrados.</li>
-                    )}
-                </ul>
-            </div>
         </div>
       </div>
+      )}
+
+      {showWorkerForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowWorkerForm(false)} />
+          <div className="relative w-full max-w-3xl bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
+                {editingWorkerId ? 'Editar Trabajador' : 'Agregar Trabajador'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  resetWorkerForm();
+                  setShowWorkerForm(false);
+                }}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="p-6">
+              <form onSubmit={handleCreateWorker} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Nombre Completo</label>
+                    <input
+                      type="text"
+                      required
+                      value={newWorkerName}
+                      onChange={(e) => setNewWorkerName(e.target.value)}
+                      className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Cargo / Rol</label>
+                    <input
+                      type="text"
+                      value={newWorkerRole}
+                      onChange={(e) => setNewWorkerRole(e.target.value)}
+                      className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Fecha de nacimiento</label>
+                    <input
+                      type="date"
+                      value={newWorkerBirthDate}
+                      onChange={(e) => setNewWorkerBirthDate(e.target.value)}
+                      className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Sexo</label>
+                    <select
+                      value={newWorkerGender}
+                      onChange={(e) => setNewWorkerGender(e.target.value as 'male' | 'female' | 'unspecified')}
+                      className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    >
+                      <option value="unspecified">No especificado</option>
+                      <option value="male">Hombre</option>
+                      <option value="female">Mujer</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-4">
+                  <div>
+                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Perfil previsional base</div>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      Estos datos se usarán para autocompletar la previsión mensual al seleccionar el trabajador.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={newWorkerIsPensioner}
+                        onChange={(e) => setNewWorkerIsPensioner(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      Está pensionado/a
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={newWorkerVoluntaryAfp}
+                        onChange={(e) => setNewWorkerVoluntaryAfp(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      Mantiene AFP voluntaria
+                    </label>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tipo de pensión</label>
+                      <select
+                        value={newWorkerPensionType}
+                        onChange={(e) =>
+                          setNewWorkerPensionType(e.target.value as 'old_age' | 'disability_total' | 'disability_partial' | 'other')
+                        }
+                        disabled={!newWorkerIsPensioner}
+                        className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                      >
+                        <option value="old_age">Vejez</option>
+                        <option value="disability_total">Invalidez total</option>
+                        <option value="disability_partial">Invalidez parcial</option>
+                        <option value="other">Otra</option>
+                      </select>
+                    </div>
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:items-end">
+                      <input
+                        type="checkbox"
+                        checked={newWorkerArt69Exempt}
+                        onChange={(e) => setNewWorkerArt69Exempt(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      Acogido/a a exención art. 69
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 justify-end">
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700"
+                  >
+                    {editingWorkerId ? 'Guardar cambios' : 'Guardar'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      resetWorkerForm();
+                      setShowWorkerForm(false);
+                    }}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
