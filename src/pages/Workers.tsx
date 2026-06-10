@@ -10,6 +10,7 @@ import { createWorker, deleteWorker, deleteWorkerCost, fetchWorkerCosts, fetchWo
 import { calculatePayrollChile } from '../lib/payrollChile';
 import { exportJsonToXlsx, importXlsxToJson } from '../lib/excel';
 import { createPayrollRateProposal, createWorkerPayrollRun, fetchPayrollRateProposals, fetchPayrollRatesForMonth, updatePayrollRateProposalStatus, upsertPayrollRates } from '../services/payroll';
+import { getSeasonFromDate, isDateInSeason } from '../lib/seasonUtils';
 
 interface Worker {
   id: string;
@@ -105,8 +106,9 @@ export const Workers: React.FC = () => {
   // Worker Form State
   const [workersMainTab, setWorkersMainTab] = useState<'trabajadores' | 'costos'>('trabajadores');
   const [workerWorkspaceId, setWorkerWorkspaceId] = useState('');
-  const [workerSummaryMonth, setWorkerSummaryMonth] = useState(new Date().toLocaleDateString('en-CA').slice(0, 7));
-  const [workerHistoryView, setWorkerHistoryView] = useState<'month' | 'all'>('month');
+  const [workerSeason, setWorkerSeason] = useState(getSeasonFromDate(new Date()));
+  const [workerHistoryView, setWorkerHistoryView] = useState<'season' | 'all'>('season');
+  const [workerWorkspacePanel, setWorkerWorkspacePanel] = useState<'resumen' | 'prevision' | 'manual' | 'historial'>('resumen');
   const [showWorkerForm, setShowWorkerForm] = useState(false);
   const [editingWorkerId, setEditingWorkerId] = useState<string | null>(null);
   const [newWorkerName, setNewWorkerName] = useState('');
@@ -251,11 +253,21 @@ export const Workers: React.FC = () => {
       workers.map((worker) =>
         buildWorkerCostSummary(
           worker,
-          costs.filter((cost) => cost.worker_id === worker.id && String(cost.date || '').slice(0, 7) === workerSummaryMonth)
+          costs.filter((cost) => cost.worker_id === worker.id && isDateInSeason(String(cost.date || ''), workerSeason))
         )
       ),
-    [costs, workerSummaryMonth, workers]
+    [costs, workerSeason, workers]
   );
+
+  const availableWorkerSeasons = useMemo(() => {
+    const seasonSet = new Set<string>();
+    seasonSet.add(getSeasonFromDate(new Date()));
+    costs.forEach((cost) => {
+      if (!cost.date) return;
+      seasonSet.add(getSeasonFromDate(new Date(`${cost.date}T12:00:00`)));
+    });
+    return Array.from(seasonSet).sort().reverse();
+  }, [costs]);
 
   const activeWorker = useMemo(
     () => workers.find((worker) => worker.id === workerWorkspaceId) || null,
@@ -268,12 +280,12 @@ export const Workers: React.FC = () => {
   );
 
   const activeWorkerMonthCosts = useMemo(
-    () => activeWorkerCosts.filter((cost) => String(cost.date || '').slice(0, 7) === workerSummaryMonth),
-    [activeWorkerCosts, workerSummaryMonth]
+    () => activeWorkerCosts.filter((cost) => isDateInSeason(String(cost.date || ''), workerSeason)),
+    [activeWorkerCosts, workerSeason]
   );
 
   const displayedWorkerCosts = useMemo(
-    () => (workerHistoryView === 'month' ? activeWorkerMonthCosts : activeWorkerCosts),
+    () => (workerHistoryView === 'season' ? activeWorkerMonthCosts : activeWorkerCosts),
     [activeWorkerCosts, activeWorkerMonthCosts, workerHistoryView]
   );
 
@@ -312,11 +324,7 @@ export const Workers: React.FC = () => {
     );
   }, [activeWorker, workerMonthlyCostSummaries]);
 
-  const workerSummaryMonthLabel = useMemo(() => {
-    const parsed = new Date(`${workerSummaryMonth}-01T12:00:00`);
-    if (Number.isNaN(parsed.getTime())) return workerSummaryMonth;
-    return parsed.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
-  }, [workerSummaryMonth]);
+  const workerSeasonLabel = useMemo(() => `Temporada ${workerSeason}`, [workerSeason]);
 
   const afpOptions = useMemo(
     () => [
@@ -744,7 +752,7 @@ export const Workers: React.FC = () => {
       return;
     }
     if (activeWorkerMonthCosts.length === 0) {
-      toast('No hay registros en el mes seleccionado para exportar.');
+      toast('No hay registros en la temporada seleccionada para exportar.');
       return;
     }
 
@@ -753,22 +761,22 @@ export const Workers: React.FC = () => {
     const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
 
     doc.setFontSize(18);
-    doc.text('Costo Mensual por Trabajador', 40, 40);
+    doc.text('Costo por Temporada del Trabajador', 40, 40);
     doc.setFontSize(10);
     doc.text(`Empresa: ${companyName}`, 40, 58);
     doc.text(`Trabajador: ${activeWorker.name}`, 40, 72);
     doc.text(`Cargo: ${activeWorker.role || 'Sin cargo'}`, 40, 86);
-    doc.text(`Mes: ${workerSummaryMonthLabel}`, 40, 100);
+    doc.text(`Temporada: ${workerSeason}`, 40, 100);
     doc.text(`Emitido: ${new Date().toLocaleDateString('es-CL')}`, 40, 114);
 
     autoTable(doc, {
       startY: 132,
       head: [['Resumen', 'Monto']],
       body: [
-        ['Remuneración mes', formatCLP(activeWorkerMonthCostSummary?.remuneration || 0)],
-        ['Previsión mes', formatCLP(activeWorkerMonthCostSummary?.payroll || 0)],
-        ['Costos manuales mes', formatCLP(activeWorkerMonthCostSummary?.manual || 0)],
-        ['Total mes', formatCLP(activeWorkerMonthCostSummary?.total || 0)]
+        ['Remuneración temporada', formatCLP(activeWorkerMonthCostSummary?.remuneration || 0)],
+        ['Previsión temporada', formatCLP(activeWorkerMonthCostSummary?.payroll || 0)],
+        ['Costos manuales temporada', formatCLP(activeWorkerMonthCostSummary?.manual || 0)],
+        ['Total temporada', formatCLP(activeWorkerMonthCostSummary?.total || 0)]
       ],
       theme: 'grid',
       headStyles: { fillColor: [79, 70, 229] },
@@ -789,7 +797,7 @@ export const Workers: React.FC = () => {
       styles: { fontSize: 9 }
     });
 
-    doc.save(`Costo_${safeWorkerName}_${workerSummaryMonth}.pdf`);
+    doc.save(`Costo_${safeWorkerName}_${workerSeason}.pdf`);
   };
 
   const exportActiveWorkerMonthExcel = async () => {
@@ -798,7 +806,7 @@ export const Workers: React.FC = () => {
       return;
     }
     if (activeWorkerMonthCosts.length === 0) {
-      toast('No hay registros en el mes seleccionado para exportar.');
+      toast('No hay registros en la temporada seleccionada para exportar.');
       return;
     }
 
@@ -807,7 +815,7 @@ export const Workers: React.FC = () => {
       Fecha: new Date(`${cost.date}T12:00:00`).toLocaleDateString('es-CL'),
       Trabajador: activeWorker.name,
       Cargo: activeWorker.role || '',
-      Mes: workerSummaryMonthLabel,
+      Temporada: workerSeason,
       Tipo: cost.description.startsWith('Previsión ')
         ? 'Previsión'
         : cost.description.startsWith('Sueldo Imponible ') ||
@@ -824,15 +832,15 @@ export const Workers: React.FC = () => {
       Fecha: '',
       Trabajador: activeWorker.name,
       Cargo: activeWorker.role || '',
-      Mes: workerSummaryMonthLabel,
+      Temporada: workerSeason,
       Tipo: 'Resumen',
-      Descripción: 'Total mes',
+      Descripción: 'Total temporada',
       Sector: '',
       Monto: Number(activeWorkerMonthCostSummary?.total || 0)
     });
 
     await exportJsonToXlsx({
-      filename: `Costo_${safeWorkerName}_${workerSummaryMonth}.xlsx`,
+      filename: `Costo_${safeWorkerName}_${workerSeason}.xlsx`,
       sheetName: 'Costo trabajador',
       rows: rows as Array<Record<string, unknown>>
     });
@@ -1819,21 +1827,26 @@ export const Workers: React.FC = () => {
             <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700 space-y-3">
               <div>
                 <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Costo por trabajador</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Selecciona una ficha para ingresar remuneraciones, previsión y revisar el costo total.</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Selecciona una ficha y trabaja sus costos por temporada.</p>
               </div>
               <div>
-                <label className="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Mes resumido</label>
-                <input
-                  type="month"
-                  value={workerSummaryMonth}
-                  onChange={(e) => setWorkerSummaryMonth(e.target.value)}
+                <label className="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Temporada</label>
+                <select
+                  value={workerSeason}
+                  onChange={(e) => setWorkerSeason(e.target.value)}
                   className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                />
+                >
+                  {availableWorkerSeasons.map((season) => (
+                    <option key={season} value={season}>
+                      {season}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             <div className="max-h-[560px] overflow-y-auto divide-y divide-gray-200 dark:divide-gray-700">
               {workerCostSummaries.map((summary) => {
-                const monthSummary =
+                const seasonSummary =
                   workerMonthlyCostSummaries.find((item) => item.worker.id === summary.worker.id) || buildWorkerCostSummary(summary.worker, []);
                 const isActive = summary.worker.id === workerWorkspaceId;
                 return (
@@ -1853,18 +1866,18 @@ export const Workers: React.FC = () => {
                         <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{summary.worker.role || 'Sin cargo'}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{formatCLP(monthSummary.total)}</p>
+                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{formatCLP(seasonSummary.total)}</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">{formatCLP(summary.total)} acumulado</p>
                       </div>
                     </div>
                     <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                       <div className="rounded-md bg-gray-50 dark:bg-gray-900 px-2 py-2">
-                        <div className="text-gray-500 dark:text-gray-400">Mes</div>
-                        <div className="font-medium text-gray-900 dark:text-gray-100">{monthSummary.count} mov.</div>
+                        <div className="text-gray-500 dark:text-gray-400">Temporada</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{seasonSummary.count} mov.</div>
                       </div>
                       <div className="rounded-md bg-gray-50 dark:bg-gray-900 px-2 py-2">
-                        <div className="text-gray-500 dark:text-gray-400">Previsión mes</div>
-                        <div className="font-medium text-gray-900 dark:text-gray-100">{formatCLP(monthSummary.payroll)}</div>
+                        <div className="text-gray-500 dark:text-gray-400">Previsión temp.</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{formatCLP(seasonSummary.payroll)}</div>
                       </div>
                       <div className="rounded-md bg-gray-50 dark:bg-gray-900 px-2 py-2">
                         <div className="text-gray-500 dark:text-gray-400">Acumulado</div>
@@ -1906,12 +1919,12 @@ export const Workers: React.FC = () => {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-full lg:min-w-[460px]">
                     <div className="rounded-lg bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900 px-4 py-3">
-                      <div className="text-xs uppercase tracking-wide text-indigo-600 dark:text-indigo-300">Costo del mes</div>
+                      <div className="text-xs uppercase tracking-wide text-indigo-600 dark:text-indigo-300">Costo temporada</div>
                       <div className="mt-1 text-2xl font-semibold text-indigo-700 dark:text-indigo-200">
                         {formatCLP(activeWorkerMonthCostSummary?.total || 0)}
                       </div>
                       <div className="mt-1 text-xs text-indigo-600/80 dark:text-indigo-300/80">
-                        {workerSummaryMonthLabel} · {activeWorkerMonthCostSummary?.count || 0} registros
+                        {workerSeasonLabel} · {activeWorkerMonthCostSummary?.count || 0} registros
                       </div>
                     </div>
                     <div className="rounded-lg bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-4 py-3">
@@ -1930,8 +1943,8 @@ export const Workers: React.FC = () => {
                   <div className="rounded-lg border border-indigo-100 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-950/20 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <div className="text-xs uppercase tracking-wide text-indigo-600 dark:text-indigo-300">Mes seleccionado</div>
-                        <div className="mt-1 text-sm font-medium text-indigo-700 dark:text-indigo-200">{workerSummaryMonthLabel}</div>
+                        <div className="text-xs uppercase tracking-wide text-indigo-600 dark:text-indigo-300">Temporada seleccionada</div>
+                        <div className="mt-1 text-sm font-medium text-indigo-700 dark:text-indigo-200">{workerSeasonLabel}</div>
                       </div>
                       <div className="text-right">
                         <div className="text-xs text-indigo-600/80 dark:text-indigo-300/80">Total</div>
@@ -1987,6 +2000,61 @@ export const Workers: React.FC = () => {
                     </div>
                   </div>
                 </div>
+
+                <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Acciones del trabajador</div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Abre solo el panel que necesitas para rellenar o visualizar información.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setWorkerWorkspacePanel('resumen')}
+                        className={`px-3 py-2 rounded-md text-sm font-medium border ${
+                          workerWorkspacePanel === 'resumen'
+                            ? 'bg-indigo-600 border-indigo-600 text-white'
+                            : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'
+                        }`}
+                      >
+                        Resumen
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setWorkerWorkspacePanel('prevision')}
+                        className={`px-3 py-2 rounded-md text-sm font-medium border ${
+                          workerWorkspacePanel === 'prevision'
+                            ? 'bg-indigo-600 border-indigo-600 text-white'
+                            : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'
+                        }`}
+                      >
+                        Previsión
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setWorkerWorkspacePanel('manual')}
+                        className={`px-3 py-2 rounded-md text-sm font-medium border ${
+                          workerWorkspacePanel === 'manual'
+                            ? 'bg-indigo-600 border-indigo-600 text-white'
+                            : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'
+                        }`}
+                      >
+                        Costo manual
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setWorkerWorkspacePanel('historial')}
+                        className={`px-3 py-2 rounded-md text-sm font-medium border ${
+                          workerWorkspacePanel === 'historial'
+                            ? 'bg-indigo-600 border-indigo-600 text-white'
+                            : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'
+                        }`}
+                      >
+                        Historial
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="text-sm text-gray-500 dark:text-gray-400">Selecciona un trabajador para ver su costo consolidado.</div>
@@ -1994,7 +2062,14 @@ export const Workers: React.FC = () => {
           </div>
         </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      <div className={`${workerWorkspacePanel === 'resumen' ? 'block' : 'hidden'} bg-white dark:bg-gray-800 rounded-lg shadow p-6 border border-gray-200 dark:border-gray-700`}>
+        <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Resumen de temporada</h3>
+        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+          Estás viendo el costo del trabajador por {workerSeasonLabel}. Usa los botones superiores para abrir previsión, registrar costos manuales o revisar el historial.
+        </p>
+      </div>
+
+      <div className={`${workerWorkspacePanel === 'prevision' ? 'block' : 'hidden'} bg-white dark:bg-gray-800 rounded-lg shadow p-6`}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Previsión del trabajador</h3>
@@ -3029,13 +3104,13 @@ export const Workers: React.FC = () => {
       </div>
     </div>
           )}
-        </div>
       </div>
+    </div>
 
       {workersMainTab === 'costos' && (
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className={`${workerWorkspacePanel === 'manual' || workerWorkspacePanel === 'historial' ? 'grid' : 'hidden'} grid-cols-1 lg:grid-cols-3 gap-6`}>
         {/* Left: Cost Registration Form */}
-        <div className="lg:col-span-1 bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <div className={`${workerWorkspacePanel === 'manual' ? 'block lg:col-span-1' : 'hidden'} bg-white dark:bg-gray-800 rounded-lg shadow p-6`}>
             <div className="flex items-center justify-between mb-4 border-b pb-2">
                 <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 flex items-center">
                     <Users className="h-5 w-5 mr-2 text-indigo-500" />
@@ -3249,7 +3324,7 @@ export const Workers: React.FC = () => {
         </div>
 
         {/* Right: History Log */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className={`${workerWorkspacePanel === 'historial' ? 'block lg:col-span-3' : 'hidden'} space-y-6`}>
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex flex-col gap-3 lg:flex-row lg:justify-between lg:items-center">
                     <div>
@@ -3265,7 +3340,7 @@ export const Workers: React.FC = () => {
                             className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
                         >
                             <Download className="mr-2 h-4 w-4" />
-                            PDF mes
+                            PDF temporada
                         </button>
                         <button
                             type="button"
@@ -3273,19 +3348,19 @@ export const Workers: React.FC = () => {
                             className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
                         >
                             <Download className="mr-2 h-4 w-4" />
-                            Excel mes
+                            Excel temporada
                         </button>
                         <div className="inline-flex rounded-md shadow-sm">
                             <button
                                 type="button"
-                                onClick={() => setWorkerHistoryView('month')}
+                                onClick={() => setWorkerHistoryView('season')}
                                 className={`px-3 py-2 text-sm font-medium rounded-l-md border ${
-                                    workerHistoryView === 'month'
+                                    workerHistoryView === 'season'
                                         ? 'bg-indigo-600 border-indigo-600 text-white'
                                         : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300'
                                 }`}
                             >
-                                Solo mes
+                                Solo temporada
                             </button>
                             <button
                                 type="button"
@@ -3300,7 +3375,7 @@ export const Workers: React.FC = () => {
                             </button>
                         </div>
                         <div className="text-sm text-gray-500 dark:text-gray-400 text-right">
-                            {workerHistoryView === 'month' ? `Total mes ${workerSummaryMonthLabel}: ` : 'Total acumulado: '}
+                            {workerHistoryView === 'season' ? `Total ${workerSeasonLabel}: ` : 'Total acumulado: '}
                             {formatCLP(displayedWorkerCostsTotal)}
                         </div>
                     </div>
@@ -3351,8 +3426,8 @@ export const Workers: React.FC = () => {
                             {displayedWorkerCosts.length === 0 && (
                                 <tr>
                                     <td colSpan={6} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
-                                      {workerHistoryView === 'month'
-                                        ? 'No hay registros para este trabajador en el mes seleccionado.'
+                                      {workerHistoryView === 'season'
+                                        ? 'No hay registros para este trabajador en la temporada seleccionada.'
                                         : 'No hay registros para este trabajador.'}
                                     </td>
                                 </tr>
