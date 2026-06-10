@@ -63,7 +63,8 @@ export const Workers: React.FC = () => {
   const [fields, setFields] = useState<Field[]>([]);
   
   // Worker Form State
-  const [workersMainTab, setWorkersMainTab] = useState<'trabajadores' | 'costos' | 'prevision'>('trabajadores');
+  const [workersMainTab, setWorkersMainTab] = useState<'trabajadores' | 'costos'>('trabajadores');
+  const [workerWorkspaceId, setWorkerWorkspaceId] = useState('');
   const [showWorkerForm, setShowWorkerForm] = useState(false);
   const [editingWorkerId, setEditingWorkerId] = useState<string | null>(null);
   const [newWorkerName, setNewWorkerName] = useState('');
@@ -197,6 +198,64 @@ export const Workers: React.FC = () => {
     () => Math.max(0, payrollImponibleTotal + payrollNonImponibleTotal),
     [payrollImponibleTotal, payrollNonImponibleTotal]
   );
+
+  const workerCostSummaries = useMemo(() => {
+    return workers.map((worker) => {
+      const workerCosts = costs.filter((cost) => cost.worker_id === worker.id);
+      const totals = workerCosts.reduce(
+        (acc, cost) => {
+          const description = String(cost.description || '');
+          const amount = Number(cost.amount || 0);
+          if (description.startsWith('Previsión ')) {
+            acc.payroll += amount;
+          } else if (
+            description.startsWith('Sueldo Imponible ') ||
+            description.startsWith('Gratificación legal ') ||
+            description.startsWith('No imponible ')
+          ) {
+            acc.remuneration += amount;
+          } else {
+            acc.manual += amount;
+          }
+          acc.total += amount;
+          return acc;
+        },
+        { total: 0, payroll: 0, remuneration: 0, manual: 0 }
+      );
+
+      return {
+        worker,
+        count: workerCosts.length,
+        lastDate: workerCosts[0]?.date || null,
+        ...totals
+      };
+    });
+  }, [costs, workers]);
+
+  const activeWorker = useMemo(
+    () => workers.find((worker) => worker.id === workerWorkspaceId) || null,
+    [workerWorkspaceId, workers]
+  );
+
+  const activeWorkerCosts = useMemo(
+    () => (workerWorkspaceId ? costs.filter((cost) => cost.worker_id === workerWorkspaceId) : costs),
+    [costs, workerWorkspaceId]
+  );
+
+  const activeWorkerCostSummary = useMemo(() => {
+    if (!activeWorker) return null;
+    return (
+      workerCostSummaries.find((summary) => summary.worker.id === activeWorker.id) || {
+        worker: activeWorker,
+        count: 0,
+        lastDate: null,
+        total: 0,
+        payroll: 0,
+        remuneration: 0,
+        manual: 0
+      }
+    );
+  }, [activeWorker, workerCostSummaries]);
 
   const afpOptions = useMemo(
     () => [
@@ -721,6 +780,25 @@ export const Workers: React.FC = () => {
     setPayrollWorkerVoluntaryAfp(Boolean(worker.voluntary_afp_after_legal_age));
     setPayrollWorkerArt69Exempt(Boolean(worker.art69_exempt));
   }, [payrollWorkerId, workers]);
+
+  useEffect(() => {
+    if (workers.length === 0) {
+      setWorkerWorkspaceId('');
+      return;
+    }
+    if (!workerWorkspaceId || !workers.some((worker) => worker.id === workerWorkspaceId)) {
+      const firstWorkerId = workers[0]?.id || '';
+      setWorkerWorkspaceId(firstWorkerId);
+      setSelectedWorkerId(firstWorkerId);
+      setPayrollWorkerId(firstWorkerId);
+    }
+  }, [workerWorkspaceId, workers]);
+
+  useEffect(() => {
+    if (!workerWorkspaceId) return;
+    setSelectedWorkerId(workerWorkspaceId);
+    setPayrollWorkerId(workerWorkspaceId);
+  }, [workerWorkspaceId]);
 
   const handleScanPayrollRates = async () => {
     setScanLoading(true);
@@ -1484,17 +1562,6 @@ export const Workers: React.FC = () => {
               >
                 Costos
               </button>
-              <button
-                type="button"
-                onClick={() => setWorkersMainTab('prevision')}
-                className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
-                  workersMainTab === 'prevision'
-                    ? 'border-indigo-500 text-indigo-600'
-                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
-                }`}
-              >
-                Previsión
-              </button>
             </nav>
           </div>
         </div>
@@ -1524,17 +1591,6 @@ export const Workers: React.FC = () => {
               }`}
             >
               Costos
-            </button>
-            <button
-              type="button"
-              onClick={() => setWorkersMainTab('prevision')}
-              className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
-                workersMainTab === 'prevision'
-                  ? 'border-indigo-500 text-indigo-600'
-                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300'
-              }`}
-            >
-              Previsión
             </button>
           </nav>
         </div>
@@ -1595,13 +1651,131 @@ export const Workers: React.FC = () => {
             </div>
           )}
 
-          {workersMainTab === 'prevision' && (
+          {workersMainTab === 'costos' && (
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-6">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Costo por trabajador</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Selecciona una ficha para ingresar remuneraciones, previsión y revisar el costo total.</p>
+            </div>
+            <div className="max-h-[560px] overflow-y-auto divide-y divide-gray-200 dark:divide-gray-700">
+              {workerCostSummaries.map((summary) => {
+                const isActive = summary.worker.id === workerWorkspaceId;
+                return (
+                  <button
+                    key={summary.worker.id}
+                    type="button"
+                    onClick={() => setWorkerWorkspaceId(summary.worker.id)}
+                    className={`w-full px-5 py-4 text-left transition ${
+                      isActive
+                        ? 'bg-indigo-50 dark:bg-indigo-950/40'
+                        : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-750'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{summary.worker.name}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{summary.worker.role || 'Sin cargo'}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">{formatCLP(summary.total)}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{summary.count} movimientos</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                      <div className="rounded-md bg-gray-50 dark:bg-gray-900 px-2 py-2">
+                        <div className="text-gray-500 dark:text-gray-400">Remuner.</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{formatCLP(summary.remuneration)}</div>
+                      </div>
+                      <div className="rounded-md bg-gray-50 dark:bg-gray-900 px-2 py-2">
+                        <div className="text-gray-500 dark:text-gray-400">Previsión</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{formatCLP(summary.payroll)}</div>
+                      </div>
+                      <div className="rounded-md bg-gray-50 dark:bg-gray-900 px-2 py-2">
+                        <div className="text-gray-500 dark:text-gray-400">Manual</div>
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{formatCLP(summary.manual)}</div>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                      {summary.lastDate ? `Último movimiento: ${new Date(summary.lastDate + 'T12:00:00').toLocaleDateString('es-CL')}` : 'Sin movimientos registrados'}
+                    </p>
+                  </button>
+                );
+              })}
+              {workerCostSummaries.length === 0 && (
+                <div className="px-5 py-6 text-sm text-center text-gray-500 dark:text-gray-400">
+                  No hay trabajadores para consolidar costos.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-6">
+            {activeWorker ? (
+              <div className="space-y-6">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{activeWorker.name}</h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{activeWorker.role || 'Sin cargo definido'}</p>
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                      {[
+                        activeWorker.birth_date || 'Sin fecha nac.',
+                        activeWorker.gender === 'male' ? 'Hombre' : activeWorker.gender === 'female' ? 'Mujer' : 'Sexo no esp.',
+                        activeWorker.is_pensioner ? 'Pensionado/a' : 'No pensionado/a',
+                        activeWorker.voluntary_afp_after_legal_age ? 'AFP voluntaria' : null,
+                        activeWorker.art69_exempt ? 'Art. 69' : null
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900 px-4 py-3">
+                    <div className="text-xs uppercase tracking-wide text-indigo-600 dark:text-indigo-300">Costo total trabajador</div>
+                    <div className="mt-1 text-2xl font-semibold text-indigo-700 dark:text-indigo-200">
+                      {formatCLP(activeWorkerCostSummary?.total || 0)}
+                    </div>
+                    <div className="mt-1 text-xs text-indigo-600/80 dark:text-indigo-300/80">
+                      {activeWorkerCostSummary?.count || 0} registros acumulados
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-4 gap-3">
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                    <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Remuneración</div>
+                    <div className="mt-2 text-lg font-semibold text-gray-900 dark:text-gray-100">{formatCLP(activeWorkerCostSummary?.remuneration || 0)}</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                    <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Previsión</div>
+                    <div className="mt-2 text-lg font-semibold text-gray-900 dark:text-gray-100">{formatCLP(activeWorkerCostSummary?.payroll || 0)}</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                    <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Costos manuales</div>
+                    <div className="mt-2 text-lg font-semibold text-gray-900 dark:text-gray-100">{formatCLP(activeWorkerCostSummary?.manual || 0)}</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                    <div className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Último movimiento</div>
+                    <div className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">
+                      {activeWorkerCostSummary?.lastDate
+                        ? new Date(activeWorkerCostSummary.lastDate + 'T12:00:00').toLocaleDateString('es-CL')
+                        : 'Sin registros'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm text-gray-500 dark:text-gray-400">Selecciona un trabajador para ver su costo consolidado.</div>
+            )}
+          </div>
+        </div>
+
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Previsión (Chile)</h3>
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Previsión del trabajador</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Calcula aportes por ley chilena y registra los costos del empleador en líneas separadas.
+              Calcula aportes por ley chilena y los suma al costo total de la ficha seleccionada.
             </p>
           </div>
           <div className="flex items-end gap-3">
@@ -1755,7 +1929,10 @@ export const Workers: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Trabajador</label>
                 <select
                   value={payrollWorkerId}
-                  onChange={(e) => setPayrollWorkerId(e.target.value)}
+                  onChange={(e) => {
+                    setPayrollWorkerId(e.target.value);
+                    setWorkerWorkspaceId(e.target.value);
+                  }}
                   className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                 >
                   <option value="">Seleccione...</option>
@@ -2626,6 +2803,7 @@ export const Workers: React.FC = () => {
           </div>
         )}
       </div>
+    </div>
           )}
         </div>
       </div>
@@ -2637,7 +2815,7 @@ export const Workers: React.FC = () => {
             <div className="flex items-center justify-between mb-4 border-b pb-2">
                 <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 flex items-center">
                     <Users className="h-5 w-5 mr-2 text-indigo-500" />
-                    Registrar Costo
+                    Registrar costo manual
                 </h3>
                 <div className="flex items-center space-x-2">
                     <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">Jornal</span>
@@ -2669,7 +2847,10 @@ export const Workers: React.FC = () => {
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Trabajador Fijo</label>
                             <select
                                 value={selectedWorkerId}
-                                onChange={e => setSelectedWorkerId(e.target.value)}
+                                onChange={e => {
+                                  setSelectedWorkerId(e.target.value);
+                                  setWorkerWorkspaceId(e.target.value);
+                                }}
                                 className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                             >
                                 <option value="">Seleccione...</option>
@@ -2847,9 +3028,14 @@ export const Workers: React.FC = () => {
         <div className="lg:col-span-2 space-y-6">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Historial de Pagos</h3>
+                    <div>
+                        <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Historial del trabajador</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          {activeWorker ? `${activeWorker.name} (${activeWorker.role || 'Sin cargo'})` : 'Sin trabajador seleccionado'}
+                        </p>
+                    </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
-                        Total Mostrado: {formatCLP(costs.reduce((sum, c) => sum + Number(c.amount), 0))}
+                        Total Mostrado: {formatCLP(activeWorkerCostSummary?.total || 0)}
                     </div>
                 </div>
                 <div className="overflow-x-auto max-h-[600px]">
@@ -2865,7 +3051,7 @@ export const Workers: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                            {costs.map(cost => (
+                            {activeWorkerCosts.map(cost => (
                                 <tr key={cost.id}>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                         {new Date(cost.date + 'T12:00:00').toLocaleDateString()}
@@ -2895,9 +3081,9 @@ export const Workers: React.FC = () => {
                                     </td>
                                 </tr>
                             ))}
-                            {costs.length === 0 && (
+                            {activeWorkerCosts.length === 0 && (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">No hay registros de costos.</td>
+                                    <td colSpan={6} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">No hay registros para este trabajador.</td>
                                 </tr>
                             )}
                         </tbody>
