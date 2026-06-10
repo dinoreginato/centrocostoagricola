@@ -8,7 +8,7 @@ import autoTable from 'jspdf-autotable';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
 import { createWorker, deleteWorker, deleteWorkerCost, fetchWorkerCosts, fetchWorkers, insertWorkerCosts, updateWorker } from '../services/workers';
 import { calculatePayrollChile } from '../lib/payrollChile';
-import { importXlsxToJson } from '../lib/excel';
+import { exportJsonToXlsx, importXlsxToJson } from '../lib/excel';
 import { createPayrollRateProposal, createWorkerPayrollRun, fetchPayrollRateProposals, fetchPayrollRatesForMonth, updatePayrollRateProposalStatus, upsertPayrollRates } from '../services/payroll';
 
 interface Worker {
@@ -736,6 +736,106 @@ export const Workers: React.FC = () => {
     });
 
     doc.save(`Planilla_Pagos_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  const exportActiveWorkerMonthPdf = () => {
+    if (!activeWorker) {
+      toast('Selecciona un trabajador.');
+      return;
+    }
+    if (activeWorkerMonthCosts.length === 0) {
+      toast('No hay registros en el mes seleccionado para exportar.');
+      return;
+    }
+
+    const companyName = selectedCompany?.name || 'Empresa';
+    const safeWorkerName = activeWorker.name.replace(/\s+/g, '_');
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+
+    doc.setFontSize(18);
+    doc.text('Costo Mensual por Trabajador', 40, 40);
+    doc.setFontSize(10);
+    doc.text(`Empresa: ${companyName}`, 40, 58);
+    doc.text(`Trabajador: ${activeWorker.name}`, 40, 72);
+    doc.text(`Cargo: ${activeWorker.role || 'Sin cargo'}`, 40, 86);
+    doc.text(`Mes: ${workerSummaryMonthLabel}`, 40, 100);
+    doc.text(`Emitido: ${new Date().toLocaleDateString('es-CL')}`, 40, 114);
+
+    autoTable(doc, {
+      startY: 132,
+      head: [['Resumen', 'Monto']],
+      body: [
+        ['Remuneración mes', formatCLP(activeWorkerMonthCostSummary?.remuneration || 0)],
+        ['Previsión mes', formatCLP(activeWorkerMonthCostSummary?.payroll || 0)],
+        ['Costos manuales mes', formatCLP(activeWorkerMonthCostSummary?.manual || 0)],
+        ['Total mes', formatCLP(activeWorkerMonthCostSummary?.total || 0)]
+      ],
+      theme: 'grid',
+      headStyles: { fillColor: [79, 70, 229] },
+      styles: { fontSize: 10 }
+    });
+
+    autoTable(doc, {
+      startY: (doc as any).lastAutoTable.finalY + 18,
+      head: [['Fecha', 'Descripción', 'Sector', 'Monto']],
+      body: activeWorkerMonthCosts.map((cost) => [
+        new Date(`${cost.date}T12:00:00`).toLocaleDateString('es-CL'),
+        cost.description,
+        cost.sectors?.name || '-',
+        formatCLP(cost.amount)
+      ]),
+      theme: 'grid',
+      headStyles: { fillColor: [79, 70, 229] },
+      styles: { fontSize: 9 }
+    });
+
+    doc.save(`Costo_${safeWorkerName}_${workerSummaryMonth}.pdf`);
+  };
+
+  const exportActiveWorkerMonthExcel = async () => {
+    if (!activeWorker) {
+      toast('Selecciona un trabajador.');
+      return;
+    }
+    if (activeWorkerMonthCosts.length === 0) {
+      toast('No hay registros en el mes seleccionado para exportar.');
+      return;
+    }
+
+    const safeWorkerName = activeWorker.name.replace(/\s+/g, '_');
+    const rows = activeWorkerMonthCosts.map((cost) => ({
+      Fecha: new Date(`${cost.date}T12:00:00`).toLocaleDateString('es-CL'),
+      Trabajador: activeWorker.name,
+      Cargo: activeWorker.role || '',
+      Mes: workerSummaryMonthLabel,
+      Tipo: cost.description.startsWith('Previsión ')
+        ? 'Previsión'
+        : cost.description.startsWith('Sueldo Imponible ') ||
+            cost.description.startsWith('Gratificación legal ') ||
+            cost.description.startsWith('No imponible ')
+          ? 'Remuneración'
+          : 'Costo manual',
+      Descripción: cost.description,
+      Sector: cost.sectors?.name || '-',
+      Monto: Number(cost.amount || 0)
+    }));
+
+    rows.push({
+      Fecha: '',
+      Trabajador: activeWorker.name,
+      Cargo: activeWorker.role || '',
+      Mes: workerSummaryMonthLabel,
+      Tipo: 'Resumen',
+      Descripción: 'Total mes',
+      Sector: '',
+      Monto: Number(activeWorkerMonthCostSummary?.total || 0)
+    });
+
+    await exportJsonToXlsx({
+      filename: `Costo_${safeWorkerName}_${workerSummaryMonth}.xlsx`,
+      sheetName: 'Costo trabajador',
+      rows: rows as Array<Record<string, unknown>>
+    });
   };
 
   const payrollRateFields = useMemo(
@@ -3158,7 +3258,23 @@ export const Workers: React.FC = () => {
                           {activeWorker ? `${activeWorker.name} (${activeWorker.role || 'Sin cargo'})` : 'Sin trabajador seleccionado'}
                         </p>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center justify-end gap-3">
+                        <button
+                            type="button"
+                            onClick={exportActiveWorkerMonthPdf}
+                            className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
+                        >
+                            <Download className="mr-2 h-4 w-4" />
+                            PDF mes
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => void exportActiveWorkerMonthExcel()}
+                            className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900"
+                        >
+                            <Download className="mr-2 h-4 w-4" />
+                            Excel mes
+                        </button>
                         <div className="inline-flex rounded-md shadow-sm">
                             <button
                                 type="button"
