@@ -119,8 +119,30 @@ export type WorkerPayrollItemInsert = {
   sort_order: number;
 };
 
+const shouldRetryWithoutCcafColumns = (error: unknown) => {
+  const message = String((error as { message?: string } | null)?.message || '').toLowerCase();
+  const details = String((error as { details?: string } | null)?.details || '').toLowerCase();
+  const combined = `${message} ${details}`;
+  return (
+    combined.includes('ccaf_enabled') ||
+    combined.includes('ccaf_name') ||
+    combined.includes('schema cache') ||
+    combined.includes('could not find the')
+  );
+};
+
 export async function createWorkerPayrollRun(params: { run: WorkerPayrollRunInsert; items: WorkerPayrollItemInsert[] }) {
-  const { data: runData, error: runError } = await supabase.from('worker_payroll_runs').insert(params.run).select('id').single();
+  let runPayload: Record<string, unknown> = { ...params.run };
+  let { data: runData, error: runError } = await supabase.from('worker_payroll_runs').insert(runPayload).select('id').single();
+
+  if (runError && shouldRetryWithoutCcafColumns(runError)) {
+    delete runPayload.ccaf_enabled;
+    delete runPayload.ccaf_name;
+    const retry = await supabase.from('worker_payroll_runs').insert(runPayload).select('id').single();
+    runData = retry.data;
+    runError = retry.error;
+  }
+
   if (runError) throw runError;
   const runId = String((runData as any).id);
 
