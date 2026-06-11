@@ -6,7 +6,7 @@ import { Users, UserPlus, Trash2, Briefcase, Loader2, Download, RefreshCcw, Uplo
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { fetchCompanyFieldsBasic, fetchCompanySectorsBasic } from '../services/companyStructure';
-import { createWorker, deleteWorker, deleteWorkerCost, fetchWorkerCosts, fetchWorkers, insertWorkerCosts, updateWorker } from '../services/workers';
+import { createWorker, deleteWorker, deleteWorkerCost, deleteWorkerCosts, fetchWorkerCosts, fetchWorkers, insertWorkerCosts, updateWorker } from '../services/workers';
 import { calculatePayrollChile } from '../lib/payrollChile';
 import { exportJsonToXlsx, importXlsxToJson } from '../lib/excel';
 import { createPayrollRateProposal, createWorkerPayrollRun, fetchPayrollRateProposals, fetchPayrollRatesForMonth, updatePayrollRateProposalStatus, upsertPayrollRates } from '../services/payroll';
@@ -69,15 +69,6 @@ type WorkerMonthlySummary = {
   payroll: number;
   remuneration: number;
   manual: number;
-  count: number;
-};
-
-type WorkerFieldDistributionRow = {
-  fieldId: string;
-  fieldName: string;
-  sectorId: string;
-  sectorName: string;
-  total: number;
   count: number;
 };
 
@@ -404,26 +395,32 @@ export const Workers: React.FC = () => {
     return buildWorkerCostSummary(activeWorker, activeWorkerSelectedMonthCosts);
   }, [activeWorker, activeWorkerSelectedMonthCosts]);
 
-  const sectorMap = useMemo(() => new Map(sectors.map((sector) => [sector.id, sector])), [sectors]);
-  const fieldMap = useMemo(() => new Map(fields.map((field) => [field.id, field])), [fields]);
+  const activeWorkerSelectedMonthDuplicateCosts = useMemo(() => {
+    const seen = new Set<string>();
+    const duplicates: WorkerCost[] = [];
 
-  const activeWorkerSelectedMonthFieldBreakdown = useMemo(() => {
-    const grouped = new Map<string, WorkerFieldDistributionRow>();
     activeWorkerSelectedMonthCosts.forEach((cost) => {
-      const sector = sectorMap.get(cost.sector_id);
-      const field = sector ? fieldMap.get(sector.field_id) : null;
-      const fieldId = field?.id || 'sin-campo';
-      const fieldName = field?.name || 'Sin campo';
-      const sectorId = cost.sector_id || 'sin-sector';
-      const sectorName = sector?.name || cost.sectors?.name || 'Sin sector';
-      const key = `${fieldId}:${sectorId}`;
-      const current = grouped.get(key) || { fieldId, fieldName, sectorId, sectorName, total: 0, count: 0 };
-      current.total += Number(cost.amount || 0);
-      current.count += 1;
-      grouped.set(key, current);
+      const key = [
+        String(cost.date || ''),
+        String(cost.description || '').trim(),
+        Number(cost.amount || 0).toFixed(2),
+        String(cost.sector_id || ''),
+        String(cost.worker_id || ''),
+        cost.is_piece_rate ? '1' : '0',
+        String(cost.worker_name || '').trim(),
+        String(cost.labor_type || '').trim()
+      ].join('::');
+
+      if (seen.has(key)) {
+        duplicates.push(cost);
+        return;
+      }
+
+      seen.add(key);
     });
-    return Array.from(grouped.values()).sort((a, b) => b.total - a.total);
-  }, [activeWorkerSelectedMonthCosts, fieldMap, sectorMap]);
+
+    return duplicates;
+  }, [activeWorkerSelectedMonthCosts]);
 
   const workerMonthLabel = useMemo(() => {
     if (!workerMonth) return 'Mes seleccionado';
@@ -787,6 +784,31 @@ export const Workers: React.FC = () => {
       } catch {
         toast.error('Error al eliminar');
       }
+  };
+
+  const handleDeleteSelectedMonthDuplicates = async () => {
+    if (!activeWorker) return;
+    if (activeWorkerSelectedMonthDuplicateCosts.length === 0) {
+      toast(`No se detectaron costos duplicados en ${workerMonthLabel}.`);
+      return;
+    }
+
+    const duplicateCount = activeWorkerSelectedMonthDuplicateCosts.length;
+    const confirmed = confirm(
+      `Se eliminarán ${duplicateCount} costo(s) duplicado(s) de ${activeWorker.name} en ${workerMonthLabel}. Esta acción no se puede deshacer.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setLoading(true);
+      await deleteWorkerCosts({ costIds: activeWorkerSelectedMonthDuplicateCosts.map((cost) => cost.id) });
+      await loadCosts();
+      toast(`Se eliminaron ${duplicateCount} costo(s) duplicado(s).`);
+    } catch (error: any) {
+      toast.error(`Error al eliminar duplicados: ${error?.message || 'intenta nuevamente.'}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const generatePayrollPDF = () => {
@@ -2148,37 +2170,40 @@ export const Workers: React.FC = () => {
 
                     <div className="rounded-lg bg-white dark:bg-gray-900 border border-emerald-100 dark:border-emerald-900 overflow-hidden">
                       <div className="px-4 py-3 border-b border-emerald-100 dark:border-emerald-900">
-                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Distribución del mes a campos y sectores</div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">Así se están mandando los costos del mes seleccionado a cada sector/campo.</p>
+                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Resumen limpio del mes</div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Aquí se muestran solo los montos agregados. El detalle interno de distribución no aparece en este resumen.</p>
                       </div>
-                      <div className="max-h-72 overflow-y-auto">
-                        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                          <thead className="bg-gray-50 dark:bg-gray-950 sticky top-0">
-                            <tr>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Campo</th>
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Sector</th>
-                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Total</th>
-                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Mov.</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                            {activeWorkerSelectedMonthFieldBreakdown.map((row) => (
-                              <tr key={`${row.fieldId}-${row.sectorId}`} className="bg-white dark:bg-gray-900">
-                                <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">{row.fieldName}</td>
-                                <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{row.sectorName}</td>
-                                <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900 dark:text-gray-100">{formatCLP(row.total)}</td>
-                                <td className="px-4 py-3 text-sm text-right text-gray-500 dark:text-gray-400">{row.count}</td>
-                              </tr>
-                            ))}
-                            {activeWorkerSelectedMonthFieldBreakdown.length === 0 && (
-                              <tr>
-                                <td colSpan={4} className="px-4 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
-                                  No hay distribución registrada para {workerMonthLabel}.
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
+                      <div className="p-4 space-y-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-950 p-3">
+                            <div className="text-xs text-gray-500 dark:text-gray-400">Registros del mes</div>
+                            <div className="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100">
+                              {activeWorkerSelectedMonthSummary?.count || 0}
+                            </div>
+                          </div>
+                          <div className="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/20 p-3">
+                            <div className="text-xs text-amber-700 dark:text-amber-300">Duplicados detectados</div>
+                            <div className="mt-1 text-lg font-semibold text-amber-800 dark:text-amber-200">
+                              {activeWorkerSelectedMonthDuplicateCosts.length}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-lg border border-dashed border-gray-200 dark:border-gray-700 p-3">
+                          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Limpieza rápida</div>
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            El botón elimina coincidencias exactas del mes seleccionado y mantiene un solo registro por costo repetido.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteSelectedMonthDuplicates()}
+                            disabled={loading || activeWorkerSelectedMonthDuplicateCosts.length === 0}
+                            className="mt-3 inline-flex items-center rounded-md border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/20 px-3 py-2 text-sm font-medium text-red-700 dark:text-red-200 hover:bg-red-100 dark:hover:bg-red-950/30 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            {loading ? 'Eliminando...' : 'Eliminar duplicados del mes'}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -3656,9 +3681,7 @@ export const Workers: React.FC = () => {
                         <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0">
                             <tr>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fecha</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Trabajador</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Descripción</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Sector</th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Monto</th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Acción</th>
                             </tr>
@@ -3669,20 +3692,8 @@ export const Workers: React.FC = () => {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                         {new Date(cost.date + 'T12:00:00').toLocaleDateString()}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">
-                                        {cost.is_piece_rate ? (
-                                            <div className="flex flex-col">
-                                                <span>{cost.worker_name} <span className="text-xs font-normal text-indigo-600">(Trato)</span></span>
-                                            </div>
-                                        ) : (
-                                            cost.workers?.name
-                                        )}
-                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                         {cost.description}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                                        {cost.sectors?.name || '-'}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 dark:text-gray-100 font-bold">
                                         {formatCLP(cost.amount)}
@@ -3696,7 +3707,7 @@ export const Workers: React.FC = () => {
                             ))}
                             {displayedWorkerCosts.length === 0 && (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                                    <td colSpan={4} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
                                       {workerHistoryView === 'season'
                                         ? 'No hay registros para este trabajador en la temporada seleccionada.'
                                         : 'No hay registros para este trabajador.'}

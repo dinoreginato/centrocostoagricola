@@ -116,3 +116,9 @@ export async function deleteWorkerCost(params: { costId: string }) {
   const { error } = await supabase.from('worker_costs').delete().eq('id', params.costId);
   if (error) throw error;
 }
+
+export async function deleteWorkerCosts(params: { costIds: string[] }) {
+  if (!params.costIds || params.costIds.length === 0) return;
+  const { error } = await supabase.from('worker_costs').delete().in('id', params.costIds);
+  if (error) throw error;
+}
