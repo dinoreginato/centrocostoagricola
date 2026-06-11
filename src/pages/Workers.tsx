@@ -63,18 +63,49 @@ type WorkerCostSummary = {
   manual: number;
 };
 
+type WorkerMonthlySummary = {
+  month: string;
+  total: number;
+  payroll: number;
+  remuneration: number;
+  manual: number;
+  count: number;
+};
+
+type WorkerFieldDistributionRow = {
+  fieldId: string;
+  fieldName: string;
+  sectorId: string;
+  sectorName: string;
+  total: number;
+  count: number;
+};
+
+const classifyWorkerCostDescription = (description: string): 'payroll' | 'remuneration' | 'manual' => {
+  if (description.startsWith('Previsión ')) return 'payroll';
+  if (
+    description.startsWith('Sueldo Imponible ') ||
+    description.startsWith('Sueldo base ') ||
+    description.startsWith('Bono imponible ') ||
+    description.startsWith('Bonos imponibles ') ||
+    description.startsWith('Gratificación legal ') ||
+    description.startsWith('No imponible ') ||
+    description.startsWith('No imponibles ')
+  ) {
+    return 'remuneration';
+  }
+  return 'manual';
+};
+
 const buildWorkerCostSummary = (worker: Worker, workerCosts: WorkerCost[]): WorkerCostSummary => {
   const totals = workerCosts.reduce(
     (acc, cost) => {
       const description = String(cost.description || '');
       const amount = Number(cost.amount || 0);
-      if (description.startsWith('Previsión ')) {
+      const bucket = classifyWorkerCostDescription(description);
+      if (bucket === 'payroll') {
         acc.payroll += amount;
-      } else if (
-        description.startsWith('Sueldo Imponible ') ||
-        description.startsWith('Gratificación legal ') ||
-        description.startsWith('No imponible ')
-      ) {
+      } else if (bucket === 'remuneration') {
         acc.remuneration += amount;
       } else {
         acc.manual += amount;
@@ -107,6 +138,7 @@ export const Workers: React.FC = () => {
   const [workersMainTab, setWorkersMainTab] = useState<'trabajadores' | 'costos'>('trabajadores');
   const [workerWorkspaceId, setWorkerWorkspaceId] = useState('');
   const [workerSeason, setWorkerSeason] = useState(getSeasonFromDate(new Date()));
+  const [workerMonth, setWorkerMonth] = useState(new Date().toLocaleDateString('en-CA').slice(0, 7));
   const [workerHistoryView, setWorkerHistoryView] = useState<'season' | 'all'>('season');
   const [workerWorkspacePanel, setWorkerWorkspacePanel] = useState<'resumen' | 'prevision' | 'manual' | 'historial'>('resumen');
   const [showWorkerForm, setShowWorkerForm] = useState(false);
@@ -279,6 +311,49 @@ export const Workers: React.FC = () => {
     [costs, workerWorkspaceId]
   );
 
+  const activeWorkerAvailableMonths = useMemo(() => {
+    const monthSet = new Set<string>();
+    activeWorkerCosts.forEach((cost) => {
+      const month = String(cost.date || '').slice(0, 7);
+      if (month) monthSet.add(month);
+    });
+    if (monthSet.size === 0) {
+      monthSet.add(new Date().toLocaleDateString('en-CA').slice(0, 7));
+    }
+    return Array.from(monthSet).sort().reverse();
+  }, [activeWorkerCosts]);
+
+  const activeWorkerMonthlySummaries = useMemo(() => {
+    if (!activeWorker) return [] as WorkerMonthlySummary[];
+    const groups = new Map<string, WorkerCost[]>();
+    activeWorkerCosts.forEach((cost) => {
+      const month = String(cost.date || '').slice(0, 7);
+      if (!month) return;
+      const current = groups.get(month) || [];
+      current.push(cost);
+      groups.set(month, current);
+    });
+
+    return Array.from(groups.entries())
+      .map(([month, monthCosts]) => {
+        const summary = buildWorkerCostSummary(activeWorker, monthCosts);
+        return {
+          month,
+          total: summary.total,
+          payroll: summary.payroll,
+          remuneration: summary.remuneration,
+          manual: summary.manual,
+          count: summary.count
+        };
+      })
+      .sort((a, b) => b.month.localeCompare(a.month));
+  }, [activeWorker, activeWorkerCosts]);
+
+  const activeWorkerSelectedMonthCosts = useMemo(
+    () => activeWorkerCosts.filter((cost) => String(cost.date || '').slice(0, 7) === workerMonth),
+    [activeWorkerCosts, workerMonth]
+  );
+
   const activeWorkerMonthCosts = useMemo(
     () => activeWorkerCosts.filter((cost) => isDateInSeason(String(cost.date || ''), workerSeason)),
     [activeWorkerCosts, workerSeason]
@@ -323,6 +398,39 @@ export const Workers: React.FC = () => {
       }
     );
   }, [activeWorker, workerMonthlyCostSummaries]);
+
+  const activeWorkerSelectedMonthSummary = useMemo(() => {
+    if (!activeWorker) return null;
+    return buildWorkerCostSummary(activeWorker, activeWorkerSelectedMonthCosts);
+  }, [activeWorker, activeWorkerSelectedMonthCosts]);
+
+  const sectorMap = useMemo(() => new Map(sectors.map((sector) => [sector.id, sector])), [sectors]);
+  const fieldMap = useMemo(() => new Map(fields.map((field) => [field.id, field])), [fields]);
+
+  const activeWorkerSelectedMonthFieldBreakdown = useMemo(() => {
+    const grouped = new Map<string, WorkerFieldDistributionRow>();
+    activeWorkerSelectedMonthCosts.forEach((cost) => {
+      const sector = sectorMap.get(cost.sector_id);
+      const field = sector ? fieldMap.get(sector.field_id) : null;
+      const fieldId = field?.id || 'sin-campo';
+      const fieldName = field?.name || 'Sin campo';
+      const sectorId = cost.sector_id || 'sin-sector';
+      const sectorName = sector?.name || cost.sectors?.name || 'Sin sector';
+      const key = `${fieldId}:${sectorId}`;
+      const current = grouped.get(key) || { fieldId, fieldName, sectorId, sectorName, total: 0, count: 0 };
+      current.total += Number(cost.amount || 0);
+      current.count += 1;
+      grouped.set(key, current);
+    });
+    return Array.from(grouped.values()).sort((a, b) => b.total - a.total);
+  }, [activeWorkerSelectedMonthCosts, fieldMap, sectorMap]);
+
+  const workerMonthLabel = useMemo(() => {
+    if (!workerMonth) return 'Mes seleccionado';
+    const parsed = new Date(`${workerMonth}-01T12:00:00`);
+    if (Number.isNaN(parsed.getTime())) return workerMonth;
+    return parsed.toLocaleDateString('es-CL', { month: 'long', year: 'numeric' });
+  }, [workerMonth]);
 
   const workerSeasonLabel = useMemo(() => `Temporada ${workerSeason}`, [workerSeason]);
 
@@ -816,13 +924,12 @@ export const Workers: React.FC = () => {
       Trabajador: activeWorker.name,
       Cargo: activeWorker.role || '',
       Temporada: workerSeason,
-      Tipo: cost.description.startsWith('Previsión ')
-        ? 'Previsión'
-        : cost.description.startsWith('Sueldo Imponible ') ||
-            cost.description.startsWith('Gratificación legal ') ||
-            cost.description.startsWith('No imponible ')
-          ? 'Remuneración'
-          : 'Costo manual',
+      Tipo:
+        classifyWorkerCostDescription(cost.description) === 'payroll'
+          ? 'Previsión'
+          : classifyWorkerCostDescription(cost.description) === 'remuneration'
+            ? 'Remuneración'
+            : 'Costo manual',
       Descripción: cost.description,
       Sector: cost.sectors?.name || '-',
       Monto: Number(cost.amount || 0)
@@ -968,6 +1075,13 @@ export const Workers: React.FC = () => {
     setSelectedWorkerId(workerWorkspaceId);
     setPayrollWorkerId(workerWorkspaceId);
   }, [workerWorkspaceId]);
+
+  useEffect(() => {
+    if (activeWorkerAvailableMonths.length === 0) return;
+    if (!activeWorkerAvailableMonths.includes(workerMonth)) {
+      setWorkerMonth(activeWorkerAvailableMonths[0]);
+    }
+  }, [activeWorkerAvailableMonths, workerMonth]);
 
   const handleScanPayrollRates = async () => {
     setScanLoading(true);
@@ -1917,7 +2031,16 @@ export const Workers: React.FC = () => {
                         .join(' · ')}
                     </p>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-full lg:min-w-[460px]">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 min-w-full lg:min-w-[700px]">
+                    <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900 px-4 py-3">
+                      <div className="text-xs uppercase tracking-wide text-emerald-600 dark:text-emerald-300">Pago del mes</div>
+                      <div className="mt-1 text-2xl font-semibold text-emerald-700 dark:text-emerald-200">
+                        {formatCLP(activeWorkerSelectedMonthSummary?.total || 0)}
+                      </div>
+                      <div className="mt-1 text-xs text-emerald-600/80 dark:text-emerald-300/80">
+                        {workerMonthLabel} · {activeWorkerSelectedMonthSummary?.count || 0} registros
+                      </div>
+                    </div>
                     <div className="rounded-lg bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900 px-4 py-3">
                       <div className="text-xs uppercase tracking-wide text-indigo-600 dark:text-indigo-300">Costo temporada</div>
                       <div className="mt-1 text-2xl font-semibold text-indigo-700 dark:text-indigo-200">
@@ -1934,6 +2057,128 @@ export const Workers: React.FC = () => {
                       </div>
                       <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                         {activeWorkerCostSummary?.count || 0} registros acumulados
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-emerald-100 dark:border-emerald-900 bg-emerald-50/40 dark:bg-emerald-950/20 p-4">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-emerald-800 dark:text-emerald-200">Pago mensual total del trabajador</div>
+                      <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80">
+                        Aquí ves el total general pagado por mes, sin quedar separado solo por líneas parciales.
+                      </p>
+                    </div>
+                    <div className="w-full max-w-xs">
+                      <label className="block text-xs font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Mes a revisar</label>
+                      <select
+                        value={workerMonth}
+                        onChange={(e) => setWorkerMonth(e.target.value)}
+                        className="mt-1 block w-full rounded-md border-emerald-200 dark:border-emerald-800 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm"
+                      >
+                        {activeWorkerAvailableMonths.map((month) => (
+                          <option key={month} value={month}>
+                            {new Date(`${month}-01T12:00:00`).toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div className="rounded-lg bg-white dark:bg-gray-900 border border-emerald-100 dark:border-emerald-900 p-3">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Total mes</div>
+                      <div className="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100">{formatCLP(activeWorkerSelectedMonthSummary?.total || 0)}</div>
+                    </div>
+                    <div className="rounded-lg bg-white dark:bg-gray-900 border border-emerald-100 dark:border-emerald-900 p-3">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Remuneración</div>
+                      <div className="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100">{formatCLP(activeWorkerSelectedMonthSummary?.remuneration || 0)}</div>
+                    </div>
+                    <div className="rounded-lg bg-white dark:bg-gray-900 border border-emerald-100 dark:border-emerald-900 p-3">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Previsión</div>
+                      <div className="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100">{formatCLP(activeWorkerSelectedMonthSummary?.payroll || 0)}</div>
+                    </div>
+                    <div className="rounded-lg bg-white dark:bg-gray-900 border border-emerald-100 dark:border-emerald-900 p-3">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Manual</div>
+                      <div className="mt-1 text-lg font-semibold text-gray-900 dark:text-gray-100">{formatCLP(activeWorkerSelectedMonthSummary?.manual || 0)}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <div className="rounded-lg bg-white dark:bg-gray-900 border border-emerald-100 dark:border-emerald-900 overflow-hidden">
+                      <div className="px-4 py-3 border-b border-emerald-100 dark:border-emerald-900">
+                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Pagado mes a mes</div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Totales mensuales del trabajador para validar lo que realmente se pagó.</p>
+                      </div>
+                      <div className="max-h-72 overflow-y-auto">
+                        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                          <thead className="bg-gray-50 dark:bg-gray-950 sticky top-0">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Mes</th>
+                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Total</th>
+                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Mov.</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                            {activeWorkerMonthlySummaries.map((summary) => (
+                              <tr
+                                key={summary.month}
+                                className={`cursor-pointer ${summary.month === workerMonth ? 'bg-emerald-50 dark:bg-emerald-950/20' : 'bg-white dark:bg-gray-900'}`}
+                                onClick={() => setWorkerMonth(summary.month)}
+                              >
+                                <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
+                                  {new Date(`${summary.month}-01T12:00:00`).toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900 dark:text-gray-100">{formatCLP(summary.total)}</td>
+                                <td className="px-4 py-3 text-sm text-right text-gray-500 dark:text-gray-400">{summary.count}</td>
+                              </tr>
+                            ))}
+                            {activeWorkerMonthlySummaries.length === 0 && (
+                              <tr>
+                                <td colSpan={3} className="px-4 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                                  No hay pagos mensuales registrados para este trabajador.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg bg-white dark:bg-gray-900 border border-emerald-100 dark:border-emerald-900 overflow-hidden">
+                      <div className="px-4 py-3 border-b border-emerald-100 dark:border-emerald-900">
+                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Distribución del mes a campos y sectores</div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Así se están mandando los costos del mes seleccionado a cada sector/campo.</p>
+                      </div>
+                      <div className="max-h-72 overflow-y-auto">
+                        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                          <thead className="bg-gray-50 dark:bg-gray-950 sticky top-0">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Campo</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Sector</th>
+                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Total</th>
+                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Mov.</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                            {activeWorkerSelectedMonthFieldBreakdown.map((row) => (
+                              <tr key={`${row.fieldId}-${row.sectorId}`} className="bg-white dark:bg-gray-900">
+                                <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">{row.fieldName}</td>
+                                <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{row.sectorName}</td>
+                                <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900 dark:text-gray-100">{formatCLP(row.total)}</td>
+                                <td className="px-4 py-3 text-sm text-right text-gray-500 dark:text-gray-400">{row.count}</td>
+                              </tr>
+                            ))}
+                            {activeWorkerSelectedMonthFieldBreakdown.length === 0 && (
+                              <tr>
+                                <td colSpan={4} className="px-4 py-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                                  No hay distribución registrada para {workerMonthLabel}.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   </div>
