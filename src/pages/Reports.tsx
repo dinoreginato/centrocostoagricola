@@ -697,6 +697,12 @@ export const Reports: React.FC = () => {
     () => executiveData.fieldRows.map((row) => ({ value: row.fieldId, label: row.fieldName })),
     [executiveData.fieldRows]
   );
+  const executiveFieldLabel = useMemo(
+    () => (executiveFieldFilter === 'all'
+      ? 'Todos los campos'
+      : (executiveFieldOptions.find((item) => item.value === executiveFieldFilter)?.label || executiveFieldFilter)),
+    [executiveFieldFilter, executiveFieldOptions]
+  );
 
   const executiveViewData = useMemo(() => {
     if (executiveFieldFilter === 'all') return executiveData;
@@ -799,8 +805,62 @@ export const Reports: React.FC = () => {
     reportData
   ]);
 
+  const executiveInsights = useMemo(() => {
+    const tone = getExecutiveTone(Math.abs(executiveViewData.kpis.seasonVariationPct));
+    const topMonth = executiveViewData.kpis.peakMonth;
+    const topField = executiveViewData.kpis.topField;
+    const topSector = executiveViewData.kpis.topSector;
+
+    const findings = [
+      {
+        title: 'Variación acumulada',
+        description: `La temporada ${selectedSeason} ${executiveViewData.kpis.seasonVariation >= 0 ? 'sube' : 'baja'} ${Math.abs(executiveViewData.kpis.seasonVariationPct).toFixed(1)}% frente a ${previousExecutiveSeason}.`,
+        emphasis: `${formatCLP(executiveViewData.kpis.seasonVariation)}`
+      },
+      {
+        title: 'Mayor concentración',
+        description: topField
+          ? `${topField.fieldName} lidera el gasto consolidado y representa ${topField.sharePct.toFixed(1)}% del total visible.`
+          : 'No hay un campo dominante con datos suficientes.',
+        emphasis: topField ? formatCLP(topField.total) : 'Sin datos'
+      },
+      {
+        title: 'Mes crítico',
+        description: topMonth
+          ? `${topMonth.monthLabel} es el punto más alto del período y debe explicarse en comité.`
+          : 'No hay un mes crítico identificado.',
+        emphasis: topMonth ? formatCLP(topMonth.total) : 'Sin datos'
+      }
+    ];
+
+    const conclusion = topSector
+      ? `La lectura ejecutiva sugiere concentrar la revisión en ${topSector.fieldName} / ${topSector.sectorName}, junto con las alertas activas y la variación acumulada de la temporada.`
+      : 'La lectura ejecutiva no muestra suficientes datos para concluir un foco prioritario.';
+
+    return {
+      tone,
+      findings,
+      conclusion,
+      activeAlertCount: executiveViewData.alerts.length
+    };
+  }, [executiveViewData, previousExecutiveSeason, selectedSeason]);
+
   const exportExecutiveExcel = async () => {
     try {
+      const boardRows = [
+        { Indicador: 'Empresa', Valor: selectedCompany?.name || '' },
+        { Indicador: 'Temporada actual', Valor: selectedSeason },
+        { Indicador: 'Temporada comparativa', Valor: previousExecutiveSeason },
+        { Indicador: 'Campo filtrado', Valor: executiveFieldLabel },
+        { Indicador: 'Gasto total temporada', Valor: Number(executiveViewData.kpis.totalSeasonCost.toFixed(0)) },
+        { Indicador: 'Temporada anterior', Valor: Number(executiveViewData.kpis.previousSeasonCost.toFixed(0)) },
+        { Indicador: 'Variación temporada', Valor: Number(executiveViewData.kpis.seasonVariation.toFixed(0)) },
+        { Indicador: 'Variación temporada %', Valor: Number(executiveViewData.kpis.seasonVariationPct.toFixed(2)) },
+        { Indicador: 'Promedio mensual', Valor: Number(executiveViewData.kpis.averageMonthlyCost.toFixed(0)) },
+        { Indicador: 'Alertas activas', Valor: executiveInsights.activeAlertCount },
+        { Indicador: 'Conclusión ejecutiva', Valor: executiveInsights.conclusion }
+      ];
+
       const summaryRows = executiveViewData.monthlyRows.map((row) => ({
         Mes: row.monthLabel,
         'Gasto Total': Number(row.total.toFixed(0)),
@@ -878,6 +938,7 @@ export const Reports: React.FC = () => {
       await exportWorkbookToXlsx({
         filename: `Reporte_Ejecutivo_${selectedCompany?.name?.replace(/\s+/g, '_') || 'empresa'}_${selectedSeason}${executiveFieldFilter !== 'all' ? `_campo_${executiveFieldFilter}` : ''}.xlsx`,
         sheets: [
+          { name: 'Resumen Directorio', rows: boardRows },
           { name: 'Resumen Mensual', rows: summaryRows },
           { name: 'Campos', rows: fieldRows },
           { name: 'Sectores', rows: sectorRows },
@@ -1578,8 +1639,7 @@ export const Reports: React.FC = () => {
         doc.text(`Temporada actual: ${selectedSeason}`, 14, 98);
         doc.text(`Temporada comparativa: ${previousExecutiveSeason}`, 14, 106);
         if (executiveFieldFilter !== 'all') {
-          const fieldLabel = executiveFieldOptions.find((item) => item.value === executiveFieldFilter)?.label || executiveFieldFilter;
-          doc.text(`Campo filtrado: ${fieldLabel}`, 14, 114);
+          doc.text(`Campo filtrado: ${executiveFieldLabel}`, 14, 114);
           doc.text(`Emitido: ${new Date().toLocaleDateString('es-CL')}`, 14, 122);
           doc.setFontSize(14);
           doc.text(`Gasto total: ${formatCLP(executiveViewData.kpis.totalSeasonCost)}`, 14, 140);
@@ -1600,12 +1660,29 @@ export const Reports: React.FC = () => {
         doc.text(`Temporada: ${selectedSeason}`, 14, 34);
         doc.text(`Comparativa: ${previousExecutiveSeason}`, 14, 40);
         if (executiveFieldFilter !== 'all') {
-          const fieldLabel = executiveFieldOptions.find((item) => item.value === executiveFieldFilter)?.label || executiveFieldFilter;
-          doc.text(`Campo: ${fieldLabel}`, 14, 46);
+          doc.text(`Campo: ${executiveFieldLabel}`, 14, 46);
           yPos = 56;
         } else {
           yPos = 50;
         }
+
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Resumen para Directorio', 'Detalle']],
+          body: [
+            ['Campo visible', executiveFieldLabel],
+            ['Alertas activas', String(executiveInsights.activeAlertCount)],
+            ['Hallazgo 1', executiveInsights.findings[0]?.description || '-'],
+            ['Hallazgo 2', executiveInsights.findings[1]?.description || '-'],
+            ['Hallazgo 3', executiveInsights.findings[2]?.description || '-'],
+            ['Conclusión', executiveInsights.conclusion]
+          ],
+          theme: 'grid',
+          headStyles: { fillColor: [67, 56, 202] },
+          styles: { fontSize: 9 }
+        });
+
+        yPos = (doc as any).lastAutoTable.finalY + 8;
 
         autoTable(doc, {
           startY: yPos,
@@ -1677,6 +1754,17 @@ export const Reports: React.FC = () => {
           ]),
           theme: 'grid',
           headStyles: { fillColor: [30, 64, 175] }
+        });
+
+        yPos = (doc as any).lastAutoTable.finalY + 8;
+
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Cierre ejecutivo']],
+          body: [[executiveInsights.conclusion]],
+          theme: 'grid',
+          headStyles: { fillColor: [17, 24, 39] },
+          styles: { fontSize: 9 }
         });
 
         yPos = (doc as any).lastAutoTable.finalY + 8;
@@ -2548,12 +2636,25 @@ export const Reports: React.FC = () => {
       </div>
 
       <div className="hidden print:block mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">{selectedCompany.name}</h1>
-        <h2 className="text-xl text-gray-600 mt-2">{getReportTitle()} - {selectedSeason}</h2>
+        <div className="flex items-start justify-between gap-6 border-b border-gray-200 pb-6">
+          <div className="flex items-center gap-4">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-900 text-xl font-bold text-white">
+              {String(selectedCompany.name || 'R').trim().slice(0, 2).toUpperCase()}
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">{selectedCompany.name}</h1>
+              <h2 className="text-xl text-gray-600 mt-2">{getReportTitle()} - {selectedSeason}</h2>
+            </div>
+          </div>
+          <div className="text-right text-sm text-gray-500">
+            <div>Documento ejecutivo</div>
+            <div>Emitido el {new Date().toLocaleDateString()}</div>
+          </div>
+        </div>
         {activeTab === 'executive' && (
           <div className="mt-2 text-sm text-gray-500 space-y-1">
             <div>Temporada comparativa: {previousExecutiveSeason}</div>
-            <div>Campo: {executiveFieldFilter === 'all' ? 'Todos los campos' : (executiveFieldOptions.find((item) => item.value === executiveFieldFilter)?.label || executiveFieldFilter)}</div>
+            <div>Campo: {executiveFieldLabel}</div>
           </div>
         )}
         <p className="text-sm text-gray-400 mt-1">Generado el {new Date().toLocaleDateString()}</p>
@@ -2783,6 +2884,70 @@ export const Reports: React.FC = () => {
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
                     </select>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl border border-slate-200 shadow overflow-hidden print:break-after-page">
+                <div className="bg-slate-950 text-white px-6 py-5">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.25em] text-slate-300">Resumen Directorio</div>
+                      <h3 className="mt-2 text-2xl font-semibold">Lectura Ejecutiva en Una Página</h3>
+                    </div>
+                    <div className="text-sm text-slate-300">
+                      {selectedCompany.name} · {selectedSeason} · {executiveFieldLabel}
+                    </div>
+                  </div>
+                </div>
+                <div className="p-6 space-y-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    {executiveInsights.findings.map((finding, index) => (
+                      <div key={finding.title} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Hallazgo {index + 1}</div>
+                        <div className="mt-2 text-lg font-semibold text-slate-900">{finding.title}</div>
+                        <div className="mt-2 text-sm text-slate-600">{finding.description}</div>
+                        <div className="mt-3 text-sm font-semibold text-slate-900">{finding.emphasis}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-[1.2fr,0.8fr] gap-4">
+                    <div className="rounded-xl border border-slate-200 p-5">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <div className="text-xs uppercase tracking-wide text-slate-500">Conclusión</div>
+                          <div className="mt-2 text-lg font-semibold text-slate-900">Mensaje para comité ejecutivo</div>
+                        </div>
+                        <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${executiveInsights.tone.badge}`}>
+                          <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveInsights.tone.dot}`} />
+                          {executiveInsights.tone.label}
+                        </span>
+                      </div>
+                      <p className="mt-4 text-sm leading-6 text-slate-700">{executiveInsights.conclusion}</p>
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 p-5">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Ficha rápida</div>
+                      <div className="mt-3 space-y-3 text-sm">
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-slate-500">Gasto actual</span>
+                          <span className="font-semibold text-slate-900">{formatCLP(executiveViewData.kpis.totalSeasonCost)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-slate-500">Temp. anterior</span>
+                          <span className="font-semibold text-slate-900">{formatCLP(executiveViewData.kpis.previousSeasonCost)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-slate-500">Campo visible</span>
+                          <span className="font-semibold text-slate-900">{executiveFieldLabel}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-slate-500">Alertas activas</span>
+                          <span className="font-semibold text-slate-900">{executiveInsights.activeAlertCount}</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -3083,6 +3248,42 @@ export const Reports: React.FC = () => {
                       ))}
                     </tbody>
                   </table>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-xl border border-slate-200 shadow p-6 print:break-before-page">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Cierre ejecutivo</div>
+                    <h3 className="mt-2 text-xl font-semibold text-slate-900">Conclusión para presentación</h3>
+                    <p className="mt-4 text-sm leading-6 text-slate-700">{executiveInsights.conclusion}</p>
+                    <div className="mt-6 rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+                      Recomendación: presentar primero esta conclusión, luego revisar alertas, después validar el top de campos/sectores y finalmente abrir las matrices mensuales como respaldo.
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Aprobación / Firma</div>
+                    <div className="mt-6 space-y-5">
+                      <div>
+                        <div className="h-10 border-b border-slate-300" />
+                        <div className="mt-2 text-sm text-slate-500">Nombre y cargo</div>
+                      </div>
+                      <div>
+                        <div className="h-10 border-b border-slate-300" />
+                        <div className="mt-2 text-sm text-slate-500">Observaciones ejecutivas</div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="h-10 border-b border-slate-300" />
+                          <div className="mt-2 text-sm text-slate-500">Fecha</div>
+                        </div>
+                        <div>
+                          <div className="h-10 border-b border-slate-300" />
+                          <div className="mt-2 text-sm text-slate-500">Firma</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
