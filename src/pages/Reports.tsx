@@ -432,16 +432,16 @@ export const Reports: React.FC = () => {
     }
   }, [selectedCompany, loadRawData]);
 
-  // Update presentation logic to support 4 slides for General tab
+  const presentationMaxSlide = activeTab === 'executive' ? 5 : activeTab === 'general' ? 3 : 1;
+
+  // Update presentation logic to support executive slides and legacy tabs
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!presentationMode) return;
-      
-      const maxSlides = activeTab === 'general' ? 3 : 1; // 0=Title, 1=Overview, 2=Labor, 3=Profit
-      
+
       if (e.key === 'ArrowRight' || e.key === ' ') {
         e.preventDefault();
-        setCurrentSlide(s => Math.min(s + 1, maxSlides));
+        setCurrentSlide(s => Math.min(s + 1, presentationMaxSlide));
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
         setCurrentSlide(s => Math.max(s - 1, 0));
@@ -451,7 +451,7 @@ export const Reports: React.FC = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [presentationMode, activeTab]);
+  }, [presentationMode, presentationMaxSlide]);
 
   const executiveSeasonMonths = useMemo(() => buildExecutiveSeasonMonths(selectedSeason), [selectedSeason]);
   const previousExecutiveSeason = useMemo(() => {
@@ -5342,7 +5342,6 @@ export const Reports: React.FC = () => {
       {/* PRESENTATION MODE OVERLAY */}
       {presentationMode && (
         <div className="fixed inset-0 z-[99999] bg-slate-50 flex flex-col font-sans text-slate-900">
-          {/* Top Bar (Auto-hides slightly, visible on hover) */}
           <div className="flex justify-between items-center p-6 opacity-30 hover:opacity-100 transition-opacity absolute top-0 left-0 right-0 z-10">
             <div className="text-xl font-bold text-slate-400">{selectedCompany?.name} - {getReportTitle()}</div>
             <button onClick={exitPresentation} className="text-slate-400 hover:text-red-500 bg-white/80 rounded-full p-2">
@@ -5350,267 +5349,298 @@ export const Reports: React.FC = () => {
             </button>
           </div>
 
-          {/* Slides */}
           <div className="flex-1 flex flex-col items-center justify-center p-12 relative w-full max-w-[95vw] mx-auto overflow-hidden">
-            
-            {/* Slide 0: Title */}
-            {currentSlide === 0 && (
-              <div className="text-center animate-fade-in-up w-full">
-                <FileText className="w-32 h-32 text-purple-600 mx-auto mb-8" />
-                <h1 className="text-5xl lg:text-6xl font-extrabold text-slate-800 mb-6">Reporte: {getReportTitle()}</h1>
-                <h2 className="text-3xl lg:text-4xl text-purple-600 font-medium mb-12">{selectedCompany?.name}</h2>
-                <p className="text-xl lg:text-2xl text-slate-500">
-                  Temporada {selectedSeason}
-                </p>
-              </div>
-            )}
+            {activeTab === 'executive' ? (
+              <>
+                {currentSlide === 0 && (
+                  <div className="text-center animate-fade-in-up w-full">
+                    <FileText className="w-28 h-28 text-purple-600 mx-auto mb-8" />
+                    <div className="text-sm uppercase tracking-[0.35em] text-slate-400 mb-4">Reporte Ejecutivo</div>
+                    <h1 className="text-5xl lg:text-6xl font-extrabold text-slate-800 mb-6">{selectedCompany?.name}</h1>
+                    <h2 className="text-3xl lg:text-4xl text-purple-600 font-medium mb-6">Temporada {selectedSeason}</h2>
+                    <p className="text-xl lg:text-2xl text-slate-500">Campo visible: {executiveFieldLabel}</p>
+                  </div>
+                )}
 
-            {/* Slide 1 or 2: Content depending on active tab */}
-            {(currentSlide >= 1 && currentSlide <= 3) && (
-              <div className="w-full h-full flex flex-col animate-fade-in-up pt-4">
-                <h2 className="text-3xl lg:text-4xl font-bold text-slate-800 mb-6 text-center">{getReportTitle()}</h2>
-                
-                <div className="flex-1 bg-white rounded-3xl shadow-xl p-6 overflow-y-auto pb-24" style={{ maxHeight: 'calc(100vh - 120px)' }}>
-                  
-                  {/* General Report - Overview */}
-                  {activeTab === 'general' && currentSlide === 1 && (
-                    <table className="w-full text-left text-base lg:text-lg">
-                      <thead className="text-lg lg:text-xl text-slate-500 bg-slate-50 sticky top-0">
-                        <tr>
-                          <th className="p-3 lg:p-4">Sector/Campo</th>
-                          <th className="p-3 lg:p-4 text-right">Hectáreas</th>
-                          <th className="p-3 lg:p-4 text-right">Prod (Kg)</th>
-                          <th className="p-3 lg:p-4 text-right">Ppto (CLP)</th>
-                          <th className="p-3 lg:p-4 text-right">Total (CLP)</th>
-                          <th className="p-3 lg:p-4 text-right font-bold text-purple-700">Costo/Ha (CLP)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {reportData.map((row, idx) => {
-                          const isOverBudget = row.total_budget > 0 && row.total_cost > row.total_budget;
-                          return (
-                          <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
-                            <td className="p-3 lg:p-4">
-                              <div className="font-bold text-slate-800">{row.sector_name}</div>
-                              <div className="text-sm lg:text-base text-slate-500">{row.field_name}</div>
-                            </td>
-                            <td className="p-3 lg:p-4 text-right">{row.hectares}</td>
-                            <td className="p-3 lg:p-4 text-right">{(row.kg_produced || 0).toLocaleString('es-CL')}</td>
-                            <td className="p-3 lg:p-4 text-right text-slate-500">
-                                {row.total_budget > 0 ? formatCLP(row.total_budget) : '-'}
-                            </td>
-                            <td className={`p-3 lg:p-4 text-right ${isOverBudget ? 'text-red-600 font-bold' : ''}`}>
-                                {formatCLP(row.total_cost)}
-                                {isOverBudget && <div className="text-xs text-red-500 mt-1">▲ Sobre Ppto</div>}
-                            </td>
-                            <td className="p-3 lg:p-4 text-right font-bold text-purple-600">{formatCLP(row.cost_per_ha)}</td>
-                          </tr>
-                        )})}
-                      </tbody>
-                    </table>
-                  )}
-
-                  {/* General Report - Cost/Kg & Labor Breakdown */}
-                  {activeTab === 'general' && currentSlide === 2 && (
-                    <div className="space-y-4 lg:space-y-8">
-                        <h3 className="text-xl lg:text-2xl font-bold text-slate-700 border-b pb-2 lg:pb-4">Análisis por Kilo y Desglose Operativo</h3>
-                        <table className="w-full text-left text-base lg:text-lg">
-                          <thead className="text-lg lg:text-xl text-slate-500 bg-slate-50 sticky top-0">
-                            <tr>
-                              <th className="p-3 lg:p-4">Sector/Campo</th>
-                              <th className="p-3 lg:p-4 text-right text-blue-700 font-bold">Costo / Kg</th>
-                              <th className="p-3 lg:p-4 text-right">Mano de Obra (Labores)</th>
-                              <th className="p-3 lg:p-4 text-right">Insumos (Aplic.)</th>
-                              <th className="p-3 lg:p-4 text-right">Maquinaria</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {reportData.map((row, idx) => (
-                              <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
-                                <td className="p-3 lg:p-4">
-                                  <div className="font-bold text-slate-800">{row.sector_name}</div>
-                                  <div className="text-sm lg:text-base text-slate-500">Prod: {(row.kg_produced || 0).toLocaleString('es-CL')} Kg</div>
-                                </td>
-                                <td className="p-3 lg:p-4 text-right font-bold">
-                                  <div className="text-blue-600">{row.cost_per_kg > 0 ? formatCLP(row.cost_per_kg) : '-'}</div>
-                                  {row.cost_per_kg > 0 && (
-                                    <div className="text-xs lg:text-sm text-green-600 mt-1">
-                                      US$ {(row.cost_per_kg / (usdExchangeRate || 1)).toFixed(2)}
-                                    </div>
-                                  )}
-                                </td>
-                                <td className="p-3 lg:p-4 text-right">
-                                    <div className="text-slate-800 font-medium">{formatCLP(row.labor_cost)}</div>
-                                    {row.labor_cost > 0 && (
-                                        <div className="text-xs lg:text-sm text-slate-500 flex flex-col items-end mt-1">
-                                            {row.labor_cosecha_cost > 0 && <span>Cosecha: {formatCLP(row.labor_cosecha_cost)}</span>}
-                                            {row.labor_poda_cost > 0 && <span>Poda: {formatCLP(row.labor_poda_cost)}</span>}
-                                            {row.labor_raleo_cost > 0 && <span>Raleo: {formatCLP(row.labor_raleo_cost)}</span>}
-                                        </div>
-                                    )}
-                                </td>
-                                <td className="p-3 lg:p-4 text-right text-slate-600">{formatCLP(row.app_cost_only)}</td>
-                                <td className="p-3 lg:p-4 text-right text-slate-600">{formatCLP(row.machinery_cost)}</td>
-                              </tr>
+                {currentSlide >= 1 && currentSlide <= 5 && (
+                  <div className="w-full h-full flex flex-col animate-fade-in-up pt-4">
+                    <h2 className="text-3xl lg:text-4xl font-bold text-slate-800 mb-6 text-center">Resumen Ejecutivo</h2>
+                    <div className="flex-1 bg-white rounded-3xl shadow-xl p-6 overflow-y-auto pb-24" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+                      {currentSlide === 1 && (
+                        <div className="space-y-8">
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            {executiveInsights.findings.map((finding, index) => (
+                              <div key={finding.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+                                <div className="text-xs uppercase tracking-[0.25em] text-slate-400">Hallazgo {index + 1}</div>
+                                <div className="mt-3 text-2xl font-bold text-slate-900">{finding.title}</div>
+                                <div className="mt-3 text-lg text-slate-600 leading-8">{finding.description}</div>
+                                <div className="mt-5 text-xl font-semibold text-purple-700">{finding.emphasis}</div>
+                              </div>
                             ))}
-                          </tbody>
-                        </table>
-                    </div>
-                  )}
+                          </div>
+                          <div className="grid grid-cols-1 lg:grid-cols-[1.4fr,0.6fr] gap-6">
+                            <div className="rounded-2xl bg-slate-950 text-white p-8">
+                              <div className="flex items-center justify-between gap-4">
+                                <div>
+                                  <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Conclusión</div>
+                                  <div className="mt-3 text-3xl font-bold">Mensaje para comité</div>
+                                </div>
+                                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${executiveInsights.tone.badge}`}>
+                                  <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveInsights.tone.dot}`} />
+                                  {executiveInsights.tone.label}
+                                </span>
+                              </div>
+                              <p className="mt-6 text-xl leading-9 text-slate-200">{executiveInsights.conclusion}</p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 p-6 bg-white">
+                              <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Ficha rápida</div>
+                              <div className="mt-5 space-y-4 text-lg">
+                                <div className="flex items-center justify-between gap-4">
+                                  <span className="text-slate-500">Campo</span>
+                                  <span className="font-semibold text-slate-900">{executiveFieldLabel}</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-4">
+                                  <span className="text-slate-500">Gasto total</span>
+                                  <span className="font-semibold text-slate-900">{formatCLP(executiveViewData.kpis.totalSeasonCost)}</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-4">
+                                  <span className="text-slate-500">Alertas</span>
+                                  <span className="font-semibold text-slate-900">{executiveInsights.activeAlertCount}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
-                  {/* General Report - Profitability Analysis */}
-                  {activeTab === 'general' && currentSlide === 3 && (
-                    <div className="space-y-4 lg:space-y-8">
-                        <h3 className="text-xl lg:text-2xl font-bold text-slate-700 border-b pb-2 lg:pb-4">Análisis de Rentabilidad Neta</h3>
-                        <table className="w-full text-left text-base lg:text-lg">
-                          <thead className="text-lg lg:text-xl text-slate-500 bg-slate-50 sticky top-0">
-                            <tr>
-                              <th className="p-3 lg:p-4">Sector/Campo</th>
-                              <th className="p-3 lg:p-4 text-right">Prod (Kg)</th>
-                              <th className="p-3 lg:p-4 text-right">Precio Venta (US$)</th>
-                              <th className="p-3 lg:p-4 text-right">Ingreso Estimado (CLP)</th>
-                              <th className="p-3 lg:p-4 text-right">Costo Total (CLP)</th>
-                              <th className="p-3 lg:p-4 text-right font-bold text-green-700">Rentabilidad Neta (CLP)</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {reportData.map((row, idx) => {
-                                const totalIncomeCLP = row.income_estimated || 0;
-                                const netProfit = totalIncomeCLP - row.total_cost;
-                                const isProfitable = netProfit > 0;
-                                return (
-                              <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
-                                <td className="p-3 lg:p-4">
-                                  <div className="font-bold text-slate-800">{row.sector_name}</div>
-                                  <div className="text-sm lg:text-base text-slate-500">{row.field_name}</div>
-                                </td>
-                                <td className="p-3 lg:p-4 text-right">{(row.kg_produced || 0).toLocaleString('es-CL')}</td>
-                                <td className="p-3 lg:p-4 text-right text-green-600 font-medium">
-                                    {row.price_per_kg > 0 ? `US$ ${row.price_per_kg}` : '-'}
-                                </td>
-                                <td className="p-3 lg:p-4 text-right text-slate-600">
-                                    {row.price_per_kg > 0 ? formatCLP(totalIncomeCLP) : '-'}
-                                    {row.price_per_kg > 0 && <div className="text-xs text-green-600 mt-1">US$ {(totalIncomeCLP / (usdExchangeRate || 1)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>}
-                                </td>
-                                <td className="p-3 lg:p-4 text-right text-red-600">{formatCLP(row.total_cost)}</td>
-                                <td className={`p-3 lg:p-4 text-right font-bold ${row.price_per_kg > 0 ? (isProfitable ? 'text-green-600' : 'text-red-600') : 'text-gray-400'}`}>
-                                    {row.price_per_kg > 0 ? formatCLP(netProfit) : '-'}
-                                </td>
+                      {currentSlide === 2 && (
+                        <div className="space-y-8 h-full">
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div className="rounded-2xl border border-slate-200 p-5 bg-slate-50">
+                              <div className="text-sm text-slate-500 uppercase tracking-wide">Gasto temporada</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{formatCLP(executiveViewData.kpis.totalSeasonCost)}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 p-5 bg-slate-50">
+                              <div className="text-sm text-slate-500 uppercase tracking-wide">Temp. anterior</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{formatCLP(executiveViewData.kpis.previousSeasonCost)}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 p-5 bg-slate-50">
+                              <div className="text-sm text-slate-500 uppercase tracking-wide">Promedio mensual</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{formatCLP(executiveViewData.kpis.averageMonthlyCost)}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 p-5 bg-slate-50">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-sm text-slate-500 uppercase tracking-wide">Variación</div>
+                                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getExecutiveTone(Math.abs(executiveViewData.kpis.seasonVariationPct)).badge}`}>
+                                  <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${getExecutiveTone(Math.abs(executiveViewData.kpis.seasonVariationPct)).dot}`} />
+                                  {getExecutiveTone(Math.abs(executiveViewData.kpis.seasonVariationPct)).label}
+                                </span>
+                              </div>
+                              <div className={`mt-3 text-3xl font-bold ${executiveViewData.kpis.seasonVariation >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                {formatCLP(executiveViewData.kpis.seasonVariation)}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 xl:grid-cols-[1.25fr,0.75fr] gap-6 min-h-[420px]">
+                            <div className="rounded-2xl border border-slate-200 p-4">
+                              <div className="text-xl font-bold text-slate-800 mb-4">Tendencia mensual</div>
+                              <div className="h-[360px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <BarChart data={executiveViewData.monthlyRows}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                    <XAxis dataKey="shortLabel" tick={{ fontSize: 16, fill: '#475569' }} axisLine={false} tickLine={false} />
+                                    <YAxis tickFormatter={(value) => formatCLP(Number(value))} tick={{ fontSize: 14, fill: '#475569' }} axisLine={false} tickLine={false} />
+                                    <Tooltip formatter={(value) => formatCLP(Number(value))} />
+                                    <Bar dataKey="total" fill="#7c3aed" radius={[10, 10, 0, 0]} />
+                                  </BarChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 p-4">
+                              <div className="text-xl font-bold text-slate-800 mb-4">Resumen mensual</div>
+                              <div className="space-y-3">
+                                {executiveViewData.monthlyRows.map((row) => (
+                                  <div key={row.monthKey} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+                                    <div>
+                                      <div className="font-semibold text-slate-900">{row.monthLabel}</div>
+                                      <div className="text-sm text-slate-500">{row.topSectorName}</div>
+                                    </div>
+                                    <div className="text-right">
+                                      <div className="font-semibold text-slate-900">{formatCLP(row.total)}</div>
+                                      <div className={`text-sm ${getExecutiveTone(Math.abs(row.vsPreviousSeasonPct)).text}`}>{row.vsPreviousSeasonPct.toFixed(1)}%</div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {currentSlide === 3 && (
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                          <div className="rounded-2xl border border-slate-200 p-6">
+                            <div className="text-2xl font-bold text-slate-800 mb-5">Alertas ejecutivas</div>
+                            <div className="space-y-4">
+                              {executiveViewData.alerts.length > 0 ? executiveViewData.alerts.map((alert, index) => (
+                                <div key={`${alert.title}-${index}`} className={`rounded-2xl border p-5 ${alert.level === 'alta' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
+                                  <div className="flex items-center justify-between gap-4">
+                                    <div>
+                                      <div className="text-xl font-semibold text-slate-900">{alert.title}</div>
+                                      <div className="mt-2 text-base text-slate-600">{alert.message}</div>
+                                    </div>
+                                    <div className="text-right">
+                                      <div className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${getExecutiveTone(alert.level === 'alta' ? 35 : 20).badge}`}>
+                                        <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${getExecutiveTone(alert.level === 'alta' ? 35 : 20).dot}`} />
+                                        {getExecutiveTone(alert.level === 'alta' ? 35 : 20).label}
+                                      </div>
+                                      <div className="mt-3 text-xl font-bold text-slate-900">{formatCLP(alert.amount)}</div>
+                                    </div>
+                                  </div>
+                                </div>
+                              )) : (
+                                <div className="rounded-2xl bg-slate-50 p-8 text-center text-xl text-slate-400">No hay alertas relevantes.</div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="rounded-2xl border border-slate-200 p-6">
+                            <div className="text-2xl font-bold text-slate-800 mb-5">Top focos de gasto</div>
+                            <div className="space-y-6">
+                              <div>
+                                <div className="text-lg font-semibold text-slate-700 mb-3">Top campos</div>
+                                <div className="space-y-3">
+                                  {executiveViewData.topFields.map((row, index) => (
+                                    <div key={row.fieldId} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+                                      <div className="font-semibold text-slate-900">{index + 1}. {row.fieldName}</div>
+                                      <div className="text-right">
+                                        <div className="font-semibold text-slate-900">{formatCLP(row.total)}</div>
+                                        <div className={`text-sm ${getExecutiveTone(Math.abs(row.deltaPct)).text}`}>{row.deltaPct.toFixed(1)}%</div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-lg font-semibold text-slate-700 mb-3">Top sectores</div>
+                                <div className="space-y-3">
+                                  {executiveViewData.topSectors.map((row, index) => (
+                                    <div key={row.sectorId} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+                                      <div className="font-semibold text-slate-900">{index + 1}. {row.fieldName} / {row.sectorName}</div>
+                                      <div className="text-right">
+                                        <div className="font-semibold text-slate-900">{formatCLP(row.total)}</div>
+                                        <div className={`text-sm ${getExecutiveTone(Math.abs(row.deltaPct)).text}`}>{row.deltaPct.toFixed(1)}%</div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {currentSlide === 4 && (
+                        <div className="space-y-5">
+                          <div className="text-2xl font-bold text-slate-800">Matriz por campo</div>
+                          <table className="w-full text-left text-base">
+                            <thead className="text-lg text-slate-500 bg-slate-50 sticky top-0">
+                              <tr>
+                                <th className="p-3">Campo</th>
+                                {executiveSeasonMonths.map((month) => (
+                                  <th key={month.key} className="p-3 text-right">{month.shortLabel}</th>
+                                ))}
+                                <th className="p-3 text-right">{previousExecutiveSeason}</th>
+                                <th className="p-3 text-right">Var %</th>
+                                <th className="p-3 text-right">Total</th>
                               </tr>
-                            )})}
-                          </tbody>
-                        </table>
-                    </div>
-                  )}
+                            </thead>
+                            <tbody>
+                              {executiveViewData.fieldRows.map((row) => (
+                                <tr key={row.fieldId} className="border-b border-slate-100">
+                                  <td className="p-3 font-semibold text-slate-900">{row.fieldName}</td>
+                                  {executiveSeasonMonths.map((month) => (
+                                    <td key={month.key} className="p-3 text-right">{formatCLP(row.months[month.key] || 0)}</td>
+                                  ))}
+                                  <td className="p-3 text-right">{formatCLP(row.previousTotal)}</td>
+                                  <td className={`p-3 text-right font-semibold ${row.delta >= 0 ? 'text-red-600' : 'text-green-600'}`}>{row.deltaPct.toFixed(1)}%</td>
+                                  <td className="p-3 text-right font-bold text-slate-900">{formatCLP(row.total)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
 
-                  {/* Monthly Expenses */}
-                  {activeTab === 'monthly' && (
-                    <div className="h-full min-h-[400px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={monthlyExpenses} margin={{ top: 20, right: 30, left: 60, bottom: 20 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                          <XAxis dataKey="month" tick={{fontSize: 16, fill: '#475569'}} axisLine={false} tickLine={false} dy={10} />
-                          <YAxis tickFormatter={(value) => formatCLP(value)} tick={{fontSize: 16, fill: '#475569'}} axisLine={false} tickLine={false} dx={-10} />
-                          <Tooltip formatter={(value) => formatCLP(Number(value))} cursor={{fill: '#f1f5f9'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}} />
-                          <Bar dataKey="total" name="Total Gastado" fill="#8b5cf6" radius={[8, 8, 0, 0]} barSize={60} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-
-                  {/* Categories */}
-                  {activeTab === 'categories' && (
-                     <div className="h-full min-h-[500px] flex justify-center">
-                        <ResponsiveContainer width="80%" height="100%">
-                            <PieChart>
-                                <Pie
-                                    data={categoryExpenses.sort((a,b) => b.total - a.total).slice(0, 10)} // Top 10 for presentation
-                                    cx="50%"
-                                    cy="50%"
-                                    labelLine={true}
-                                    label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
-                                    outerRadius={200}
-                                    fill="#8884d8"
-                                    dataKey="total"
-                                    nameKey="category"
-                                >
-                                    {categoryExpenses.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                    ))}
-                                </Pie>
-                                <Tooltip formatter={(value: number) => formatCLP(value)} />
-                                <Legend wrapperStyle={{ fontSize: '18px' }}/>
-                            </PieChart>
-                        </ResponsiveContainer>
-                     </div>
-                  )}
-
-                  {/* Pending Invoices */}
-                  {activeTab === 'pending' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                      {filteredPendingInvoices.map((inv, idx) => (
-                        <div key={idx} className="bg-white p-8 rounded-2xl shadow border-l-8 border-red-500 flex flex-col">
-                          <div className="text-2xl font-bold text-slate-800 mb-2 truncate" title={inv.supplier}>{inv.supplier}</div>
-                          <div className="text-xl text-slate-500 mb-6">N° {inv.invoice_number}</div>
-                          <div className="flex justify-between items-end mt-auto pt-4 border-t border-slate-100">
-                            <div>
-                              <div className="text-sm text-slate-400 uppercase tracking-wider mb-1">Vencimiento</div>
-                              <div className="text-xl font-semibold text-red-600">
-                                {new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })}
-                              </div>
-                            </div>
-                            <div className="text-3xl font-bold text-slate-800">{formatCLP(inv.total_amount)}</div>
+                      {currentSlide === 5 && (
+                        <div className="space-y-6">
+                          <div className="text-2xl font-bold text-slate-800">Matriz por sector y cierre</div>
+                          <table className="w-full text-left text-sm">
+                            <thead className="text-base text-slate-500 bg-slate-50 sticky top-0">
+                              <tr>
+                                <th className="p-3">Campo</th>
+                                <th className="p-3">Sector</th>
+                                {executiveSeasonMonths.map((month) => (
+                                  <th key={month.key} className="p-3 text-right">{month.shortLabel}</th>
+                                ))}
+                                <th className="p-3 text-right">{previousExecutiveSeason}</th>
+                                <th className="p-3 text-right">Var %</th>
+                                <th className="p-3 text-right">Total</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {executiveViewData.sectorRows.map((row) => (
+                                <tr key={row.sectorId} className="border-b border-slate-100">
+                                  <td className="p-3">{row.fieldName}</td>
+                                  <td className="p-3 font-semibold text-slate-900">{row.sectorName}</td>
+                                  {executiveSeasonMonths.map((month) => (
+                                    <td key={month.key} className="p-3 text-right">{formatCLP(row.months[month.key] || 0)}</td>
+                                  ))}
+                                  <td className="p-3 text-right">{formatCLP(row.previousTotal)}</td>
+                                  <td className={`p-3 text-right font-semibold ${row.delta >= 0 ? 'text-red-600' : 'text-green-600'}`}>{row.deltaPct.toFixed(1)}%</td>
+                                  <td className="p-3 text-right font-bold text-slate-900">{formatCLP(row.total)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          <div className="rounded-2xl bg-slate-950 text-white p-6">
+                            <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Cierre Ejecutivo</div>
+                            <p className="mt-4 text-2xl leading-10">{executiveInsights.conclusion}</p>
                           </div>
                         </div>
-                      ))}
-                      {filteredPendingInvoices.length === 0 && (
-                         <div className="col-span-full text-center text-3xl text-slate-400 py-20">No hay facturas pendientes.</div>
                       )}
                     </div>
-                  )}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                {currentSlide === 0 && (
+                  <div className="text-center animate-fade-in-up w-full">
+                    <FileText className="w-32 h-32 text-purple-600 mx-auto mb-8" />
+                    <h1 className="text-5xl lg:text-6xl font-extrabold text-slate-800 mb-6">Reporte: {getReportTitle()}</h1>
+                    <h2 className="text-3xl lg:text-4xl text-purple-600 font-medium mb-12">{selectedCompany?.name}</h2>
+                    <p className="text-xl lg:text-2xl text-slate-500">Temporada {selectedSeason}</p>
+                  </div>
+                )}
 
-                  {activeTab === 'overdue' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                      {filteredOverdueInvoices.map((inv, idx) => (
-                        <div key={idx} className="bg-white p-8 rounded-2xl shadow border-l-8 border-red-500 flex flex-col">
-                          <div className="text-2xl font-bold text-slate-800 mb-2 truncate" title={inv.supplier}>{inv.supplier}</div>
-                          <div className="text-xl text-slate-500 mb-6">N° {inv.invoice_number}</div>
-                          <div className="flex justify-between items-end mt-auto pt-4 border-t border-slate-100">
-                            <div>
-                              <div className="text-sm text-slate-400 uppercase tracking-wider mb-1">Vencimiento</div>
-                              <div className="text-xl font-semibold text-red-600">
-                                {new Date(inv.due_date + 'T12:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })}
-                              </div>
-                              <div className="text-sm text-red-600 font-semibold mt-1">{inv.days_overdue} días</div>
-                            </div>
-                            <div className="text-3xl font-bold text-slate-800">{formatCLP(inv.total_amount)}</div>
-                          </div>
-                        </div>
-                      ))}
-                      {filteredOverdueInvoices.length === 0 && (
-                         <div className="col-span-full text-center text-3xl text-slate-400 py-20">No hay facturas vencidas.</div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Add fallback for other tabs to show a simple table or message */}
-                  {!['general', 'monthly', 'categories', 'pending', 'overdue'].includes(activeTab) && (
+                {currentSlide >= 1 && (
+                  <div className="w-full h-full flex flex-col animate-fade-in-up pt-4">
+                    <h2 className="text-3xl lg:text-4xl font-bold text-slate-800 mb-6 text-center">{getReportTitle()}</h2>
+                    <div className="flex-1 bg-white rounded-3xl shadow-xl p-6 overflow-y-auto pb-24" style={{ maxHeight: 'calc(100vh - 120px)' }}>
                       <div className="text-center text-3xl text-slate-400 py-20 flex flex-col items-center">
-                          <AlertCircle className="w-20 h-20 mb-6 text-slate-300" />
-                          <p>Para esta vista, recomendamos generar el PDF o usar la tabla detallada.</p>
-                          <button onClick={exitPresentation} className="mt-8 px-6 py-3 bg-purple-100 text-purple-700 rounded-lg font-medium text-xl hover:bg-purple-200">
-                              Volver a la vista normal
-                          </button>
+                        <AlertCircle className="w-20 h-20 mb-6 text-slate-300" />
+                        <p>La presentación extendida quedó disponible principalmente para la Vista Ejecutiva.</p>
+                        <button onClick={exitPresentation} className="mt-8 px-6 py-3 bg-purple-100 text-purple-700 rounded-lg font-medium text-xl hover:bg-purple-200">
+                          Volver a la vista normal
+                        </button>
                       </div>
-                  )}
-
-                </div>
-              </div>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
-            
           </div>
 
-          {/* Bottom Bar / Controls */}
           <div className="flex justify-between items-center p-6 bg-white/80 backdrop-blur-sm absolute bottom-0 left-0 right-0 z-10 border-t border-slate-200">
             <div className="text-slate-400 text-sm lg:text-base flex items-center">
               <span className="hidden sm:inline">Use las flechas del teclado </span>
@@ -5629,11 +5659,11 @@ export const Reports: React.FC = () => {
                 <ChevronLeft className="w-6 h-6 sm:w-8 sm:h-8" />
               </button>
               <div className="text-xl sm:text-2xl font-bold text-slate-500 w-24 text-center">
-                {currentSlide + 1} / {activeTab === 'general' ? 4 : 2}
+                {currentSlide + 1} / {presentationMaxSlide + 1}
               </div>
               <button 
-                onClick={() => setCurrentSlide(s => Math.min(s + 1, activeTab === 'general' ? 3 : 1))}
-                disabled={currentSlide === (activeTab === 'general' ? 3 : 1)}
+                onClick={() => setCurrentSlide(s => Math.min(s + 1, presentationMaxSlide))}
+                disabled={currentSlide === presentationMaxSlide}
                 className="p-2 sm:p-3 rounded-full hover:bg-slate-200 text-slate-600 disabled:opacity-30 transition-colors"
               >
                 <ChevronRight className="w-6 h-6 sm:w-8 sm:h-8" />
