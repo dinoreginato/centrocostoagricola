@@ -123,6 +123,163 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'
 const MONTH_NAMES_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const MONTH_NAMES_LONG = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
+const buildExecutiveSeasonMonths = (season: string) => {
+  const [startYearStr] = String(season || '').split('-');
+  const startYear = Number(startYearStr) || new Date().getFullYear();
+  const defs: Array<{ key: string; shortLabel: string; fullLabel: string }> = [];
+
+  for (let month = 4; month <= 11; month += 1) {
+    defs.push({
+      key: `${startYear}-${String(month + 1).padStart(2, '0')}`,
+      shortLabel: MONTH_NAMES_SHORT[month],
+      fullLabel: `${MONTH_NAMES_LONG[month]} ${startYear}`
+    });
+  }
+
+  for (let month = 0; month <= 3; month += 1) {
+    defs.push({
+      key: `${startYear + 1}-${String(month + 1).padStart(2, '0')}`,
+      shortLabel: MONTH_NAMES_SHORT[month],
+      fullLabel: `${MONTH_NAMES_LONG[month]} ${startYear + 1}`
+    });
+  }
+
+  return defs;
+};
+
+const parseExecutiveMonthKey = (rawDate: string) => {
+  if (!rawDate) return null;
+  const parsed = new Date(`${String(rawDate).slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const aggregateExecutiveCosts = (params: {
+  seasonMonths: Array<{ key: string; shortLabel: string; fullLabel: string }>;
+  seasonMonthKeys: Set<string>;
+  sectorMeta: Map<string, { fieldId: string; fieldName: string; sectorName: string; hectares: number }>;
+  fieldMeta: Map<string, { fieldName: string; hectares: number }>;
+  fuelPrices: { diesel: number; gasoline: number };
+  rawApplications: any[];
+  rawLabor: any[];
+  rawWorkerCosts: any[];
+  rawFuel: any[];
+  rawFuelConsumption: any[];
+  rawMachinery: any[];
+  rawIrrigation: any[];
+  rawGeneralCosts: any[];
+}) => {
+  const monthlyTotals = new Map<string, number>();
+  const fieldMonthly = new Map<string, Map<string, number>>();
+  const sectorMonthly = new Map<string, Map<string, number>>();
+
+  params.seasonMonths.forEach((month) => {
+    monthlyTotals.set(month.key, 0);
+  });
+
+  const addAmount = (bucket: Map<string, Map<string, number>>, entityId: string, monthKey: string, amount: number) => {
+    const current = bucket.get(entityId) || new Map<string, number>();
+    current.set(monthKey, (current.get(monthKey) || 0) + amount);
+    bucket.set(entityId, current);
+  };
+
+  const registerCost = (sectorId: string, rawDate: string, rawAmount: number) => {
+    const meta = params.sectorMeta.get(sectorId);
+    if (!meta) return;
+    const monthKey = parseExecutiveMonthKey(rawDate);
+    if (!monthKey || !params.seasonMonthKeys.has(monthKey)) return;
+    const amount = Number(rawAmount || 0);
+    if (!Number.isFinite(amount) || Math.abs(amount) < 0.0001) return;
+
+    monthlyTotals.set(monthKey, (monthlyTotals.get(monthKey) || 0) + amount);
+    addAmount(fieldMonthly, meta.fieldId, monthKey, amount);
+    addAmount(sectorMonthly, sectorId, monthKey, amount);
+  };
+
+  params.rawApplications.forEach((item: any) => registerCost(item.sector_id, item.application_date, Number(item.total_cost || 0)));
+  params.rawLabor.forEach((item: any) => registerCost(item.sector_id, item.assigned_date, Number(item.assigned_amount || 0)));
+  params.rawWorkerCosts.forEach((item: any) => registerCost(item.sector_id, item.date, Number(item.amount || 0)));
+  params.rawFuel.forEach((item: any) => registerCost(item.sector_id, item.assigned_date, Number(item.assigned_amount || 0)));
+  params.rawFuelConsumption.forEach((item: any) => {
+    const activity = String(item.activity || '').toLowerCase();
+    const isGasoline = activity.includes('gasolina') || activity.includes('bencina');
+    let cost = Number(item.estimated_price || 0);
+    if (cost === 0 && Number(item.liters || 0) > 0) {
+      cost = Number(item.liters || 0) * (isGasoline ? params.fuelPrices.gasoline : params.fuelPrices.diesel);
+    }
+    registerCost(item.sector_id, item.date, cost);
+  });
+  params.rawMachinery.forEach((item: any) => registerCost(item.sector_id, item.assigned_date, Number(item.assigned_amount || 0)));
+  params.rawIrrigation.forEach((item: any) => registerCost(item.sector_id, item.assigned_date, Number(item.assigned_amount || 0)));
+  params.rawGeneralCosts.forEach((item: any) => registerCost(item.sector_id, item.date, Number(item.amount || 0)));
+
+  const fieldRows = Array.from(params.fieldMeta.entries())
+    .map(([fieldId, meta]) => {
+      const months = params.seasonMonths.reduce<Record<string, number>>((acc, month) => {
+        acc[month.key] = fieldMonthly.get(fieldId)?.get(month.key) || 0;
+        return acc;
+      }, {});
+      const total = Object.values(months).reduce((sum, value) => sum + value, 0);
+      return { fieldId, fieldName: meta.fieldName, hectares: meta.hectares, months, total };
+    })
+    .filter((row) => row.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  const sectorRows = Array.from(params.sectorMeta.entries())
+    .map(([sectorId, meta]) => {
+      const months = params.seasonMonths.reduce<Record<string, number>>((acc, month) => {
+        acc[month.key] = sectorMonthly.get(sectorId)?.get(month.key) || 0;
+        return acc;
+      }, {});
+      const total = Object.values(months).reduce((sum, value) => sum + value, 0);
+      return { sectorId, sectorName: meta.sectorName, fieldName: meta.fieldName, hectares: meta.hectares, months, total };
+    })
+    .filter((row) => row.total > 0)
+    .sort((a, b) => b.total - a.total);
+
+  const monthlyRows = params.seasonMonths.map((month, index) => {
+    const total = monthlyTotals.get(month.key) || 0;
+    const previousTotal = index > 0 ? monthlyTotals.get(params.seasonMonths[index - 1].key) || 0 : 0;
+    const variation = index > 0 ? total - previousTotal : 0;
+    const variationPct = index > 0 && previousTotal > 0 ? (variation / previousTotal) * 100 : 0;
+
+    const topField = fieldRows
+      .map((row) => ({ name: row.fieldName, total: row.months[month.key] || 0 }))
+      .sort((a, b) => b.total - a.total)[0];
+    const topSector = sectorRows
+      .map((row) => ({ name: row.sectorName, total: row.months[month.key] || 0 }))
+      .sort((a, b) => b.total - a.total)[0];
+
+    return {
+      monthKey: month.key,
+      monthLabel: month.fullLabel,
+      shortLabel: month.shortLabel,
+      total,
+      variation,
+      variationPct,
+      topFieldName: topField?.total ? topField.name : '-',
+      topSectorName: topSector?.total ? topSector.name : '-'
+    };
+  });
+
+  const totalSeasonCost = monthlyRows.reduce((sum, row) => sum + row.total, 0);
+  const totalHectares = fieldRows.reduce((sum, row) => sum + row.hectares, 0);
+  const peakMonth = [...monthlyRows].sort((a, b) => b.total - a.total)[0] || null;
+  const averageMonthlyCost = monthlyRows.length > 0 ? totalSeasonCost / monthlyRows.length : 0;
+
+  return {
+    monthlyRows,
+    fieldRows,
+    sectorRows,
+    totalSeasonCost,
+    totalHectares,
+    averageMonthlyCost,
+    peakMonth,
+    topField: fieldRows[0] || null,
+    topSector: sectorRows[0] || null
+  };
+};
+
 // Categories considered as "Chemicals" or "Inputs"
 const CHEMICAL_CATEGORIES = [
   'Quimicos', 'Plaguicida', 'Insecticida', 'Fungicida', 'Herbicida', 
@@ -270,31 +427,16 @@ export const Reports: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [presentationMode, activeTab]);
 
-  const executiveSeasonMonths = useMemo(() => {
-    const [startYearStr] = selectedSeason.split('-');
+  const executiveSeasonMonths = useMemo(() => buildExecutiveSeasonMonths(selectedSeason), [selectedSeason]);
+  const previousExecutiveSeason = useMemo(() => {
+    const [startYearStr] = String(selectedSeason || '').split('-');
     const startYear = Number(startYearStr) || new Date().getFullYear();
-    const defs: Array<{ key: string; shortLabel: string; fullLabel: string }> = [];
-
-    for (let month = 4; month <= 11; month += 1) {
-      defs.push({
-        key: `${startYear}-${String(month + 1).padStart(2, '0')}`,
-        shortLabel: MONTH_NAMES_SHORT[month],
-        fullLabel: `${MONTH_NAMES_LONG[month]} ${startYear}`
-      });
-    }
-
-    for (let month = 0; month <= 3; month += 1) {
-      defs.push({
-        key: `${startYear + 1}-${String(month + 1).padStart(2, '0')}`,
-        shortLabel: MONTH_NAMES_SHORT[month],
-        fullLabel: `${MONTH_NAMES_LONG[month]} ${startYear + 1}`
-      });
-    }
-
-    return defs;
+    return `${startYear - 1}-${startYear}`;
   }, [selectedSeason]);
+  const previousExecutiveSeasonMonths = useMemo(() => buildExecutiveSeasonMonths(previousExecutiveSeason), [previousExecutiveSeason]);
 
   const executiveMonthKeySet = useMemo(() => new Set(executiveSeasonMonths.map((month) => month.key)), [executiveSeasonMonths]);
+  const previousExecutiveMonthKeySet = useMemo(() => new Set(previousExecutiveSeasonMonths.map((month) => month.key)), [previousExecutiveSeasonMonths]);
 
   const executiveSectorMeta = useMemo(() => {
     const map = new Map<string, { fieldId: string; fieldName: string; sectorName: string; hectares: number }>();
@@ -367,72 +509,71 @@ export const Reports: React.FC = () => {
     };
   }, [rawInvoices]);
 
+  const executiveCurrentBase = useMemo(() => {
+    return aggregateExecutiveCosts({
+      seasonMonths: executiveSeasonMonths,
+      seasonMonthKeys: executiveMonthKeySet,
+      sectorMeta: executiveSectorMeta,
+      fieldMeta: executiveFieldMeta,
+      fuelPrices: executiveFuelPrices,
+      rawApplications,
+      rawLabor,
+      rawWorkerCosts,
+      rawFuel,
+      rawFuelConsumption,
+      rawMachinery,
+      rawIrrigation,
+      rawGeneralCosts
+    });
+  }, [
+    executiveFieldMeta,
+    executiveFuelPrices,
+    executiveMonthKeySet,
+    executiveSeasonMonths,
+    executiveSectorMeta,
+    rawApplications,
+    rawFuel,
+    rawFuelConsumption,
+    rawGeneralCosts,
+    rawIrrigation,
+    rawLabor,
+    rawMachinery,
+    rawWorkerCosts
+  ]);
+
+  const executivePreviousBase = useMemo(() => {
+    return aggregateExecutiveCosts({
+      seasonMonths: previousExecutiveSeasonMonths,
+      seasonMonthKeys: previousExecutiveMonthKeySet,
+      sectorMeta: executiveSectorMeta,
+      fieldMeta: executiveFieldMeta,
+      fuelPrices: executiveFuelPrices,
+      rawApplications,
+      rawLabor,
+      rawWorkerCosts,
+      rawFuel,
+      rawFuelConsumption,
+      rawMachinery,
+      rawIrrigation,
+      rawGeneralCosts
+    });
+  }, [
+    executiveFieldMeta,
+    executiveFuelPrices,
+    previousExecutiveMonthKeySet,
+    previousExecutiveSeasonMonths,
+    executiveSectorMeta,
+    rawApplications,
+    rawFuel,
+    rawFuelConsumption,
+    rawGeneralCosts,
+    rawIrrigation,
+    rawLabor,
+    rawMachinery,
+    rawWorkerCosts
+  ]);
+
   const executiveData = useMemo(() => {
-    const monthlyTotals = new Map<string, number>();
-    const fieldMonthly = new Map<string, Map<string, number>>();
-    const sectorMonthly = new Map<string, Map<string, number>>();
-
-    executiveSeasonMonths.forEach((month) => {
-      monthlyTotals.set(month.key, 0);
-    });
-
-    const addAmount = (bucket: Map<string, Map<string, number>>, entityId: string, monthKey: string, amount: number) => {
-      const current = bucket.get(entityId) || new Map<string, number>();
-      current.set(monthKey, (current.get(monthKey) || 0) + amount);
-      bucket.set(entityId, current);
-    };
-
-    const parseMonthKey = (rawDate: string) => {
-      if (!rawDate) return null;
-      const parsed = new Date(`${String(rawDate).slice(0, 10)}T12:00:00`);
-      if (Number.isNaN(parsed.getTime())) return null;
-      return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
-    };
-
-    const registerCost = (params: { sectorId: string; rawDate: string; amount: number }) => {
-      const meta = executiveSectorMeta.get(params.sectorId);
-      if (!meta) return;
-      const monthKey = parseMonthKey(params.rawDate);
-      if (!monthKey || !executiveMonthKeySet.has(monthKey)) return;
-      const amount = Number(params.amount || 0);
-      if (!Number.isFinite(amount) || Math.abs(amount) < 0.0001) return;
-
-      monthlyTotals.set(monthKey, (monthlyTotals.get(monthKey) || 0) + amount);
-      addAmount(fieldMonthly, meta.fieldId, monthKey, amount);
-      addAmount(sectorMonthly, params.sectorId, monthKey, amount);
-    };
-
-    rawApplications.forEach((item: any) =>
-      registerCost({ sectorId: item.sector_id, rawDate: item.application_date, amount: Number(item.total_cost || 0) })
-    );
-    rawLabor.forEach((item: any) =>
-      registerCost({ sectorId: item.sector_id, rawDate: item.assigned_date, amount: Number(item.assigned_amount || 0) })
-    );
-    rawWorkerCosts.forEach((item: any) =>
-      registerCost({ sectorId: item.sector_id, rawDate: item.date, amount: Number(item.amount || 0) })
-    );
-    rawFuel.forEach((item: any) =>
-      registerCost({ sectorId: item.sector_id, rawDate: item.assigned_date, amount: Number(item.assigned_amount || 0) })
-    );
-    rawFuelConsumption.forEach((item: any) => {
-      const activity = String(item.activity || '').toLowerCase();
-      const isGasoline = activity.includes('gasolina') || activity.includes('bencina');
-      let cost = Number(item.estimated_price || 0);
-      if (cost === 0 && Number(item.liters || 0) > 0) {
-        cost = Number(item.liters || 0) * (isGasoline ? executiveFuelPrices.gasoline : executiveFuelPrices.diesel);
-      }
-      registerCost({ sectorId: item.sector_id, rawDate: item.date, amount: cost });
-    });
-    rawMachinery.forEach((item: any) =>
-      registerCost({ sectorId: item.sector_id, rawDate: item.assigned_date, amount: Number(item.assigned_amount || 0) })
-    );
-    rawIrrigation.forEach((item: any) =>
-      registerCost({ sectorId: item.sector_id, rawDate: item.assigned_date, amount: Number(item.assigned_amount || 0) })
-    );
-    rawGeneralCosts.forEach((item: any) =>
-      registerCost({ sectorId: item.sector_id, rawDate: item.date, amount: Number(item.amount || 0) })
-    );
-
     const categoryRows = [
       { category: 'Aplicaciones', total: reportData.reduce((sum, row) => sum + Number(row.app_cost_only || 0), 0) },
       { category: 'Labores', total: reportData.reduce((sum, row) => sum + Number(row.labor_cost || 0), 0) },
@@ -443,105 +584,86 @@ export const Reports: React.FC = () => {
       { category: 'Generales', total: reportData.reduce((sum, row) => sum + Number(row.general_cost || 0), 0) }
     ].filter((row) => row.total > 0);
 
-    const fieldRows = Array.from(executiveFieldMeta.entries())
-      .map(([fieldId, meta]) => {
-        const months = executiveSeasonMonths.reduce<Record<string, number>>((acc, month) => {
-          acc[month.key] = fieldMonthly.get(fieldId)?.get(month.key) || 0;
-          return acc;
-        }, {});
-        const total = Object.values(months).reduce((sum, value) => sum + value, 0);
-        return {
-          fieldId,
-          fieldName: meta.fieldName,
-          hectares: meta.hectares,
-          months,
-          total
-        };
-      })
-      .filter((row) => row.total > 0)
-      .sort((a, b) => b.total - a.total);
-
-    const sectorRows = Array.from(executiveSectorMeta.entries())
-      .map(([sectorId, meta]) => {
-        const months = executiveSeasonMonths.reduce<Record<string, number>>((acc, month) => {
-          acc[month.key] = sectorMonthly.get(sectorId)?.get(month.key) || 0;
-          return acc;
-        }, {});
-        const total = Object.values(months).reduce((sum, value) => sum + value, 0);
-        return {
-          sectorId,
-          sectorName: meta.sectorName,
-          fieldName: meta.fieldName,
-          hectares: meta.hectares,
-          months,
-          total
-        };
-      })
-      .filter((row) => row.total > 0)
-      .sort((a, b) => b.total - a.total);
-
-    const monthlyRows = executiveSeasonMonths.map((month, index) => {
-      const total = monthlyTotals.get(month.key) || 0;
-      const previousTotal = index > 0 ? monthlyTotals.get(executiveSeasonMonths[index - 1].key) || 0 : 0;
-      const variation = index > 0 ? total - previousTotal : 0;
-      const variationPct = index > 0 && previousTotal > 0 ? (variation / previousTotal) * 100 : 0;
-
-      const topField = fieldRows
-        .map((row) => ({ name: row.fieldName, total: row.months[month.key] || 0 }))
-        .sort((a, b) => b.total - a.total)[0];
-      const topSector = sectorRows
-        .map((row) => ({ name: row.sectorName, total: row.months[month.key] || 0 }))
-        .sort((a, b) => b.total - a.total)[0];
-
+    const monthlyRows = executiveCurrentBase.monthlyRows.map((row, index) => {
+      const previousSeasonTotal = executivePreviousBase.monthlyRows[index]?.total || 0;
+      const vsPreviousSeason = row.total - previousSeasonTotal;
+      const vsPreviousSeasonPct = previousSeasonTotal > 0 ? (vsPreviousSeason / previousSeasonTotal) * 100 : 0;
       return {
-        monthKey: month.key,
-        monthLabel: month.fullLabel,
-        shortLabel: month.shortLabel,
-        total,
-        variation,
-        variationPct,
-        topFieldName: topField?.total ? topField.name : '-',
-        topSectorName: topSector?.total ? topSector.name : '-'
+        ...row,
+        previousSeasonTotal,
+        vsPreviousSeason,
+        vsPreviousSeasonPct
       };
     });
 
-    const totalSeasonCost = monthlyRows.reduce((sum, row) => sum + row.total, 0);
-    const totalHectares = fieldRows.reduce((sum, row) => sum + row.hectares, 0);
-    const peakMonth = [...monthlyRows].sort((a, b) => b.total - a.total)[0] || null;
-    const averageMonthlyCost = monthlyRows.length > 0 ? totalSeasonCost / monthlyRows.length : 0;
-    const topField = fieldRows[0] || null;
-    const topSector = sectorRows[0] || null;
+    const previousFieldMap = new Map(executivePreviousBase.fieldRows.map((row) => [row.fieldId, row]));
+    const previousSectorMap = new Map(executivePreviousBase.sectorRows.map((row) => [row.sectorId, row]));
+
+    const fieldRows = executiveCurrentBase.fieldRows.map((row) => {
+      const previous = previousFieldMap.get(row.fieldId);
+      const previousTotal = previous?.total || 0;
+      const delta = row.total - previousTotal;
+      const deltaPct = previousTotal > 0 ? (delta / previousTotal) * 100 : 0;
+      return { ...row, previousTotal, delta, deltaPct, sharePct: executiveCurrentBase.totalSeasonCost > 0 ? (row.total / executiveCurrentBase.totalSeasonCost) * 100 : 0 };
+    });
+
+    const sectorRows = executiveCurrentBase.sectorRows.map((row) => {
+      const previous = previousSectorMap.get(row.sectorId);
+      const previousTotal = previous?.total || 0;
+      const delta = row.total - previousTotal;
+      const deltaPct = previousTotal > 0 ? (delta / previousTotal) * 100 : 0;
+      return { ...row, previousTotal, delta, deltaPct, sharePct: executiveCurrentBase.totalSeasonCost > 0 ? (row.total / executiveCurrentBase.totalSeasonCost) * 100 : 0 };
+    });
+
+    const seasonVariation = executiveCurrentBase.totalSeasonCost - executivePreviousBase.totalSeasonCost;
+    const seasonVariationPct = executivePreviousBase.totalSeasonCost > 0 ? (seasonVariation / executivePreviousBase.totalSeasonCost) * 100 : 0;
+
+    const alerts = [
+      ...monthlyRows
+        .filter((row) => row.total > 0 && row.vsPreviousSeasonPct >= 15)
+        .map((row) => ({
+          level: row.vsPreviousSeasonPct >= 30 ? 'alta' : 'media',
+          title: `Alza mensual en ${row.monthLabel}`,
+          message: `El gasto sube ${row.vsPreviousSeasonPct.toFixed(1)}% frente a la misma fecha de la temporada anterior.`,
+          amount: row.vsPreviousSeason
+        })),
+      ...fieldRows
+        .filter((row) => row.total > 0 && row.deltaPct >= 20)
+        .slice(0, 3)
+        .map((row) => ({
+          level: row.deltaPct >= 35 ? 'alta' : 'media',
+          title: `Campo ${row.fieldName} en alza`,
+          message: `Acumula ${row.deltaPct.toFixed(1)}% más gasto que la temporada anterior.`,
+          amount: row.delta
+        }))
+    ].sort((a, b) => b.amount - a.amount);
+
+    const topFields = [...fieldRows].slice(0, 5);
+    const topSectors = [...sectorRows].slice(0, 5);
 
     return {
       monthlyRows,
       fieldRows,
       sectorRows,
       categoryRows,
+      alerts,
+      topFields,
+      topSectors,
       kpis: {
-        totalSeasonCost,
-        totalHectares,
-        averageMonthlyCost,
-        peakMonth,
-        topField,
-        topSector
+        totalSeasonCost: executiveCurrentBase.totalSeasonCost,
+        totalHectares: executiveCurrentBase.totalHectares,
+        averageMonthlyCost: executiveCurrentBase.averageMonthlyCost,
+        peakMonth: executiveCurrentBase.peakMonth,
+        topField: executiveCurrentBase.topField,
+        topSector: executiveCurrentBase.topSector,
+        previousSeasonCost: executivePreviousBase.totalSeasonCost,
+        seasonVariation,
+        seasonVariationPct
       }
     };
   }, [
-    executiveFieldMeta,
-    executiveFuelPrices.diesel,
-    executiveFuelPrices.gasoline,
-    executiveMonthKeySet,
-    executiveSeasonMonths,
-    executiveSectorMeta,
-    rawApplications,
-    rawFields,
-    rawFuel,
-    rawFuelConsumption,
-    rawGeneralCosts,
-    rawIrrigation,
-    rawLabor,
-    rawMachinery,
-    rawWorkerCosts,
+    executiveCurrentBase,
+    executivePreviousBase,
     reportData
   ]);
 
@@ -552,6 +674,9 @@ export const Reports: React.FC = () => {
         'Gasto Total': Number(row.total.toFixed(0)),
         'Variación CLP': Number(row.variation.toFixed(0)),
         'Variación %': Number(row.variationPct.toFixed(2)),
+        [`${previousExecutiveSeason}`]: Number(row.previousSeasonTotal.toFixed(0)),
+        'Vs Temp. Anterior CLP': Number(row.vsPreviousSeason.toFixed(0)),
+        'Vs Temp. Anterior %': Number(row.vsPreviousSeasonPct.toFixed(2)),
         'Campo Mayor Gasto': row.topFieldName,
         'Sector Mayor Gasto': row.topSectorName
       }));
@@ -560,7 +685,11 @@ export const Reports: React.FC = () => {
         const base: Record<string, unknown> = {
           Campo: row.fieldName,
           Hectáreas: Number(row.hectares.toFixed(2)),
-          'Total Temporada': Number(row.total.toFixed(0))
+          'Total Temporada': Number(row.total.toFixed(0)),
+          [`Temp. ${previousExecutiveSeason}`]: Number(row.previousTotal.toFixed(0)),
+          'Variación CLP': Number(row.delta.toFixed(0)),
+          'Variación %': Number(row.deltaPct.toFixed(2)),
+          'Participación %': Number(row.sharePct.toFixed(2))
         };
         executiveSeasonMonths.forEach((month) => {
           base[month.shortLabel] = Number((row.months[month.key] || 0).toFixed(0));
@@ -573,7 +702,11 @@ export const Reports: React.FC = () => {
           Campo: row.fieldName,
           Sector: row.sectorName,
           Hectáreas: Number(row.hectares.toFixed(2)),
-          'Total Temporada': Number(row.total.toFixed(0))
+          'Total Temporada': Number(row.total.toFixed(0)),
+          [`Temp. ${previousExecutiveSeason}`]: Number(row.previousTotal.toFixed(0)),
+          'Variación CLP': Number(row.delta.toFixed(0)),
+          'Variación %': Number(row.deltaPct.toFixed(2)),
+          'Participación %': Number(row.sharePct.toFixed(2))
         };
         executiveSeasonMonths.forEach((month) => {
           base[month.shortLabel] = Number((row.months[month.key] || 0).toFixed(0));
@@ -581,12 +714,44 @@ export const Reports: React.FC = () => {
         return base;
       });
 
+      const topFieldsRows = executiveData.topFields.map((row, index) => ({
+        Ranking: index + 1,
+        Campo: row.fieldName,
+        'Total Temporada': Number(row.total.toFixed(0)),
+        [`Temp. ${previousExecutiveSeason}`]: Number(row.previousTotal.toFixed(0)),
+        'Variación CLP': Number(row.delta.toFixed(0)),
+        'Variación %': Number(row.deltaPct.toFixed(2)),
+        'Participación %': Number(row.sharePct.toFixed(2))
+      }));
+
+      const topSectorsRows = executiveData.topSectors.map((row, index) => ({
+        Ranking: index + 1,
+        Campo: row.fieldName,
+        Sector: row.sectorName,
+        'Total Temporada': Number(row.total.toFixed(0)),
+        [`Temp. ${previousExecutiveSeason}`]: Number(row.previousTotal.toFixed(0)),
+        'Variación CLP': Number(row.delta.toFixed(0)),
+        'Variación %': Number(row.deltaPct.toFixed(2)),
+        'Participación %': Number(row.sharePct.toFixed(2))
+      }));
+
+      const alertRows = executiveData.alerts.map((alert, index) => ({
+        Ranking: index + 1,
+        Nivel: alert.level,
+        Título: alert.title,
+        Mensaje: alert.message,
+        Monto: Number(alert.amount.toFixed(0))
+      }));
+
       await exportWorkbookToXlsx({
         filename: `Reporte_Ejecutivo_${selectedCompany?.name?.replace(/\s+/g, '_') || 'empresa'}_${selectedSeason}.xlsx`,
         sheets: [
           { name: 'Resumen Mensual', rows: summaryRows },
           { name: 'Campos', rows: fieldRows },
-          { name: 'Sectores', rows: sectorRows }
+          { name: 'Sectores', rows: sectorRows },
+          { name: 'Top Campos', rows: topFieldsRows },
+          { name: 'Top Sectores', rows: topSectorsRows },
+          { name: 'Alertas', rows: alertRows }
         ]
       });
     } catch (error: any) {
@@ -1269,11 +1434,40 @@ export const Reports: React.FC = () => {
     // --- REPORT GENERATION LOGIC BASED ON ACTIVE TAB ---
 
     if (activeTab === 'executive') {
+        doc.setFillColor(245, 243, 255);
+        doc.rect(0, 0, doc.internal.pageSize.getWidth(), doc.internal.pageSize.getHeight(), 'F');
+        doc.setFontSize(26);
+        doc.setTextColor(88, 28, 135);
+        doc.text('Reporte Ejecutivo', 14, 70);
+        doc.setFontSize(16);
+        doc.setTextColor(31, 41, 55);
+        doc.text(String(selectedCompany?.name || ''), 14, 85);
+        doc.setFontSize(12);
+        doc.text(`Temporada actual: ${selectedSeason}`, 14, 98);
+        doc.text(`Temporada comparativa: ${previousExecutiveSeason}`, 14, 106);
+        doc.text(`Emitido: ${new Date().toLocaleDateString('es-CL')}`, 14, 114);
+        doc.setFontSize(14);
+        doc.text(`Gasto total: ${formatCLP(executiveData.kpis.totalSeasonCost)}`, 14, 132);
+        doc.text(`Variación vs temporada anterior: ${formatCLP(executiveData.kpis.seasonVariation)} (${executiveData.kpis.seasonVariationPct.toFixed(1)}%)`, 14, 142);
+
+        doc.addPage();
+        doc.setFontSize(18);
+        doc.setTextColor(0);
+        doc.text(`Reporte: ${title}`, 14, 20);
+        doc.setFontSize(12);
+        doc.text(`Empresa: ${selectedCompany?.name}`, 14, 28);
+        doc.text(`Temporada: ${selectedSeason}`, 14, 34);
+        doc.text(`Comparativa: ${previousExecutiveSeason}`, 14, 40);
+        yPos = 50;
+
         autoTable(doc, {
           startY: yPos,
           head: [['Indicador', 'Valor']],
           body: [
             ['Gasto total temporada', formatCLP(executiveData.kpis.totalSeasonCost)],
+            ['Temporada anterior', formatCLP(executiveData.kpis.previousSeasonCost)],
+            ['Variación temporada', formatCLP(executiveData.kpis.seasonVariation)],
+            ['Variación temporada %', `${executiveData.kpis.seasonVariationPct.toFixed(1)}%`],
             ['Promedio mensual', formatCLP(executiveData.kpis.averageMonthlyCost)],
             ['Hectáreas reportadas', executiveData.kpis.totalHectares.toFixed(2)],
             ['Campo con mayor gasto', executiveData.kpis.topField ? `${executiveData.kpis.topField.fieldName} (${formatCLP(executiveData.kpis.topField.total)})` : '-'],
@@ -1288,17 +1482,54 @@ export const Reports: React.FC = () => {
 
         autoTable(doc, {
           startY: yPos,
-          head: [['Mes', 'Gasto total', 'Variación', 'Variación %', 'Campo mayor gasto', 'Sector mayor gasto']],
+          head: [['Mes', 'Gasto actual', previousExecutiveSeason, 'Vs ant. CLP', 'Vs ant. %', 'Campo mayor gasto', 'Sector mayor gasto']],
           body: executiveData.monthlyRows.map((row) => [
             row.monthLabel,
             formatCLP(row.total),
-            formatCLP(row.variation),
-            `${row.variationPct.toFixed(1)}%`,
+            formatCLP(row.previousSeasonTotal),
+            formatCLP(row.vsPreviousSeason),
+            `${row.vsPreviousSeasonPct.toFixed(1)}%`,
             row.topFieldName,
             row.topSectorName
           ]),
           theme: 'striped',
           headStyles: { fillColor: [22, 101, 52] }
+        });
+
+        yPos = (doc as any).lastAutoTable.finalY + 8;
+
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Alerta', 'Nivel', 'Impacto']],
+          body: (executiveData.alerts.length > 0 ? executiveData.alerts : [{ title: 'Sin alertas relevantes', level: 'informativa', amount: 0 }]).map((alert) => [
+            alert.title,
+            alert.level,
+            formatCLP(alert.amount)
+          ]),
+          theme: 'grid',
+          headStyles: { fillColor: [185, 28, 28] }
+        });
+
+        yPos = (doc as any).lastAutoTable.finalY + 8;
+
+        if (yPos > 160) {
+          doc.addPage();
+          yPos = 20;
+        }
+
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Ranking', 'Campo', 'Total', previousExecutiveSeason, 'Variación %', 'Participación %']],
+          body: executiveData.topFields.map((row, index) => [
+            String(index + 1),
+            row.fieldName,
+            formatCLP(row.total),
+            formatCLP(row.previousTotal),
+            `${row.deltaPct.toFixed(1)}%`,
+            `${row.sharePct.toFixed(1)}%`
+          ]),
+          theme: 'grid',
+          headStyles: { fillColor: [30, 64, 175] }
         });
 
         yPos = (doc as any).lastAutoTable.finalY + 8;
@@ -2379,14 +2610,25 @@ export const Reports: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
                 <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
                   <div className="text-xs uppercase tracking-wide text-gray-500">Gasto temporada</div>
                   <div className="mt-2 text-2xl font-semibold text-gray-900">{formatCLP(executiveData.kpis.totalSeasonCost)}</div>
                 </div>
                 <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
+                  <div className="text-xs uppercase tracking-wide text-gray-500">Temp. anterior</div>
+                  <div className="mt-2 text-2xl font-semibold text-gray-900">{formatCLP(executiveData.kpis.previousSeasonCost)}</div>
+                </div>
+                <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
                   <div className="text-xs uppercase tracking-wide text-gray-500">Promedio mensual</div>
                   <div className="mt-2 text-2xl font-semibold text-gray-900">{formatCLP(executiveData.kpis.averageMonthlyCost)}</div>
+                </div>
+                <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
+                  <div className="text-xs uppercase tracking-wide text-gray-500">Variación temporada</div>
+                  <div className={`mt-2 text-2xl font-semibold ${executiveData.kpis.seasonVariation >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    {formatCLP(executiveData.kpis.seasonVariation)}
+                  </div>
+                  <div className="mt-1 text-sm text-gray-500">{executiveData.kpis.seasonVariationPct.toFixed(1)}%</div>
                 </div>
                 <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
                   <div className="text-xs uppercase tracking-wide text-gray-500">Campo principal</div>
@@ -2405,6 +2647,11 @@ export const Reports: React.FC = () => {
                   <div className="mt-1 text-sm text-gray-500">
                     {executiveData.kpis.topSector ? formatCLP(executiveData.kpis.topSector.total) : 'Sin datos'}
                   </div>
+                </div>
+                <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
+                  <div className="text-xs uppercase tracking-wide text-gray-500">Alertas activas</div>
+                  <div className="mt-2 text-2xl font-semibold text-gray-900">{executiveData.alerts.length}</div>
+                  <div className="mt-1 text-sm text-gray-500">Focos relevantes para revisión ejecutiva</div>
                 </div>
               </div>
 
@@ -2466,16 +2713,17 @@ export const Reports: React.FC = () => {
               <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-200">
                   <h3 className="text-lg font-semibold text-gray-900">Resumen mensual ejecutivo</h3>
-                  <p className="text-sm text-gray-500">Incluye variación contra el mes anterior y concentración del gasto.</p>
+                  <p className="text-sm text-gray-500">Incluye comparación contra la temporada anterior y concentración del gasto.</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200 text-sm">
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase">Mes</th>
-                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Total</th>
-                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Variación</th>
-                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Variación %</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Actual</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">{previousExecutiveSeason}</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Vs anterior</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Vs anterior %</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase">Campo mayor gasto</th>
                         <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase">Sector mayor gasto</th>
                       </tr>
@@ -2485,11 +2733,12 @@ export const Reports: React.FC = () => {
                         <tr key={row.monthKey}>
                           <td className="px-4 py-3 text-gray-900">{row.monthLabel}</td>
                           <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCLP(row.total)}</td>
-                          <td className={`px-4 py-3 text-right font-medium ${row.variation >= 0 ? 'text-red-600' : 'text-green-600'}`}>
-                            {formatCLP(row.variation)}
+                          <td className="px-4 py-3 text-right text-gray-700">{formatCLP(row.previousSeasonTotal)}</td>
+                          <td className={`px-4 py-3 text-right font-medium ${row.vsPreviousSeason >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                            {formatCLP(row.vsPreviousSeason)}
                           </td>
-                          <td className={`px-4 py-3 text-right font-medium ${row.variation >= 0 ? 'text-red-600' : 'text-green-600'}`}>
-                            {row.variationPct.toFixed(1)}%
+                          <td className={`px-4 py-3 text-right font-medium ${row.vsPreviousSeason >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                            {row.vsPreviousSeasonPct.toFixed(1)}%
                           </td>
                           <td className="px-4 py-3 text-gray-700">{row.topFieldName}</td>
                           <td className="px-4 py-3 text-gray-700">{row.topSectorName}</td>
@@ -2500,10 +2749,69 @@ export const Reports: React.FC = () => {
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <h3 className="text-lg font-semibold text-gray-900">Alertas ejecutivas</h3>
+                    <p className="text-sm text-gray-500">Variaciones relevantes que merecen revisión con el equipo.</p>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    {executiveData.alerts.length > 0 ? executiveData.alerts.map((alert, index) => (
+                      <div key={`${alert.title}-${index}`} className={`rounded-lg border p-4 ${alert.level === 'alta' ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <div className="font-medium text-gray-900">{alert.title}</div>
+                            <div className="text-sm text-gray-600">{alert.message}</div>
+                          </div>
+                          <div className={`text-sm font-semibold ${alert.level === 'alta' ? 'text-red-700' : 'text-amber-700'}`}>
+                            {formatCLP(alert.amount)}
+                          </div>
+                        </div>
+                      </div>
+                    )) : (
+                      <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+                        No se detectan alertas relevantes para la temporada seleccionada.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <h3 className="text-lg font-semibold text-gray-900">Top focos de gasto</h3>
+                    <p className="text-sm text-gray-500">Campos y sectores que concentran la mayor parte del costo.</p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 p-4">
+                    <div>
+                      <div className="mb-2 text-sm font-medium text-gray-700">Top 5 campos</div>
+                      <div className="space-y-2">
+                        {executiveData.topFields.map((row, index) => (
+                          <div key={row.fieldId} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
+                            <div className="text-sm text-gray-900">{index + 1}. {row.fieldName}</div>
+                            <div className="text-sm font-semibold text-gray-900">{formatCLP(row.total)} · {row.sharePct.toFixed(1)}%</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="mb-2 text-sm font-medium text-gray-700">Top 5 sectores</div>
+                      <div className="space-y-2">
+                        {executiveData.topSectors.map((row, index) => (
+                          <div key={row.sectorId} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
+                            <div className="text-sm text-gray-900">{index + 1}. {row.fieldName} / {row.sectorName}</div>
+                            <div className="text-sm font-semibold text-gray-900">{formatCLP(row.total)} · {row.sharePct.toFixed(1)}%</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-200">
                   <h3 className="text-lg font-semibold text-gray-900">Gasto mes a mes por campo</h3>
-                  <p className="text-sm text-gray-500">Matriz ejecutiva lista para imprimir y presentar.</p>
+                  <p className="text-sm text-gray-500">Matriz ejecutiva lista para imprimir y presentar, con comparación total por temporada.</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -2513,6 +2821,8 @@ export const Reports: React.FC = () => {
                         {executiveSeasonMonths.map((month) => (
                           <th key={month.key} className="px-4 py-3 text-right font-medium text-gray-500 uppercase">{month.shortLabel}</th>
                         ))}
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">{previousExecutiveSeason}</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Var %</th>
                         <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Total</th>
                       </tr>
                     </thead>
@@ -2525,6 +2835,8 @@ export const Reports: React.FC = () => {
                               {formatCLP(row.months[month.key] || 0)}
                             </td>
                           ))}
+                          <td className="px-4 py-3 text-right text-gray-700">{formatCLP(row.previousTotal)}</td>
+                          <td className={`px-4 py-3 text-right font-medium ${row.delta >= 0 ? 'text-red-600' : 'text-green-600'}`}>{row.deltaPct.toFixed(1)}%</td>
                           <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCLP(row.total)}</td>
                         </tr>
                       ))}
@@ -2536,7 +2848,7 @@ export const Reports: React.FC = () => {
               <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-200">
                   <h3 className="text-lg font-semibold text-gray-900">Gasto mes a mes por sector</h3>
-                  <p className="text-sm text-gray-500">Detalle ejecutivo resumido por sector y campo.</p>
+                  <p className="text-sm text-gray-500">Detalle ejecutivo resumido por sector y campo, con comparación acumulada.</p>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -2547,6 +2859,8 @@ export const Reports: React.FC = () => {
                         {executiveSeasonMonths.map((month) => (
                           <th key={month.key} className="px-4 py-3 text-right font-medium text-gray-500 uppercase">{month.shortLabel}</th>
                         ))}
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">{previousExecutiveSeason}</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Var %</th>
                         <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Total</th>
                       </tr>
                     </thead>
@@ -2560,6 +2874,8 @@ export const Reports: React.FC = () => {
                               {formatCLP(row.months[month.key] || 0)}
                             </td>
                           ))}
+                          <td className="px-4 py-3 text-right text-gray-700">{formatCLP(row.previousTotal)}</td>
+                          <td className={`px-4 py-3 text-right font-medium ${row.delta >= 0 ? 'text-red-600' : 'text-green-600'}`}>{row.deltaPct.toFixed(1)}%</td>
                           <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCLP(row.total)}</td>
                         </tr>
                       ))}
