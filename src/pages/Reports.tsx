@@ -1,5 +1,5 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { getSeasonFromDate, isDateInSeason } from '../lib/seasonUtils';
@@ -9,7 +9,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { loadReportsRawData } from '../services/reports';
-import { exportJsonToXlsx } from '../lib/excel';
+import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
 interface ReportData {
   field_name: string;
@@ -120,6 +120,8 @@ interface IncomeEntry {
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#8dd1e1', '#a4de6c', '#d0ed57'];
+const MONTH_NAMES_SHORT = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+const MONTH_NAMES_LONG = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 // Categories considered as "Chemicals" or "Inputs"
 const CHEMICAL_CATEGORIES = [
@@ -130,7 +132,7 @@ const CHEMICAL_CATEGORIES = [
 export const Reports: React.FC = () => {
   const { selectedCompany } = useCompany();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'general' | 'costs_ha' | 'margin' | 'labors' | 'applications' | 'monthly' | 'categories' | 'pending' | 'overdue' | 'paid_payments' | 'fuel_machines' | 'chemicals' | 'stock_breaks' | 'detailed' | 'budget' | 'comparative'>('general');
+  const [activeTab, setActiveTab] = useState<'executive' | 'general' | 'costs_ha' | 'margin' | 'labors' | 'applications' | 'monthly' | 'categories' | 'pending' | 'overdue' | 'paid_payments' | 'fuel_machines' | 'chemicals' | 'stock_breaks' | 'detailed' | 'budget' | 'comparative'>('executive');
   const [activeGroup, setActiveGroup] = useState<'general' | 'financial' | 'inventory' | 'comparative'>('general');
   
   // Pending Invoices Filter State
@@ -190,7 +192,7 @@ export const Reports: React.FC = () => {
 
   // Update orientation when tab changes
   useEffect(() => {
-    if (activeTab === 'general' || activeTab === 'detailed' || activeTab === 'labors' || activeTab === 'costs_ha' || activeTab === 'margin' || activeTab === 'fuel_machines') {
+    if (activeTab === 'executive' || activeTab === 'general' || activeTab === 'detailed' || activeTab === 'labors' || activeTab === 'costs_ha' || activeTab === 'margin' || activeTab === 'fuel_machines') {
       setPdfOrientation('landscape');
     } else {
       setPdfOrientation('portrait');
@@ -267,6 +269,330 @@ export const Reports: React.FC = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [presentationMode, activeTab]);
+
+  const executiveSeasonMonths = useMemo(() => {
+    const [startYearStr] = selectedSeason.split('-');
+    const startYear = Number(startYearStr) || new Date().getFullYear();
+    const defs: Array<{ key: string; shortLabel: string; fullLabel: string }> = [];
+
+    for (let month = 4; month <= 11; month += 1) {
+      defs.push({
+        key: `${startYear}-${String(month + 1).padStart(2, '0')}`,
+        shortLabel: MONTH_NAMES_SHORT[month],
+        fullLabel: `${MONTH_NAMES_LONG[month]} ${startYear}`
+      });
+    }
+
+    for (let month = 0; month <= 3; month += 1) {
+      defs.push({
+        key: `${startYear + 1}-${String(month + 1).padStart(2, '0')}`,
+        shortLabel: MONTH_NAMES_SHORT[month],
+        fullLabel: `${MONTH_NAMES_LONG[month]} ${startYear + 1}`
+      });
+    }
+
+    return defs;
+  }, [selectedSeason]);
+
+  const executiveMonthKeySet = useMemo(() => new Set(executiveSeasonMonths.map((month) => month.key)), [executiveSeasonMonths]);
+
+  const executiveSectorMeta = useMemo(() => {
+    const map = new Map<string, { fieldId: string; fieldName: string; sectorName: string; hectares: number }>();
+
+    rawFields.forEach((field: any) => {
+      (field.sectors || []).forEach((sector: any) => {
+        map.set(sector.id, {
+          fieldId: field.id,
+          fieldName: field.name,
+          sectorName: sector.name,
+          hectares: Number(sector.hectares || 0)
+        });
+      });
+    });
+
+    return map;
+  }, [rawFields]);
+
+  const executiveFieldMeta = useMemo(() => {
+    const map = new Map<string, { fieldName: string; hectares: number }>();
+
+    rawFields.forEach((field: any) => {
+      const hectares = (field.sectors || []).reduce((sum: number, sector: any) => sum + Number(sector.hectares || 0), 0);
+      map.set(field.id, {
+        fieldName: field.name,
+        hectares
+      });
+    });
+
+    return map;
+  }, [rawFields]);
+
+  const executiveFuelPrices = useMemo(() => {
+    let totalDieselLiters = 0;
+    let totalDieselCost = 0;
+    let totalGasLiters = 0;
+    let totalGasCost = 0;
+
+    rawInvoices.forEach((inv: any) => {
+      inv.invoice_items?.forEach((item: any) => {
+        const cat = String(item.category || item.products?.category || '').toLowerCase().trim();
+        const productName = String(item.products?.name || '').toLowerCase();
+        const unit = String(item.products?.unit || '').toLowerCase().trim();
+        const invalidUnits = ['un', 'unid', 'unidad', 'und', 'pieza', 'kit', 'juego', 'global', 'servicio', 'hrs', 'horas'];
+        if (invalidUnits.includes(unit)) return;
+
+        const docType = String(inv.document_type || '').toLowerCase();
+        const isCreditNote = docType.includes('nota de cr') || docType.includes('nota de cre') || docType.includes('nota credito');
+        const qty = Number(item.quantity || 0);
+        const price = Number(item.total_price || 0);
+        const finalQty = isCreditNote ? -Math.abs(qty) : qty;
+        const finalPrice = isCreditNote ? -Math.abs(price) : price;
+
+        const isDiesel = ['petroleo', 'diesel'].some((token) => cat.includes(token) || productName.includes(token));
+        const isGasoline = ['bencina', 'gasolina', 'combustible'].some((token) => cat.includes(token) || productName.includes(token));
+
+        if (isDiesel && !productName.includes('bencina') && !productName.includes('gasolina')) {
+          totalDieselLiters += finalQty;
+          totalDieselCost += finalPrice;
+        } else if (isGasoline) {
+          totalGasLiters += finalQty;
+          totalGasCost += finalPrice;
+        }
+      });
+    });
+
+    return {
+      diesel: totalDieselLiters > 0 ? totalDieselCost / totalDieselLiters : 0,
+      gasoline: totalGasLiters > 0 ? totalGasCost / totalGasLiters : 0
+    };
+  }, [rawInvoices]);
+
+  const executiveData = useMemo(() => {
+    const monthlyTotals = new Map<string, number>();
+    const fieldMonthly = new Map<string, Map<string, number>>();
+    const sectorMonthly = new Map<string, Map<string, number>>();
+
+    executiveSeasonMonths.forEach((month) => {
+      monthlyTotals.set(month.key, 0);
+    });
+
+    const addAmount = (bucket: Map<string, Map<string, number>>, entityId: string, monthKey: string, amount: number) => {
+      const current = bucket.get(entityId) || new Map<string, number>();
+      current.set(monthKey, (current.get(monthKey) || 0) + amount);
+      bucket.set(entityId, current);
+    };
+
+    const parseMonthKey = (rawDate: string) => {
+      if (!rawDate) return null;
+      const parsed = new Date(`${String(rawDate).slice(0, 10)}T12:00:00`);
+      if (Number.isNaN(parsed.getTime())) return null;
+      return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+    };
+
+    const registerCost = (params: { sectorId: string; rawDate: string; amount: number }) => {
+      const meta = executiveSectorMeta.get(params.sectorId);
+      if (!meta) return;
+      const monthKey = parseMonthKey(params.rawDate);
+      if (!monthKey || !executiveMonthKeySet.has(monthKey)) return;
+      const amount = Number(params.amount || 0);
+      if (!Number.isFinite(amount) || Math.abs(amount) < 0.0001) return;
+
+      monthlyTotals.set(monthKey, (monthlyTotals.get(monthKey) || 0) + amount);
+      addAmount(fieldMonthly, meta.fieldId, monthKey, amount);
+      addAmount(sectorMonthly, params.sectorId, monthKey, amount);
+    };
+
+    rawApplications.forEach((item: any) =>
+      registerCost({ sectorId: item.sector_id, rawDate: item.application_date, amount: Number(item.total_cost || 0) })
+    );
+    rawLabor.forEach((item: any) =>
+      registerCost({ sectorId: item.sector_id, rawDate: item.assigned_date, amount: Number(item.assigned_amount || 0) })
+    );
+    rawWorkerCosts.forEach((item: any) =>
+      registerCost({ sectorId: item.sector_id, rawDate: item.date, amount: Number(item.amount || 0) })
+    );
+    rawFuel.forEach((item: any) =>
+      registerCost({ sectorId: item.sector_id, rawDate: item.assigned_date, amount: Number(item.assigned_amount || 0) })
+    );
+    rawFuelConsumption.forEach((item: any) => {
+      const activity = String(item.activity || '').toLowerCase();
+      const isGasoline = activity.includes('gasolina') || activity.includes('bencina');
+      let cost = Number(item.estimated_price || 0);
+      if (cost === 0 && Number(item.liters || 0) > 0) {
+        cost = Number(item.liters || 0) * (isGasoline ? executiveFuelPrices.gasoline : executiveFuelPrices.diesel);
+      }
+      registerCost({ sectorId: item.sector_id, rawDate: item.date, amount: cost });
+    });
+    rawMachinery.forEach((item: any) =>
+      registerCost({ sectorId: item.sector_id, rawDate: item.assigned_date, amount: Number(item.assigned_amount || 0) })
+    );
+    rawIrrigation.forEach((item: any) =>
+      registerCost({ sectorId: item.sector_id, rawDate: item.assigned_date, amount: Number(item.assigned_amount || 0) })
+    );
+    rawGeneralCosts.forEach((item: any) =>
+      registerCost({ sectorId: item.sector_id, rawDate: item.date, amount: Number(item.amount || 0) })
+    );
+
+    const categoryRows = [
+      { category: 'Aplicaciones', total: reportData.reduce((sum, row) => sum + Number(row.app_cost_only || 0), 0) },
+      { category: 'Labores', total: reportData.reduce((sum, row) => sum + Number(row.labor_cost || 0), 0) },
+      { category: 'Trabajadores', total: reportData.reduce((sum, row) => sum + Number(row.worker_cost || 0), 0) },
+      { category: 'Combustible', total: reportData.reduce((sum, row) => sum + Number(row.fuel_cost || 0), 0) },
+      { category: 'Maquinaria', total: reportData.reduce((sum, row) => sum + Number(row.machinery_cost || 0), 0) },
+      { category: 'Riego', total: reportData.reduce((sum, row) => sum + Number(row.irrigation_cost || 0), 0) },
+      { category: 'Generales', total: reportData.reduce((sum, row) => sum + Number(row.general_cost || 0), 0) }
+    ].filter((row) => row.total > 0);
+
+    const fieldRows = Array.from(executiveFieldMeta.entries())
+      .map(([fieldId, meta]) => {
+        const months = executiveSeasonMonths.reduce<Record<string, number>>((acc, month) => {
+          acc[month.key] = fieldMonthly.get(fieldId)?.get(month.key) || 0;
+          return acc;
+        }, {});
+        const total = Object.values(months).reduce((sum, value) => sum + value, 0);
+        return {
+          fieldId,
+          fieldName: meta.fieldName,
+          hectares: meta.hectares,
+          months,
+          total
+        };
+      })
+      .filter((row) => row.total > 0)
+      .sort((a, b) => b.total - a.total);
+
+    const sectorRows = Array.from(executiveSectorMeta.entries())
+      .map(([sectorId, meta]) => {
+        const months = executiveSeasonMonths.reduce<Record<string, number>>((acc, month) => {
+          acc[month.key] = sectorMonthly.get(sectorId)?.get(month.key) || 0;
+          return acc;
+        }, {});
+        const total = Object.values(months).reduce((sum, value) => sum + value, 0);
+        return {
+          sectorId,
+          sectorName: meta.sectorName,
+          fieldName: meta.fieldName,
+          hectares: meta.hectares,
+          months,
+          total
+        };
+      })
+      .filter((row) => row.total > 0)
+      .sort((a, b) => b.total - a.total);
+
+    const monthlyRows = executiveSeasonMonths.map((month, index) => {
+      const total = monthlyTotals.get(month.key) || 0;
+      const previousTotal = index > 0 ? monthlyTotals.get(executiveSeasonMonths[index - 1].key) || 0 : 0;
+      const variation = index > 0 ? total - previousTotal : 0;
+      const variationPct = index > 0 && previousTotal > 0 ? (variation / previousTotal) * 100 : 0;
+
+      const topField = fieldRows
+        .map((row) => ({ name: row.fieldName, total: row.months[month.key] || 0 }))
+        .sort((a, b) => b.total - a.total)[0];
+      const topSector = sectorRows
+        .map((row) => ({ name: row.sectorName, total: row.months[month.key] || 0 }))
+        .sort((a, b) => b.total - a.total)[0];
+
+      return {
+        monthKey: month.key,
+        monthLabel: month.fullLabel,
+        shortLabel: month.shortLabel,
+        total,
+        variation,
+        variationPct,
+        topFieldName: topField?.total ? topField.name : '-',
+        topSectorName: topSector?.total ? topSector.name : '-'
+      };
+    });
+
+    const totalSeasonCost = monthlyRows.reduce((sum, row) => sum + row.total, 0);
+    const totalHectares = fieldRows.reduce((sum, row) => sum + row.hectares, 0);
+    const peakMonth = [...monthlyRows].sort((a, b) => b.total - a.total)[0] || null;
+    const averageMonthlyCost = monthlyRows.length > 0 ? totalSeasonCost / monthlyRows.length : 0;
+    const topField = fieldRows[0] || null;
+    const topSector = sectorRows[0] || null;
+
+    return {
+      monthlyRows,
+      fieldRows,
+      sectorRows,
+      categoryRows,
+      kpis: {
+        totalSeasonCost,
+        totalHectares,
+        averageMonthlyCost,
+        peakMonth,
+        topField,
+        topSector
+      }
+    };
+  }, [
+    executiveFieldMeta,
+    executiveFuelPrices.diesel,
+    executiveFuelPrices.gasoline,
+    executiveMonthKeySet,
+    executiveSeasonMonths,
+    executiveSectorMeta,
+    rawApplications,
+    rawFields,
+    rawFuel,
+    rawFuelConsumption,
+    rawGeneralCosts,
+    rawIrrigation,
+    rawLabor,
+    rawMachinery,
+    rawWorkerCosts,
+    reportData
+  ]);
+
+  const exportExecutiveExcel = async () => {
+    try {
+      const summaryRows = executiveData.monthlyRows.map((row) => ({
+        Mes: row.monthLabel,
+        'Gasto Total': Number(row.total.toFixed(0)),
+        'Variación CLP': Number(row.variation.toFixed(0)),
+        'Variación %': Number(row.variationPct.toFixed(2)),
+        'Campo Mayor Gasto': row.topFieldName,
+        'Sector Mayor Gasto': row.topSectorName
+      }));
+
+      const fieldRows = executiveData.fieldRows.map((row) => {
+        const base: Record<string, unknown> = {
+          Campo: row.fieldName,
+          Hectáreas: Number(row.hectares.toFixed(2)),
+          'Total Temporada': Number(row.total.toFixed(0))
+        };
+        executiveSeasonMonths.forEach((month) => {
+          base[month.shortLabel] = Number((row.months[month.key] || 0).toFixed(0));
+        });
+        return base;
+      });
+
+      const sectorRows = executiveData.sectorRows.map((row) => {
+        const base: Record<string, unknown> = {
+          Campo: row.fieldName,
+          Sector: row.sectorName,
+          Hectáreas: Number(row.hectares.toFixed(2)),
+          'Total Temporada': Number(row.total.toFixed(0))
+        };
+        executiveSeasonMonths.forEach((month) => {
+          base[month.shortLabel] = Number((row.months[month.key] || 0).toFixed(0));
+        });
+        return base;
+      });
+
+      await exportWorkbookToXlsx({
+        filename: `Reporte_Ejecutivo_${selectedCompany?.name?.replace(/\s+/g, '_') || 'empresa'}_${selectedSeason}.xlsx`,
+        sheets: [
+          { name: 'Resumen Mensual', rows: summaryRows },
+          { name: 'Campos', rows: fieldRows },
+          { name: 'Sectores', rows: sectorRows }
+        ]
+      });
+    } catch (error: any) {
+      toast.error(`No se pudo exportar el reporte ejecutivo: ${error?.message || 'intenta nuevamente.'}`);
+    }
+  };
 
   const startPresentation = () => {
     setPresentationMode(true);
@@ -942,7 +1268,84 @@ export const Reports: React.FC = () => {
 
     // --- REPORT GENERATION LOGIC BASED ON ACTIVE TAB ---
 
-    if (activeTab === 'general') {
+    if (activeTab === 'executive') {
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Indicador', 'Valor']],
+          body: [
+            ['Gasto total temporada', formatCLP(executiveData.kpis.totalSeasonCost)],
+            ['Promedio mensual', formatCLP(executiveData.kpis.averageMonthlyCost)],
+            ['Hectáreas reportadas', executiveData.kpis.totalHectares.toFixed(2)],
+            ['Campo con mayor gasto', executiveData.kpis.topField ? `${executiveData.kpis.topField.fieldName} (${formatCLP(executiveData.kpis.topField.total)})` : '-'],
+            ['Sector con mayor gasto', executiveData.kpis.topSector ? `${executiveData.kpis.topSector.sectorName} (${formatCLP(executiveData.kpis.topSector.total)})` : '-'],
+            ['Mes más alto', executiveData.kpis.peakMonth ? `${executiveData.kpis.peakMonth.monthLabel} (${formatCLP(executiveData.kpis.peakMonth.total)})` : '-']
+          ],
+          theme: 'grid',
+          headStyles: { fillColor: [88, 28, 135] }
+        });
+
+        yPos = (doc as any).lastAutoTable.finalY + 8;
+
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Mes', 'Gasto total', 'Variación', 'Variación %', 'Campo mayor gasto', 'Sector mayor gasto']],
+          body: executiveData.monthlyRows.map((row) => [
+            row.monthLabel,
+            formatCLP(row.total),
+            formatCLP(row.variation),
+            `${row.variationPct.toFixed(1)}%`,
+            row.topFieldName,
+            row.topSectorName
+          ]),
+          theme: 'striped',
+          headStyles: { fillColor: [22, 101, 52] }
+        });
+
+        yPos = (doc as any).lastAutoTable.finalY + 8;
+
+        autoTable(doc, {
+          startY: yPos,
+          head: [[
+            'Campo',
+            ...executiveSeasonMonths.map((month) => month.shortLabel),
+            'Total'
+          ]],
+          body: executiveData.fieldRows.map((row) => [
+            row.fieldName,
+            ...executiveSeasonMonths.map((month) => formatCLP(row.months[month.key] || 0)),
+            formatCLP(row.total)
+          ]),
+          theme: 'grid',
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: [30, 64, 175] }
+        });
+
+        yPos = (doc as any).lastAutoTable.finalY + 8;
+
+        if (yPos > 160) {
+          doc.addPage();
+          yPos = 20;
+        }
+
+        autoTable(doc, {
+          startY: yPos,
+          head: [[
+            'Campo',
+            'Sector',
+            ...executiveSeasonMonths.map((month) => month.shortLabel),
+            'Total'
+          ]],
+          body: executiveData.sectorRows.map((row) => [
+            row.fieldName,
+            row.sectorName,
+            ...executiveSeasonMonths.map((month) => formatCLP(row.months[month.key] || 0)),
+            formatCLP(row.total)
+          ]),
+          theme: 'grid',
+          styles: { fontSize: 7 },
+          headStyles: { fillColor: [109, 40, 217] }
+        });
+    } else if (activeTab === 'general') {
         // GENERAL REPORT
         const tableBody = reportData.map(row => {
             const costUsd = row.total_cost / (usdExchangeRate || 1);
@@ -1560,6 +1963,7 @@ export const Reports: React.FC = () => {
   
   const getReportTitle = () => {
     switch(activeTab) {
+      case 'executive': return 'Resumen Ejecutivo';
       case 'applications': return 'Costos de Aplicación';
       case 'costs_ha': return 'Costos por Hectárea';
       case 'margin': return 'Rentabilidad Neta';
@@ -1720,6 +2124,25 @@ export const Reports: React.FC = () => {
           >
             <Printer className="mr-2 h-4 w-4 text-gray-500" /> Imprimir PDF
           </button>
+
+          {activeTab === 'executive' && (
+            <>
+              <button
+                onClick={() => window.print()}
+                className="inline-flex items-center px-4 py-2 border border-purple-300 shadow-sm text-sm font-medium rounded-md text-purple-700 bg-white hover:bg-purple-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+                title="Imprimir vista ejecutiva"
+              >
+                <Printer className="mr-2 h-4 w-4" /> Imprimir Vista
+              </button>
+              <button
+                onClick={() => void exportExecutiveExcel()}
+                className="inline-flex items-center px-4 py-2 border border-green-300 shadow-sm text-sm font-medium rounded-md text-green-700 bg-white hover:bg-green-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                title="Exportar tablas ejecutivas a Excel"
+              >
+                <FileText className="mr-2 h-4 w-4" /> Excel Ejecutivo
+              </button>
+            </>
+          )}
           
           <div className="relative">
             <select
@@ -1755,7 +2178,7 @@ export const Reports: React.FC = () => {
       <div className="border-b border-gray-200 print:hidden mb-4">
         <nav className="-mb-px flex space-x-8">
           <button
-            onClick={() => { setActiveGroup('general'); setActiveTab('general'); }}
+            onClick={() => { setActiveGroup('general'); setActiveTab('executive'); }}
             className={`${
               activeGroup === 'general' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
             } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
@@ -1792,6 +2215,14 @@ export const Reports: React.FC = () => {
       <div className="border-b border-gray-100 print:hidden mb-6 bg-slate-50 p-2 rounded-t-lg">
         {activeGroup === 'general' && (
             <nav className="flex space-x-4 overflow-x-auto">
+              <button
+                onClick={() => setActiveTab('executive')}
+                className={`${
+                  activeTab === 'executive' ? 'bg-white shadow-sm text-purple-700' : 'text-gray-600 hover:bg-gray-100'
+                } px-3 py-1.5 rounded-md font-medium text-sm transition-colors`}
+              >
+                Vista Ejecutiva
+              </button>
               <button
                 onClick={() => setActiveTab('general')}
                 className={`${
@@ -1932,6 +2363,213 @@ export const Reports: React.FC = () => {
         </div>
       ) : (
         <div className="mt-6">
+          {activeTab === 'executive' && (
+            <div className="space-y-6">
+              <div className="bg-gradient-to-r from-slate-900 via-purple-900 to-slate-900 text-white rounded-xl p-6 shadow print:bg-white print:text-gray-900 print:border print:border-gray-200">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <h3 className="text-2xl font-semibold">Resumen Ejecutivo</h3>
+                    <p className="text-sm text-purple-100 print:text-gray-500">
+                      Lectura gerencial de gastos por mes, campo y sector para presentar e imprimir.
+                    </p>
+                  </div>
+                  <div className="text-sm text-purple-100 print:text-gray-500">
+                    Temporada {selectedSeason} · {selectedCompany.name}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
+                  <div className="text-xs uppercase tracking-wide text-gray-500">Gasto temporada</div>
+                  <div className="mt-2 text-2xl font-semibold text-gray-900">{formatCLP(executiveData.kpis.totalSeasonCost)}</div>
+                </div>
+                <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
+                  <div className="text-xs uppercase tracking-wide text-gray-500">Promedio mensual</div>
+                  <div className="mt-2 text-2xl font-semibold text-gray-900">{formatCLP(executiveData.kpis.averageMonthlyCost)}</div>
+                </div>
+                <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
+                  <div className="text-xs uppercase tracking-wide text-gray-500">Campo principal</div>
+                  <div className="mt-2 text-lg font-semibold text-gray-900">
+                    {executiveData.kpis.topField?.fieldName || '-'}
+                  </div>
+                  <div className="mt-1 text-sm text-gray-500">
+                    {executiveData.kpis.topField ? formatCLP(executiveData.kpis.topField.total) : 'Sin datos'}
+                  </div>
+                </div>
+                <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
+                  <div className="text-xs uppercase tracking-wide text-gray-500">Sector principal</div>
+                  <div className="mt-2 text-lg font-semibold text-gray-900">
+                    {executiveData.kpis.topSector?.sectorName || '-'}
+                  </div>
+                  <div className="mt-1 text-sm text-gray-500">
+                    {executiveData.kpis.topSector ? formatCLP(executiveData.kpis.topSector.total) : 'Sin datos'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Evolución mensual</h3>
+                      <p className="text-sm text-gray-500">Total consolidado por mes de la temporada.</p>
+                    </div>
+                    <div className="text-right text-sm text-gray-500">
+                      <div>Mes más alto</div>
+                      <div className="font-semibold text-gray-900">
+                        {executiveData.kpis.peakMonth ? `${executiveData.kpis.peakMonth.shortLabel} · ${formatCLP(executiveData.kpis.peakMonth.total)}` : '-'}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={executiveData.monthlyRows}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="shortLabel" />
+                        <YAxis tickFormatter={(value) => formatCLP(Number(value))} />
+                        <Tooltip formatter={(value) => formatCLP(Number(value))} />
+                        <Bar dataKey="total" fill="#7c3aed" radius={[8, 8, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
+                  <div className="mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900">Participación por categoría</h3>
+                    <p className="text-sm text-gray-500">Distribución consolidada de costos de la temporada.</p>
+                  </div>
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={executiveData.categoryRows}
+                          dataKey="total"
+                          nameKey="category"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={110}
+                          label={({ category, percent }) => `${category} ${(percent * 100).toFixed(0)}%`}
+                        >
+                          {executiveData.categoryRows.map((entry, index) => (
+                            <Cell key={`${entry.category}-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value: number) => formatCLP(value)} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900">Resumen mensual ejecutivo</h3>
+                  <p className="text-sm text-gray-500">Incluye variación contra el mes anterior y concentración del gasto.</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase">Mes</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Total</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Variación</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Variación %</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase">Campo mayor gasto</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase">Sector mayor gasto</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {executiveData.monthlyRows.map((row) => (
+                        <tr key={row.monthKey}>
+                          <td className="px-4 py-3 text-gray-900">{row.monthLabel}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCLP(row.total)}</td>
+                          <td className={`px-4 py-3 text-right font-medium ${row.variation >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                            {formatCLP(row.variation)}
+                          </td>
+                          <td className={`px-4 py-3 text-right font-medium ${row.variation >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                            {row.variationPct.toFixed(1)}%
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">{row.topFieldName}</td>
+                          <td className="px-4 py-3 text-gray-700">{row.topSectorName}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900">Gasto mes a mes por campo</h3>
+                  <p className="text-sm text-gray-500">Matriz ejecutiva lista para imprimir y presentar.</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase sticky left-0 bg-gray-50">Campo</th>
+                        {executiveSeasonMonths.map((month) => (
+                          <th key={month.key} className="px-4 py-3 text-right font-medium text-gray-500 uppercase">{month.shortLabel}</th>
+                        ))}
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {executiveData.fieldRows.map((row) => (
+                        <tr key={row.fieldId}>
+                          <td className="px-4 py-3 font-medium text-gray-900 sticky left-0 bg-white">{row.fieldName}</td>
+                          {executiveSeasonMonths.map((month) => (
+                            <td key={month.key} className="px-4 py-3 text-right text-gray-700">
+                              {formatCLP(row.months[month.key] || 0)}
+                            </td>
+                          ))}
+                          <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCLP(row.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900">Gasto mes a mes por sector</h3>
+                  <p className="text-sm text-gray-500">Detalle ejecutivo resumido por sector y campo.</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase sticky left-0 bg-gray-50">Campo</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase sticky left-[120px] bg-gray-50">Sector</th>
+                        {executiveSeasonMonths.map((month) => (
+                          <th key={month.key} className="px-4 py-3 text-right font-medium text-gray-500 uppercase">{month.shortLabel}</th>
+                        ))}
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {executiveData.sectorRows.map((row) => (
+                        <tr key={row.sectorId}>
+                          <td className="px-4 py-3 text-gray-700 sticky left-0 bg-white">{row.fieldName}</td>
+                          <td className="px-4 py-3 font-medium text-gray-900 sticky left-[120px] bg-white">{row.sectorName}</td>
+                          {executiveSeasonMonths.map((month) => (
+                            <td key={month.key} className="px-4 py-3 text-right text-gray-700">
+                              {formatCLP(row.months[month.key] || 0)}
+                            </td>
+                          ))}
+                          <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCLP(row.total)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 8. BUDGET & SALES REPORT (NEW) */}
           {activeTab === 'budget' && (
             <div className="space-y-6">
