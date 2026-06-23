@@ -4031,7 +4031,7 @@ export const Reports: React.FC = () => {
                         <div className="flex items-center justify-between gap-4">
                           <div>
                             <div className="font-medium text-slate-900">{row.category}</div>
-                            <div className="text-sm text-slate-500">{formatCLP(row.previous)} -> {formatCLP(row.current)}</div>
+                            <div className="text-sm text-slate-500">{formatCLP(row.previous)} -&gt; {formatCLP(row.current)}</div>
                           </div>
                           <div className={`text-right font-semibold ${row.delta >= 0 ? 'text-red-600' : 'text-green-600'}`}>
                             {formatCLP(row.delta)}
