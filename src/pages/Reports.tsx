@@ -312,7 +312,7 @@ const CHEMICAL_CATEGORIES = [
 ];
 
 export const Reports: React.FC = () => {
-  const { selectedCompany } = useCompany();
+  const { selectedCompany, companies } = useCompany();
   const companyName = selectedCompany?.name || 'Empresa';
   const companySlug = companyName.replace(/\s+/g, '_');
   const [loading, setLoading] = useState(false);
@@ -370,6 +370,8 @@ export const Reports: React.FC = () => {
   const [filterChemicalCategory, setFilterChemicalCategory] = useState<string>('all');
   const [executiveFieldFilter, setExecutiveFieldFilter] = useState<string>('all');
   const [executiveComparisonSeason, setExecutiveComparisonSeason] = useState<string>('');
+  const [executiveCompareCompanyId, setExecutiveCompareCompanyId] = useState<string>('none');
+  const [executiveCompareCompanyRaw, setExecutiveCompareCompanyRaw] = useState<any | null>(null);
 
   // Preview Modal State
   const [showPreview, setShowPreview] = useState(false);
@@ -439,6 +441,8 @@ export const Reports: React.FC = () => {
   useEffect(() => {
     setExecutiveFieldFilter('all');
     setExecutiveComparisonSeason('');
+    setExecutiveCompareCompanyId('none');
+    setExecutiveCompareCompanyRaw(null);
     setCurrentSlide(0);
     setPresentationMode(false);
     setReportData([]);
@@ -449,6 +453,36 @@ export const Reports: React.FC = () => {
     setDetailedReport([]);
     setComparativeData([]);
   }, [selectedCompany?.id]);
+
+  const executiveComparableCompanies = useMemo(
+    () => companies.filter((company) => company.id !== selectedCompany?.id),
+    [companies, selectedCompany?.id]
+  );
+
+  useEffect(() => {
+    if (executiveCompareCompanyId === 'none') {
+      setExecutiveCompareCompanyRaw(null);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const raw = await loadReportsRawData({ companyId: executiveCompareCompanyId });
+        if (!cancelled) {
+          setExecutiveCompareCompanyRaw(raw);
+        }
+      } catch {
+        if (!cancelled) {
+          setExecutiveCompareCompanyRaw(null);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [executiveCompareCompanyId]);
 
   const presentationMaxSlide = activeTab === 'executive' ? 5 : activeTab === 'general' ? 3 : 1;
 
@@ -630,6 +664,27 @@ export const Reports: React.FC = () => {
   ]);
 
   const executiveData = useMemo(() => {
+    const fieldBudgetMap = new Map<string, { budget: number; cost: number; hectares: number; kg: number }>();
+    const sectorBudgetMap = new Map<string, { budget: number; cost: number; hectares: number; kg: number }>();
+
+    reportData.forEach((row) => {
+      const fieldKey = String(row.field_name || '').trim();
+      const sectorKey = `${fieldKey}::${String(row.sector_name || '').trim()}`;
+      const currentField = fieldBudgetMap.get(fieldKey) || { budget: 0, cost: 0, hectares: 0, kg: 0 };
+      currentField.budget += Number(row.total_budget || 0);
+      currentField.cost += Number(row.total_cost || 0);
+      currentField.hectares += Number(row.hectares || 0);
+      currentField.kg += Number(row.kg_produced || 0);
+      fieldBudgetMap.set(fieldKey, currentField);
+
+      const currentSector = sectorBudgetMap.get(sectorKey) || { budget: 0, cost: 0, hectares: 0, kg: 0 };
+      currentSector.budget += Number(row.total_budget || 0);
+      currentSector.cost += Number(row.total_cost || 0);
+      currentSector.hectares += Number(row.hectares || 0);
+      currentSector.kg += Number(row.kg_produced || 0);
+      sectorBudgetMap.set(sectorKey, currentSector);
+    });
+
     const categoryRows = [
       { category: 'Aplicaciones', total: reportData.reduce((sum, row) => sum + Number(row.app_cost_only || 0), 0) },
       { category: 'Labores', total: reportData.reduce((sum, row) => sum + Number(row.labor_cost || 0), 0) },
@@ -660,7 +715,23 @@ export const Reports: React.FC = () => {
       const previousTotal = previous?.total || 0;
       const delta = row.total - previousTotal;
       const deltaPct = previousTotal > 0 ? (delta / previousTotal) * 100 : 0;
-      return { ...row, previousTotal, delta, deltaPct, sharePct: executiveCurrentBase.totalSeasonCost > 0 ? (row.total / executiveCurrentBase.totalSeasonCost) * 100 : 0 };
+      const budgetInfo = fieldBudgetMap.get(row.fieldName) || { budget: 0, cost: row.total, hectares: row.hectares, kg: 0 };
+      const budgetTotal = Number(budgetInfo.budget || 0);
+      const costPerHa = row.hectares > 0 ? row.total / row.hectares : 0;
+      const costPerKg = Number(budgetInfo.kg || 0) > 0 ? row.total / Number(budgetInfo.kg || 0) : 0;
+      return {
+        ...row,
+        previousTotal,
+        delta,
+        deltaPct,
+        sharePct: executiveCurrentBase.totalSeasonCost > 0 ? (row.total / executiveCurrentBase.totalSeasonCost) * 100 : 0,
+        budgetTotal,
+        budgetDelta: row.total - budgetTotal,
+        budgetExecutionPct: budgetTotal > 0 ? (row.total / budgetTotal) * 100 : 0,
+        kgProduced: Number(budgetInfo.kg || 0),
+        costPerHa,
+        costPerKg
+      };
     });
 
     const sectorRows = executiveCurrentBase.sectorRows.map((row) => {
@@ -668,11 +739,31 @@ export const Reports: React.FC = () => {
       const previousTotal = previous?.total || 0;
       const delta = row.total - previousTotal;
       const deltaPct = previousTotal > 0 ? (delta / previousTotal) * 100 : 0;
-      return { ...row, previousTotal, delta, deltaPct, sharePct: executiveCurrentBase.totalSeasonCost > 0 ? (row.total / executiveCurrentBase.totalSeasonCost) * 100 : 0 };
+      const budgetInfo = sectorBudgetMap.get(`${row.fieldName}::${row.sectorName}`) || { budget: 0, cost: row.total, hectares: row.hectares, kg: 0 };
+      const budgetTotal = Number(budgetInfo.budget || 0);
+      const costPerHa = row.hectares > 0 ? row.total / row.hectares : 0;
+      const costPerKg = Number(budgetInfo.kg || 0) > 0 ? row.total / Number(budgetInfo.kg || 0) : 0;
+      return {
+        ...row,
+        previousTotal,
+        delta,
+        deltaPct,
+        sharePct: executiveCurrentBase.totalSeasonCost > 0 ? (row.total / executiveCurrentBase.totalSeasonCost) * 100 : 0,
+        budgetTotal,
+        budgetDelta: row.total - budgetTotal,
+        budgetExecutionPct: budgetTotal > 0 ? (row.total / budgetTotal) * 100 : 0,
+        kgProduced: Number(budgetInfo.kg || 0),
+        costPerHa,
+        costPerKg
+      };
     });
 
     const seasonVariation = executiveCurrentBase.totalSeasonCost - executivePreviousBase.totalSeasonCost;
     const seasonVariationPct = executivePreviousBase.totalSeasonCost > 0 ? (seasonVariation / executivePreviousBase.totalSeasonCost) * 100 : 0;
+    const totalBudget = reportData.reduce((sum, row) => sum + Number(row.total_budget || 0), 0);
+    const totalKgProduced = reportData.reduce((sum, row) => sum + Number(row.kg_produced || 0), 0);
+    const averageCostPerHa = executiveCurrentBase.totalHectares > 0 ? executiveCurrentBase.totalSeasonCost / executiveCurrentBase.totalHectares : 0;
+    const averageCostPerKg = totalKgProduced > 0 ? executiveCurrentBase.totalSeasonCost / totalKgProduced : 0;
 
     const alerts = [
       ...monthlyRows
@@ -714,7 +805,13 @@ export const Reports: React.FC = () => {
         topSector: sectorRows[0] || null,
         previousSeasonCost: executivePreviousBase.totalSeasonCost,
         seasonVariation,
-        seasonVariationPct
+        seasonVariationPct,
+        totalBudget,
+        budgetDelta: executiveCurrentBase.totalSeasonCost - totalBudget,
+        budgetExecutionPct: totalBudget > 0 ? (executiveCurrentBase.totalSeasonCost / totalBudget) * 100 : 0,
+        totalKgProduced,
+        averageCostPerHa,
+        averageCostPerKg
       }
     };
   }, [
@@ -784,6 +881,8 @@ export const Reports: React.FC = () => {
     const seasonVariationPct = previousSeasonCost > 0 ? (seasonVariation / previousSeasonCost) * 100 : 0;
     const peakMonth = [...monthlyRows].sort((a, b) => b.total - a.total)[0] || null;
     const averageMonthlyCost = monthlyRows.length > 0 ? totalSeasonCost / monthlyRows.length : 0;
+    const totalBudget = Number((selectedField as any)?.budgetTotal || 0);
+    const totalKgProduced = Number((selectedField as any)?.kgProduced || 0);
     const alerts = [
       ...monthlyRows
         .filter((row) => row.total > 0 && row.vsPreviousSeasonPct >= 15)
@@ -821,6 +920,12 @@ export const Reports: React.FC = () => {
         seasonVariation,
         seasonVariationPct,
         averageMonthlyCost,
+        totalBudget,
+        budgetDelta: totalSeasonCost - totalBudget,
+        budgetExecutionPct: totalBudget > 0 ? (totalSeasonCost / totalBudget) * 100 : 0,
+        totalKgProduced,
+        averageCostPerHa: selectedField?.hectares ? totalSeasonCost / selectedField.hectares : 0,
+        averageCostPerKg: totalKgProduced > 0 ? totalSeasonCost / totalKgProduced : 0,
         peakMonth,
         topField: selectedField,
         topSector: filteredSectorRows[0] || null
@@ -875,6 +980,125 @@ export const Reports: React.FC = () => {
       activeAlertCount: executiveViewData.alerts.length
     };
   }, [executiveViewData, previousExecutiveSeason, selectedSeason]);
+
+  const executiveCategoryComparisonRows = useMemo(() => {
+    const currentMap = new Map(executiveViewData.categoryRows.map((row) => [row.category, row.total]));
+    const previousCategories = (() => {
+      const seasonMonths = buildExecutiveSeasonMonths(previousExecutiveSeason);
+      const monthKeys = new Set(seasonMonths.map((month) => month.key));
+      const isAllowedSector = (sectorId: string) => executiveFieldFilter === 'all' || executiveSectorMeta.get(sectorId)?.fieldId === executiveFieldFilter;
+      const buildSum = (items: any[], dateKey: string, amountKey: string, seasonFilter?: (item: any) => number) =>
+        items.reduce((sum, item) => {
+          const monthKey = parseExecutiveMonthKey(String(item[dateKey] || ''));
+          if (!monthKey || !monthKeys.has(monthKey) || !isAllowedSector(String(item.sector_id || ''))) return sum;
+          return sum + Number(seasonFilter ? seasonFilter(item) : item[amountKey] || 0);
+        }, 0);
+
+      return [
+        { category: 'Aplicaciones', total: buildSum(rawApplications, 'application_date', 'total_cost') },
+        { category: 'Labores', total: buildSum(rawLabor, 'assigned_date', 'assigned_amount') },
+        { category: 'Trabajadores', total: buildSum(rawWorkerCosts, 'date', 'amount') },
+        { category: 'Combustible', total: buildSum(rawFuel, 'assigned_date', 'assigned_amount') + rawFuelConsumption.reduce((sum, item) => {
+          const monthKey = parseExecutiveMonthKey(String(item.date || ''));
+          if (!monthKey || !monthKeys.has(monthKey) || !isAllowedSector(String(item.sector_id || ''))) return sum;
+          const activity = String(item.activity || '').toLowerCase();
+          const isGasoline = activity.includes('gasolina') || activity.includes('bencina');
+          const estimated = Number(item.estimated_price || 0);
+          const calculated = Number(item.liters || 0) * (isGasoline ? executiveFuelPrices.gasoline : executiveFuelPrices.diesel);
+          return sum + (estimated || calculated || 0);
+        }, 0) },
+        { category: 'Maquinaria', total: buildSum(rawMachinery, 'assigned_date', 'assigned_amount') },
+        { category: 'Riego', total: buildSum(rawIrrigation, 'assigned_date', 'assigned_amount') },
+        { category: 'Generales', total: buildSum(rawGeneralCosts, 'date', 'amount') }
+      ];
+    })();
+
+    return previousCategories.map((row) => {
+      const current = Number(currentMap.get(row.category) || 0);
+      const previous = Number(row.total || 0);
+      const delta = current - previous;
+      const deltaPct = previous > 0 ? (delta / previous) * 100 : 0;
+      return { category: row.category, current, previous, delta, deltaPct };
+    }).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  }, [
+    executiveFuelPrices.diesel,
+    executiveFuelPrices.gasoline,
+    executiveFieldFilter,
+    executiveSectorMeta,
+    executiveViewData.categoryRows,
+    previousExecutiveSeason,
+    rawApplications,
+    rawFuel,
+    rawFuelConsumption,
+    rawGeneralCosts,
+    rawIrrigation,
+    rawLabor,
+    rawMachinery,
+    rawWorkerCosts
+  ]);
+
+  const executiveParetoFields = useMemo(() => {
+    let cumulative = 0;
+    return executiveViewData.fieldRows
+      .slice()
+      .sort((a, b) => b.total - a.total)
+      .map((row) => {
+        cumulative += Number((row as any).sharePct || 0);
+        return { ...row, cumulativeSharePct: cumulative };
+      });
+  }, [executiveViewData.fieldRows]);
+
+  const executiveHeatmapMax = useMemo(() => {
+    return Math.max(
+      0,
+      ...executiveViewData.fieldRows.flatMap((row) => executiveSeasonMonths.map((month) => Number(row.months[month.key] || 0)))
+    );
+  }, [executiveSeasonMonths, executiveViewData.fieldRows]);
+
+  const executiveCompareCompanyName = useMemo(
+    () => executiveComparableCompanies.find((company) => company.id === executiveCompareCompanyId)?.name || '',
+    [executiveComparableCompanies, executiveCompareCompanyId]
+  );
+
+  const executiveCompareCompanySummary = useMemo(() => {
+    if (!executiveCompareCompanyRaw) return null;
+
+    const compareSectorMeta = new Map<string, { fieldId: string; fieldName: string; sectorName: string; hectares: number }>();
+    const compareFieldMeta = new Map<string, { fieldName: string; hectares: number }>();
+    (executiveCompareCompanyRaw.fields || []).forEach((field: any) => {
+      const hectares = (field.sectors || []).reduce((sum: number, sector: any) => sum + Number(sector.hectares || 0), 0);
+      compareFieldMeta.set(field.id, { fieldName: field.name, hectares });
+      (field.sectors || []).forEach((sector: any) => {
+        compareSectorMeta.set(sector.id, { fieldId: field.id, fieldName: field.name, sectorName: sector.name, hectares: Number(sector.hectares || 0) });
+      });
+    });
+
+    const fuelPrices = { diesel: executiveFuelPrices.diesel, gasoline: executiveFuelPrices.gasoline };
+    const aggregated = aggregateExecutiveCosts({
+      seasonMonths: executiveSeasonMonths,
+      seasonMonthKeys: new Set(executiveSeasonMonths.map((month) => month.key)),
+      sectorMeta: compareSectorMeta,
+      fieldMeta: compareFieldMeta,
+      fuelPrices,
+      rawApplications: executiveCompareCompanyRaw.applications || [],
+      rawLabor: executiveCompareCompanyRaw.labor || [],
+      rawWorkerCosts: executiveCompareCompanyRaw.workerCosts || [],
+      rawFuel: executiveCompareCompanyRaw.fuel || [],
+      rawFuelConsumption: executiveCompareCompanyRaw.fuelConsumption || [],
+      rawMachinery: executiveCompareCompanyRaw.machinery || [],
+      rawIrrigation: executiveCompareCompanyRaw.irrigation || [],
+      rawGeneralCosts: executiveCompareCompanyRaw.generalCosts || []
+    });
+
+    const totalHectares = aggregated.totalHectares;
+    return {
+      totalSeasonCost: aggregated.totalSeasonCost,
+      totalHectares,
+      averageCostPerHa: totalHectares > 0 ? aggregated.totalSeasonCost / totalHectares : 0,
+      averageMonthlyCost: aggregated.averageMonthlyCost,
+      topField: aggregated.topField
+    };
+  }, [executiveCompareCompanyRaw, executiveFuelPrices.diesel, executiveFuelPrices.gasoline, executiveSeasonMonths]);
 
   const executiveHistoricalSeasonRows = useMemo(() => {
     return availablePreviousExecutiveSeasons.map((season) => {
@@ -936,6 +1160,10 @@ export const Reports: React.FC = () => {
         { Indicador: 'Temporada comparativa', Valor: previousExecutiveSeason },
         { Indicador: 'Campo filtrado', Valor: executiveFieldLabel },
         { Indicador: 'Gasto total temporada', Valor: Number(executiveViewData.kpis.totalSeasonCost.toFixed(0)) },
+        { Indicador: 'Presupuesto visible', Valor: Number((executiveViewData.kpis.totalBudget || 0).toFixed(0)) },
+        { Indicador: 'Desviación presupuesto', Valor: Number((executiveViewData.kpis.budgetDelta || 0).toFixed(0)) },
+        { Indicador: 'Costo por ha', Valor: Number((executiveViewData.kpis.averageCostPerHa || 0).toFixed(2)) },
+        { Indicador: 'Costo por kg', Valor: Number((executiveViewData.kpis.averageCostPerKg || 0).toFixed(2)) },
         { Indicador: 'Temporada anterior', Valor: Number(executiveViewData.kpis.previousSeasonCost.toFixed(0)) },
         { Indicador: 'Variación temporada', Valor: Number(executiveViewData.kpis.seasonVariation.toFixed(0)) },
         { Indicador: 'Variación temporada %', Valor: Number(executiveViewData.kpis.seasonVariationPct.toFixed(2)) },
@@ -967,6 +1195,11 @@ export const Reports: React.FC = () => {
           Campo: row.fieldName,
           Hectáreas: Number(row.hectares.toFixed(2)),
           'Total Temporada': Number(row.total.toFixed(0)),
+          Presupuesto: Number((row.budgetTotal || 0).toFixed(0)),
+          'Desviación Ppto': Number((row.budgetDelta || 0).toFixed(0)),
+          'Ejecución Ppto %': Number((row.budgetExecutionPct || 0).toFixed(2)),
+          'Costo / Ha': Number((row.costPerHa || 0).toFixed(2)),
+          'Costo / Kg': Number((row.costPerKg || 0).toFixed(2)),
           [`Temp. ${previousExecutiveSeason}`]: Number(row.previousTotal.toFixed(0)),
           'Variación CLP': Number(row.delta.toFixed(0)),
           'Variación %': Number(row.deltaPct.toFixed(2)),
@@ -984,6 +1217,11 @@ export const Reports: React.FC = () => {
           Sector: row.sectorName,
           Hectáreas: Number(row.hectares.toFixed(2)),
           'Total Temporada': Number(row.total.toFixed(0)),
+          Presupuesto: Number((row.budgetTotal || 0).toFixed(0)),
+          'Desviación Ppto': Number((row.budgetDelta || 0).toFixed(0)),
+          'Ejecución Ppto %': Number((row.budgetExecutionPct || 0).toFixed(2)),
+          'Costo / Ha': Number((row.costPerHa || 0).toFixed(2)),
+          'Costo / Kg': Number((row.costPerKg || 0).toFixed(2)),
           [`Temp. ${previousExecutiveSeason}`]: Number(row.previousTotal.toFixed(0)),
           'Variación CLP': Number(row.delta.toFixed(0)),
           'Variación %': Number(row.deltaPct.toFixed(2)),
@@ -3001,7 +3239,7 @@ export const Reports: React.FC = () => {
                     <h3 className="text-sm font-semibold text-gray-900">Filtro ejecutivo</h3>
                     <p className="text-sm text-gray-500">Enfoca la vista por campo y elige la temporada anterior que quieres usar como base comparativa.</p>
                   </div>
-                  <div className="grid w-full xl:w-auto grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="grid w-full xl:w-auto grid-cols-1 md:grid-cols-3 gap-3">
                     <select
                       value={executiveFieldFilter}
                       onChange={(e) => setExecutiveFieldFilter(e.target.value)}
@@ -3024,6 +3262,16 @@ export const Reports: React.FC = () => {
                       ) : (
                         <option value={previousExecutiveSeason}>{previousExecutiveSeason}</option>
                       )}
+                    </select>
+                    <select
+                      value={executiveCompareCompanyId}
+                      onChange={(e) => setExecutiveCompareCompanyId(e.target.value)}
+                      className="block w-full rounded-md border-gray-300 text-sm focus:border-purple-500 focus:ring-purple-500"
+                    >
+                      <option value="none">Sin comparar empresa</option>
+                      {executiveComparableCompanies.map((company) => (
+                        <option key={company.id} value={company.id}>{company.name}</option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -3087,6 +3335,14 @@ export const Reports: React.FC = () => {
                           <span className="text-slate-500">Alertas activas</span>
                           <span className="font-semibold text-slate-900">{executiveInsights.activeAlertCount}</span>
                         </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-slate-500">Presupuesto</span>
+                          <span className="font-semibold text-slate-900">{formatCLP(executiveViewData.kpis.totalBudget || 0)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="text-slate-500">Costo / Ha</span>
+                          <span className="font-semibold text-slate-900">{formatCLP(executiveViewData.kpis.averageCostPerHa || 0)}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -3129,7 +3385,7 @@ export const Reports: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-8 gap-4">
                 <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
                   <div className="text-xs uppercase tracking-wide text-gray-500">Gasto temporada</div>
                   <div className="mt-2 text-2xl font-semibold text-gray-900">{formatCLP(executiveViewData.kpis.totalSeasonCost)}</div>
@@ -3141,6 +3397,23 @@ export const Reports: React.FC = () => {
                 <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
                   <div className="text-xs uppercase tracking-wide text-gray-500">Promedio mensual</div>
                   <div className="mt-2 text-2xl font-semibold text-gray-900">{formatCLP(executiveViewData.kpis.averageMonthlyCost)}</div>
+                </div>
+                <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
+                  <div className="text-xs uppercase tracking-wide text-gray-500">Presupuesto</div>
+                  <div className="mt-2 text-2xl font-semibold text-gray-900">{formatCLP(executiveViewData.kpis.totalBudget || 0)}</div>
+                  <div className={`mt-1 text-sm ${(executiveViewData.kpis.budgetDelta || 0) >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    {formatCLP(executiveViewData.kpis.budgetDelta || 0)}
+                  </div>
+                </div>
+                <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
+                  <div className="text-xs uppercase tracking-wide text-gray-500">Costo / Ha</div>
+                  <div className="mt-2 text-2xl font-semibold text-gray-900">{formatCLP(executiveViewData.kpis.averageCostPerHa || 0)}</div>
+                </div>
+                <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
+                  <div className="text-xs uppercase tracking-wide text-gray-500">Costo / Kg</div>
+                  <div className="mt-2 text-2xl font-semibold text-gray-900">
+                    {executiveViewData.kpis.averageCostPerKg ? formatCLP(executiveViewData.kpis.averageCostPerKg) : '-'}
+                  </div>
                 </div>
                 <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
                   <div className="flex items-center justify-between gap-3">
@@ -3179,6 +3452,85 @@ export const Reports: React.FC = () => {
                   <div className="mt-1 text-sm text-gray-500">Focos relevantes para revisión ejecutiva</div>
                 </div>
               </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                <div className="bg-white rounded-lg shadow border border-gray-200 p-6 xl:col-span-2">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Presupuesto vs real</h3>
+                      <p className="text-sm text-gray-500">Seguimiento del gasto ejecutado contra el presupuesto visible.</p>
+                    </div>
+                    <span className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${getExecutiveTone(Math.abs((executiveViewData.kpis.budgetExecutionPct || 0) - 100)).badge}`}>
+                      {Number(executiveViewData.kpis.budgetExecutionPct || 0).toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="rounded-xl bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Presupuesto</div>
+                      <div className="mt-2 text-xl font-semibold text-slate-900">{formatCLP(executiveViewData.kpis.totalBudget || 0)}</div>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Gasto real</div>
+                      <div className="mt-2 text-xl font-semibold text-slate-900">{formatCLP(executiveViewData.kpis.totalSeasonCost)}</div>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Desviación</div>
+                      <div className={`mt-2 text-xl font-semibold ${(executiveViewData.kpis.budgetDelta || 0) >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {formatCLP(executiveViewData.kpis.budgetDelta || 0)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
+                  <h3 className="text-lg font-semibold text-gray-900">Pareto 80/20</h3>
+                  <p className="text-sm text-gray-500">Campos que concentran la mayor parte del costo.</p>
+                  <div className="mt-4 space-y-3">
+                    {executiveParetoFields.slice(0, 5).map((row) => (
+                      <div key={row.fieldId} className="rounded-xl bg-slate-50 p-3">
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="font-medium text-slate-900">{row.fieldName}</div>
+                          <div className="text-sm font-semibold text-slate-900">{row.sharePct.toFixed(1)}%</div>
+                        </div>
+                        <div className="mt-2 h-2 rounded-full bg-slate-200 overflow-hidden">
+                          <div className="h-full bg-purple-600" style={{ width: `${Math.min(row.cumulativeSharePct, 100)}%` }} />
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">Acumulado {row.cumulativeSharePct.toFixed(1)}%</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {executiveCompareCompanySummary && (
+                <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Comparación entre empresas</h3>
+                      <p className="text-sm text-gray-500">Comparativa de la misma temporada entre la empresa activa y la empresa seleccionada.</p>
+                    </div>
+                    <div className="text-sm text-gray-500">{selectedSeason}</div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="rounded-xl border border-purple-200 bg-purple-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-purple-700">{companyName}</div>
+                      <div className="mt-3 space-y-2 text-sm">
+                        <div className="flex items-center justify-between"><span>Gasto total</span><span className="font-semibold">{formatCLP(executiveViewData.kpis.totalSeasonCost)}</span></div>
+                        <div className="flex items-center justify-between"><span>Costo / Ha</span><span className="font-semibold">{formatCLP(executiveViewData.kpis.averageCostPerHa || 0)}</span></div>
+                        <div className="flex items-center justify-between"><span>Promedio mensual</span><span className="font-semibold">{formatCLP(executiveViewData.kpis.averageMonthlyCost)}</span></div>
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-700">{executiveCompareCompanyName}</div>
+                      <div className="mt-3 space-y-2 text-sm">
+                        <div className="flex items-center justify-between"><span>Gasto total</span><span className="font-semibold">{formatCLP(executiveCompareCompanySummary.totalSeasonCost)}</span></div>
+                        <div className="flex items-center justify-between"><span>Costo / Ha</span><span className="font-semibold">{formatCLP(executiveCompareCompanySummary.averageCostPerHa || 0)}</span></div>
+                        <div className="flex items-center justify-between"><span>Promedio mensual</span><span className="font-semibold">{formatCLP(executiveCompareCompanySummary.averageMonthlyCost)}</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
@@ -3231,6 +3583,71 @@ export const Reports: React.FC = () => {
                         <Tooltip formatter={(value: number) => formatCLP(value)} />
                       </PieChart>
                     </ResponsiveContainer>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <h3 className="text-lg font-semibold text-gray-900">Drivers de variación por categoría</h3>
+                    <p className="text-sm text-gray-500">Qué categorías explican la subida o baja frente a la temporada comparativa.</p>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    {executiveCategoryComparisonRows.map((row) => (
+                      <div key={row.category} className="rounded-xl bg-slate-50 p-4">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <div className="font-medium text-slate-900">{row.category}</div>
+                            <div className="text-sm text-slate-500">{formatCLP(row.previous)} -> {formatCLP(row.current)}</div>
+                          </div>
+                          <div className={`text-right font-semibold ${row.delta >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                            {formatCLP(row.delta)}
+                            <div className="text-xs">{row.deltaPct.toFixed(1)}%</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <h3 className="text-lg font-semibold text-gray-900">Heatmap de costos por campo y mes</h3>
+                    <p className="text-sm text-gray-500">Permite detectar rápidamente meses y campos con mayor intensidad de gasto.</p>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase sticky left-0 bg-gray-50">Campo</th>
+                          {executiveSeasonMonths.map((month) => (
+                            <th key={month.key} className="px-4 py-3 text-center font-medium text-gray-500 uppercase">{month.shortLabel}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {executiveViewData.fieldRows.map((row) => (
+                          <tr key={row.fieldId}>
+                            <td className="px-4 py-3 font-medium text-gray-900 sticky left-0 bg-white">{row.fieldName}</td>
+                            {executiveSeasonMonths.map((month) => {
+                              const value = Number(row.months[month.key] || 0);
+                              const opacity = executiveHeatmapMax > 0 ? Math.max(0.12, value / executiveHeatmapMax) : 0;
+                              return (
+                                <td key={month.key} className="px-2 py-3 text-center">
+                                  <div
+                                    className="rounded-lg px-2 py-2 text-xs font-medium text-slate-900"
+                                    style={{ backgroundColor: `rgba(124, 58, 237, ${opacity})` }}
+                                  >
+                                    {value > 0 ? formatCLP(value) : '-'}
+                                  </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </div>
@@ -3365,6 +3782,9 @@ export const Reports: React.FC = () => {
                         {executiveSeasonMonths.map((month) => (
                           <th key={month.key} className="px-4 py-3 text-right font-medium text-gray-500 uppercase">{month.shortLabel}</th>
                         ))}
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Ppto</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Costo/Ha</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Costo/Kg</th>
                         <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">{previousExecutiveSeason}</th>
                         <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Var %</th>
                         <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Total</th>
@@ -3379,6 +3799,9 @@ export const Reports: React.FC = () => {
                               {formatCLP(row.months[month.key] || 0)}
                             </td>
                           ))}
+                          <td className="px-4 py-3 text-right text-gray-700">{formatCLP(row.budgetTotal || 0)}</td>
+                          <td className="px-4 py-3 text-right text-gray-700">{formatCLP(row.costPerHa || 0)}</td>
+                          <td className="px-4 py-3 text-right text-gray-700">{row.costPerKg ? formatCLP(row.costPerKg) : '-'}</td>
                           <td className="px-4 py-3 text-right text-gray-700">{formatCLP(row.previousTotal)}</td>
                           <td className={`px-4 py-3 text-right font-medium ${row.delta >= 0 ? 'text-red-600' : 'text-green-600'}`}>{row.deltaPct.toFixed(1)}%</td>
                           <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCLP(row.total)}</td>
@@ -3403,6 +3826,9 @@ export const Reports: React.FC = () => {
                         {executiveSeasonMonths.map((month) => (
                           <th key={month.key} className="px-4 py-3 text-right font-medium text-gray-500 uppercase">{month.shortLabel}</th>
                         ))}
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Ppto</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Costo/Ha</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Costo/Kg</th>
                         <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">{previousExecutiveSeason}</th>
                         <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Var %</th>
                         <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Total</th>
@@ -3418,6 +3844,9 @@ export const Reports: React.FC = () => {
                               {formatCLP(row.months[month.key] || 0)}
                             </td>
                           ))}
+                          <td className="px-4 py-3 text-right text-gray-700">{formatCLP(row.budgetTotal || 0)}</td>
+                          <td className="px-4 py-3 text-right text-gray-700">{formatCLP(row.costPerHa || 0)}</td>
+                          <td className="px-4 py-3 text-right text-gray-700">{row.costPerKg ? formatCLP(row.costPerKg) : '-'}</td>
                           <td className="px-4 py-3 text-right text-gray-700">{formatCLP(row.previousTotal)}</td>
                           <td className={`px-4 py-3 text-right font-medium ${row.delta >= 0 ? 'text-red-600' : 'text-green-600'}`}>{row.deltaPct.toFixed(1)}%</td>
                           <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCLP(row.total)}</td>
@@ -5588,6 +6017,14 @@ export const Reports: React.FC = () => {
                                   <span className="text-slate-500">Comparativa base</span>
                                   <span className="font-semibold text-slate-900">{previousExecutiveSeason}</span>
                                 </div>
+                                <div className="flex items-center justify-between gap-4">
+                                  <span className="text-slate-500">Presupuesto</span>
+                                  <span className="font-semibold text-slate-900">{formatCLP(executiveViewData.kpis.totalBudget || 0)}</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-4">
+                                  <span className="text-slate-500">Costo / Ha</span>
+                                  <span className="font-semibold text-slate-900">{formatCLP(executiveViewData.kpis.averageCostPerHa || 0)}</span>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -5596,7 +6033,7 @@ export const Reports: React.FC = () => {
 
                       {currentSlide === 2 && (
                         <div className="space-y-8 h-full">
-                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                          <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                             <div className="rounded-2xl border border-slate-200 p-5 bg-slate-50">
                               <div className="text-sm text-slate-500 uppercase tracking-wide">Gasto temporada</div>
                               <div className="mt-3 text-3xl font-bold text-slate-900">{formatCLP(executiveViewData.kpis.totalSeasonCost)}</div>
@@ -5608,6 +6045,18 @@ export const Reports: React.FC = () => {
                             <div className="rounded-2xl border border-slate-200 p-5 bg-slate-50">
                               <div className="text-sm text-slate-500 uppercase tracking-wide">Promedio mensual</div>
                               <div className="mt-3 text-3xl font-bold text-slate-900">{formatCLP(executiveViewData.kpis.averageMonthlyCost)}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 p-5 bg-slate-50">
+                              <div className="text-sm text-slate-500 uppercase tracking-wide">Presupuesto</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{formatCLP(executiveViewData.kpis.totalBudget || 0)}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 p-5 bg-slate-50">
+                              <div className="text-sm text-slate-500 uppercase tracking-wide">Costo / Ha</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{formatCLP(executiveViewData.kpis.averageCostPerHa || 0)}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 p-5 bg-slate-50">
+                              <div className="text-sm text-slate-500 uppercase tracking-wide">Costo / Kg</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{executiveViewData.kpis.averageCostPerKg ? formatCLP(executiveViewData.kpis.averageCostPerKg) : '-'}</div>
                             </div>
                             <div className="rounded-2xl border border-slate-200 p-5 bg-slate-50">
                               <div className="flex items-center justify-between gap-3">
