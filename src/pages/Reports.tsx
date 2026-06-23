@@ -313,6 +313,8 @@ const CHEMICAL_CATEGORIES = [
 
 export const Reports: React.FC = () => {
   const { selectedCompany } = useCompany();
+  const companyName = selectedCompany?.name || 'Empresa';
+  const companySlug = companyName.replace(/\s+/g, '_');
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'executive' | 'general' | 'costs_ha' | 'margin' | 'labors' | 'applications' | 'monthly' | 'categories' | 'pending' | 'overdue' | 'paid_payments' | 'fuel_machines' | 'chemicals' | 'stock_breaks' | 'detailed' | 'budget' | 'comparative'>('executive');
   const [activeGroup, setActiveGroup] = useState<'general' | 'financial' | 'inventory' | 'comparative'>('general');
@@ -367,6 +369,7 @@ export const Reports: React.FC = () => {
   // Chemical Report Filters
   const [filterChemicalCategory, setFilterChemicalCategory] = useState<string>('all');
   const [executiveFieldFilter, setExecutiveFieldFilter] = useState<string>('all');
+  const [executiveComparisonSeason, setExecutiveComparisonSeason] = useState<string>('');
 
   // Preview Modal State
   const [showPreview, setShowPreview] = useState(false);
@@ -432,6 +435,13 @@ export const Reports: React.FC = () => {
     }
   }, [selectedCompany, loadRawData]);
 
+  useEffect(() => {
+    setExecutiveFieldFilter('all');
+    setExecutiveComparisonSeason('');
+    setCurrentSlide(0);
+    setPresentationMode(false);
+  }, [selectedCompany?.id]);
+
   const presentationMaxSlide = activeTab === 'executive' ? 5 : activeTab === 'general' ? 3 : 1;
 
   // Update presentation logic to support executive slides and legacy tabs
@@ -454,11 +464,23 @@ export const Reports: React.FC = () => {
   }, [presentationMode, presentationMaxSlide]);
 
   const executiveSeasonMonths = useMemo(() => buildExecutiveSeasonMonths(selectedSeason), [selectedSeason]);
+  const availablePreviousExecutiveSeasons = useMemo(() => {
+    const currentStartYear = Number(String(selectedSeason || '').split('-')[0] || 0);
+    return [...availableSeasons]
+      .filter((season) => season !== selectedSeason)
+      .filter((season) => Number(String(season || '').split('-')[0] || 0) <= currentStartYear)
+      .sort((a, b) => b.localeCompare(a));
+  }, [availableSeasons, selectedSeason]);
   const previousExecutiveSeason = useMemo(() => {
+    if (executiveComparisonSeason && availablePreviousExecutiveSeasons.includes(executiveComparisonSeason)) {
+      return executiveComparisonSeason;
+    }
     const [startYearStr] = String(selectedSeason || '').split('-');
     const startYear = Number(startYearStr) || new Date().getFullYear();
-    return `${startYear - 1}-${startYear}`;
-  }, [selectedSeason]);
+    const immediatePrevious = `${startYear - 1}-${startYear}`;
+    if (availablePreviousExecutiveSeasons.includes(immediatePrevious)) return immediatePrevious;
+    return availablePreviousExecutiveSeasons[0] || immediatePrevious;
+  }, [availablePreviousExecutiveSeasons, executiveComparisonSeason, selectedSeason]);
   const previousExecutiveSeasonMonths = useMemo(() => buildExecutiveSeasonMonths(previousExecutiveSeason), [previousExecutiveSeason]);
 
   const executiveMonthKeySet = useMemo(() => new Set(executiveSeasonMonths.map((month) => month.key)), [executiveSeasonMonths]);
@@ -845,10 +867,62 @@ export const Reports: React.FC = () => {
     };
   }, [executiveViewData, previousExecutiveSeason, selectedSeason]);
 
+  const executiveHistoricalSeasonRows = useMemo(() => {
+    return availablePreviousExecutiveSeasons.map((season) => {
+      const base = aggregateExecutiveCosts({
+        seasonMonths: buildExecutiveSeasonMonths(season),
+        seasonMonthKeys: new Set(buildExecutiveSeasonMonths(season).map((month) => month.key)),
+        sectorMeta: executiveSectorMeta,
+        fieldMeta: executiveFieldMeta,
+        fuelPrices: executiveFuelPrices,
+        rawApplications,
+        rawLabor,
+        rawWorkerCosts,
+        rawFuel,
+        rawFuelConsumption,
+        rawMachinery,
+        rawIrrigation,
+        rawGeneralCosts
+      });
+
+      if (executiveFieldFilter !== 'all') {
+        const selectedField = base.fieldRows.find((row) => row.fieldId === executiveFieldFilter) || null;
+        const total = selectedField?.total || 0;
+        return {
+          season,
+          total,
+          averageMonthlyCost: total > 0 ? total / base.monthlyRows.length : 0,
+          peakMonthLabel: base.peakMonth?.monthLabel || '-'
+        };
+      }
+
+      return {
+        season,
+        total: base.totalSeasonCost,
+        averageMonthlyCost: base.averageMonthlyCost,
+        peakMonthLabel: base.peakMonth?.monthLabel || '-'
+      };
+    }).sort((a, b) => b.season.localeCompare(a.season));
+  }, [
+    availablePreviousExecutiveSeasons,
+    executiveFieldFilter,
+    executiveFieldMeta,
+    executiveFuelPrices,
+    executiveSectorMeta,
+    rawApplications,
+    rawFuel,
+    rawFuelConsumption,
+    rawGeneralCosts,
+    rawIrrigation,
+    rawLabor,
+    rawMachinery,
+    rawWorkerCosts
+  ]);
+
   const exportExecutiveExcel = async () => {
     try {
       const boardRows = [
-        { Indicador: 'Empresa', Valor: selectedCompany?.name || '' },
+        { Indicador: 'Empresa', Valor: companyName },
         { Indicador: 'Temporada actual', Valor: selectedSeason },
         { Indicador: 'Temporada comparativa', Valor: previousExecutiveSeason },
         { Indicador: 'Campo filtrado', Valor: executiveFieldLabel },
@@ -860,6 +934,12 @@ export const Reports: React.FC = () => {
         { Indicador: 'Alertas activas', Valor: executiveInsights.activeAlertCount },
         { Indicador: 'Conclusión ejecutiva', Valor: executiveInsights.conclusion }
       ];
+      const historicalRows = executiveHistoricalSeasonRows.map((row) => ({
+        Temporada: row.season,
+        'Gasto total': Number(row.total.toFixed(0)),
+        'Promedio mensual': Number(row.averageMonthlyCost.toFixed(0)),
+        'Mes más alto': row.peakMonthLabel
+      }));
 
       const summaryRows = executiveViewData.monthlyRows.map((row) => ({
         Mes: row.monthLabel,
@@ -936,12 +1016,13 @@ export const Reports: React.FC = () => {
       }));
 
       await exportWorkbookToXlsx({
-        filename: `Reporte_Ejecutivo_${selectedCompany?.name?.replace(/\s+/g, '_') || 'empresa'}_${selectedSeason}${executiveFieldFilter !== 'all' ? `_campo_${executiveFieldFilter}` : ''}.xlsx`,
+        filename: `Reporte_Ejecutivo_${companySlug}_${selectedSeason}${executiveFieldFilter !== 'all' ? `_campo_${executiveFieldFilter}` : ''}.xlsx`,
         sheets: [
           { name: 'Resumen Directorio', rows: boardRows },
           { name: 'Resumen Mensual', rows: summaryRows },
           { name: 'Campos', rows: fieldRows },
           { name: 'Sectores', rows: sectorRows },
+          { name: 'Historico Temporadas', rows: historicalRows },
           { name: 'Top Campos', rows: topFieldsRows },
           { name: 'Top Sectores', rows: topSectorsRows },
           { name: 'Alertas', rows: alertRows }
@@ -1597,7 +1678,7 @@ export const Reports: React.FC = () => {
     doc.setFontSize(18);
     doc.text(`Reporte: ${title}`, 14, 20);
     doc.setFontSize(12);
-    doc.text(`Empresa: ${selectedCompany?.name}`, 14, 28);
+        doc.text(`Empresa: ${companyName}`, 14, 28);
     doc.text(`Temporada: ${selectedSeason}`, 14, 34);
     
     let subHeader = '';
@@ -1634,7 +1715,7 @@ export const Reports: React.FC = () => {
         doc.text('Reporte Ejecutivo', 14, 70);
         doc.setFontSize(16);
         doc.setTextColor(31, 41, 55);
-        doc.text(String(selectedCompany?.name || ''), 14, 85);
+        doc.text(companyName, 14, 85);
         doc.setFontSize(12);
         doc.text(`Temporada actual: ${selectedSeason}`, 14, 98);
         doc.text(`Temporada comparativa: ${previousExecutiveSeason}`, 14, 106);
@@ -1656,7 +1737,7 @@ export const Reports: React.FC = () => {
         doc.setTextColor(0);
         doc.text(`Reporte: ${title}`, 14, 20);
         doc.setFontSize(12);
-        doc.text(`Empresa: ${selectedCompany?.name}`, 14, 28);
+        doc.text(`Empresa: ${companyName}`, 14, 28);
         doc.text(`Temporada: ${selectedSeason}`, 14, 34);
         doc.text(`Comparativa: ${previousExecutiveSeason}`, 14, 40);
         if (executiveFieldFilter !== 'all') {
@@ -2638,11 +2719,11 @@ export const Reports: React.FC = () => {
       <div className="hidden print:block mb-8">
         <div className="flex items-start justify-between gap-6 border-b border-gray-200 pb-6">
           <div className="flex items-center gap-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-900 text-xl font-bold text-white">
-              {String(selectedCompany.name || 'R').trim().slice(0, 2).toUpperCase()}
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-900 text-xl font-bold text-white">
+              {String(companyName || 'R').trim().slice(0, 2).toUpperCase()}
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">{selectedCompany.name}</h1>
+              <h1 className="text-3xl font-bold text-gray-900">{companyName}</h1>
               <h2 className="text-xl text-gray-600 mt-2">{getReportTitle()} - {selectedSeason}</h2>
             </div>
           </div>
@@ -2859,7 +2940,7 @@ export const Reports: React.FC = () => {
                     </p>
                   </div>
                   <div className="text-sm text-purple-100 print:text-gray-500">
-                    <div>Temporada {selectedSeason} · {selectedCompany.name}</div>
+                    <div>Temporada {selectedSeason} · {companyName}</div>
                     {executiveFieldFilter !== 'all' && (
                       <div className="mt-1">Campo: {executiveFieldOptions.find((item) => item.value === executiveFieldFilter)?.label || executiveFieldFilter}</div>
                     )}
@@ -2868,12 +2949,12 @@ export const Reports: React.FC = () => {
               </div>
 
               <div className="bg-white rounded-lg shadow border border-gray-200 p-4 print:hidden">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                   <div>
                     <h3 className="text-sm font-semibold text-gray-900">Filtro ejecutivo</h3>
-                    <p className="text-sm text-gray-500">Enfoca la vista, el PDF y el Excel en un campo específico si lo necesitas.</p>
+                    <p className="text-sm text-gray-500">Enfoca la vista por campo y elige la temporada anterior que quieres usar como base comparativa.</p>
                   </div>
-                  <div className="w-full md:w-72">
+                  <div className="grid w-full xl:w-auto grid-cols-1 md:grid-cols-2 gap-3">
                     <select
                       value={executiveFieldFilter}
                       onChange={(e) => setExecutiveFieldFilter(e.target.value)}
@@ -2883,6 +2964,19 @@ export const Reports: React.FC = () => {
                       {executiveFieldOptions.map((option) => (
                         <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
+                    </select>
+                    <select
+                      value={previousExecutiveSeason}
+                      onChange={(e) => setExecutiveComparisonSeason(e.target.value)}
+                      className="block w-full rounded-md border-gray-300 text-sm focus:border-purple-500 focus:ring-purple-500"
+                    >
+                      {availablePreviousExecutiveSeasons.length > 0 ? (
+                        availablePreviousExecutiveSeasons.map((season) => (
+                          <option key={season} value={season}>{season}</option>
+                        ))
+                      ) : (
+                        <option value={previousExecutiveSeason}>{previousExecutiveSeason}</option>
+                      )}
                     </select>
                   </div>
                 </div>
@@ -2896,7 +2990,7 @@ export const Reports: React.FC = () => {
                       <h3 className="mt-2 text-2xl font-semibold">Lectura Ejecutiva en Una Página</h3>
                     </div>
                     <div className="text-sm text-slate-300">
-                      {selectedCompany.name} · {selectedSeason} · {executiveFieldLabel}
+                      {companyName} · {selectedSeason} · {executiveFieldLabel}
                     </div>
                   </div>
                 </div>
@@ -2949,6 +3043,42 @@ export const Reports: React.FC = () => {
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900">Comparativo de temporadas anteriores</h3>
+                  <p className="text-sm text-gray-500">Referencia histórica para la empresa activa y el campo visible.</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase">Temporada</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Gasto total</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Promedio mensual</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase">Mes más alto</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {executiveHistoricalSeasonRows.map((row) => (
+                        <tr key={row.season} className={row.season === previousExecutiveSeason ? 'bg-purple-50' : ''}>
+                          <td className="px-4 py-3 font-medium text-gray-900">{row.season}</td>
+                          <td className="px-4 py-3 text-right text-gray-900">{formatCLP(row.total)}</td>
+                          <td className="px-4 py-3 text-right text-gray-700">{formatCLP(row.averageMonthlyCost)}</td>
+                          <td className="px-4 py-3 text-gray-700">{row.peakMonthLabel}</td>
+                        </tr>
+                      ))}
+                      {executiveHistoricalSeasonRows.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="px-4 py-4 text-center text-sm text-gray-500">
+                            No hay temporadas anteriores disponibles para comparar en esta empresa.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
@@ -3704,7 +3834,7 @@ export const Reports: React.FC = () => {
                           const encodedUri = encodeURI(csvContent);
                           const link = document.createElement("a");
                           link.setAttribute("href", encodedUri);
-                          link.setAttribute("download", `Costos_Generales_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.csv`);
+                          link.setAttribute("download", `Costos_Generales_${companySlug}_${selectedSeason}.csv`);
                           document.body.appendChild(link);
                           link.click();
                           document.body.removeChild(link);
@@ -3827,7 +3957,7 @@ export const Reports: React.FC = () => {
                   const encodedUri = encodeURI(csvContent);
                   const link = document.createElement("a");
                   link.setAttribute("href", encodedUri);
-                  link.setAttribute("download", `Costos_por_Ha_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.csv`);
+                  link.setAttribute("download", `Costos_por_Ha_${companySlug}_${selectedSeason}.csv`);
                   document.body.appendChild(link);
                   link.click();
                   document.body.removeChild(link);
@@ -3960,7 +4090,7 @@ export const Reports: React.FC = () => {
                     };
                   });
                     await exportJsonToXlsx({
-                    filename: `KilosHa_SolventarCostos_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.xlsx`,
+                    filename: `KilosHa_SolventarCostos_${companySlug}_${selectedSeason}.xlsx`,
                     sheetName: `Eq_${selectedSeason}`,
                     rows
                   });
@@ -4061,7 +4191,7 @@ export const Reports: React.FC = () => {
                   const encodedUri = encodeURI(csvContent);
                   const link = document.createElement("a");
                   link.setAttribute("href", encodedUri);
-                  link.setAttribute("download", `Rentabilidad_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.csv`);
+                  link.setAttribute("download", `Rentabilidad_${companySlug}_${selectedSeason}.csv`);
                   document.body.appendChild(link);
                   link.click();
                   document.body.removeChild(link);
@@ -4369,7 +4499,7 @@ export const Reports: React.FC = () => {
                     const encodedUri = encodeURI(csvContent);
                     const link = document.createElement("a");
                     link.setAttribute("href", encodedUri);
-                    link.setAttribute("download", `Petroleo_por_Maquina_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.csv`);
+                    link.setAttribute("download", `Petroleo_por_Maquina_${companySlug}_${selectedSeason}.csv`);
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
@@ -4459,7 +4589,7 @@ export const Reports: React.FC = () => {
                     const encodedUri = encodeURI(csvContent);
                     const link = document.createElement("a");
                     link.setAttribute("href", encodedUri);
-                    link.setAttribute("download", `Quiebres_Stock_${selectedCompany.name.replace(/\s+/g, '_')}.csv`);
+                    link.setAttribute("download", `Quiebres_Stock_${companySlug}.csv`);
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
@@ -5186,7 +5316,7 @@ export const Reports: React.FC = () => {
                             const encodedUri = encodeURI(csvContent);
                             const link = document.createElement("a");
                             link.setAttribute("href", encodedUri);
-                            link.setAttribute("download", `Reporte_Detallado_${selectedCompany.name.replace(/\s+/g, '_')}_${selectedSeason}.csv`);
+                            link.setAttribute("download", `Reporte_Detallado_${companySlug}_${selectedSeason}.csv`);
                             document.body.appendChild(link);
                             link.click();
                             document.body.removeChild(link);
@@ -5343,7 +5473,7 @@ export const Reports: React.FC = () => {
       {presentationMode && (
         <div className="fixed inset-0 z-[99999] bg-slate-50 flex flex-col font-sans text-slate-900">
           <div className="flex justify-between items-center p-6 opacity-30 hover:opacity-100 transition-opacity absolute top-0 left-0 right-0 z-10">
-            <div className="text-xl font-bold text-slate-400">{selectedCompany?.name} - {getReportTitle()}</div>
+            <div className="text-xl font-bold text-slate-400">{companyName} - {getReportTitle()}</div>
             <button onClick={exitPresentation} className="text-slate-400 hover:text-red-500 bg-white/80 rounded-full p-2">
               <X className="w-8 h-8" />
             </button>
@@ -5356,7 +5486,7 @@ export const Reports: React.FC = () => {
                   <div className="text-center animate-fade-in-up w-full">
                     <FileText className="w-28 h-28 text-purple-600 mx-auto mb-8" />
                     <div className="text-sm uppercase tracking-[0.35em] text-slate-400 mb-4">Reporte Ejecutivo</div>
-                    <h1 className="text-5xl lg:text-6xl font-extrabold text-slate-800 mb-6">{selectedCompany?.name}</h1>
+                    <h1 className="text-5xl lg:text-6xl font-extrabold text-slate-800 mb-6">{companyName}</h1>
                     <h2 className="text-3xl lg:text-4xl text-purple-600 font-medium mb-6">Temporada {selectedSeason}</h2>
                     <p className="text-xl lg:text-2xl text-slate-500">Campo visible: {executiveFieldLabel}</p>
                   </div>
@@ -5406,6 +5536,10 @@ export const Reports: React.FC = () => {
                                 <div className="flex items-center justify-between gap-4">
                                   <span className="text-slate-500">Alertas</span>
                                   <span className="font-semibold text-slate-900">{executiveInsights.activeAlertCount}</span>
+                                </div>
+                                <div className="flex items-center justify-between gap-4">
+                                  <span className="text-slate-500">Comparativa base</span>
+                                  <span className="font-semibold text-slate-900">{previousExecutiveSeason}</span>
                                 </div>
                               </div>
                             </div>
@@ -5457,20 +5591,23 @@ export const Reports: React.FC = () => {
                               </div>
                             </div>
                             <div className="rounded-2xl border border-slate-200 p-4">
-                              <div className="text-xl font-bold text-slate-800 mb-4">Resumen mensual</div>
+                              <div className="text-xl font-bold text-slate-800 mb-4">Temporadas anteriores</div>
                               <div className="space-y-3">
-                                {executiveViewData.monthlyRows.map((row) => (
-                                  <div key={row.monthKey} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
+                                {executiveHistoricalSeasonRows.slice(0, 5).map((row) => (
+                                  <div key={row.season} className={`flex items-center justify-between rounded-xl px-4 py-3 ${row.season === previousExecutiveSeason ? 'bg-purple-50' : 'bg-slate-50'}`}>
                                     <div>
-                                      <div className="font-semibold text-slate-900">{row.monthLabel}</div>
-                                      <div className="text-sm text-slate-500">{row.topSectorName}</div>
+                                      <div className="font-semibold text-slate-900">{row.season}</div>
+                                      <div className="text-sm text-slate-500">{row.peakMonthLabel}</div>
                                     </div>
                                     <div className="text-right">
                                       <div className="font-semibold text-slate-900">{formatCLP(row.total)}</div>
-                                      <div className={`text-sm ${getExecutiveTone(Math.abs(row.vsPreviousSeasonPct)).text}`}>{row.vsPreviousSeasonPct.toFixed(1)}%</div>
+                                      <div className="text-sm text-slate-500">{formatCLP(row.averageMonthlyCost)}</div>
                                     </div>
                                   </div>
                                 ))}
+                                {executiveHistoricalSeasonRows.length === 0 && (
+                                  <div className="rounded-xl bg-slate-50 px-4 py-6 text-center text-slate-400">No hay temporadas anteriores cargadas.</div>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -5618,7 +5755,7 @@ export const Reports: React.FC = () => {
                   <div className="text-center animate-fade-in-up w-full">
                     <FileText className="w-32 h-32 text-purple-600 mx-auto mb-8" />
                     <h1 className="text-5xl lg:text-6xl font-extrabold text-slate-800 mb-6">Reporte: {getReportTitle()}</h1>
-                    <h2 className="text-3xl lg:text-4xl text-purple-600 font-medium mb-12">{selectedCompany?.name}</h2>
+                    <h2 className="text-3xl lg:text-4xl text-purple-600 font-medium mb-12">{companyName}</h2>
                     <p className="text-xl lg:text-2xl text-slate-500">Temporada {selectedSeason}</p>
                   </div>
                 )}
