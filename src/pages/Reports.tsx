@@ -440,6 +440,13 @@ export const Reports: React.FC = () => {
     setExecutiveComparisonSeason('');
     setCurrentSlide(0);
     setPresentationMode(false);
+    setReportData([]);
+    setMonthlyExpenses([]);
+    setCategoryExpenses([]);
+    setPendingInvoices([]);
+    setChemicalProducts([]);
+    setDetailedReport([]);
+    setComparativeData([]);
   }, [selectedCompany?.id]);
 
   const presentationMaxSlide = activeTab === 'executive' ? 5 : activeTab === 'general' ? 3 : 1;
@@ -1099,6 +1106,26 @@ export const Reports: React.FC = () => {
       }
 
     } catch {
+      setRawFields([]);
+      setRawApplications([]);
+      setRawLabor([]);
+      setRawWorkerCosts([]);
+      setRawFuel([]);
+      setRawFuelConsumption([]);
+      setRawMachinery([]);
+      setRawIrrigation([]);
+      setRawGeneralCosts([]);
+      setIncomeEntries([]);
+      setRawInvoices([]);
+      setRawProducts([]);
+      setAvailableSeasons([getSeasonFromDate(new Date())]);
+      setReportData([]);
+      setMonthlyExpenses([]);
+      setCategoryExpenses([]);
+      setPendingInvoices([]);
+      setChemicalProducts([]);
+      setDetailedReport([]);
+      setComparativeData([]);
       toast.error('Error al cargar datos de reportes.');
     } finally {
       setLoading(false);
@@ -1192,7 +1219,10 @@ export const Reports: React.FC = () => {
   };
 
   const processApplicationReports = () => {
-    if (!rawFields.length) return;
+    if (!rawFields.length) {
+      setReportData([]);
+      return;
+    }
 
     // Calculate Average Fuel Prices (Diesel vs Gasoline) for fallback
     let totalDieselLiters = 0;
@@ -2931,6 +2961,15 @@ export const Reports: React.FC = () => {
         <div className="mt-6">
           {activeTab === 'executive' && (
             <div className="space-y-6">
+              {rawFields.length === 0 && reportData.length === 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
+                  <div className="text-sm font-semibold">Sin estructura suficiente para el reporte ejecutivo</div>
+                  <p className="mt-1 text-sm text-amber-800">
+                    La empresa activa no tiene campos o sectores cargados para construir esta vista. Igual puedes usar temporadas disponibles, historial financiero y exportaciones cuando existan datos.
+                  </p>
+                </div>
+              )}
+
               <div className="bg-gradient-to-r from-slate-900 via-purple-900 to-slate-900 text-white rounded-xl p-6 shadow print:bg-white print:text-gray-900 print:border print:border-gray-200">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                   <div>
