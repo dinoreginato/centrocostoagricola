@@ -179,6 +179,40 @@ const getExecutiveTone = (variationPct: number) => {
   };
 };
 
+type ExecutiveSortKey = 'total' | 'variation' | 'budget' | 'cost_ha' | 'cost_kg';
+
+const EXECUTIVE_SORT_OPTIONS: Array<{ value: ExecutiveSortKey; label: string }> = [
+  { value: 'total', label: 'Mayor gasto' },
+  { value: 'variation', label: 'Mayor variacion' },
+  { value: 'budget', label: 'Mayor desviacion ppto' },
+  { value: 'cost_ha', label: 'Mayor costo / ha' },
+  { value: 'cost_kg', label: 'Mayor costo / kg' }
+];
+
+const getExecutiveSortMetric = (row: any, sortBy: ExecutiveSortKey) => {
+  switch (sortBy) {
+    case 'variation':
+      return Math.abs(Number(row?.deltaPct || 0));
+    case 'budget':
+      return Math.abs(Number(row?.budgetDelta || 0));
+    case 'cost_ha':
+      return Number(row?.costPerHa || 0);
+    case 'cost_kg':
+      return Number(row?.costPerKg || 0);
+    case 'total':
+    default:
+      return Number(row?.total || 0);
+  }
+};
+
+const sortExecutiveRows = <T extends Record<string, any>>(rows: T[], sortBy: ExecutiveSortKey) => {
+  return rows.slice().sort((a, b) => {
+    const primary = getExecutiveSortMetric(b, sortBy) - getExecutiveSortMetric(a, sortBy);
+    if (Math.abs(primary) > 0.0001) return primary;
+    return Number(b?.total || 0) - Number(a?.total || 0);
+  });
+};
+
 const aggregateExecutiveCosts = (params: {
   seasonMonths: Array<{ key: string; shortLabel: string; fullLabel: string }>;
   seasonMonthKeys: Set<string>;
@@ -372,6 +406,10 @@ export const Reports: React.FC = () => {
   const [executiveComparisonSeason, setExecutiveComparisonSeason] = useState<string>('');
   const [executiveCompareCompanyId, setExecutiveCompareCompanyId] = useState<string>('none');
   const [executiveCompareCompanyRaw, setExecutiveCompareCompanyRaw] = useState<any | null>(null);
+  const [executiveCompareFieldA, setExecutiveCompareFieldA] = useState<string>('auto');
+  const [executiveCompareFieldB, setExecutiveCompareFieldB] = useState<string>('auto');
+  const [executiveFieldSortBy, setExecutiveFieldSortBy] = useState<ExecutiveSortKey>('total');
+  const [executiveSectorSortBy, setExecutiveSectorSortBy] = useState<ExecutiveSortKey>('total');
 
   // Preview Modal State
   const [showPreview, setShowPreview] = useState(false);
@@ -443,6 +481,10 @@ export const Reports: React.FC = () => {
     setExecutiveComparisonSeason('');
     setExecutiveCompareCompanyId('none');
     setExecutiveCompareCompanyRaw(null);
+    setExecutiveCompareFieldA('auto');
+    setExecutiveCompareFieldB('auto');
+    setExecutiveFieldSortBy('total');
+    setExecutiveSectorSortBy('total');
     setCurrentSlide(0);
     setPresentationMode(false);
     setReportData([]);
@@ -831,113 +873,296 @@ export const Reports: React.FC = () => {
     [executiveFieldFilter, executiveFieldOptions]
   );
 
+  const executiveAllSortedFieldRows = useMemo(
+    () => sortExecutiveRows(executiveData.fieldRows, executiveFieldSortBy),
+    [executiveData.fieldRows, executiveFieldSortBy]
+  );
+
   const executiveViewData = useMemo(() => {
-    if (executiveFieldFilter === 'all') return executiveData;
+    let baseViewData = executiveData;
 
-    const selectedField = executiveData.fieldRows.find((row) => row.fieldId === executiveFieldFilter) || null;
-    const filteredSectorRows = executiveData.sectorRows.filter((row) =>
-      row.fieldName === selectedField?.fieldName
-    );
-    const filteredCategoryRows = [
-      { category: 'Aplicaciones', total: reportData.filter((row) => row.field_name === selectedField?.fieldName).reduce((sum, row) => sum + Number(row.app_cost_only || 0), 0) },
-      { category: 'Labores', total: reportData.filter((row) => row.field_name === selectedField?.fieldName).reduce((sum, row) => sum + Number(row.labor_cost || 0), 0) },
-      { category: 'Trabajadores', total: reportData.filter((row) => row.field_name === selectedField?.fieldName).reduce((sum, row) => sum + Number(row.worker_cost || 0), 0) },
-      { category: 'Combustible', total: reportData.filter((row) => row.field_name === selectedField?.fieldName).reduce((sum, row) => sum + Number(row.fuel_cost || 0), 0) },
-      { category: 'Maquinaria', total: reportData.filter((row) => row.field_name === selectedField?.fieldName).reduce((sum, row) => sum + Number(row.machinery_cost || 0), 0) },
-      { category: 'Riego', total: reportData.filter((row) => row.field_name === selectedField?.fieldName).reduce((sum, row) => sum + Number(row.irrigation_cost || 0), 0) },
-      { category: 'Generales', total: reportData.filter((row) => row.field_name === selectedField?.fieldName).reduce((sum, row) => sum + Number(row.general_cost || 0), 0) }
-    ].filter((row) => row.total > 0);
+    if (executiveFieldFilter !== 'all') {
+      const selectedField = executiveData.fieldRows.find((row) => row.fieldId === executiveFieldFilter) || null;
+      const filteredSectorRows = executiveData.sectorRows.filter((row) =>
+        row.fieldName === selectedField?.fieldName
+      );
+      const filteredCategoryRows = [
+        { category: 'Aplicaciones', total: reportData.filter((row) => row.field_name === selectedField?.fieldName).reduce((sum, row) => sum + Number(row.app_cost_only || 0), 0) },
+        { category: 'Labores', total: reportData.filter((row) => row.field_name === selectedField?.fieldName).reduce((sum, row) => sum + Number(row.labor_cost || 0), 0) },
+        { category: 'Trabajadores', total: reportData.filter((row) => row.field_name === selectedField?.fieldName).reduce((sum, row) => sum + Number(row.worker_cost || 0), 0) },
+        { category: 'Combustible', total: reportData.filter((row) => row.field_name === selectedField?.fieldName).reduce((sum, row) => sum + Number(row.fuel_cost || 0), 0) },
+        { category: 'Maquinaria', total: reportData.filter((row) => row.field_name === selectedField?.fieldName).reduce((sum, row) => sum + Number(row.machinery_cost || 0), 0) },
+        { category: 'Riego', total: reportData.filter((row) => row.field_name === selectedField?.fieldName).reduce((sum, row) => sum + Number(row.irrigation_cost || 0), 0) },
+        { category: 'Generales', total: reportData.filter((row) => row.field_name === selectedField?.fieldName).reduce((sum, row) => sum + Number(row.general_cost || 0), 0) }
+      ].filter((row) => row.total > 0);
 
-    const monthlyRows = executiveSeasonMonths.map((month, index) => {
-      const total = selectedField?.months[month.key] || 0;
-      const previousSeasonTotal = executivePreviousBase.fieldRows.find((row) => row.fieldId === executiveFieldFilter)?.months[previousExecutiveSeasonMonths[index]?.key] || 0;
-      const previousMonthTotal = index > 0 ? (selectedField?.months[executiveSeasonMonths[index - 1].key] || 0) : 0;
-      const variation = index > 0 ? total - previousMonthTotal : 0;
-      const variationPct = index > 0 && previousMonthTotal > 0 ? (variation / previousMonthTotal) * 100 : 0;
-      const vsPreviousSeason = total - previousSeasonTotal;
-      const vsPreviousSeasonPct = previousSeasonTotal > 0 ? (vsPreviousSeason / previousSeasonTotal) * 100 : 0;
-      const topSector = filteredSectorRows
-        .map((row) => ({ name: row.sectorName, total: row.months[month.key] || 0 }))
-        .sort((a, b) => b.total - a.total)[0];
+      const monthlyRows = executiveSeasonMonths.map((month, index) => {
+        const total = selectedField?.months[month.key] || 0;
+        const previousSeasonTotal = executivePreviousBase.fieldRows.find((row) => row.fieldId === executiveFieldFilter)?.months[previousExecutiveSeasonMonths[index]?.key] || 0;
+        const previousMonthTotal = index > 0 ? (selectedField?.months[executiveSeasonMonths[index - 1].key] || 0) : 0;
+        const variation = index > 0 ? total - previousMonthTotal : 0;
+        const variationPct = index > 0 && previousMonthTotal > 0 ? (variation / previousMonthTotal) * 100 : 0;
+        const vsPreviousSeason = total - previousSeasonTotal;
+        const vsPreviousSeasonPct = previousSeasonTotal > 0 ? (vsPreviousSeason / previousSeasonTotal) * 100 : 0;
+        const topSector = filteredSectorRows
+          .map((row) => ({ name: row.sectorName, total: row.months[month.key] || 0 }))
+          .sort((a, b) => b.total - a.total)[0];
 
-      return {
-        monthKey: month.key,
-        monthLabel: month.fullLabel,
-        shortLabel: month.shortLabel,
-        total,
-        variation,
-        variationPct,
-        previousSeasonTotal,
-        vsPreviousSeason,
-        vsPreviousSeasonPct,
-        topFieldName: selectedField?.fieldName || '-',
-        topSectorName: topSector?.total ? topSector.name : '-'
+        return {
+          monthKey: month.key,
+          monthLabel: month.fullLabel,
+          shortLabel: month.shortLabel,
+          total,
+          variation,
+          variationPct,
+          previousSeasonTotal,
+          vsPreviousSeason,
+          vsPreviousSeasonPct,
+          topFieldName: selectedField?.fieldName || '-',
+          topSectorName: topSector?.total ? topSector.name : '-'
+        };
+      });
+
+      const totalSeasonCost = monthlyRows.reduce((sum, row) => sum + row.total, 0);
+      const previousSeasonCost = selectedField?.previousTotal || 0;
+      const seasonVariation = totalSeasonCost - previousSeasonCost;
+      const seasonVariationPct = previousSeasonCost > 0 ? (seasonVariation / previousSeasonCost) * 100 : 0;
+      const peakMonth = [...monthlyRows].sort((a, b) => b.total - a.total)[0] || null;
+      const averageMonthlyCost = monthlyRows.length > 0 ? totalSeasonCost / monthlyRows.length : 0;
+      const totalBudget = Number((selectedField as any)?.budgetTotal || 0);
+      const totalKgProduced = Number((selectedField as any)?.kgProduced || 0);
+
+      baseViewData = {
+        ...executiveData,
+        monthlyRows,
+        categoryRows: filteredCategoryRows,
+        fieldRows: selectedField ? [selectedField] : [],
+        sectorRows: filteredSectorRows,
+        alerts: [],
+        topFields: selectedField ? [selectedField] : [],
+        topSectors: filteredSectorRows.slice(0, 5),
+        kpis: {
+          ...executiveData.kpis,
+          totalSeasonCost,
+          totalHectares: selectedField?.hectares || 0,
+          previousSeasonCost,
+          seasonVariation,
+          seasonVariationPct,
+          averageMonthlyCost,
+          totalBudget,
+          budgetDelta: totalSeasonCost - totalBudget,
+          budgetExecutionPct: totalBudget > 0 ? (totalSeasonCost / totalBudget) * 100 : 0,
+          totalKgProduced,
+          averageCostPerHa: selectedField?.hectares ? totalSeasonCost / selectedField.hectares : 0,
+          averageCostPerKg: totalKgProduced > 0 ? totalSeasonCost / totalKgProduced : 0,
+          peakMonth,
+          topField: selectedField,
+          topSector: filteredSectorRows[0] || null
+        }
       };
-    });
+    }
 
-    const totalSeasonCost = monthlyRows.reduce((sum, row) => sum + row.total, 0);
-    const previousSeasonCost = selectedField?.previousTotal || 0;
-    const seasonVariation = totalSeasonCost - previousSeasonCost;
-    const seasonVariationPct = previousSeasonCost > 0 ? (seasonVariation / previousSeasonCost) * 100 : 0;
-    const peakMonth = [...monthlyRows].sort((a, b) => b.total - a.total)[0] || null;
-    const averageMonthlyCost = monthlyRows.length > 0 ? totalSeasonCost / monthlyRows.length : 0;
-    const totalBudget = Number((selectedField as any)?.budgetTotal || 0);
-    const totalKgProduced = Number((selectedField as any)?.kgProduced || 0);
-    const alerts = [
-      ...monthlyRows
+    const sortedFieldRows = sortExecutiveRows(baseViewData.fieldRows, executiveFieldSortBy);
+    const sortedSectorRows = sortExecutiveRows(baseViewData.sectorRows, executiveSectorSortBy);
+    const averageFieldCostPerHa = baseViewData.fieldRows.length > 0
+      ? baseViewData.fieldRows.reduce((sum, row) => sum + Number((row as any).costPerHa || 0), 0) / baseViewData.fieldRows.length
+      : 0;
+    const validCostPerKgRows = baseViewData.fieldRows.filter((row) => Number((row as any).costPerKg || 0) > 0);
+    const averageFieldCostPerKg = validCostPerKgRows.length > 0
+      ? validCostPerKgRows.reduce((sum, row) => sum + Number((row as any).costPerKg || 0), 0) / validCostPerKgRows.length
+      : 0;
+
+    const alertCandidates = [
+      ...baseViewData.monthlyRows
         .filter((row) => row.total > 0 && row.vsPreviousSeasonPct >= 15)
         .map((row) => ({
           level: row.vsPreviousSeasonPct >= 30 ? 'alta' : 'media',
           title: `Alza mensual en ${row.monthLabel}`,
-          message: `El campo ${selectedField?.fieldName || ''} sube ${row.vsPreviousSeasonPct.toFixed(1)}% frente a la temporada anterior.`,
-          amount: row.vsPreviousSeason
+          message: `${row.topFieldName !== '-' ? `${row.topFieldName} lidera el gasto del mes. ` : ''}El gasto sube ${row.vsPreviousSeasonPct.toFixed(1)}% frente a la misma fecha de ${previousExecutiveSeason}.`,
+          amount: Math.abs(row.vsPreviousSeason),
+          score: Math.abs(row.vsPreviousSeason)
         })),
-      ...filteredSectorRows
-        .filter((row) => row.total > 0 && row.deltaPct >= 20)
-        .slice(0, 3)
+      ...sortedFieldRows
+        .filter((row) => Number((row as any).budgetTotal || 0) > 0 && Number((row as any).budgetExecutionPct || 0) >= 110)
         .map((row) => ({
-          level: row.deltaPct >= 35 ? 'alta' : 'media',
-          title: `Sector ${row.sectorName} en alza`,
-          message: `Acumula ${row.deltaPct.toFixed(1)}% más gasto que la temporada anterior.`,
-          amount: row.delta
+          level: Number((row as any).budgetExecutionPct || 0) >= 130 ? 'alta' : 'media',
+          title: `Campo ${row.fieldName} sobre presupuesto`,
+          message: `Ejecuta ${Number((row as any).budgetExecutionPct || 0).toFixed(1)}% del presupuesto y supera el plan en ${formatCLP(Number((row as any).budgetDelta || 0))}.`,
+          amount: Math.max(Number((row as any).budgetDelta || 0), 0),
+          score: Math.max(Number((row as any).budgetDelta || 0), 0)
+        })),
+      ...sortedFieldRows
+        .filter((row) => row.total > 0 && Number((row as any).kgProduced || 0) <= 0 && Number(row.hectares || 0) > 0)
+        .map((row) => ({
+          level: row.total >= baseViewData.kpis.averageMonthlyCost ? 'alta' : 'media',
+          title: `Campo ${row.fieldName} sin produccion visible`,
+          message: `Registra ${formatCLP(row.total)} de costo acumulado, pero no tiene kilos informados para calcular eficiencia.`,
+          amount: row.total,
+          score: row.total
+        })),
+      ...sortedFieldRows
+        .filter((row) => averageFieldCostPerHa > 0 && Number((row as any).costPerHa || 0) >= averageFieldCostPerHa * 1.25)
+        .map((row) => ({
+          level: Number((row as any).costPerHa || 0) >= averageFieldCostPerHa * 1.5 ? 'alta' : 'media',
+          title: `Campo ${row.fieldName} con costo / ha exigido`,
+          message: `Marca ${formatCLP(Number((row as any).costPerHa || 0))} por ha, sobre una referencia visible de ${formatCLP(averageFieldCostPerHa)}.`,
+          amount: Number((row as any).costPerHa || 0),
+          score: Number((row as any).costPerHa || 0)
+        })),
+      ...sortedFieldRows
+        .filter((row) => averageFieldCostPerKg > 0 && Number((row as any).costPerKg || 0) > 0 && Number((row as any).costPerKg || 0) >= averageFieldCostPerKg * 1.25)
+        .map((row) => ({
+          level: Number((row as any).costPerKg || 0) >= averageFieldCostPerKg * 1.5 ? 'alta' : 'media',
+          title: `Campo ${row.fieldName} con costo / kg tensionado`,
+          message: `Su costo por kg llega a ${formatCLP(Number((row as any).costPerKg || 0))}, sobre el promedio visible de ${formatCLP(averageFieldCostPerKg)}.`,
+          amount: Number((row as any).costPerKg || 0),
+          score: Number((row as any).costPerKg || 0)
+        })),
+      ...sortedSectorRows
+        .filter((row) => Number((row as any).budgetTotal || 0) > 0 && Number((row as any).budgetExecutionPct || 0) >= 115)
+        .slice(0, 4)
+        .map((row) => ({
+          level: Number((row as any).budgetExecutionPct || 0) >= 135 ? 'alta' : 'media',
+          title: `Sector ${row.fieldName} / ${row.sectorName} en desvio`,
+          message: `El sector ejecuta ${Number((row as any).budgetExecutionPct || 0).toFixed(1)}% de su presupuesto y requiere explicacion operativa.`,
+          amount: Math.max(Number((row as any).budgetDelta || 0), 0),
+          score: Math.max(Number((row as any).budgetDelta || 0), 0)
         }))
-    ].sort((a, b) => b.amount - a.amount);
+    ];
+
+    const dedupedAlerts = Array.from(
+      new Map(alertCandidates.map((alert) => [`${alert.title}::${alert.message}`, alert])).values()
+    );
+    const alerts = dedupedAlerts
+      .sort((a, b) => {
+        if (a.level !== b.level) return a.level === 'alta' ? -1 : 1;
+        return (b.score || 0) - (a.score || 0);
+      })
+      .slice(0, 8)
+      .map(({ score, ...alert }) => alert);
 
     return {
-      ...executiveData,
-      monthlyRows,
-      categoryRows: filteredCategoryRows,
-      fieldRows: selectedField ? [selectedField] : [],
-      sectorRows: filteredSectorRows,
+      ...baseViewData,
+      fieldRows: sortedFieldRows,
+      sectorRows: sortedSectorRows,
       alerts,
-      topFields: selectedField ? [selectedField] : [],
-      topSectors: filteredSectorRows.slice(0, 5),
-      kpis: {
-        ...executiveData.kpis,
-        totalSeasonCost,
-        totalHectares: selectedField?.hectares || 0,
-        previousSeasonCost,
-        seasonVariation,
-        seasonVariationPct,
-        averageMonthlyCost,
-        totalBudget,
-        budgetDelta: totalSeasonCost - totalBudget,
-        budgetExecutionPct: totalBudget > 0 ? (totalSeasonCost / totalBudget) * 100 : 0,
-        totalKgProduced,
-        averageCostPerHa: selectedField?.hectares ? totalSeasonCost / selectedField.hectares : 0,
-        averageCostPerKg: totalKgProduced > 0 ? totalSeasonCost / totalKgProduced : 0,
-        peakMonth,
-        topField: selectedField,
-        topSector: filteredSectorRows[0] || null
-      }
+      topFields: sortedFieldRows.slice(0, 5),
+      topSectors: sortedSectorRows.slice(0, 5)
     };
   }, [
     executiveData,
+    executiveFieldSortBy,
     executiveFieldFilter,
     executivePreviousBase.fieldRows,
     executiveSeasonMonths,
+    executiveSectorSortBy,
     previousExecutiveSeasonMonths,
+    previousExecutiveSeason,
     reportData
+  ]);
+
+  const executiveFieldComparison = useMemo(() => {
+    if (executiveAllSortedFieldRows.length < 2) return null;
+
+    const preferredFieldA = executiveCompareFieldA !== 'auto'
+      ? executiveData.fieldRows.find((row) => row.fieldId === executiveCompareFieldA) || null
+      : (executiveFieldFilter !== 'all'
+        ? executiveData.fieldRows.find((row) => row.fieldId === executiveFieldFilter) || null
+        : executiveAllSortedFieldRows[0] || null);
+
+    const fieldA = preferredFieldA || executiveAllSortedFieldRows[0] || null;
+    if (!fieldA) return null;
+
+    const autoFieldB = executiveAllSortedFieldRows.find((row) => row.fieldId !== fieldA.fieldId) || null;
+    const preferredFieldB = executiveCompareFieldB !== 'auto'
+      ? executiveData.fieldRows.find((row) => row.fieldId === executiveCompareFieldB && row.fieldId !== fieldA.fieldId) || null
+      : autoFieldB;
+    const fieldB = preferredFieldB || autoFieldB;
+
+    if (!fieldB || fieldA.fieldId === fieldB.fieldId) return null;
+
+    const monthlyRows = executiveSeasonMonths.map((month) => {
+      const fieldATotal = Number(fieldA.months[month.key] || 0);
+      const fieldBTotal = Number(fieldB.months[month.key] || 0);
+      return {
+        monthKey: month.key,
+        monthLabel: month.shortLabel,
+        fullLabel: month.fullLabel,
+        fieldATotal,
+        fieldBTotal,
+        gap: fieldATotal - fieldBTotal
+      };
+    });
+
+    const comparisonRows = [
+      {
+        metric: 'Gasto total',
+        fieldAValue: Number(fieldA.total || 0),
+        fieldBValue: Number(fieldB.total || 0),
+        gap: Number(fieldA.total || 0) - Number(fieldB.total || 0),
+        format: 'currency'
+      },
+      {
+        metric: 'Desviacion ppto',
+        fieldAValue: Number((fieldA as any).budgetDelta || 0),
+        fieldBValue: Number((fieldB as any).budgetDelta || 0),
+        gap: Number((fieldA as any).budgetDelta || 0) - Number((fieldB as any).budgetDelta || 0),
+        format: 'currency'
+      },
+      {
+        metric: 'Costo / Ha',
+        fieldAValue: Number((fieldA as any).costPerHa || 0),
+        fieldBValue: Number((fieldB as any).costPerHa || 0),
+        gap: Number((fieldA as any).costPerHa || 0) - Number((fieldB as any).costPerHa || 0),
+        format: 'currency'
+      },
+      {
+        metric: 'Costo / Kg',
+        fieldAValue: Number((fieldA as any).costPerKg || 0),
+        fieldBValue: Number((fieldB as any).costPerKg || 0),
+        gap: Number((fieldA as any).costPerKg || 0) - Number((fieldB as any).costPerKg || 0),
+        format: 'currency_optional'
+      },
+      {
+        metric: 'Variacion %',
+        fieldAValue: Number((fieldA as any).deltaPct || 0),
+        fieldBValue: Number((fieldB as any).deltaPct || 0),
+        gap: Number((fieldA as any).deltaPct || 0) - Number((fieldB as any).deltaPct || 0),
+        format: 'percent'
+      },
+      {
+        metric: 'Kg producidos',
+        fieldAValue: Number((fieldA as any).kgProduced || 0),
+        fieldBValue: Number((fieldB as any).kgProduced || 0),
+        gap: Number((fieldA as any).kgProduced || 0) - Number((fieldB as any).kgProduced || 0),
+        format: 'number'
+      }
+    ];
+
+    const dominantField = fieldA.total >= fieldB.total ? fieldA : fieldB;
+    const efficientField = (() => {
+      const fieldACostPerHa = Number((fieldA as any).costPerHa || 0);
+      const fieldBCostPerHa = Number((fieldB as any).costPerHa || 0);
+      if (fieldACostPerHa <= 0 && fieldBCostPerHa <= 0) return null;
+      if (fieldBCostPerHa <= 0) return fieldA;
+      if (fieldACostPerHa <= 0) return fieldB;
+      return fieldACostPerHa <= fieldBCostPerHa ? fieldA : fieldB;
+    })();
+
+    return {
+      fieldA,
+      fieldB,
+      monthlyRows,
+      comparisonRows,
+      narrative: `${dominantField.fieldName} concentra el mayor gasto entre los dos campos comparados${efficientField ? `, mientras ${efficientField.fieldName} muestra la mejor eficiencia visible por hectarea.` : '.'}`
+    };
+  }, [
+    executiveAllSortedFieldRows,
+    executiveCompareFieldA,
+    executiveCompareFieldB,
+    executiveData.fieldRows,
+    executiveFieldFilter,
+    executiveSeasonMonths
   ]);
 
   const executiveInsights = useMemo(() => {
@@ -1159,6 +1384,9 @@ export const Reports: React.FC = () => {
         { Indicador: 'Temporada actual', Valor: selectedSeason },
         { Indicador: 'Temporada comparativa', Valor: previousExecutiveSeason },
         { Indicador: 'Campo filtrado', Valor: executiveFieldLabel },
+        { Indicador: 'Orden campos', Valor: EXECUTIVE_SORT_OPTIONS.find((item) => item.value === executiveFieldSortBy)?.label || executiveFieldSortBy },
+        { Indicador: 'Orden sectores', Valor: EXECUTIVE_SORT_OPTIONS.find((item) => item.value === executiveSectorSortBy)?.label || executiveSectorSortBy },
+        { Indicador: 'Comparacion campos', Valor: executiveFieldComparison ? `${executiveFieldComparison.fieldA.fieldName} vs ${executiveFieldComparison.fieldB.fieldName}` : 'No disponible' },
         { Indicador: 'Gasto total temporada', Valor: Number(executiveViewData.kpis.totalSeasonCost.toFixed(0)) },
         { Indicador: 'Presupuesto visible', Valor: Number((executiveViewData.kpis.totalBudget || 0).toFixed(0)) },
         { Indicador: 'Desviación presupuesto', Valor: Number((executiveViewData.kpis.budgetDelta || 0).toFixed(0)) },
@@ -1261,6 +1489,22 @@ export const Reports: React.FC = () => {
         Mensaje: alert.message,
         Monto: Number(alert.amount.toFixed(0))
       }));
+      const comparisonRows = executiveFieldComparison
+        ? executiveFieldComparison.comparisonRows.map((row) => ({
+          Indicador: row.metric,
+          [executiveFieldComparison.fieldA.fieldName]: Number(row.fieldAValue.toFixed(2)),
+          [executiveFieldComparison.fieldB.fieldName]: Number(row.fieldBValue.toFixed(2)),
+          Brecha: Number(row.gap.toFixed(2))
+        }))
+        : [];
+      const comparisonMonthlyRows = executiveFieldComparison
+        ? executiveFieldComparison.monthlyRows.map((row) => ({
+          Mes: row.fullLabel,
+          [executiveFieldComparison.fieldA.fieldName]: Number(row.fieldATotal.toFixed(0)),
+          [executiveFieldComparison.fieldB.fieldName]: Number(row.fieldBTotal.toFixed(0)),
+          Brecha: Number(row.gap.toFixed(0))
+        }))
+        : [];
 
       await exportWorkbookToXlsx({
         filename: `Reporte_Ejecutivo_${companySlug}_${selectedSeason}${executiveFieldFilter !== 'all' ? `_campo_${executiveFieldFilter}` : ''}.xlsx`,
@@ -1272,7 +1516,11 @@ export const Reports: React.FC = () => {
           { name: 'Historico Temporadas', rows: historicalRows },
           { name: 'Top Campos', rows: topFieldsRows },
           { name: 'Top Sectores', rows: topSectorsRows },
-          { name: 'Alertas', rows: alertRows }
+          { name: 'Alertas', rows: alertRows },
+          ...(comparisonRows.length > 0 ? [
+            { name: 'Comparacion Campos', rows: comparisonRows },
+            { name: 'Campos Mes a Mes', rows: comparisonMonthlyRows }
+          ] : [])
         ]
       });
     } catch (error: any) {
@@ -2028,6 +2276,9 @@ export const Reports: React.FC = () => {
           head: [['Resumen para Directorio', 'Detalle']],
           body: [
             ['Campo visible', executiveFieldLabel],
+            ['Orden campos', EXECUTIVE_SORT_OPTIONS.find((item) => item.value === executiveFieldSortBy)?.label || executiveFieldSortBy],
+            ['Orden sectores', EXECUTIVE_SORT_OPTIONS.find((item) => item.value === executiveSectorSortBy)?.label || executiveSectorSortBy],
+            ['Comparacion campos', executiveFieldComparison ? `${executiveFieldComparison.fieldA.fieldName} vs ${executiveFieldComparison.fieldB.fieldName}` : '-'],
             ['Alertas activas', String(executiveInsights.activeAlertCount)],
             ['Hallazgo 1', executiveInsights.findings[0]?.description || '-'],
             ['Hallazgo 2', executiveInsights.findings[1]?.description || '-'],
@@ -2092,6 +2343,48 @@ export const Reports: React.FC = () => {
         });
 
         yPos = (doc as any).lastAutoTable.finalY + 8;
+
+        if (executiveFieldComparison) {
+          if (yPos > 150) {
+            doc.addPage();
+            yPos = 20;
+          }
+
+          autoTable(doc, {
+            startY: yPos,
+            head: [['Comparacion entre campos', 'Detalle']],
+            body: executiveFieldComparison.comparisonRows.map((row) => [
+              row.metric,
+              `${executiveFieldComparison.fieldA.fieldName}: ${row.format === 'percent'
+                ? `${row.fieldAValue.toFixed(1)}%`
+                : row.format === 'number'
+                  ? row.fieldAValue.toLocaleString('es-CL')
+                  : row.format === 'currency_optional' && row.fieldAValue <= 0
+                    ? '-'
+                    : formatCLP(row.fieldAValue)
+              }\n${executiveFieldComparison.fieldB.fieldName}: ${row.format === 'percent'
+                ? `${row.fieldBValue.toFixed(1)}%`
+                : row.format === 'number'
+                  ? row.fieldBValue.toLocaleString('es-CL')
+                  : row.format === 'currency_optional' && row.fieldBValue <= 0
+                    ? '-'
+                    : formatCLP(row.fieldBValue)
+              }\nBrecha: ${row.format === 'percent'
+                ? `${row.gap.toFixed(1)}%`
+                : row.format === 'number'
+                  ? row.gap.toLocaleString('es-CL')
+                  : row.format === 'currency_optional' && Math.abs(row.gap) <= 0
+                    ? '-'
+                    : formatCLP(row.gap)
+              }`
+            ]),
+            theme: 'grid',
+            headStyles: { fillColor: [67, 56, 202] },
+            styles: { fontSize: 8 }
+          });
+
+          yPos = (doc as any).lastAutoTable.finalY + 8;
+        }
 
         if (yPos > 160) {
           doc.addPage();
@@ -3237,9 +3530,9 @@ export const Reports: React.FC = () => {
                 <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                   <div>
                     <h3 className="text-sm font-semibold text-gray-900">Filtro ejecutivo</h3>
-                    <p className="text-sm text-gray-500">Enfoca la vista por campo y elige la temporada anterior que quieres usar como base comparativa.</p>
+                    <p className="text-sm text-gray-500">Enfoca la vista por campo, define el orden ejecutivo de las matrices y prepara la comparacion directa entre campos.</p>
                   </div>
-                  <div className="grid w-full xl:w-auto grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="grid w-full xl:w-auto grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-3">
                     <select
                       value={executiveFieldFilter}
                       onChange={(e) => setExecutiveFieldFilter(e.target.value)}
@@ -3272,6 +3565,46 @@ export const Reports: React.FC = () => {
                       {executiveComparableCompanies.map((company) => (
                         <option key={company.id} value={company.id}>{company.name}</option>
                       ))}
+                    </select>
+                    <select
+                      value={executiveFieldSortBy}
+                      onChange={(e) => setExecutiveFieldSortBy(e.target.value as ExecutiveSortKey)}
+                      className="block w-full rounded-md border-gray-300 text-sm focus:border-purple-500 focus:ring-purple-500"
+                    >
+                      {EXECUTIVE_SORT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>Campos: {option.label}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={executiveSectorSortBy}
+                      onChange={(e) => setExecutiveSectorSortBy(e.target.value as ExecutiveSortKey)}
+                      className="block w-full rounded-md border-gray-300 text-sm focus:border-purple-500 focus:ring-purple-500"
+                    >
+                      {EXECUTIVE_SORT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>Sectores: {option.label}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={executiveCompareFieldA}
+                      onChange={(e) => setExecutiveCompareFieldA(e.target.value)}
+                      className="block w-full rounded-md border-gray-300 text-sm focus:border-purple-500 focus:ring-purple-500"
+                    >
+                      <option value="auto">Campo A automatico</option>
+                      {executiveFieldOptions.map((option) => (
+                        <option key={`field-a-${option.value}`} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={executiveCompareFieldB}
+                      onChange={(e) => setExecutiveCompareFieldB(e.target.value)}
+                      className="block w-full rounded-md border-gray-300 text-sm focus:border-purple-500 focus:ring-purple-500"
+                    >
+                      <option value="auto">Campo B automatico</option>
+                      {executiveFieldOptions
+                        .filter((option) => option.value !== executiveCompareFieldA || executiveCompareFieldA === 'auto')
+                        .map((option) => (
+                          <option key={`field-b-${option.value}`} value={option.value}>{option.label}</option>
+                        ))}
                     </select>
                   </div>
                 </div>
@@ -3532,6 +3865,105 @@ export const Reports: React.FC = () => {
                 </div>
               )}
 
+              {executiveFieldComparison && (
+                <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Comparacion lado a lado entre campos</h3>
+                      <p className="text-sm text-gray-500">Sirve para defender en comite por que un campo presiona mas costo, presupuesto o eficiencia que otro.</p>
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      Orden activo campos: {EXECUTIVE_SORT_OPTIONS.find((item) => item.value === executiveFieldSortBy)?.label || executiveFieldSortBy}
+                    </div>
+                  </div>
+                  <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="rounded-xl border border-purple-200 bg-purple-50 p-5">
+                      <div className="text-xs uppercase tracking-wide text-purple-700">Campo A</div>
+                      <div className="mt-2 text-xl font-semibold text-slate-900">{executiveFieldComparison.fieldA.fieldName}</div>
+                      <div className="mt-4 space-y-2 text-sm">
+                        <div className="flex items-center justify-between gap-4"><span>Gasto total</span><span className="font-semibold">{formatCLP(executiveFieldComparison.fieldA.total)}</span></div>
+                        <div className="flex items-center justify-between gap-4"><span>Desviacion ppto</span><span className={`font-semibold ${Number((executiveFieldComparison.fieldA as any).budgetDelta || 0) >= 0 ? 'text-red-600' : 'text-green-600'}`}>{formatCLP(Number((executiveFieldComparison.fieldA as any).budgetDelta || 0))}</span></div>
+                        <div className="flex items-center justify-between gap-4"><span>Costo / Ha</span><span className="font-semibold">{formatCLP(Number((executiveFieldComparison.fieldA as any).costPerHa || 0))}</span></div>
+                        <div className="flex items-center justify-between gap-4"><span>Costo / Kg</span><span className="font-semibold">{Number((executiveFieldComparison.fieldA as any).costPerKg || 0) > 0 ? formatCLP(Number((executiveFieldComparison.fieldA as any).costPerKg || 0)) : '-'}</span></div>
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+                      <div className="text-xs uppercase tracking-wide text-slate-700">Campo B</div>
+                      <div className="mt-2 text-xl font-semibold text-slate-900">{executiveFieldComparison.fieldB.fieldName}</div>
+                      <div className="mt-4 space-y-2 text-sm">
+                        <div className="flex items-center justify-between gap-4"><span>Gasto total</span><span className="font-semibold">{formatCLP(executiveFieldComparison.fieldB.total)}</span></div>
+                        <div className="flex items-center justify-between gap-4"><span>Desviacion ppto</span><span className={`font-semibold ${Number((executiveFieldComparison.fieldB as any).budgetDelta || 0) >= 0 ? 'text-red-600' : 'text-green-600'}`}>{formatCLP(Number((executiveFieldComparison.fieldB as any).budgetDelta || 0))}</span></div>
+                        <div className="flex items-center justify-between gap-4"><span>Costo / Ha</span><span className="font-semibold">{formatCLP(Number((executiveFieldComparison.fieldB as any).costPerHa || 0))}</span></div>
+                        <div className="flex items-center justify-between gap-4"><span>Costo / Kg</span><span className="font-semibold">{Number((executiveFieldComparison.fieldB as any).costPerKg || 0) > 0 ? formatCLP(Number((executiveFieldComparison.fieldB as any).costPerKg || 0)) : '-'}</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-6 grid grid-cols-1 xl:grid-cols-[1.2fr,0.8fr] gap-6">
+                    <div className="rounded-xl border border-slate-200 p-4">
+                      <div className="text-sm font-medium text-slate-900">Evolucion mensual comparada</div>
+                      <div className="mt-4 h-72">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={executiveFieldComparison.monthlyRows}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                            <XAxis dataKey="monthLabel" />
+                            <YAxis tickFormatter={(value) => formatCLP(Number(value))} />
+                            <Tooltip formatter={(value) => formatCLP(Number(value))} />
+                            <Legend />
+                            <Bar dataKey="fieldATotal" name={executiveFieldComparison.fieldA.fieldName} fill="#7c3aed" radius={[6, 6, 0, 0]} />
+                            <Bar dataKey="fieldBTotal" name={executiveFieldComparison.fieldB.fieldName} fill="#0f172a" radius={[6, 6, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 p-4">
+                      <div className="text-sm font-medium text-slate-900">Brechas ejecutivas</div>
+                      <div className="mt-4 space-y-3">
+                        {executiveFieldComparison.comparisonRows.map((row) => (
+                          <div key={row.metric} className="rounded-xl bg-slate-50 p-4">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <div className="font-medium text-slate-900">{row.metric}</div>
+                                <div className="mt-1 text-sm text-slate-500">
+                                  {executiveFieldComparison.fieldA.fieldName}: {row.format === 'percent'
+                                    ? `${row.fieldAValue.toFixed(1)}%`
+                                    : row.format === 'number'
+                                      ? row.fieldAValue.toLocaleString('es-CL')
+                                      : row.format === 'currency_optional' && row.fieldAValue <= 0
+                                        ? '-'
+                                        : formatCLP(row.fieldAValue)}
+                                </div>
+                                <div className="text-sm text-slate-500">
+                                  {executiveFieldComparison.fieldB.fieldName}: {row.format === 'percent'
+                                    ? `${row.fieldBValue.toFixed(1)}%`
+                                    : row.format === 'number'
+                                      ? row.fieldBValue.toLocaleString('es-CL')
+                                      : row.format === 'currency_optional' && row.fieldBValue <= 0
+                                        ? '-'
+                                        : formatCLP(row.fieldBValue)}
+                                </div>
+                              </div>
+                              <div className={`text-right font-semibold ${row.gap >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                {row.format === 'percent'
+                                  ? `${row.gap.toFixed(1)}%`
+                                  : row.format === 'number'
+                                    ? row.gap.toLocaleString('es-CL')
+                                    : row.format === 'currency_optional' && Math.abs(row.gap) <= 0
+                                      ? '-'
+                                      : formatCLP(row.gap)}
+                                <div className="text-xs text-slate-500">Brecha A - B</div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-4 rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+                        {executiveFieldComparison.narrative}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
                   <div className="flex items-start justify-between gap-4 mb-4">
@@ -3739,6 +4171,7 @@ export const Reports: React.FC = () => {
                   <div className="grid grid-cols-1 gap-4 p-4">
                     <div>
                       <div className="mb-2 text-sm font-medium text-gray-700">Top 5 campos</div>
+                      <div className="mb-3 text-xs text-gray-500">Ordenados por {EXECUTIVE_SORT_OPTIONS.find((item) => item.value === executiveFieldSortBy)?.label || executiveFieldSortBy}.</div>
                       <div className="space-y-2">
                         {executiveViewData.topFields.map((row, index) => (
                           <div key={row.fieldId} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
@@ -3753,6 +4186,7 @@ export const Reports: React.FC = () => {
                     </div>
                     <div>
                       <div className="mb-2 text-sm font-medium text-gray-700">Top 5 sectores</div>
+                      <div className="mb-3 text-xs text-gray-500">Ordenados por {EXECUTIVE_SORT_OPTIONS.find((item) => item.value === executiveSectorSortBy)?.label || executiveSectorSortBy}.</div>
                       <div className="space-y-2">
                         {executiveViewData.topSectors.map((row, index) => (
                           <div key={row.sectorId} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
@@ -3773,6 +4207,7 @@ export const Reports: React.FC = () => {
                 <div className="px-6 py-4 border-b border-gray-200">
                   <h3 className="text-lg font-semibold text-gray-900">Gasto mes a mes por campo</h3>
                   <p className="text-sm text-gray-500">Matriz ejecutiva lista para imprimir y presentar, con comparación total por temporada.</p>
+                  <div className="mt-2 text-xs text-gray-500">Filas ordenadas por {EXECUTIVE_SORT_OPTIONS.find((item) => item.value === executiveFieldSortBy)?.label || executiveFieldSortBy}.</div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -3816,6 +4251,7 @@ export const Reports: React.FC = () => {
                 <div className="px-6 py-4 border-b border-gray-200">
                   <h3 className="text-lg font-semibold text-gray-900">Gasto mes a mes por sector</h3>
                   <p className="text-sm text-gray-500">Detalle ejecutivo resumido por sector y campo, con comparación acumulada.</p>
+                  <div className="mt-2 text-xs text-gray-500">Filas ordenadas por {EXECUTIVE_SORT_OPTIONS.find((item) => item.value === executiveSectorSortBy)?.label || executiveSectorSortBy}.</div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200 text-sm">
