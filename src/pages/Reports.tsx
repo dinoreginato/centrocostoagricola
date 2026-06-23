@@ -1,5 +1,5 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { getSeasonFromDate, isDateInSeason } from '../lib/seasonUtils';
@@ -375,6 +375,7 @@ export const Reports: React.FC = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState('');
+  const reportLoadSeqRef = useRef(0);
 
   // Update orientation when tab changes
   useEffect(() => {
@@ -709,8 +710,8 @@ export const Reports: React.FC = () => {
         totalHectares: executiveCurrentBase.totalHectares,
         averageMonthlyCost: executiveCurrentBase.averageMonthlyCost,
         peakMonth: executiveCurrentBase.peakMonth,
-        topField: executiveCurrentBase.topField,
-        topSector: executiveCurrentBase.topSector,
+        topField: fieldRows[0] || null,
+        topSector: sectorRows[0] || null,
         previousSeasonCost: executivePreviousBase.totalSeasonCost,
         seasonVariation,
         seasonVariationPct
@@ -839,6 +840,7 @@ export const Reports: React.FC = () => {
     const topMonth = executiveViewData.kpis.peakMonth;
     const topField = executiveViewData.kpis.topField;
     const topSector = executiveViewData.kpis.topSector;
+    const topFieldShare = Number((topField as any)?.sharePct || 0);
 
     const findings = [
       {
@@ -849,7 +851,7 @@ export const Reports: React.FC = () => {
       {
         title: 'Mayor concentración',
         description: topField
-          ? `${topField.fieldName} lidera el gasto consolidado y representa ${topField.sharePct.toFixed(1)}% del total visible.`
+          ? `${topField.fieldName} lidera el gasto consolidado y representa ${topFieldShare.toFixed(1)}% del total visible.`
           : 'No hay un campo dominante con datos suficientes.',
         emphasis: topField ? formatCLP(topField.total) : 'Sin datos'
       },
@@ -1084,9 +1086,12 @@ export const Reports: React.FC = () => {
 
   async function loadRawDataImpl() {
     if (!selectedCompany) return;
+    const companyId = selectedCompany.id;
+    const loadSeq = ++reportLoadSeqRef.current;
     setLoading(true);
     try {
-      const res = await loadReportsRawData({ companyId: selectedCompany.id });
+      const res = await loadReportsRawData({ companyId });
+      if (reportLoadSeqRef.current !== loadSeq || selectedCompany?.id !== companyId) return;
       setRawFields(res.fields || []);
       setRawApplications(res.applications || []);
       setRawLabor(res.labor || []);
@@ -1106,6 +1111,7 @@ export const Reports: React.FC = () => {
       }
 
     } catch {
+      if (reportLoadSeqRef.current !== loadSeq || selectedCompany?.id !== companyId) return;
       setRawFields([]);
       setRawApplications([]);
       setRawLabor([]);
@@ -1128,7 +1134,9 @@ export const Reports: React.FC = () => {
       setComparativeData([]);
       toast.error('Error al cargar datos de reportes.');
     } finally {
-      setLoading(false);
+      if (reportLoadSeqRef.current === loadSeq) {
+        setLoading(false);
+      }
     }
   }
 
@@ -3214,7 +3222,7 @@ export const Reports: React.FC = () => {
                           cx="50%"
                           cy="50%"
                           outerRadius={110}
-                          label={({ category, percent }) => `${category} ${(percent * 100).toFixed(0)}%`}
+                          label={({ category, percent }) => `${category} ${(((percent || 0) as number) * 100).toFixed(0)}%`}
                         >
                           {executiveViewData.categoryRows.map((entry, index) => (
                             <Cell key={`${entry.category}-${index}`} fill={COLORS[index % COLORS.length]} />
