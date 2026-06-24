@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCLP } from '../lib/utils';
+import { getSeasonFromDate } from '../lib/seasonUtils';
 import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X, Trash2, Layout, AlertCircle, Play, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, ShieldAlert } from 'lucide-react';
 import { 
   BarChart, 
@@ -59,6 +60,8 @@ export const Dashboard: React.FC = () => {
   });
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
   const [invoiceDetailLoading, setInvoiceDetailLoading] = useState(false);
+  const [selectedSeason, setSelectedSeason] = useState<string>(getSeasonFromDate(new Date()));
+  const [availableSeasons, setAvailableSeasons] = useState<string[]>([getSeasonFromDate(new Date())]);
 
   const [dashboardStats, setDashboardStats] = useState({
     totalFields: 0,
@@ -422,26 +425,33 @@ export const Dashboard: React.FC = () => {
         allSectors,
         applications,
         laborAssignments,
+        workerCosts,
         fuelAssignments,
         fuelConsumption,
         machineryAssignments,
         irrigationAssignments,
+        generalCosts,
         upcomingInvoices,
         incomeEntries,
         stockData,
         ordersData,
         rainLogs,
-        machines
-      } = await loadDashboardRaw({ companyId: selectedCompany.id });
+        machines,
+        availableSeasons
+      } = await loadDashboardRaw({ companyId: selectedCompany.id, season: selectedSeason });
 
       setCompanyFields(fields || []);
       setUpcomingInvoices(upcomingInvoices || []);
       setRainLogs(rainLogs || []);
+      setAvailableSeasons((availableSeasons && availableSeasons.length > 0) ? availableSeasons : [getSeasonFromDate(new Date())]);
 
       setRainFieldId((prev) => prev || (fields && fields.length > 0 ? fields[0].id : prev));
       setRainSectorId((prev) =>
         prev || (fields && fields.length > 0 && (fields as any)[0].sectors && (fields as any)[0].sectors.length > 0 ? (fields as any)[0].sectors[0].id : prev)
       );
+      if (availableSeasons && availableSeasons.length > 0 && !availableSeasons.includes(selectedSeason)) {
+        setSelectedSeason(availableSeasons[0]);
+      }
 
       const totalFields = fields?.length || 0;
       const totalHectares = fields?.reduce((sum: number, field: any) => sum + Number(field.total_hectares), 0) || 0;
@@ -449,6 +459,7 @@ export const Dashboard: React.FC = () => {
       // Calculate Totals
       const totalAppCost = applications?.reduce((sum, app) => sum + Number(app.total_cost), 0) || 0;
       const totalLaborCost = laborAssignments.reduce((sum, l) => sum + Number(l.assigned_amount), 0);
+      const totalWorkerCost = workerCosts.reduce((sum, l) => sum + Number(l.amount), 0);
       
       const totalFuelDirect = fuelAssignments.reduce((sum, l) => sum + Number(l.assigned_amount), 0);
       const totalFuelConsumption = fuelConsumption.reduce((sum, l) => sum + Number(l.estimated_price), 0);
@@ -456,8 +467,9 @@ export const Dashboard: React.FC = () => {
 
       const totalMachineryCost = machineryAssignments.reduce((sum, l) => sum + Number(l.assigned_amount), 0);
       const totalIrrigationCost = irrigationAssignments.reduce((sum, l) => sum + Number(l.assigned_amount), 0);
+      const totalGeneralCost = generalCosts.reduce((sum, l) => sum + Number(l.amount), 0);
       
-      const totalCost = totalAppCost + totalLaborCost + totalFuelCost + totalMachineryCost + totalIrrigationCost;
+      const totalCost = totalAppCost + totalLaborCost + totalWorkerCost + totalFuelCost + totalMachineryCost + totalIrrigationCost + totalGeneralCost;
       const costPerHectare = totalHectares > 0 ? totalCost / totalHectares : 0;
 
       setDashboardStats({
@@ -479,6 +491,9 @@ export const Dashboard: React.FC = () => {
         const fieldLaborCost = laborAssignments
             .filter(l => fieldSectorIds.includes(l.sector_id))
             .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
+        const fieldWorkerCost = workerCosts
+            .filter(l => fieldSectorIds.includes(l.sector_id))
+            .reduce((sum, l) => sum + Number(l.amount), 0);
         
         const fieldFuelDirect = fuelAssignments
             .filter(l => fieldSectorIds.includes(l.sector_id))
@@ -495,8 +510,11 @@ export const Dashboard: React.FC = () => {
         const fieldIrrigationCost = irrigationAssignments
             .filter(l => fieldSectorIds.includes(l.sector_id))
             .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
+        const fieldGeneralCost = generalCosts
+            .filter(l => fieldSectorIds.includes(l.sector_id))
+            .reduce((sum, l) => sum + Number(l.amount), 0);
 
-        const totalFieldCost = fieldAppCost + fieldLaborCost + fieldFuelCost + fieldMachineryCost + fieldIrrigationCost;
+        const totalFieldCost = fieldAppCost + fieldLaborCost + fieldWorkerCost + fieldFuelCost + fieldMachineryCost + fieldIrrigationCost + fieldGeneralCost;
 
         return {
           name: field.name,
@@ -519,6 +537,9 @@ export const Dashboard: React.FC = () => {
           const sectorLaborCost = laborAssignments
             .filter(l => l.sector_id === sector.id)
             .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
+          const sectorWorkerCost = workerCosts
+            .filter(l => l.sector_id === sector.id)
+            .reduce((sum, l) => sum + Number(l.amount), 0);
           
           // Fuel (Direct + Consumption)
           const sectorFuelDirect = fuelAssignments
@@ -538,8 +559,11 @@ export const Dashboard: React.FC = () => {
           const sectorIrrigationCost = irrigationAssignments
             .filter(l => l.sector_id === sector.id)
             .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
+          const sectorGeneralCost = generalCosts
+            .filter(l => l.sector_id === sector.id)
+            .reduce((sum, l) => sum + Number(l.amount), 0);
           
-          const totalSectorCost = sectorAppCost + sectorLaborCost + sectorFuelCost + sectorMachineryCost + sectorIrrigationCost;
+          const totalSectorCost = sectorAppCost + sectorLaborCost + sectorWorkerCost + sectorFuelCost + sectorMachineryCost + sectorIrrigationCost + sectorGeneralCost;
           
           // Income
           const sectorIncome = incomeEntriesSafe
@@ -556,10 +580,12 @@ export const Dashboard: React.FC = () => {
               hectares: sector.hectares,
               costPerHa: sector.hectares > 0 ? totalSectorCost / sector.hectares : 0,
               laborCost: sectorLaborCost,
+              workerCost: sectorWorkerCost,
               appCost: sectorAppCost,
               machineryCost: sectorMachineryCost,
               irrigationCost: sectorIrrigationCost,
               fuelCost: sectorFuelCost,
+              generalCost: sectorGeneralCost,
               income: sectorIncome,
               profitability: profitability,
               profitabilityPerHa: profitabilityPerHa
@@ -726,13 +752,18 @@ export const Dashboard: React.FC = () => {
     } catch {
       toast.error('Error al cargar datos del dashboard.');
     }
-  }, [selectedCompany]);
+  }, [selectedCompany, selectedSeason]);
 
   useEffect(() => {
     if (selectedCompany) {
       void loadDashboardData();
     }
-  }, [selectedCompany, loadDashboardData]);
+  }, [selectedCompany, loadDashboardData, selectedSeason]);
+
+  useEffect(() => {
+    setSelectedSeason(getSeasonFromDate(new Date()));
+    setAvailableSeasons([getSeasonFromDate(new Date())]);
+  }, [selectedCompany?.id]);
 
   useEffect(() => {
     if (!user) {
@@ -911,7 +942,7 @@ export const Dashboard: React.FC = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded-lg shadow-sm print:hidden">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard General</h1>
-          <p className="text-sm text-gray-500">Resumen de costos y producción</p>
+          <p className="text-sm text-gray-500">Resumen de costos y producción por temporada</p>
         </div>
         
         {/* Right Action Section */}
@@ -945,6 +976,20 @@ export const Dashboard: React.FC = () => {
 
           {/* Company Controls */}
           <div className="flex items-center space-x-2">
+              <div className="relative">
+                  <select
+                    value={selectedSeason}
+                    onChange={(e) => setSelectedSeason(e.target.value)}
+                    className="block w-full px-3 py-2 text-sm border-gray-300 focus:outline-none focus:ring-green-500 focus:border-green-500 rounded-md font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 cursor-pointer shadow-sm"
+                  >
+                    {availableSeasons.map((season) => (
+                      <option key={season} value={season}>
+                        Temporada {season}
+                      </option>
+                    ))}
+                  </select>
+              </div>
+
               <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                       <Building2 className="text-gray-400 h-4 w-4" />
@@ -1194,13 +1239,13 @@ export const Dashboard: React.FC = () => {
                     <div className="absolute -right-4 -top-4 opacity-10">
                         <TrendingUp className="w-24 h-24" />
                     </div>
-                    <div className="text-green-50 text-xs font-bold uppercase tracking-wider mb-2 print:text-gray-600 relative z-10">Costo Total Acumulado</div>
+                    <div className="text-green-50 text-xs font-bold uppercase tracking-wider mb-2 print:text-gray-600 relative z-10">Costo Total Temporada</div>
                     <div className="text-xl lg:text-3xl font-black truncate print:text-xl relative z-10" title={formatCLP(Number(dashboardStats.totalCost) || 0)}>
                         {formatCLP(Number(dashboardStats.totalCost) || 0)}
                     </div>
                     <div className="mt-3 bg-white/20 text-white py-1.5 px-3 rounded-md inline-flex items-center text-[10px] font-medium print:text-gray-500 print:bg-gray-50 print:mt-2 self-start relative z-10">
                         <DollarSign className="h-3 w-3 mr-1 print:text-gray-400 flex-shrink-0" />
-                        <span>Inversión Total en la Empresa</span>
+                        <span>Temporada {selectedSeason}</span>
                     </div>
                 </div>
 
@@ -1214,7 +1259,7 @@ export const Dashboard: React.FC = () => {
                     </div>
                     <div className="mt-3 bg-blue-50 text-blue-700 py-1.5 px-3 rounded-md inline-flex items-center text-[10px] font-medium print:mt-2 self-start">
                         <Map className="h-3 w-3 mr-1 flex-shrink-0" />
-                        <span>{dashboardStats.totalHectares} Hectáreas Totales</span>
+                        <span>{dashboardStats.totalHectares} Hectáreas visibles temporada {selectedSeason}</span>
                     </div>
                 </div>
 
@@ -1906,7 +1951,7 @@ export const Dashboard: React.FC = () => {
                 <h2 className="text-4xl lg:text-5xl font-bold text-slate-800 mb-16 text-center">Resumen General</h2>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12">
                   <div className="bg-white rounded-3xl shadow-2xl p-10 lg:p-12 text-center border-t-8 border-green-500">
-                    <div className="text-slate-500 text-xl lg:text-2xl font-medium mb-4">Costo Total Acumulado</div>
+                    <div className="text-slate-500 text-xl lg:text-2xl font-medium mb-4">Costo Total Temporada</div>
                     <div className="text-4xl lg:text-5xl xl:text-6xl font-bold text-slate-800">{formatCLP(Number(dashboardStats.totalCost) || 0)}</div>
                   </div>
                   <div className="bg-white rounded-3xl shadow-2xl p-10 lg:p-12 text-center border-t-8 border-blue-500">
