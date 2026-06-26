@@ -5,6 +5,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCLP } from '../lib/utils';
 import { getSeasonFromDate } from '../lib/seasonUtils';
+import { aggregateCostMovementsBySector, buildAgriculturalCostMovements } from '../lib/costMovements';
 import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X, Trash2, Layout, AlertCircle, Play, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, ShieldAlert } from 'lucide-react';
 import { 
   BarChart, 
@@ -453,23 +454,29 @@ export const Dashboard: React.FC = () => {
         setSelectedSeason(availableSeasons[0]);
       }
 
+      const sectorMeta = new Map<string, { fieldId: string }>();
+      (fields || []).forEach((field: any) => {
+        (field.sectors || []).forEach((sector: any) => {
+          sectorMeta.set(String(sector.id), { fieldId: String(field.id) });
+        });
+      });
+
+      const costMovements = buildAgriculturalCostMovements({
+        sectorMeta,
+        applications,
+        labor: laborAssignments,
+        workerCosts,
+        fuelAssignments,
+        fuelConsumption,
+        machinery: machineryAssignments,
+        irrigation: irrigationAssignments,
+        generalCosts
+      });
+      const sectorCostSummary = aggregateCostMovementsBySector(costMovements);
+
       const totalFields = fields?.length || 0;
       const totalHectares = fields?.reduce((sum: number, field: any) => sum + Number(field.total_hectares), 0) || 0;
-
-      // Calculate Totals
-      const totalAppCost = applications?.reduce((sum, app) => sum + Number(app.total_cost), 0) || 0;
-      const totalLaborCost = laborAssignments.reduce((sum, l) => sum + Number(l.assigned_amount), 0);
-      const totalWorkerCost = workerCosts.reduce((sum, l) => sum + Number(l.amount), 0);
-      
-      const totalFuelDirect = fuelAssignments.reduce((sum, l) => sum + Number(l.assigned_amount), 0);
-      const totalFuelConsumption = fuelConsumption.reduce((sum, l) => sum + Number(l.estimated_price), 0);
-      const totalFuelCost = totalFuelDirect + totalFuelConsumption;
-
-      const totalMachineryCost = machineryAssignments.reduce((sum, l) => sum + Number(l.assigned_amount), 0);
-      const totalIrrigationCost = irrigationAssignments.reduce((sum, l) => sum + Number(l.assigned_amount), 0);
-      const totalGeneralCost = generalCosts.reduce((sum, l) => sum + Number(l.amount), 0);
-      
-      const totalCost = totalAppCost + totalLaborCost + totalWorkerCost + totalFuelCost + totalMachineryCost + totalIrrigationCost + totalGeneralCost;
+      const totalCost = costMovements.reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
       const costPerHectare = totalHectares > 0 ? totalCost / totalHectares : 0;
 
       setDashboardStats({
@@ -481,40 +488,10 @@ export const Dashboard: React.FC = () => {
 
       // 3. Prepare Chart Data: Cost per Field
       const fieldCosts = fields?.map(field => {
-        // App costs for this field
-        const fieldAppCost = applications?.filter(app => app.field_id === field.id)
-            .reduce((sum, app) => sum + Number(app.total_cost), 0) || 0;
-        
-        // Assignments for sectors in this field
         const fieldSectorIds = field.sectors?.map(s => s.id) || [];
-        
-        const fieldLaborCost = laborAssignments
-            .filter(l => fieldSectorIds.includes(l.sector_id))
-            .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
-        const fieldWorkerCost = workerCosts
-            .filter(l => fieldSectorIds.includes(l.sector_id))
-            .reduce((sum, l) => sum + Number(l.amount), 0);
-        
-        const fieldFuelDirect = fuelAssignments
-            .filter(l => fieldSectorIds.includes(l.sector_id))
-            .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
-        const fieldFuelConsumption = fuelConsumption
-            .filter(l => fieldSectorIds.includes(l.sector_id))
-            .reduce((sum, l) => sum + Number(l.estimated_price), 0);
-        const fieldFuelCost = fieldFuelDirect + fieldFuelConsumption;
-
-        const fieldMachineryCost = machineryAssignments
-            .filter(l => fieldSectorIds.includes(l.sector_id))
-            .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
-
-        const fieldIrrigationCost = irrigationAssignments
-            .filter(l => fieldSectorIds.includes(l.sector_id))
-            .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
-        const fieldGeneralCost = generalCosts
-            .filter(l => fieldSectorIds.includes(l.sector_id))
-            .reduce((sum, l) => sum + Number(l.amount), 0);
-
-        const totalFieldCost = fieldAppCost + fieldLaborCost + fieldWorkerCost + fieldFuelCost + fieldMachineryCost + fieldIrrigationCost + fieldGeneralCost;
+        const totalFieldCost = fieldSectorIds.reduce((sum: number, sectorId: string) => {
+          return sum + Number(sectorCostSummary.get(String(sectorId))?.total || 0);
+        }, 0);
 
         return {
           name: field.name,
@@ -529,41 +506,15 @@ export const Dashboard: React.FC = () => {
 
       // 4. Prepare Chart Data: Cost per Sector (Detailed)
       const sectorCosts = allSectors.map(sector => {
-          // App costs
-          const sectorAppCost = applications?.filter(app => app.sector_id === sector.id)
-            .reduce((sum, app) => sum + Number(app.total_cost), 0) || 0;
-          
-          // Labor
-          const sectorLaborCost = laborAssignments
-            .filter(l => l.sector_id === sector.id)
-            .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
-          const sectorWorkerCost = workerCosts
-            .filter(l => l.sector_id === sector.id)
-            .reduce((sum, l) => sum + Number(l.amount), 0);
-          
-          // Fuel (Direct + Consumption)
-          const sectorFuelDirect = fuelAssignments
-            .filter(l => l.sector_id === sector.id)
-            .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
-          const sectorFuelConsumption = fuelConsumption
-            .filter(l => l.sector_id === sector.id)
-            .reduce((sum, l) => sum + Number(l.estimated_price), 0);
-          const sectorFuelCost = sectorFuelDirect + sectorFuelConsumption;
-
-          // Machinery
-          const sectorMachineryCost = machineryAssignments
-            .filter(l => l.sector_id === sector.id)
-            .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
-
-          // Irrigation
-          const sectorIrrigationCost = irrigationAssignments
-            .filter(l => l.sector_id === sector.id)
-            .reduce((sum, l) => sum + Number(l.assigned_amount), 0);
-          const sectorGeneralCost = generalCosts
-            .filter(l => l.sector_id === sector.id)
-            .reduce((sum, l) => sum + Number(l.amount), 0);
-          
-          const totalSectorCost = sectorAppCost + sectorLaborCost + sectorWorkerCost + sectorFuelCost + sectorMachineryCost + sectorIrrigationCost + sectorGeneralCost;
+          const summary = sectorCostSummary.get(String(sector.id));
+          const sectorAppCost = Number(summary?.byCategory?.Aplicaciones || 0);
+          const sectorLaborCost = Number(summary?.byCategory?.Labores || 0);
+          const sectorWorkerCost = Number(summary?.byCategory?.Trabajadores || 0);
+          const sectorFuelCost = Number(summary?.byCategory?.Combustible || 0);
+          const sectorMachineryCost = Number(summary?.byCategory?.Maquinaria || 0);
+          const sectorIrrigationCost = Number(summary?.byCategory?.Riego || 0);
+          const sectorGeneralCost = Number(summary?.byCategory?.Generales || 0);
+          const totalSectorCost = Number(summary?.total || 0);
           
           // Income
           const sectorIncome = incomeEntriesSafe

@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { getSeasonFromDate, isDateInSeason } from '../lib/seasonUtils';
+import { aggregateCostMovementsBySector, buildAgriculturalCostMovements } from '../lib/costMovements';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Loader2, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer, Settings, DollarSign, Scale, Play, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
 import jsPDF from 'jspdf';
@@ -1807,84 +1808,53 @@ export const Reports: React.FC = () => {
       return isDateInSeason(item.date, selectedSeason);
     });
 
+    const sectorMeta = new Map<string, { fieldId: string }>();
+    rawFields.forEach((field: any) => {
+      (field.sectors || []).forEach((sector: any) => {
+        sectorMeta.set(String(sector.id), { fieldId: String(field.id) });
+      });
+    });
+
+    const costMovements = buildAgriculturalCostMovements({
+      sectorMeta,
+      fuelPrices: {
+        diesel: avgPriceDiesel,
+        gasoline: avgPriceGasoline
+      },
+      applications: filteredApps,
+      labor: filteredLabor,
+      workerCosts: filteredWorkerCosts,
+      fuelAssignments: filteredFuel,
+      fuelConsumption: filteredFuelConsumption,
+      machinery: filteredMachinery,
+      irrigation: filteredIrrigation,
+      generalCosts: filteredGeneral
+    });
+    const sectorCostSummary = aggregateCostMovementsBySector(costMovements);
+
     const data: ReportData[] = [];
 
     rawFields.forEach(field => {
       field.sectors?.forEach((sector: any) => {
         // Costs
         const sectorApps = filteredApps.filter(app => app.sector_id === sector.id);
-        const appCost = sectorApps.reduce((sum, app) => sum + Number(app.total_cost), 0);
-        
-        const sectorLabor = filteredLabor.filter(lab => lab.sector_id === sector.id);
-        const laborCost = sectorLabor.reduce((sum, lab) => sum + Number(lab.assigned_amount), 0);
-        
-        let labor_cosecha_cost = 0;
-        let labor_poda_cost = 0;
-        let labor_raleo_cost = 0;
-        let labor_otros_cost = 0;
-
-        sectorLabor.forEach(lab => {
-            const amount = Number(lab.assigned_amount);
-            const type = (lab.labor_type || '').toLowerCase();
-            if (type.includes('cosecha')) {
-                labor_cosecha_cost += amount;
-            } else if (type.includes('poda')) {
-                labor_poda_cost += amount;
-            } else if (type.includes('raleo')) {
-                labor_raleo_cost += amount;
-            } else {
-                labor_otros_cost += amount;
-            }
-        });
-
-        const sectorWorkers = filteredWorkerCosts.filter(w => w.sector_id === sector.id);
-        const workerCost = sectorWorkers.reduce((sum, w) => sum + Number(w.amount), 0);
-
-        const sectorFuelDirect = filteredFuel.filter(item => item.sector_id === sector.id);
-        const sectorFuelCons = filteredFuelConsumption.filter(item => item.sector_id === sector.id);
-        
-        // Split fuel costs (We need to guess type from activity for Consumption, or assume Diesel for Direct)
-        // Direct Fuel Assignment is typically Diesel (old system)
-        const fuelCostDirect = sectorFuelDirect.reduce((sum, item) => sum + Number(item.assigned_amount), 0);
-        
-        let fuelCostDiesel = fuelCostDirect;
-        let fuelCostGasoline = 0;
-
-        sectorFuelCons.forEach(item => {
-            const activity = (item.activity || '').toLowerCase();
-            let cost = Number(item.estimated_price);
-            
-            const isGasoline = activity.includes('gasolina') || activity.includes('bencina');
-            
-            // Fallback: If cost is 0 but we have liters, calculate it
-            if (cost === 0 && item.liters > 0) {
-                if (isGasoline) {
-                    cost = item.liters * avgPriceGasoline;
-                } else {
-                    cost = item.liters * avgPriceDiesel;
-                }
-            }
-            
-            if (isGasoline) {
-                fuelCostGasoline += cost;
-            } else {
-                fuelCostDiesel += cost;
-            }
-        });
-
-        const fuelCost = fuelCostDiesel + fuelCostGasoline;
-
-        const sectorMachinery = filteredMachinery.filter(item => item.sector_id === sector.id);
-        const machineryCost = sectorMachinery.reduce((sum, item) => sum + Number(item.assigned_amount), 0);
-
-        const sectorIrrigation = filteredIrrigation.filter(item => item.sector_id === sector.id);
-        const irrigationCost = sectorIrrigation.reduce((sum, item) => sum + Number(item.assigned_amount), 0);
-
-        const sectorGeneral = filteredGeneral.filter(item => item.sector_id === sector.id);
-        const generalCost = sectorGeneral.reduce((sum, item) => sum + Number(item.amount), 0);
+        const sectorSummary = sectorCostSummary.get(String(sector.id));
+        const appCost = Number(sectorSummary?.byCategory?.Aplicaciones || 0);
+        const laborCost = Number(sectorSummary?.byCategory?.Labores || 0);
+        const labor_cosecha_cost = Number(sectorSummary?.bySubCategory?.['Labores:Cosecha'] || 0);
+        const labor_poda_cost = Number(sectorSummary?.bySubCategory?.['Labores:Poda'] || 0);
+        const labor_raleo_cost = Number(sectorSummary?.bySubCategory?.['Labores:Raleo'] || 0);
+        const labor_otros_cost = Number(sectorSummary?.bySubCategory?.['Labores:Otros'] || 0);
+        const workerCost = Number(sectorSummary?.byCategory?.Trabajadores || 0);
+        const fuelCostDiesel = Number(sectorSummary?.bySubCategory?.['Combustible:Diesel'] || 0);
+        const fuelCostGasoline = Number(sectorSummary?.bySubCategory?.['Combustible:Gasolina'] || 0);
+        const fuelCost = Number(sectorSummary?.byCategory?.Combustible || 0);
+        const machineryCost = Number(sectorSummary?.byCategory?.Maquinaria || 0);
+        const irrigationCost = Number(sectorSummary?.byCategory?.Riego || 0);
+        const generalCost = Number(sectorSummary?.byCategory?.Generales || 0);
 
         // For General Report: Total Cost = Apps + Labor + Workers + Fuel + Machinery + Irrigation + General
-        const totalCostGeneral = appCost + laborCost + workerCost + fuelCost + machineryCost + irrigationCost + generalCost;
+        const totalCostGeneral = Number(sectorSummary?.total || 0);
         const totalCostAppsOnly = appCost;
         
         const hectares = Number(sector.hectares);
