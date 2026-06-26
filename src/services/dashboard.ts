@@ -1,6 +1,7 @@
 import { supabase } from '../supabase/client';
 import { getSeasonFromDate } from '../lib/seasonUtils';
-import { collectAvailableSeasons, filterRowsBySeason } from '../lib/agriculturalData';
+import { filterRowsBySeason } from '../lib/agriculturalData';
+import type { AgriculturalCostMovement } from '../lib/costMovements';
 
 type FieldRow = {
   id: string;
@@ -13,11 +14,16 @@ type FieldRow = {
     field_id: string;
   }>;
 };
-type ApplicationRow = { total_cost: number; field_id: string; sector_id: string; application_date?: string | null };
-type AssignmentRow = { assigned_amount: number; sector_id: string; assigned_date?: string | null };
-type WorkerCostRow = { amount: number; sector_id: string; date?: string | null };
-type GeneralCostRow = { amount: number; sector_id: string; date?: string | null };
-type FuelConsumptionRow = { estimated_price: number | null; sector_id: string; date?: string | null };
+type CostMovementViewRow = {
+  source_type: string;
+  category: string;
+  subcategory?: string | null;
+  movement_date: string;
+  season: string | null;
+  field_id?: string | null;
+  sector_id?: string | null;
+  amount: number;
+};
 type InvoiceUpcomingRow = {
   id: string;
   invoice_number: string;
@@ -53,7 +59,17 @@ type IncomeEntryRow = { id: string; date: string; amount: number; category: stri
 type RainLogRow = { id: string; date: string; rain_mm: number; field_id?: string | null; sector_id?: string | null; source?: string | null };
 
 type QueryResult<T> = { data: T[] | null; error: unknown | null };
-const emptyResult = <T>(): Promise<QueryResult<T>> => Promise.resolve({ data: [] as T[], error: null });
+
+const mapCostMovementViewRow = (row: CostMovementViewRow): AgriculturalCostMovement => ({
+  source: row.source_type as AgriculturalCostMovement['source'],
+  category: row.category as AgriculturalCostMovement['category'],
+  subCategory: row.subcategory || undefined,
+  date: row.movement_date,
+  season: row.season || null,
+  fieldId: row.field_id || null,
+  sectorId: row.sector_id || null,
+  amount: Number(row.amount || 0)
+});
 
 export async function loadDashboardRaw(params: { companyId: string; season?: string }) {
   const { data: fields, error: fieldsError } = await supabase
@@ -67,24 +83,8 @@ export async function loadDashboardRaw(params: { companyId: string; season?: str
   const allSectors = typedFields.flatMap((f) => f.sectors || []);
   const sectorIds = allSectors.map((s) => s.id);
 
-  const { data: applications, error: appError } = await supabase
-    .from('applications')
-    .select('total_cost, field_id, sector_id, application_date')
-    .in(
-      'field_id',
-      typedFields.map((f) => f.id)
-    );
-
-  if (appError) throw appError;
-
   const [
-    laborAssignmentsRes,
-    workerCostsRes,
-    fuelAssignmentsRes,
-    fuelConsumptionRes,
-    machineryAssignmentsRes,
-    irrigationAssignmentsRes,
-    generalCostsRes,
+    costMovementsRes,
     upcomingInvoicesRes,
     incomeEntriesRes,
     stockRes,
@@ -92,27 +92,10 @@ export async function loadDashboardRaw(params: { companyId: string; season?: str
     rainLogsRes,
     machinesRes
   ] = await Promise.all([
-    sectorIds.length > 0
-      ? (supabase.from('labor_assignments').select('assigned_amount, sector_id, assigned_date').in('sector_id', sectorIds) as unknown as Promise<QueryResult<AssignmentRow>>)
-      : emptyResult<AssignmentRow>(),
-    sectorIds.length > 0
-      ? (supabase.from('worker_costs').select('amount, sector_id, date').in('sector_id', sectorIds) as unknown as Promise<QueryResult<WorkerCostRow>>)
-      : emptyResult<WorkerCostRow>(),
-    sectorIds.length > 0
-      ? (supabase.from('fuel_assignments').select('assigned_amount, sector_id, assigned_date').in('sector_id', sectorIds) as unknown as Promise<QueryResult<AssignmentRow>>)
-      : emptyResult<AssignmentRow>(),
-    sectorIds.length > 0
-      ? (supabase.from('fuel_consumption').select('estimated_price, sector_id, date').in('sector_id', sectorIds) as unknown as Promise<QueryResult<FuelConsumptionRow>>)
-      : emptyResult<FuelConsumptionRow>(),
-    sectorIds.length > 0
-      ? (supabase.from('machinery_assignments').select('assigned_amount, sector_id, assigned_date').in('sector_id', sectorIds) as unknown as Promise<QueryResult<AssignmentRow>>)
-      : emptyResult<AssignmentRow>(),
-    sectorIds.length > 0
-      ? (supabase.from('irrigation_assignments').select('assigned_amount, sector_id, assigned_date').in('sector_id', sectorIds) as unknown as Promise<QueryResult<AssignmentRow>>)
-      : emptyResult<AssignmentRow>(),
-    sectorIds.length > 0
-      ? (supabase.from('general_costs').select('amount, sector_id, date').in('sector_id', sectorIds) as unknown as Promise<QueryResult<GeneralCostRow>>)
-      : emptyResult<GeneralCostRow>(),
+    supabase
+      .from('v_agricultural_cost_movements')
+      .select('source_type, category, subcategory, movement_date, season, field_id, sector_id, amount')
+      .eq('company_id', params.companyId) as unknown as Promise<QueryResult<CostMovementViewRow>>,
     (async () => {
       const today = new Date();
       const startDate = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -164,13 +147,7 @@ export async function loadDashboardRaw(params: { companyId: string; season?: str
   ]);
 
   const errors = [
-    laborAssignmentsRes.error,
-    workerCostsRes.error,
-    fuelAssignmentsRes.error,
-    fuelConsumptionRes.error,
-    machineryAssignmentsRes.error,
-    irrigationAssignmentsRes.error,
-    generalCostsRes.error,
+    costMovementsRes.error,
     upcomingInvoicesRes.error,
     incomeEntriesRes.error,
     stockRes.error,
@@ -181,14 +158,7 @@ export async function loadDashboardRaw(params: { companyId: string; season?: str
 
   if (errors.length > 0) throw errors[0];
 
-  const applicationsTyped = (applications || []) as unknown as ApplicationRow[];
-  const laborAssignmentsTyped = laborAssignmentsRes.data || [];
-  const workerCostsTyped = workerCostsRes.data || [];
-  const fuelAssignmentsTyped = fuelAssignmentsRes.data || [];
-  const fuelConsumptionTyped = fuelConsumptionRes.data || [];
-  const machineryAssignmentsTyped = machineryAssignmentsRes.data || [];
-  const irrigationAssignmentsTyped = irrigationAssignmentsRes.data || [];
-  const generalCostsTyped = generalCostsRes.data || [];
+  const costMovementsAll = (costMovementsRes.data || []).map(mapCostMovementViewRow);
   const incomeEntriesTyped = incomeEntriesRes.data || [];
   const upcomingInvoicesTyped = upcomingInvoicesRes.data || [];
   const stockDataTyped = stockRes.data || [];
@@ -196,41 +166,23 @@ export async function loadDashboardRaw(params: { companyId: string; season?: str
   const rainLogsTyped = rainLogsRes.data || [];
   const machinesTyped = machinesRes.data || [];
 
-  const availableSeasons = collectAvailableSeasons([
-    { rows: applicationsTyped, getDate: (row) => row.application_date },
-    { rows: laborAssignmentsTyped, getDate: (row) => row.assigned_date },
-    { rows: workerCostsTyped, getDate: (row) => row.date },
-    { rows: fuelAssignmentsTyped, getDate: (row) => row.assigned_date },
-    { rows: fuelConsumptionTyped, getDate: (row) => row.date },
-    { rows: machineryAssignmentsTyped, getDate: (row) => row.assigned_date },
-    { rows: irrigationAssignmentsTyped, getDate: (row) => row.assigned_date },
-    { rows: generalCostsTyped, getDate: (row) => row.date },
-    { rows: incomeEntriesTyped, getDate: (row) => row.date }
-  ], getSeasonFromDate(new Date()));
+  const availableSeasons = Array.from(
+    new Set<string>([
+      getSeasonFromDate(new Date()),
+      ...costMovementsAll.map((row) => String(row.season || '')).filter(Boolean),
+      ...incomeEntriesTyped.map((row) => getSeasonFromDate(new Date(`${row.date}T12:00:00`)))
+    ])
+  ).sort().reverse();
 
   const selectedSeason = params.season || getSeasonFromDate(new Date());
-  const filteredApplications = filterRowsBySeason(applicationsTyped, selectedSeason, (row) => row.application_date);
-  const filteredLaborAssignments = filterRowsBySeason(laborAssignmentsTyped, selectedSeason, (row) => row.assigned_date);
-  const filteredWorkerCosts = filterRowsBySeason(workerCostsTyped, selectedSeason, (row) => row.date);
-  const filteredFuelAssignments = filterRowsBySeason(fuelAssignmentsTyped, selectedSeason, (row) => row.assigned_date);
-  const filteredFuelConsumption = filterRowsBySeason(fuelConsumptionTyped, selectedSeason, (row) => row.date);
-  const filteredMachineryAssignments = filterRowsBySeason(machineryAssignmentsTyped, selectedSeason, (row) => row.assigned_date);
-  const filteredIrrigationAssignments = filterRowsBySeason(irrigationAssignmentsTyped, selectedSeason, (row) => row.assigned_date);
-  const filteredGeneralCosts = filterRowsBySeason(generalCostsTyped, selectedSeason, (row) => row.date);
+  const filteredCostMovements = costMovementsAll.filter((row) => row.season === selectedSeason);
   const filteredIncomeEntries = filterRowsBySeason(incomeEntriesTyped, selectedSeason, (row) => row.date);
 
   return {
     fields: typedFields,
     sectorIds,
     allSectors,
-    applications: filteredApplications,
-    laborAssignments: filteredLaborAssignments,
-    workerCosts: filteredWorkerCosts,
-    fuelAssignments: filteredFuelAssignments,
-    fuelConsumption: filteredFuelConsumption,
-    machineryAssignments: filteredMachineryAssignments,
-    irrigationAssignments: filteredIrrigationAssignments,
-    generalCosts: filteredGeneralCosts,
+    costMovements: filteredCostMovements,
     upcomingInvoices: upcomingInvoicesTyped,
     incomeEntries: filteredIncomeEntries,
     stockData: stockDataTyped,

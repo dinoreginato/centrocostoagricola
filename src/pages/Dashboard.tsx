@@ -5,7 +5,7 @@ import { useCompany } from '../contexts/CompanyContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCLP } from '../lib/utils';
 import { getSeasonFromDate } from '../lib/seasonUtils';
-import { aggregateCostMovementsBySector, buildAgriculturalCostMovements } from '../lib/costMovements';
+import { aggregateCostMovementsBySector } from '../lib/costMovements';
 import { Plus, Building2, TrendingUp, DollarSign, Map, BarChart3, X, Trash2, Layout, AlertCircle, Play, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle, ShieldAlert } from 'lucide-react';
 import { 
   BarChart, 
@@ -424,14 +424,7 @@ export const Dashboard: React.FC = () => {
       const {
         fields,
         allSectors,
-        applications,
-        laborAssignments,
-        workerCosts,
-        fuelAssignments,
-        fuelConsumption,
-        machineryAssignments,
-        irrigationAssignments,
-        generalCosts,
+        costMovements,
         upcomingInvoices,
         incomeEntries,
         stockData,
@@ -454,29 +447,11 @@ export const Dashboard: React.FC = () => {
         setSelectedSeason(availableSeasons[0]);
       }
 
-      const sectorMeta = new Map<string, { fieldId: string }>();
-      (fields || []).forEach((field: any) => {
-        (field.sectors || []).forEach((sector: any) => {
-          sectorMeta.set(String(sector.id), { fieldId: String(field.id) });
-        });
-      });
-
-      const costMovements = buildAgriculturalCostMovements({
-        sectorMeta,
-        applications,
-        labor: laborAssignments,
-        workerCosts,
-        fuelAssignments,
-        fuelConsumption,
-        machinery: machineryAssignments,
-        irrigation: irrigationAssignments,
-        generalCosts
-      });
-      const sectorCostSummary = aggregateCostMovementsBySector(costMovements);
+      const sectorCostSummary = aggregateCostMovementsBySector(costMovements || []);
 
       const totalFields = fields?.length || 0;
       const totalHectares = fields?.reduce((sum: number, field: any) => sum + Number(field.total_hectares), 0) || 0;
-      const totalCost = costMovements.reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
+      const totalCost = (costMovements || []).reduce((sum, movement) => sum + Number(movement.amount || 0), 0);
       const costPerHectare = totalHectares > 0 ? totalCost / totalHectares : 0;
 
       setDashboardStats({

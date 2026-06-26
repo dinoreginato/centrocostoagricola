@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { getSeasonFromDate, isDateInSeason } from '../lib/seasonUtils';
-import { aggregateCostMovementsBySector, buildAgriculturalCostMovements } from '../lib/costMovements';
+import { aggregateCostMovementsBySector, type AgriculturalCostMovement } from '../lib/costMovements';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Loader2, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer, Settings, DollarSign, Scale, Play, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
 import jsPDF from 'jspdf';
@@ -220,6 +220,7 @@ const aggregateExecutiveCosts = (params: {
   sectorMeta: Map<string, { fieldId: string; fieldName: string; sectorName: string; hectares: number }>;
   fieldMeta: Map<string, { fieldName: string; hectares: number }>;
   fuelPrices: { diesel: number; gasoline: number };
+  costMovements?: AgriculturalCostMovement[];
   rawApplications: any[];
   rawLabor: any[];
   rawWorkerCosts: any[];
@@ -256,22 +257,28 @@ const aggregateExecutiveCosts = (params: {
     addAmount(sectorMonthly, sectorId, monthKey, amount);
   };
 
-  params.rawApplications.forEach((item: any) => registerCost(item.sector_id, item.application_date, Number(item.total_cost || 0)));
-  params.rawLabor.forEach((item: any) => registerCost(item.sector_id, item.assigned_date, Number(item.assigned_amount || 0)));
-  params.rawWorkerCosts.forEach((item: any) => registerCost(item.sector_id, item.date, Number(item.amount || 0)));
-  params.rawFuel.forEach((item: any) => registerCost(item.sector_id, item.assigned_date, Number(item.assigned_amount || 0)));
-  params.rawFuelConsumption.forEach((item: any) => {
-    const activity = String(item.activity || '').toLowerCase();
-    const isGasoline = activity.includes('gasolina') || activity.includes('bencina');
-    let cost = Number(item.estimated_price || 0);
-    if (cost === 0 && Number(item.liters || 0) > 0) {
-      cost = Number(item.liters || 0) * (isGasoline ? params.fuelPrices.gasoline : params.fuelPrices.diesel);
-    }
-    registerCost(item.sector_id, item.date, cost);
-  });
-  params.rawMachinery.forEach((item: any) => registerCost(item.sector_id, item.assigned_date, Number(item.assigned_amount || 0)));
-  params.rawIrrigation.forEach((item: any) => registerCost(item.sector_id, item.assigned_date, Number(item.assigned_amount || 0)));
-  params.rawGeneralCosts.forEach((item: any) => registerCost(item.sector_id, item.date, Number(item.amount || 0)));
+  if (params.costMovements && params.costMovements.length > 0) {
+    params.costMovements.forEach((item) => {
+      registerCost(String(item.sectorId || ''), String(item.date || ''), Number(item.amount || 0));
+    });
+  } else {
+    params.rawApplications.forEach((item: any) => registerCost(item.sector_id, item.application_date, Number(item.total_cost || 0)));
+    params.rawLabor.forEach((item: any) => registerCost(item.sector_id, item.assigned_date, Number(item.assigned_amount || 0)));
+    params.rawWorkerCosts.forEach((item: any) => registerCost(item.sector_id, item.date, Number(item.amount || 0)));
+    params.rawFuel.forEach((item: any) => registerCost(item.sector_id, item.assigned_date, Number(item.assigned_amount || 0)));
+    params.rawFuelConsumption.forEach((item: any) => {
+      const activity = String(item.activity || '').toLowerCase();
+      const isGasoline = activity.includes('gasolina') || activity.includes('bencina');
+      let cost = Number(item.estimated_price || 0);
+      if (cost === 0 && Number(item.liters || 0) > 0) {
+        cost = Number(item.liters || 0) * (isGasoline ? params.fuelPrices.gasoline : params.fuelPrices.diesel);
+      }
+      registerCost(item.sector_id, item.date, cost);
+    });
+    params.rawMachinery.forEach((item: any) => registerCost(item.sector_id, item.assigned_date, Number(item.assigned_amount || 0)));
+    params.rawIrrigation.forEach((item: any) => registerCost(item.sector_id, item.assigned_date, Number(item.assigned_amount || 0)));
+    params.rawGeneralCosts.forEach((item: any) => registerCost(item.sector_id, item.date, Number(item.amount || 0)));
+  }
 
   const fieldRows = Array.from(params.fieldMeta.entries())
     .map(([fieldId, meta]) => {
@@ -367,6 +374,7 @@ export const Reports: React.FC = () => {
   // Data State
   const [rawFields, setRawFields] = useState<any[]>([]);
   const [rawApplications, setRawApplications] = useState<any[]>([]);
+  const [rawCostMovements, setRawCostMovements] = useState<AgriculturalCostMovement[]>([]);
   const [rawInvoices, setRawInvoices] = useState<any[]>([]);
   const [rawLabor, setRawLabor] = useState<any[]>([]); 
   const [rawWorkerCosts, setRawWorkerCosts] = useState<any[]>([]); // New state
@@ -488,6 +496,7 @@ export const Reports: React.FC = () => {
     setExecutiveSectorSortBy('total');
     setCurrentSlide(0);
     setPresentationMode(false);
+    setRawCostMovements([]);
     setReportData([]);
     setMonthlyExpenses([]);
     setCategoryExpenses([]);
@@ -649,6 +658,7 @@ export const Reports: React.FC = () => {
       sectorMeta: executiveSectorMeta,
       fieldMeta: executiveFieldMeta,
       fuelPrices: executiveFuelPrices,
+      costMovements: rawCostMovements,
       rawApplications,
       rawLabor,
       rawWorkerCosts,
@@ -664,6 +674,7 @@ export const Reports: React.FC = () => {
     executiveMonthKeySet,
     executiveSeasonMonths,
     executiveSectorMeta,
+    rawCostMovements,
     rawApplications,
     rawFuel,
     rawFuelConsumption,
@@ -681,6 +692,7 @@ export const Reports: React.FC = () => {
       sectorMeta: executiveSectorMeta,
       fieldMeta: executiveFieldMeta,
       fuelPrices: executiveFuelPrices,
+      costMovements: rawCostMovements,
       rawApplications,
       rawLabor,
       rawWorkerCosts,
@@ -696,6 +708,7 @@ export const Reports: React.FC = () => {
     previousExecutiveMonthKeySet,
     previousExecutiveSeasonMonths,
     executiveSectorMeta,
+    rawCostMovements,
     rawApplications,
     rawFuel,
     rawFuelConsumption,
@@ -1213,30 +1226,17 @@ export const Reports: React.FC = () => {
       const seasonMonths = buildExecutiveSeasonMonths(previousExecutiveSeason);
       const monthKeys = new Set(seasonMonths.map((month) => month.key));
       const isAllowedSector = (sectorId: string) => executiveFieldFilter === 'all' || executiveSectorMeta.get(sectorId)?.fieldId === executiveFieldFilter;
-      const buildSum = (items: any[], dateKey: string, amountKey: string, seasonFilter?: (item: any) => number) =>
-        items.reduce((sum, item) => {
-          const monthKey = parseExecutiveMonthKey(String(item[dateKey] || ''));
-          if (!monthKey || !monthKeys.has(monthKey) || !isAllowedSector(String(item.sector_id || ''))) return sum;
-          return sum + Number(seasonFilter ? seasonFilter(item) : item[amountKey] || 0);
-        }, 0);
+      const summary = new Map<string, number>();
+      rawCostMovements.forEach((item) => {
+        const monthKey = parseExecutiveMonthKey(String(item.date || ''));
+        if (!monthKey || !monthKeys.has(monthKey) || !isAllowedSector(String(item.sectorId || ''))) return;
+        summary.set(item.category, (summary.get(item.category) || 0) + Number(item.amount || 0));
+      });
 
-      return [
-        { category: 'Aplicaciones', total: buildSum(rawApplications, 'application_date', 'total_cost') },
-        { category: 'Labores', total: buildSum(rawLabor, 'assigned_date', 'assigned_amount') },
-        { category: 'Trabajadores', total: buildSum(rawWorkerCosts, 'date', 'amount') },
-        { category: 'Combustible', total: buildSum(rawFuel, 'assigned_date', 'assigned_amount') + rawFuelConsumption.reduce((sum, item) => {
-          const monthKey = parseExecutiveMonthKey(String(item.date || ''));
-          if (!monthKey || !monthKeys.has(monthKey) || !isAllowedSector(String(item.sector_id || ''))) return sum;
-          const activity = String(item.activity || '').toLowerCase();
-          const isGasoline = activity.includes('gasolina') || activity.includes('bencina');
-          const estimated = Number(item.estimated_price || 0);
-          const calculated = Number(item.liters || 0) * (isGasoline ? executiveFuelPrices.gasoline : executiveFuelPrices.diesel);
-          return sum + (estimated || calculated || 0);
-        }, 0) },
-        { category: 'Maquinaria', total: buildSum(rawMachinery, 'assigned_date', 'assigned_amount') },
-        { category: 'Riego', total: buildSum(rawIrrigation, 'assigned_date', 'assigned_amount') },
-        { category: 'Generales', total: buildSum(rawGeneralCosts, 'date', 'amount') }
-      ];
+      return ['Aplicaciones', 'Labores', 'Trabajadores', 'Combustible', 'Maquinaria', 'Riego', 'Generales'].map((category) => ({
+        category,
+        total: Number(summary.get(category) || 0)
+      }));
     })();
 
     return previousCategories.map((row) => {
@@ -1247,20 +1247,11 @@ export const Reports: React.FC = () => {
       return { category: row.category, current, previous, delta, deltaPct };
     }).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
   }, [
-    executiveFuelPrices.diesel,
-    executiveFuelPrices.gasoline,
     executiveFieldFilter,
     executiveSectorMeta,
     executiveViewData.categoryRows,
     previousExecutiveSeason,
-    rawApplications,
-    rawFuel,
-    rawFuelConsumption,
-    rawGeneralCosts,
-    rawIrrigation,
-    rawLabor,
-    rawMachinery,
-    rawWorkerCosts
+    rawCostMovements
   ]);
 
   const executiveParetoFields = useMemo(() => {
@@ -1306,6 +1297,7 @@ export const Reports: React.FC = () => {
       sectorMeta: compareSectorMeta,
       fieldMeta: compareFieldMeta,
       fuelPrices,
+      costMovements: executiveCompareCompanyRaw.costMovements || [],
       rawApplications: executiveCompareCompanyRaw.applications || [],
       rawLabor: executiveCompareCompanyRaw.labor || [],
       rawWorkerCosts: executiveCompareCompanyRaw.workerCosts || [],
@@ -1334,6 +1326,7 @@ export const Reports: React.FC = () => {
         sectorMeta: executiveSectorMeta,
         fieldMeta: executiveFieldMeta,
         fuelPrices: executiveFuelPrices,
+        costMovements: rawCostMovements,
         rawApplications,
         rawLabor,
         rawWorkerCosts,
@@ -1551,6 +1544,7 @@ export const Reports: React.FC = () => {
   }, [
     rawFields,
     rawApplications,
+    rawCostMovements,
     rawInvoices,
     rawLabor,
     rawWorkerCosts,
@@ -1569,7 +1563,7 @@ export const Reports: React.FC = () => {
   useEffect(() => {
     // Only process if we have sectors/fields loaded, otherwise wait
     processReports();
-  }, [rawFields, rawApplications, rawInvoices, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawMachinery, rawIrrigation, rawGeneralCosts, rawProducts, incomeEntries, selectedSeason, processReports]);
+  }, [rawFields, rawApplications, rawCostMovements, rawInvoices, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawMachinery, rawIrrigation, rawGeneralCosts, rawProducts, incomeEntries, selectedSeason, processReports]);
 
   async function loadRawDataImpl() {
     if (!selectedCompany) return;
@@ -1581,6 +1575,7 @@ export const Reports: React.FC = () => {
       if (reportLoadSeqRef.current !== loadSeq || selectedCompany?.id !== companyId) return;
       setRawFields(res.fields || []);
       setRawApplications(res.applications || []);
+      setRawCostMovements((res as any).costMovements || []);
       setRawLabor(res.labor || []);
       setRawWorkerCosts(res.workerCosts || []);
       setRawFuel(res.fuel || []);
@@ -1601,6 +1596,7 @@ export const Reports: React.FC = () => {
       if (reportLoadSeqRef.current !== loadSeq || selectedCompany?.id !== companyId) return;
       setRawFields([]);
       setRawApplications([]);
+      setRawCostMovements([]);
       setRawLabor([]);
       setRawWorkerCosts([]);
       setRawFuel([]);
@@ -1808,28 +1804,7 @@ export const Reports: React.FC = () => {
       return isDateInSeason(item.date, selectedSeason);
     });
 
-    const sectorMeta = new Map<string, { fieldId: string }>();
-    rawFields.forEach((field: any) => {
-      (field.sectors || []).forEach((sector: any) => {
-        sectorMeta.set(String(sector.id), { fieldId: String(field.id) });
-      });
-    });
-
-    const costMovements = buildAgriculturalCostMovements({
-      sectorMeta,
-      fuelPrices: {
-        diesel: avgPriceDiesel,
-        gasoline: avgPriceGasoline
-      },
-      applications: filteredApps,
-      labor: filteredLabor,
-      workerCosts: filteredWorkerCosts,
-      fuelAssignments: filteredFuel,
-      fuelConsumption: filteredFuelConsumption,
-      machinery: filteredMachinery,
-      irrigation: filteredIrrigation,
-      generalCosts: filteredGeneral
-    });
+    const costMovements = rawCostMovements.filter((movement) => movement.season === selectedSeason);
     const sectorCostSummary = aggregateCostMovementsBySector(costMovements);
 
     const data: ReportData[] = [];

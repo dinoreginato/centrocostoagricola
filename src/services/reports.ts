@@ -1,6 +1,7 @@
 import { supabase } from '../supabase/client';
 import { getSeasonFromDate } from '../lib/seasonUtils';
 import { collectAvailableSeasons } from '../lib/agriculturalData';
+import type { AgriculturalCostMovement } from '../lib/costMovements';
 
 type ReportFieldRow = {
   id: string;
@@ -19,6 +20,28 @@ type ReportApplicationRow = {
 type ReportInvoiceRow = {
   invoice_date: string;
 };
+
+type CostMovementViewRow = {
+  source_type: string;
+  category: string;
+  subcategory?: string | null;
+  movement_date: string;
+  season: string | null;
+  field_id?: string | null;
+  sector_id?: string | null;
+  amount: number;
+};
+
+const mapCostMovementViewRow = (row: CostMovementViewRow): AgriculturalCostMovement => ({
+  source: row.source_type as AgriculturalCostMovement['source'],
+  category: row.category as AgriculturalCostMovement['category'],
+  subCategory: row.subcategory || undefined,
+  date: row.movement_date,
+  season: row.season || null,
+  fieldId: row.field_id || null,
+  sectorId: row.sector_id || null,
+  amount: Number(row.amount || 0)
+});
 
 export async function loadReportsRawData(params: { companyId: string }) {
   const { data: fields, error: fieldsError } = await supabase
@@ -42,6 +65,7 @@ export async function loadReportsRawData(params: { companyId: string }) {
     machinery: [] as any[],
     irrigation: [] as any[],
     generalCosts: [] as any[],
+    costMovements: [] as AgriculturalCostMovement[],
     incomeEntries: [] as any[],
     invoices: [] as any[],
     products: [] as any[],
@@ -49,7 +73,7 @@ export async function loadReportsRawData(params: { companyId: string }) {
   };
 
   if (fieldIds.length === 0 || sectorIds.length === 0) {
-    const [incomeRes, invoicesRes, productsRes, fuelConsRes] = await Promise.all([
+    const [incomeRes, invoicesRes, productsRes, fuelConsRes, costMovementsRes] = await Promise.all([
       supabase.from('income_entries').select('*, fields(name), sectors(name)').eq('company_id', params.companyId),
       supabase
         .from('invoices')
@@ -72,13 +96,19 @@ export async function loadReportsRawData(params: { companyId: string }) {
       supabase
         .from('fuel_consumption')
         .select('sector_id, estimated_price, date, activity, liters, machine_id, machine:machines(name, type)')
+        .eq('company_id', params.companyId),
+      supabase
+        .from('v_agricultural_cost_movements')
+        .select('source_type, category, subcategory, movement_date, season, field_id, sector_id, amount')
         .eq('company_id', params.companyId)
     ]);
 
-    const lightweightErrors = [incomeRes.error, invoicesRes.error, productsRes.error, fuelConsRes.error].filter(Boolean);
+    const lightweightErrors = [incomeRes.error, invoicesRes.error, productsRes.error, fuelConsRes.error, costMovementsRes.error].filter(Boolean);
     if (lightweightErrors.length > 0) throw lightweightErrors[0];
+    const costMovements = (costMovementsRes.data || []).map((row: any) => mapCostMovementViewRow(row));
 
     const availableSeasons = collectAvailableSeasons([
+      { rows: costMovements, getDate: (row) => row.date },
       { rows: incomeRes.data || [], getDate: (row) => row.date },
       { rows: invoicesRes.data || [], getDate: (row) => row.invoice_date },
       { rows: fuelConsRes.data || [], getDate: (row) => row.date }
@@ -90,6 +120,7 @@ export async function loadReportsRawData(params: { companyId: string }) {
       invoices: invoicesRes.data || [],
       products: productsRes.data || [],
       fuelConsumption: fuelConsRes.data || [],
+      costMovements,
       availableSeasons
     };
   }
@@ -105,7 +136,8 @@ export async function loadReportsRawData(params: { companyId: string }) {
     generalCostsRes,
     incomeRes,
     invoicesRes,
-    productsRes
+    productsRes,
+    costMovementsRes
   ] = await Promise.all([
     supabase.from('applications').select('field_id, sector_id, total_cost, application_date').in('field_id', fieldIds),
     supabase.from('labor_assignments').select('sector_id, assigned_amount, assigned_date, labor_type').in('sector_id', sectorIds),
@@ -136,7 +168,11 @@ export async function loadReportsRawData(params: { companyId: string }) {
       .from('products')
       .select('id, name, unit, category, current_stock, minimum_stock, average_cost')
       .eq('company_id', params.companyId)
-      .neq('category', 'Archivado')
+      .neq('category', 'Archivado'),
+    supabase
+      .from('v_agricultural_cost_movements')
+      .select('source_type, category, subcategory, movement_date, season, field_id, sector_id, amount')
+      .eq('company_id', params.companyId)
   ]);
 
   const errors = [
@@ -150,14 +186,17 @@ export async function loadReportsRawData(params: { companyId: string }) {
     generalCostsRes.error,
     incomeRes.error,
     invoicesRes.error,
-    productsRes.error
+    productsRes.error,
+    costMovementsRes.error
   ].filter(Boolean);
 
   if (errors.length > 0) throw errors[0];
 
   const applications = (applicationsRes.data || []) as unknown as ReportApplicationRow[];
   const invoices = (invoicesRes.data || []) as unknown as ReportInvoiceRow[];
+  const costMovements = (costMovementsRes.data || []).map((row: any) => mapCostMovementViewRow(row));
   const availableSeasons = collectAvailableSeasons([
+    { rows: costMovements, getDate: (row) => row.date },
     { rows: applications, getDate: (row) => row.application_date },
     { rows: laborRes.data || [], getDate: (row) => row.assigned_date },
     { rows: workerCostsRes.data || [], getDate: (row) => row.date },
@@ -180,6 +219,7 @@ export async function loadReportsRawData(params: { companyId: string }) {
     machinery: machineryRes.data || [],
     irrigation: irrigationRes.data || [],
     generalCosts: generalCostsRes.data || [],
+    costMovements,
     incomeEntries: incomeRes.data || [],
     invoices,
     products: productsRes.data || [],
