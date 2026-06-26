@@ -128,5 +128,33 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
 - Reporteria:
   - `Dashboard` y `Reportes` deben leer la misma consolidacion y no recalcular reglas distintas por separado.
 
+## Vista SQL Canonica
+- Se agrego la migracion `supabase/migrations/20260623170000_create_agricultural_cost_movements_view.sql`.
+- Esta migracion crea:
+  - la funcion `public.agricultural_season_from_date(date)`
+  - la vista `public.v_agricultural_cost_movements`
+- La vista entrega una capa comun con:
+  - `company_id`
+  - `field_id`
+  - `field_name`
+  - `sector_id`
+  - `sector_name`
+  - `movement_date`
+  - `season`
+  - `category`
+  - `subcategory`
+  - `amount`
+  - `source_type`
+  - `origin_type`
+  - `origin_id`
+  - banderas `is_official` e `is_fallback`
+- La vista ya incorpora reglas de prioridad:
+  - excluye `fuel_assignments` cuando existe `fuel_consumption` real en el mismo sector y mes
+  - excluye `labor_assignments` cuando detecta coincidencia fuerte con `worker_costs` manuales del mismo sector, fecha y labor
+- Esta vista debe ser la siguiente fuente oficial para migrar:
+  - dashboard
+  - reportes
+  - futuras conciliaciones de costos
+
 ## Siguiente Paso Recomendado
 - Crear una vista o servicio canonico de movimientos de costo y migrar primero `Dashboard` y `Reportes` para que lean exactamente la misma consolidacion.
