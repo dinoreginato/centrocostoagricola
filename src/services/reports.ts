@@ -1,5 +1,6 @@
 import { supabase } from '../supabase/client';
 import { getSeasonFromDate } from '../lib/seasonUtils';
+import { collectAvailableSeasons } from '../lib/agriculturalData';
 
 type ReportFieldRow = {
   id: string;
@@ -77,12 +78,11 @@ export async function loadReportsRawData(params: { companyId: string }) {
     const lightweightErrors = [incomeRes.error, invoicesRes.error, productsRes.error, fuelConsRes.error].filter(Boolean);
     if (lightweightErrors.length > 0) throw lightweightErrors[0];
 
-    const invoices = (invoicesRes.data || []) as unknown as ReportInvoiceRow[];
-    const seasonsSet = new Set<string>();
-    seasonsSet.add(getSeasonFromDate(new Date()));
-    invoices.forEach((inv) => {
-      if (inv.invoice_date) seasonsSet.add(getSeasonFromDate(new Date(inv.invoice_date)));
-    });
+    const availableSeasons = collectAvailableSeasons([
+      { rows: incomeRes.data || [], getDate: (row) => row.date },
+      { rows: invoicesRes.data || [], getDate: (row) => row.invoice_date },
+      { rows: fuelConsRes.data || [], getDate: (row) => row.date }
+    ], getSeasonFromDate(new Date()));
 
     return {
       ...emptyResult,
@@ -90,7 +90,7 @@ export async function loadReportsRawData(params: { companyId: string }) {
       invoices: invoicesRes.data || [],
       products: productsRes.data || [],
       fuelConsumption: fuelConsRes.data || [],
-      availableSeasons: Array.from(seasonsSet).sort().reverse()
+      availableSeasons
     };
   }
 
@@ -157,19 +157,18 @@ export async function loadReportsRawData(params: { companyId: string }) {
 
   const applications = (applicationsRes.data || []) as unknown as ReportApplicationRow[];
   const invoices = (invoicesRes.data || []) as unknown as ReportInvoiceRow[];
-
-  const seasonsSet = new Set<string>();
-  seasonsSet.add(getSeasonFromDate(new Date()));
-
-  applications.forEach((app) => {
-    if (app.application_date) seasonsSet.add(getSeasonFromDate(new Date(app.application_date)));
-  });
-
-  invoices.forEach((inv) => {
-    if (inv.invoice_date) seasonsSet.add(getSeasonFromDate(new Date(inv.invoice_date)));
-  });
-
-  const availableSeasons = Array.from(seasonsSet).sort().reverse();
+  const availableSeasons = collectAvailableSeasons([
+    { rows: applications, getDate: (row) => row.application_date },
+    { rows: laborRes.data || [], getDate: (row) => row.assigned_date },
+    { rows: workerCostsRes.data || [], getDate: (row) => row.date },
+    { rows: fuelRes.data || [], getDate: (row) => row.assigned_date },
+    { rows: fuelConsRes.data || [], getDate: (row) => row.date },
+    { rows: machineryRes.data || [], getDate: (row) => row.assigned_date },
+    { rows: irrigationRes.data || [], getDate: (row) => row.assigned_date },
+    { rows: generalCostsRes.data || [], getDate: (row) => row.date },
+    { rows: incomeRes.data || [], getDate: (row) => row.date },
+    { rows: invoices, getDate: (row) => row.invoice_date }
+  ], getSeasonFromDate(new Date()));
 
   return {
     fields: typedFields,

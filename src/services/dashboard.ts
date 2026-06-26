@@ -1,5 +1,6 @@
 import { supabase } from '../supabase/client';
 import { getSeasonFromDate } from '../lib/seasonUtils';
+import { collectAvailableSeasons, filterRowsBySeason } from '../lib/agriculturalData';
 
 type FieldRow = {
   id: string;
@@ -53,13 +54,6 @@ type RainLogRow = { id: string; date: string; rain_mm: number; field_id?: string
 
 type QueryResult<T> = { data: T[] | null; error: unknown | null };
 const emptyResult = <T>(): Promise<QueryResult<T>> => Promise.resolve({ data: [] as T[], error: null });
-
-const seasonFromRawDate = (rawDate?: string | null) => {
-  if (!rawDate) return null;
-  const parsed = new Date(`${String(rawDate).slice(0, 10)}T12:00:00`);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return getSeasonFromDate(parsed);
-};
 
 export async function loadDashboardRaw(params: { companyId: string; season?: string }) {
   const { data: fields, error: fieldsError } = await supabase
@@ -202,58 +196,28 @@ export async function loadDashboardRaw(params: { companyId: string; season?: str
   const rainLogsTyped = rainLogsRes.data || [];
   const machinesTyped = machinesRes.data || [];
 
-  const seasonsSet = new Set<string>();
-  seasonsSet.add(getSeasonFromDate(new Date()));
-  applicationsTyped.forEach((row) => {
-    const season = seasonFromRawDate(row.application_date);
-    if (season) seasonsSet.add(season);
-  });
-  laborAssignmentsTyped.forEach((row) => {
-    const season = seasonFromRawDate(row.assigned_date);
-    if (season) seasonsSet.add(season);
-  });
-  workerCostsTyped.forEach((row) => {
-    const season = seasonFromRawDate(row.date);
-    if (season) seasonsSet.add(season);
-  });
-  fuelAssignmentsTyped.forEach((row) => {
-    const season = seasonFromRawDate(row.assigned_date);
-    if (season) seasonsSet.add(season);
-  });
-  fuelConsumptionTyped.forEach((row) => {
-    const season = seasonFromRawDate(row.date);
-    if (season) seasonsSet.add(season);
-  });
-  machineryAssignmentsTyped.forEach((row) => {
-    const season = seasonFromRawDate(row.assigned_date);
-    if (season) seasonsSet.add(season);
-  });
-  irrigationAssignmentsTyped.forEach((row) => {
-    const season = seasonFromRawDate(row.assigned_date);
-    if (season) seasonsSet.add(season);
-  });
-  generalCostsTyped.forEach((row) => {
-    const season = seasonFromRawDate(row.date);
-    if (season) seasonsSet.add(season);
-  });
-  incomeEntriesTyped.forEach((row) => {
-    const season = seasonFromRawDate(row.date);
-    if (season) seasonsSet.add(season);
-  });
+  const availableSeasons = collectAvailableSeasons([
+    { rows: applicationsTyped, getDate: (row) => row.application_date },
+    { rows: laborAssignmentsTyped, getDate: (row) => row.assigned_date },
+    { rows: workerCostsTyped, getDate: (row) => row.date },
+    { rows: fuelAssignmentsTyped, getDate: (row) => row.assigned_date },
+    { rows: fuelConsumptionTyped, getDate: (row) => row.date },
+    { rows: machineryAssignmentsTyped, getDate: (row) => row.assigned_date },
+    { rows: irrigationAssignmentsTyped, getDate: (row) => row.assigned_date },
+    { rows: generalCostsTyped, getDate: (row) => row.date },
+    { rows: incomeEntriesTyped, getDate: (row) => row.date }
+  ], getSeasonFromDate(new Date()));
 
   const selectedSeason = params.season || getSeasonFromDate(new Date());
-  const filterBySeason = <T extends { [key: string]: any }>(items: T[], dateKey: string) =>
-    items.filter((item) => seasonFromRawDate(item?.[dateKey]) === selectedSeason);
-
-  const filteredApplications = filterBySeason(applicationsTyped, 'application_date');
-  const filteredLaborAssignments = filterBySeason(laborAssignmentsTyped, 'assigned_date');
-  const filteredWorkerCosts = filterBySeason(workerCostsTyped, 'date');
-  const filteredFuelAssignments = filterBySeason(fuelAssignmentsTyped, 'assigned_date');
-  const filteredFuelConsumption = filterBySeason(fuelConsumptionTyped, 'date');
-  const filteredMachineryAssignments = filterBySeason(machineryAssignmentsTyped, 'assigned_date');
-  const filteredIrrigationAssignments = filterBySeason(irrigationAssignmentsTyped, 'assigned_date');
-  const filteredGeneralCosts = filterBySeason(generalCostsTyped, 'date');
-  const filteredIncomeEntries = filterBySeason(incomeEntriesTyped, 'date');
+  const filteredApplications = filterRowsBySeason(applicationsTyped, selectedSeason, (row) => row.application_date);
+  const filteredLaborAssignments = filterRowsBySeason(laborAssignmentsTyped, selectedSeason, (row) => row.assigned_date);
+  const filteredWorkerCosts = filterRowsBySeason(workerCostsTyped, selectedSeason, (row) => row.date);
+  const filteredFuelAssignments = filterRowsBySeason(fuelAssignmentsTyped, selectedSeason, (row) => row.assigned_date);
+  const filteredFuelConsumption = filterRowsBySeason(fuelConsumptionTyped, selectedSeason, (row) => row.date);
+  const filteredMachineryAssignments = filterRowsBySeason(machineryAssignmentsTyped, selectedSeason, (row) => row.assigned_date);
+  const filteredIrrigationAssignments = filterRowsBySeason(irrigationAssignmentsTyped, selectedSeason, (row) => row.assigned_date);
+  const filteredGeneralCosts = filterRowsBySeason(generalCostsTyped, selectedSeason, (row) => row.date);
+  const filteredIncomeEntries = filterRowsBySeason(incomeEntriesTyped, selectedSeason, (row) => row.date);
 
   return {
     fields: typedFields,
@@ -273,6 +237,6 @@ export async function loadDashboardRaw(params: { companyId: string; season?: str
     ordersData: ordersDataTyped,
     rainLogs: rainLogsTyped,
     machines: machinesTyped,
-    availableSeasons: Array.from(seasonsSet).sort().reverse()
+    availableSeasons
   };
 }
