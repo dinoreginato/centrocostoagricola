@@ -32,8 +32,16 @@ export interface AgriculturalCostMovement {
 
 type SectorMeta = { fieldId: string };
 
+const normalizeText = (value?: string | null) =>
+  String(value || '')
+    .toLowerCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+
 export const normalizeLaborSubCategory = (laborType?: string | null) => {
-  const type = String(laborType || '').toLowerCase();
+  const type = normalizeText(laborType);
   if (type.includes('cosecha')) return 'Cosecha';
   if (type.includes('poda')) return 'Poda';
   if (type.includes('raleo')) return 'Raleo';
@@ -41,9 +49,26 @@ export const normalizeLaborSubCategory = (laborType?: string | null) => {
 };
 
 export const resolveFuelSubCategory = (activity?: string | null) => {
-  const value = String(activity || '').toLowerCase();
+  const value = normalizeText(activity);
   if (value.includes('gasolina') || value.includes('bencina')) return 'Gasolina';
   return 'Diesel';
+};
+
+export const classifyWorkerCostBucket = (description?: string | null): 'payroll' | 'remuneration' | 'manual' => {
+  const raw = String(description || '');
+  if (raw.startsWith('Previsión ')) return 'payroll';
+  if (
+    raw.startsWith('Sueldo Imponible ') ||
+    raw.startsWith('Sueldo base ') ||
+    raw.startsWith('Bono imponible ') ||
+    raw.startsWith('Bonos imponibles ') ||
+    raw.startsWith('Gratificación legal ') ||
+    raw.startsWith('No imponible ') ||
+    raw.startsWith('No imponibles ')
+  ) {
+    return 'remuneration';
+  }
+  return 'manual';
 };
 
 export const buildAgriculturalCostMovements = (params: {
@@ -78,6 +103,28 @@ export const buildAgriculturalCostMovements = (params: {
     });
   };
 
+  const fuelConsumptionCoverage = new Set<string>();
+  (params.fuelConsumption || []).forEach((item) => {
+    const sectorId = String(item.sector_id || '');
+    const monthKey = String(item.date || '').slice(0, 7);
+    if (!sectorId || !monthKey) return;
+    const liters = Number(item.liters || 0);
+    const estimatedPrice = Number(item.estimated_price || 0);
+    if (Math.abs(liters) <= 0.0001 && Math.abs(estimatedPrice) <= 0.0001) return;
+    fuelConsumptionCoverage.add(`${sectorId}::${monthKey}`);
+  });
+
+  const manualWorkerCoverage = new Map<string, number>();
+  (params.workerCosts || []).forEach((item) => {
+    if (classifyWorkerCostBucket(item.description) !== 'manual') return;
+    const sectorId = String(item.sector_id || '');
+    const date = String(item.date || '');
+    if (!sectorId || !date) return;
+    const laborType = normalizeLaborSubCategory(item.labor_type || item.description);
+    const key = `${sectorId}::${date}::${laborType}`;
+    manualWorkerCoverage.set(key, (manualWorkerCoverage.get(key) || 0) + Number(item.amount || 0));
+  });
+
   (params.applications || []).forEach((item) => {
     const fieldId = item.field_id || sectorMeta.get(String(item.sector_id || ''))?.fieldId || null;
     pushMovement({
@@ -91,15 +138,26 @@ export const buildAgriculturalCostMovements = (params: {
   });
 
   (params.labor || []).forEach((item) => {
+    const sectorId = String(item.sector_id || '');
+    const date = String(item.assigned_date || '');
+    const laborType = normalizeLaborSubCategory(item.labor_type);
+    const probableDuplicateKey = `${sectorId}::${date}::${laborType}`;
+    const matchingManualWorkerAmount = manualWorkerCoverage.get(probableDuplicateKey) || 0;
+    const laborAmount = Number(item.assigned_amount || 0);
+    const isProbableDuplicate =
+      matchingManualWorkerAmount > 0 &&
+      Math.abs(matchingManualWorkerAmount - laborAmount) <= Math.max(1000, laborAmount * 0.03);
+    if (isProbableDuplicate) return;
+
     const fieldId = sectorMeta.get(String(item.sector_id || ''))?.fieldId || null;
     pushMovement({
       source: 'labor_assignments',
       category: 'Labores',
-      subCategory: normalizeLaborSubCategory(item.labor_type),
+      subCategory: laborType,
       date: item.assigned_date,
       fieldId,
       sectorId: item.sector_id || null,
-      amount: Number(item.assigned_amount || 0)
+      amount: laborAmount
     });
   });
 
@@ -116,6 +174,9 @@ export const buildAgriculturalCostMovements = (params: {
   });
 
   (params.fuelAssignments || []).forEach((item) => {
+    const sectorId = String(item.sector_id || '');
+    const monthKey = String(item.assigned_date || '').slice(0, 7);
+    if (sectorId && monthKey && fuelConsumptionCoverage.has(`${sectorId}::${monthKey}`)) return;
     const fieldId = sectorMeta.get(String(item.sector_id || ''))?.fieldId || null;
     pushMovement({
       source: 'fuel_assignments',

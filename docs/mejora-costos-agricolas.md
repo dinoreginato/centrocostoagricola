@@ -103,9 +103,30 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - derivar temporada desde fecha
   - filtrar registros por temporada
   - construir temporadas disponibles desde distintas fuentes
+- Se creo una utilidad canonica en `src/lib/costMovements.ts` para transformar costos operativos en movimientos compartidos por:
+  - aplicaciones
+  - labores
+  - trabajadores
+  - combustible
+  - maquinaria
+  - riego
+  - generales
 - Se aplico esta capa a:
   - `src/services/dashboard.ts`
   - `src/services/reports.ts`
+
+## Reglas Oficiales De Costo
+- Mano de obra:
+  - `worker_costs` representa costo directo de trabajadores propios.
+  - `labor_assignments` representa costo asignado desde factura o distribucion de labor.
+  - Si existe coincidencia fuerte por `sector + fecha + tipo de labor + monto`, se considera probable duplicidad y se prioriza `worker_costs`.
+- Combustible:
+  - `fuel_consumption` es la fuente oficial cuando existe bitacora real en terreno.
+  - `fuel_assignments` queda como respaldo contable cuando no existe consumo registrado para ese `sector + mes`.
+- Temporadas:
+  - siempre se derivan desde fecha con regla agricola compartida.
+- Reporteria:
+  - `Dashboard` y `Reportes` deben leer la misma consolidacion y no recalcular reglas distintas por separado.
 
 ## Siguiente Paso Recomendado
 - Crear una vista o servicio canonico de movimientos de costo y migrar primero `Dashboard` y `Reportes` para que lean exactamente la misma consolidacion.
