@@ -156,5 +156,38 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - reportes
   - futuras conciliaciones de costos
 
+## Capa De Conciliacion
+- Se agrego la migracion `supabase/migrations/20260623183000_create_agricultural_cost_reconciliation_views.sql`.
+- Esta migracion crea:
+  - `public.v_agricultural_cost_reconciliation`
+  - `public.v_agricultural_cost_reconciliation_summary`
+- La capa de conciliacion clasifica cada movimiento con:
+  - `cost_role`: oficial, respaldo o distribucion
+  - `source_layer`: operacional, distribucion, manual o contable
+  - `audit_status`: trazable, respaldo contable, costo manual, monto cero o faltantes estructurales
+  - `review_priority`: alta, media o baja
+  - `has_full_traceability`
+  - `reconciliation_key`
+- Esto permite distinguir:
+  - costo operativo real
+  - costo distribuido desde factura
+  - costo de respaldo contable
+  - costo que necesita revision
+- Tambien se creo el servicio `src/services/costAudit.ts` para leer:
+  - detalle de conciliacion
+  - resumen de conciliacion por temporada y categoria
+
+## Uso Recomendado De La Conciliacion
+- Crear una pantalla o drawer ejecutivo de auditoria de costos.
+- Mostrar:
+  - monto trazable
+  - monto en respaldo
+  - monto distribuido
+  - monto con revision alta
+- Usar esta capa para alertas de calidad del dato antes de presentar reportes al directorio.
+
 ## Siguiente Paso Recomendado
-- Crear una vista o servicio canonico de movimientos de costo y migrar primero `Dashboard` y `Reportes` para que lean exactamente la misma consolidacion.
+- Llevar la conciliacion a interfaz:
+  - tablero de auditoria de costos
+  - semaforos de trazabilidad
+  - detalle filtrable por temporada, campo y sector
