@@ -10,6 +10,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { loadReportsRawData } from '../services/reports';
+import { loadAgriculturalCostAudit, loadAgriculturalCostAuditSummary, type AgriculturalCostAuditRow, type AgriculturalCostAuditSummaryRow } from '../services/costAudit';
 import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
 interface ReportData {
@@ -181,6 +182,8 @@ const getExecutiveTone = (variationPct: number) => {
 };
 
 type ExecutiveSortKey = 'total' | 'variation' | 'budget' | 'cost_ha' | 'cost_kg';
+type ExecutiveAuditPriorityFilter = 'all' | 'alta' | 'media' | 'baja';
+type ExecutiveAuditLayerFilter = 'all' | AgriculturalCostAuditRow['source_layer'];
 
 const EXECUTIVE_SORT_OPTIONS: Array<{ value: ExecutiveSortKey; label: string }> = [
   { value: 'total', label: 'Mayor gasto' },
@@ -188,6 +191,22 @@ const EXECUTIVE_SORT_OPTIONS: Array<{ value: ExecutiveSortKey; label: string }> 
   { value: 'budget', label: 'Mayor desviacion ppto' },
   { value: 'cost_ha', label: 'Mayor costo / ha' },
   { value: 'cost_kg', label: 'Mayor costo / kg' }
+];
+
+const EXECUTIVE_AUDIT_PRIORITY_OPTIONS: Array<{ value: ExecutiveAuditPriorityFilter; label: string }> = [
+  { value: 'all', label: 'Todas las prioridades' },
+  { value: 'alta', label: 'Prioridad alta' },
+  { value: 'media', label: 'Prioridad media' },
+  { value: 'baja', label: 'Prioridad baja' }
+];
+
+const EXECUTIVE_AUDIT_LAYER_OPTIONS: Array<{ value: ExecutiveAuditLayerFilter; label: string }> = [
+  { value: 'all', label: 'Todas las capas' },
+  { value: 'Operacional', label: 'Operacional' },
+  { value: 'Distribucion', label: 'Distribucion' },
+  { value: 'Manual', label: 'Manual' },
+  { value: 'Contable', label: 'Contable' },
+  { value: 'Otro', label: 'Otro' }
 ];
 
 const getExecutiveSortMetric = (row: any, sortBy: ExecutiveSortKey) => {
@@ -385,6 +404,9 @@ export const Reports: React.FC = () => {
   const [rawGeneralCosts, setRawGeneralCosts] = useState<any[]>([]); // New state
   const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([]);
   const [rawProducts, setRawProducts] = useState<any[]>([]);
+  const [costAuditRows, setCostAuditRows] = useState<AgriculturalCostAuditRow[]>([]);
+  const [costAuditSummary, setCostAuditSummary] = useState<AgriculturalCostAuditSummaryRow[]>([]);
+  const [costAuditLoading, setCostAuditLoading] = useState(false);
 
   // Comparative State
   const [comparativeData, setComparativeData] = useState<any[]>([]);
@@ -419,12 +441,15 @@ export const Reports: React.FC = () => {
   const [executiveCompareFieldB, setExecutiveCompareFieldB] = useState<string>('auto');
   const [executiveFieldSortBy, setExecutiveFieldSortBy] = useState<ExecutiveSortKey>('total');
   const [executiveSectorSortBy, setExecutiveSectorSortBy] = useState<ExecutiveSortKey>('total');
+  const [executiveAuditPriorityFilter, setExecutiveAuditPriorityFilter] = useState<ExecutiveAuditPriorityFilter>('all');
+  const [executiveAuditLayerFilter, setExecutiveAuditLayerFilter] = useState<ExecutiveAuditLayerFilter>('all');
 
   // Preview Modal State
   const [showPreview, setShowPreview] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState('');
   const reportLoadSeqRef = useRef(0);
+  const costAuditLoadSeqRef = useRef(0);
 
   // Update orientation when tab changes
   useEffect(() => {
@@ -494,9 +519,13 @@ export const Reports: React.FC = () => {
     setExecutiveCompareFieldB('auto');
     setExecutiveFieldSortBy('total');
     setExecutiveSectorSortBy('total');
+    setExecutiveAuditPriorityFilter('all');
+    setExecutiveAuditLayerFilter('all');
     setCurrentSlide(0);
     setPresentationMode(false);
     setRawCostMovements([]);
+    setCostAuditRows([]);
+    setCostAuditSummary([]);
     setReportData([]);
     setMonthlyExpenses([]);
     setCategoryExpenses([]);
@@ -505,6 +534,34 @@ export const Reports: React.FC = () => {
     setDetailedReport([]);
     setComparativeData([]);
   }, [selectedCompany?.id]);
+
+  useEffect(() => {
+    if (!selectedCompany?.id) return;
+    const companyId = selectedCompany.id;
+    const loadSeq = ++costAuditLoadSeqRef.current;
+    setCostAuditLoading(true);
+
+    void (async () => {
+      try {
+        const [summary, auditRows] = await Promise.all([
+          loadAgriculturalCostAuditSummary({ companyId, season: selectedSeason }),
+          loadAgriculturalCostAudit({ companyId, season: selectedSeason })
+        ]);
+
+        if (costAuditLoadSeqRef.current !== loadSeq || selectedCompany?.id !== companyId) return;
+        setCostAuditSummary(summary || []);
+        setCostAuditRows(auditRows || []);
+      } catch {
+        if (costAuditLoadSeqRef.current !== loadSeq || selectedCompany?.id !== companyId) return;
+        setCostAuditSummary([]);
+        setCostAuditRows([]);
+      } finally {
+        if (costAuditLoadSeqRef.current === loadSeq) {
+          setCostAuditLoading(false);
+        }
+      }
+    })();
+  }, [selectedCompany?.id, selectedSeason]);
 
   const executiveComparableCompanies = useMemo(
     () => companies.filter((company) => company.id !== selectedCompany?.id),
@@ -536,7 +593,7 @@ export const Reports: React.FC = () => {
     };
   }, [executiveCompareCompanyId]);
 
-  const presentationMaxSlide = activeTab === 'executive' ? 5 : activeTab === 'general' ? 3 : 1;
+  const presentationMaxSlide = activeTab === 'executive' ? 6 : activeTab === 'general' ? 3 : 1;
 
   // Update presentation logic to support executive slides and legacy tabs
   useEffect(() => {
@@ -1220,6 +1277,185 @@ export const Reports: React.FC = () => {
     };
   }, [executiveViewData, previousExecutiveSeason, selectedSeason]);
 
+  const executiveAuditVisibleRows = useMemo(() => (
+    costAuditRows.filter((row) => {
+      if (executiveFieldFilter !== 'all' && row.field_id !== executiveFieldFilter) return false;
+      if (executiveAuditPriorityFilter !== 'all' && row.review_priority !== executiveAuditPriorityFilter) return false;
+      if (executiveAuditLayerFilter !== 'all' && row.source_layer !== executiveAuditLayerFilter) return false;
+      return true;
+    })
+  ), [costAuditRows, executiveAuditLayerFilter, executiveAuditPriorityFilter, executiveFieldFilter]);
+
+  const executiveAuditSummaryRows = useMemo(() => {
+    const summaryMap = new Map<string, AgriculturalCostAuditSummaryRow>();
+
+    executiveAuditVisibleRows.forEach((row) => {
+      const season = row.season || selectedSeason;
+      const key = [
+        season,
+        row.category,
+        row.source_layer,
+        row.cost_role,
+        row.audit_status,
+        row.review_priority
+      ].join('::');
+
+      const current = summaryMap.get(key) || {
+        company_id: row.company_id,
+        season,
+        category: row.category,
+        source_layer: row.source_layer,
+        cost_role: row.cost_role,
+        audit_status: row.audit_status,
+        review_priority: row.review_priority,
+        movement_count: 0,
+        total_amount: 0,
+        traceable_amount: 0,
+        non_traceable_amount: 0
+      };
+
+      current.movement_count += 1;
+      current.total_amount += Number(row.amount || 0);
+      current.traceable_amount += row.has_full_traceability ? Number(row.amount || 0) : 0;
+      current.non_traceable_amount += row.has_full_traceability ? 0 : Number(row.amount || 0);
+      summaryMap.set(key, current);
+    });
+
+    return [...summaryMap.values()].sort((a, b) => Number(b.total_amount || 0) - Number(a.total_amount || 0));
+  }, [executiveAuditVisibleRows, selectedSeason]);
+
+  const executiveAuditExportSummaryRows = useMemo(() => (
+    executiveFieldFilter === 'all' &&
+    executiveAuditPriorityFilter === 'all' &&
+    executiveAuditLayerFilter === 'all'
+      ? costAuditSummary
+      : executiveAuditSummaryRows
+  ), [
+    costAuditSummary,
+    executiveAuditLayerFilter,
+    executiveAuditPriorityFilter,
+    executiveAuditSummaryRows,
+    executiveFieldFilter
+  ]);
+
+  const executiveAuditData = useMemo(() => {
+    const totalAudited = executiveAuditVisibleRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const traceableAmount = executiveAuditVisibleRows.reduce(
+      (sum, row) => sum + (row.has_full_traceability ? Number(row.amount || 0) : 0),
+      0
+    );
+    const nonTraceableAmount = totalAudited - traceableAmount;
+    const backupAmount = executiveAuditVisibleRows
+      .filter((row) => row.cost_role === 'respaldo')
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const distributedAmount = executiveAuditVisibleRows
+      .filter((row) => row.cost_role === 'distribucion')
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const officialAmount = executiveAuditVisibleRows
+      .filter((row) => row.cost_role === 'oficial')
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const highReviewRows = executiveAuditVisibleRows.filter((row) => row.review_priority === 'alta');
+    const highReviewAmount = highReviewRows
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const highReviewCount = highReviewRows.length;
+    const traceabilityPct = totalAudited > 0 ? (traceableAmount / totalAudited) * 100 : 0;
+    const highReviewPct = totalAudited > 0 ? (highReviewAmount / totalAudited) * 100 : 0;
+
+    const tone = (() => {
+      if (traceabilityPct < 70 || highReviewPct >= 20) {
+        return {
+          badge: 'bg-red-100 text-red-700 border-red-200',
+          text: 'text-red-600',
+          dot: 'bg-red-500',
+          label: 'Riesgo alto'
+        };
+      }
+      if (traceabilityPct < 85 || highReviewPct >= 10 || backupAmount > 0) {
+        return {
+          badge: 'bg-amber-100 text-amber-700 border-amber-200',
+          text: 'text-amber-600',
+          dot: 'bg-amber-500',
+          label: 'Atencion'
+        };
+      }
+      return {
+        badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+        text: 'text-emerald-600',
+        dot: 'bg-emerald-500',
+        label: 'Trazable'
+      };
+    })();
+
+    const topAuditCategory = [...executiveAuditSummaryRows]
+      .filter((row) => row.review_priority === 'alta')
+      .sort((a, b) => Number(b.total_amount || 0) - Number(a.total_amount || 0))[0] || null;
+    const topBackupCategory = [...executiveAuditSummaryRows]
+      .filter((row) => row.cost_role === 'respaldo')
+      .sort((a, b) => Number(b.total_amount || 0) - Number(a.total_amount || 0))[0] || null;
+    const topDetailRows = [...highReviewRows]
+      .sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0))
+      .slice(0, 8);
+    const scopeLabel = [
+      executiveFieldFilter === 'all' ? 'Todos los campos' : executiveFieldLabel,
+      EXECUTIVE_AUDIT_PRIORITY_OPTIONS.find((item) => item.value === executiveAuditPriorityFilter)?.label || 'Todas las prioridades',
+      EXECUTIVE_AUDIT_LAYER_OPTIONS.find((item) => item.value === executiveAuditLayerFilter)?.label || 'Todas las capas'
+    ].join(' · ');
+
+    const findings = [
+      {
+        title: 'Costo trazable',
+        description: `La temporada tiene ${traceabilityPct.toFixed(1)}% del monto conciliado con trazabilidad completa.`,
+        emphasis: formatCLP(traceableAmount)
+      },
+      {
+        title: 'Monto en revisión alta',
+        description: topAuditCategory
+          ? `${topAuditCategory.category} concentra la mayor exposición crítica en conciliación.`
+          : 'No hay movimientos críticos detectados en la temporada visible.',
+        emphasis: formatCLP(highReviewAmount)
+      },
+      {
+        title: 'Respaldo y distribución',
+        description: topBackupCategory
+          ? `${topBackupCategory.category} es la principal bolsa de respaldo contable o distribución a vigilar.`
+          : 'No hay respaldo contable material en la temporada visible.',
+        emphasis: formatCLP(backupAmount + distributedAmount)
+      }
+    ];
+
+    const conclusion = totalAudited <= 0
+      ? 'La conciliación no tiene movimientos suficientes para emitir una lectura de trazabilidad.'
+      : highReviewAmount > 0
+        ? `La temporada requiere revisar ${highReviewCount} focos críticos antes de presentar el costo como definitivo a comité.`
+        : `La temporada muestra una trazabilidad de ${traceabilityPct.toFixed(1)}% y puede presentarse con un nivel de respaldo más controlado.`;
+
+    return {
+      totalAudited,
+      traceableAmount,
+      nonTraceableAmount,
+      backupAmount,
+      distributedAmount,
+      officialAmount,
+      visibleMovementCount: executiveAuditVisibleRows.length,
+      highReviewAmount,
+      highReviewCount,
+      traceabilityPct,
+      highReviewPct,
+      scopeLabel,
+      tone,
+      findings,
+      conclusion,
+      topDetailRows
+    };
+  }, [
+    executiveAuditLayerFilter,
+    executiveAuditPriorityFilter,
+    executiveAuditSummaryRows,
+    executiveAuditVisibleRows,
+    executiveFieldFilter,
+    executiveFieldLabel
+  ]);
+
   const executiveCategoryComparisonRows = useMemo(() => {
     const currentMap = new Map(executiveViewData.categoryRows.map((row) => [row.category, row.total]));
     const previousCategories = (() => {
@@ -1391,6 +1627,12 @@ export const Reports: React.FC = () => {
         { Indicador: 'Variación temporada %', Valor: Number(executiveViewData.kpis.seasonVariationPct.toFixed(2)) },
         { Indicador: 'Promedio mensual', Valor: Number(executiveViewData.kpis.averageMonthlyCost.toFixed(0)) },
         { Indicador: 'Alertas activas', Valor: executiveInsights.activeAlertCount },
+        { Indicador: 'Monto oficial', Valor: Number(executiveAuditData.officialAmount.toFixed(0)) },
+        { Indicador: 'Trazabilidad %', Valor: Number(executiveAuditData.traceabilityPct.toFixed(2)) },
+        { Indicador: 'Monto trazable', Valor: Number(executiveAuditData.traceableAmount.toFixed(0)) },
+        { Indicador: 'Monto respaldo', Valor: Number(executiveAuditData.backupAmount.toFixed(0)) },
+        { Indicador: 'Monto distribución', Valor: Number(executiveAuditData.distributedAmount.toFixed(0)) },
+        { Indicador: 'Monto revisión alta', Valor: Number(executiveAuditData.highReviewAmount.toFixed(0)) },
         { Indicador: 'Conclusión ejecutiva', Valor: executiveInsights.conclusion }
       ];
       const historicalRows = executiveHistoricalSeasonRows.map((row) => ({
@@ -1499,6 +1741,28 @@ export const Reports: React.FC = () => {
           Brecha: Number(row.gap.toFixed(0))
         }))
         : [];
+      const auditSummaryRows = executiveAuditExportSummaryRows.map((row) => ({
+        Temporada: row.season || 'Sin temporada',
+        Categoria: row.category,
+        Capa: row.source_layer,
+        Rol: row.cost_role,
+        Estado: row.audit_status,
+        Prioridad: row.review_priority,
+        Movimientos: Number(row.movement_count || 0),
+        Total: Number(row.total_amount || 0),
+        Trazable: Number(row.traceable_amount || 0),
+        'No trazable': Number(row.non_traceable_amount || 0)
+      }));
+      const auditDetailRows = executiveAuditData.topDetailRows.map((row, index) => ({
+        Ranking: index + 1,
+        Fecha: row.movement_date,
+        Campo: row.field_name || '-',
+        Sector: row.sector_name || '-',
+        Categoria: row.category,
+        Estado: row.audit_status,
+        Prioridad: row.review_priority,
+        Monto: Number(row.amount || 0)
+      }));
 
       await exportWorkbookToXlsx({
         filename: `Reporte_Ejecutivo_${companySlug}_${selectedSeason}${executiveFieldFilter !== 'all' ? `_campo_${executiveFieldFilter}` : ''}.xlsx`,
@@ -1511,6 +1775,8 @@ export const Reports: React.FC = () => {
           { name: 'Top Campos', rows: topFieldsRows },
           { name: 'Top Sectores', rows: topSectorsRows },
           { name: 'Alertas', rows: alertRows },
+          ...(auditSummaryRows.length > 0 ? [{ name: 'Auditoria Costos', rows: auditSummaryRows }] : []),
+          ...(auditDetailRows.length > 0 ? [{ name: 'Focos Revision', rows: auditDetailRows }] : []),
           ...(comparisonRows.length > 0 ? [
             { name: 'Comparacion Campos', rows: comparisonRows },
             { name: 'Campos Mes a Mes', rows: comparisonMonthlyRows }
@@ -2171,6 +2437,10 @@ export const Reports: React.FC = () => {
             ['Orden sectores', EXECUTIVE_SORT_OPTIONS.find((item) => item.value === executiveSectorSortBy)?.label || executiveSectorSortBy],
             ['Comparacion campos', executiveFieldComparison ? `${executiveFieldComparison.fieldA.fieldName} vs ${executiveFieldComparison.fieldB.fieldName}` : '-'],
             ['Alertas activas', String(executiveInsights.activeAlertCount)],
+            ['Monto oficial', formatCLP(executiveAuditData.officialAmount)],
+            ['Trazabilidad %', `${executiveAuditData.traceabilityPct.toFixed(1)}%`],
+            ['Monto respaldo', formatCLP(executiveAuditData.backupAmount)],
+            ['Monto revisión alta', formatCLP(executiveAuditData.highReviewAmount)],
             ['Hallazgo 1', executiveInsights.findings[0]?.description || '-'],
             ['Hallazgo 2', executiveInsights.findings[1]?.description || '-'],
             ['Hallazgo 3', executiveInsights.findings[2]?.description || '-'],
@@ -2192,6 +2462,8 @@ export const Reports: React.FC = () => {
             ['Variación temporada', formatCLP(executiveViewData.kpis.seasonVariation)],
             ['Variación temporada %', `${executiveViewData.kpis.seasonVariationPct.toFixed(1)}%`],
             ['Promedio mensual', formatCLP(executiveViewData.kpis.averageMonthlyCost)],
+            ['Monto trazable', formatCLP(executiveAuditData.traceableAmount)],
+            ['Monto no trazable', formatCLP(executiveAuditData.nonTraceableAmount)],
             ['Hectáreas reportadas', executiveViewData.kpis.totalHectares.toFixed(2)],
             ['Campo con mayor gasto', executiveViewData.kpis.topField ? `${executiveViewData.kpis.topField.fieldName} (${formatCLP(executiveViewData.kpis.topField.total)})` : '-'],
             ['Sector con mayor gasto', executiveViewData.kpis.topSector ? `${executiveViewData.kpis.topSector.sectorName} (${formatCLP(executiveViewData.kpis.topSector.total)})` : '-'],
@@ -2271,6 +2543,28 @@ export const Reports: React.FC = () => {
             ]),
             theme: 'grid',
             headStyles: { fillColor: [67, 56, 202] },
+            styles: { fontSize: 8 }
+          });
+
+          yPos = (doc as any).lastAutoTable.finalY + 8;
+        }
+
+        if (executiveAuditData.topDetailRows.length > 0) {
+          if (yPos > 150) {
+            doc.addPage();
+            yPos = 20;
+          }
+
+          autoTable(doc, {
+            startY: yPos,
+            head: [['Foco auditoría', 'Detalle', 'Monto']],
+            body: executiveAuditData.topDetailRows.slice(0, 6).map((row) => [
+              `${row.category} · ${row.audit_status}`,
+              `${row.field_name || '-'} / ${row.sector_name || '-'}\n${row.movement_date} · ${row.review_priority}`,
+              formatCLP(row.amount)
+            ]),
+            theme: 'grid',
+            headStyles: { fillColor: [146, 64, 14] },
             styles: { fontSize: 8 }
           });
 
@@ -3575,6 +3869,213 @@ export const Reports: React.FC = () => {
 
               <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Salud de trazabilidad del costo</h3>
+                      <p className="text-sm text-gray-500">Controla qué parte del costo ejecutivo está trazada, en respaldo contable o requiere revisión antes de comité.</p>
+                    </div>
+                    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${executiveAuditData.tone.badge}`}>
+                      <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveAuditData.tone.dot}`} />
+                      {costAuditLoading ? 'Cargando auditoría' : executiveAuditData.tone.label}
+                    </span>
+                  </div>
+                </div>
+                <div className="p-6 space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Monto oficial</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{formatCLP(executiveAuditData.officialAmount)}</div>
+                      <div className="mt-1 text-sm text-slate-500">Base oficial consolidada</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Trazabilidad</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveAuditData.traceabilityPct.toFixed(1)}%</div>
+                      <div className="mt-1 text-sm text-slate-500">{formatCLP(executiveAuditData.traceableAmount)} conciliado</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Respaldo contable</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{formatCLP(executiveAuditData.backupAmount)}</div>
+                      <div className="mt-1 text-sm text-slate-500">Monto sostenido por respaldo</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Distribución</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{formatCLP(executiveAuditData.distributedAmount)}</div>
+                      <div className="mt-1 text-sm text-slate-500">Costo distribuido desde factura</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Revisión alta</div>
+                      <div className={`mt-2 text-2xl font-semibold ${executiveAuditData.highReviewAmount > 0 ? 'text-red-600' : 'text-slate-900'}`}>{formatCLP(executiveAuditData.highReviewAmount)}</div>
+                      <div className="mt-1 text-sm text-slate-500">{executiveAuditData.highReviewCount} focos críticos visibles</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">No trazable</div>
+                      <div className={`mt-2 text-2xl font-semibold ${executiveAuditData.nonTraceableAmount > 0 ? 'text-amber-600' : 'text-slate-900'}`}>{formatCLP(executiveAuditData.nonTraceableAmount)}</div>
+                      <div className="mt-1 text-sm text-slate-500">Monto pendiente de mejor soporte</div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Auditoría visible</div>
+                        <div className="mt-1 text-sm text-slate-600">{executiveAuditData.scopeLabel}</div>
+                        <div className="mt-2 text-sm font-medium text-slate-900">
+                          {executiveAuditData.visibleMovementCount} movimientos considerados en esta lectura
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:min-w-[420px]">
+                        <label className="text-sm text-slate-600">
+                          <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">Prioridad</span>
+                          <select
+                            value={executiveAuditPriorityFilter}
+                            onChange={(e) => setExecutiveAuditPriorityFilter(e.target.value as ExecutiveAuditPriorityFilter)}
+                            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                          >
+                            {EXECUTIVE_AUDIT_PRIORITY_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="text-sm text-slate-600">
+                          <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">Capa</span>
+                          <select
+                            value={executiveAuditLayerFilter}
+                            onChange={(e) => setExecutiveAuditLayerFilter(e.target.value as ExecutiveAuditLayerFilter)}
+                            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                          >
+                            {EXECUTIVE_AUDIT_LAYER_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    {executiveAuditData.findings.map((finding, index) => (
+                      <div key={finding.title} className="rounded-xl border border-slate-200 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Auditoría {index + 1}</div>
+                        <div className="mt-2 text-lg font-semibold text-slate-900">{finding.title}</div>
+                        <div className="mt-2 text-sm text-slate-600">{finding.description}</div>
+                        <div className="mt-3 text-sm font-semibold text-slate-900">{finding.emphasis}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-700">
+                    {executiveAuditData.conclusion}
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Categoría</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Capa</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Estado</th>
+                          <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Mov.</th>
+                          <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Monto</th>
+                          <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Trazable %</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 bg-white">
+                        {executiveAuditSummaryRows.slice(0, 8).map((row) => {
+                          const ratio = Number(row.total_amount || 0) > 0
+                            ? (Number(row.traceable_amount || 0) / Number(row.total_amount || 0)) * 100
+                            : 0;
+                          return (
+                            <tr key={`${row.category}-${row.source_layer}-${row.audit_status}-${row.review_priority}`}>
+                              <td className="px-4 py-3 text-slate-900">{row.category}</td>
+                              <td className="px-4 py-3 text-slate-700">{row.source_layer}</td>
+                              <td className="px-4 py-3 text-slate-700">{row.audit_status}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{Number(row.movement_count || 0)}</td>
+                              <td className="px-4 py-3 text-right font-medium text-slate-900">{formatCLP(Number(row.total_amount || 0))}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{ratio.toFixed(1)}%</td>
+                            </tr>
+                          );
+                        })}
+                        {!costAuditLoading && executiveAuditSummaryRows.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="px-4 py-4 text-center text-sm text-slate-500">
+                              No hay movimientos de auditoría para los filtros visibles.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <h3 className="text-lg font-semibold text-gray-900">Focos de revisión alta</h3>
+                  <p className="text-sm text-gray-500">Movimientos que conviene revisar antes de usar el costo como referencia definitiva en comité o directorio.</p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase">Fecha</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase">Campo / Sector</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase">Categoría</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase">Estado</th>
+                        <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase">Origen</th>
+                        <th className="px-4 py-3 text-right font-medium text-gray-500 uppercase">Monto</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {executiveAuditData.topDetailRows.map((row) => (
+                        <tr key={`${row.source_type}-${row.source_id}`}>
+                          <td className="px-4 py-3 text-gray-700">{row.movement_date}</td>
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-gray-900">{row.field_name || '-'}</div>
+                            <div className="text-xs text-gray-500">{row.sector_name || 'Sin sector'}</div>
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            <div>{row.category}</div>
+                            <div className="text-xs text-gray-500">{row.subcategory || row.source_layer}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${
+                              row.review_priority === 'alta'
+                                ? 'border-red-200 bg-red-50 text-red-700'
+                                : row.review_priority === 'media'
+                                  ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                  : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                            }`}>
+                              {row.audit_status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            <div>{row.cost_role}</div>
+                            <div className="text-xs text-gray-500">{row.origin_type}</div>
+                          </td>
+                          <td className="px-4 py-3 text-right font-medium text-gray-900">{formatCLP(row.amount)}</td>
+                        </tr>
+                      ))}
+                      {!costAuditLoading && executiveAuditData.topDetailRows.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-4 text-center text-sm text-gray-500">
+                            No hay focos de revisión alta para la temporada visible.
+                          </td>
+                        </tr>
+                      )}
+                      {costAuditLoading && (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-4 text-center text-sm text-gray-500">
+                            Cargando auditoría de costos...
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200">
                   <h3 className="text-lg font-semibold text-gray-900">Comparativo de temporadas anteriores</h3>
                   <p className="text-sm text-gray-500">Referencia histórica para la empresa activa y el campo visible.</p>
                 </div>
@@ -3897,7 +4398,7 @@ export const Reports: React.FC = () => {
                           cx="50%"
                           cy="50%"
                           outerRadius={110}
-                          label={({ category, percent }) => `${category} ${(((percent || 0) as number) * 100).toFixed(0)}%`}
+                          label={({ name, percent }) => `${String(name || '')} ${(((percent || 0) as number) * 100).toFixed(0)}%`}
                         >
                           {executiveViewData.categoryRows.map((entry, index) => (
                             <Cell key={`${entry.category}-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -6565,6 +7066,90 @@ export const Reports: React.FC = () => {
                           <div className="rounded-2xl bg-slate-950 text-white p-6">
                             <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Cierre Ejecutivo</div>
                             <p className="mt-4 text-2xl leading-10">{executiveInsights.conclusion}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {currentSlide === 6 && (
+                        <div className="space-y-6">
+                          <div className="flex items-start justify-between gap-6">
+                            <div>
+                              <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Auditoría De Costos</div>
+                              <div className="mt-2 text-3xl font-bold text-slate-900">Trazabilidad y conciliación</div>
+                              <div className="mt-2 text-lg text-slate-500">{executiveAuditData.scopeLabel}</div>
+                            </div>
+                            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${executiveAuditData.tone.badge}`}>
+                              <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveAuditData.tone.dot}`} />
+                              {costAuditLoading ? 'Cargando auditoría' : executiveAuditData.tone.label}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Monto oficial</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{formatCLP(executiveAuditData.officialAmount)}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Trazabilidad</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{executiveAuditData.traceabilityPct.toFixed(1)}%</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Respaldo</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{formatCLP(executiveAuditData.backupAmount)}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Distribución</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{formatCLP(executiveAuditData.distributedAmount)}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Rev. alta</div>
+                              <div className={`mt-3 text-3xl font-bold ${executiveAuditData.highReviewAmount > 0 ? 'text-red-600' : 'text-slate-900'}`}>{formatCLP(executiveAuditData.highReviewAmount)}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Movimientos</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{executiveAuditData.visibleMovementCount}</div>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 xl:grid-cols-[0.9fr,1.1fr] gap-6">
+                            <div className="rounded-2xl border border-slate-200 p-6">
+                              <div className="text-2xl font-bold text-slate-800 mb-5">Hallazgos de conciliación</div>
+                              <div className="space-y-4">
+                                {executiveAuditData.findings.map((finding) => (
+                                  <div key={finding.title} className="rounded-2xl bg-slate-50 p-5">
+                                    <div className="text-lg font-semibold text-slate-900">{finding.title}</div>
+                                    <div className="mt-2 text-base text-slate-600">{finding.description}</div>
+                                    <div className="mt-3 text-xl font-bold text-purple-700">{finding.emphasis}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 p-6">
+                              <div className="text-2xl font-bold text-slate-800 mb-5">Focos críticos visibles</div>
+                              <div className="space-y-3">
+                                {executiveAuditData.topDetailRows.slice(0, 5).map((row) => (
+                                  <div key={`${row.source_type}-${row.source_id}`} className="rounded-2xl bg-slate-50 px-4 py-3">
+                                    <div className="flex items-center justify-between gap-4">
+                                      <div>
+                                        <div className="font-semibold text-slate-900">{row.category} · {row.audit_status}</div>
+                                        <div className="mt-1 text-sm text-slate-500">{row.field_name || '-'} / {row.sector_name || 'Sin sector'} · {row.movement_date}</div>
+                                      </div>
+                                      <div className="text-right">
+                                        <div className="font-semibold text-slate-900">{formatCLP(row.amount)}</div>
+                                        <div className="text-sm text-slate-500">{row.source_layer}</div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                                {executiveAuditData.topDetailRows.length === 0 && (
+                                  <div className="rounded-2xl bg-slate-50 p-8 text-center text-xl text-slate-400">
+                                    No hay focos críticos visibles para los filtros actuales.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="rounded-2xl bg-slate-950 text-white p-6">
+                            <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Cierre De Auditoría</div>
+                            <p className="mt-4 text-2xl leading-10">{executiveAuditData.conclusion}</p>
                           </div>
                         </div>
                       )}
