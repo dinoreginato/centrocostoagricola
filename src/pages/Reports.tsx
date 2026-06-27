@@ -619,7 +619,7 @@ export const Reports: React.FC = () => {
     };
   }, [executiveCompareCompanyId]);
 
-  const presentationMaxSlide = activeTab === 'executive' ? 7 : activeTab === 'general' ? 3 : 1;
+  const presentationMaxSlide = activeTab === 'executive' ? 8 : activeTab === 'general' ? 3 : 1;
 
   // Update presentation logic to support executive slides and legacy tabs
   useEffect(() => {
@@ -1594,10 +1594,36 @@ export const Reports: React.FC = () => {
     };
   }, [productionCoverageRows]);
 
-  const executiveEconomicClosureData = useMemo(() => {
-    const visibleRows = productionCoverageRows.filter((row) => (
-      executiveFieldFilter === 'all' || row.fieldId === executiveFieldFilter
-    ));
+  const buildEconomicClosureSummary = useCallback((season: string) => {
+    const seasonStartYear = Number(String(season || '').split('-')[0]) || new Date().getFullYear();
+    const productionRecordMap = new Map(
+      rawProductionRecords
+        .filter((row) => Number(row.season_year || 0) === seasonStartYear)
+        .map((row) => [String(row.sector_id), row])
+    );
+    const visibleRows = rawFields
+      .flatMap((field) =>
+        (field.sectors || []).map((sector: any) => {
+          const record = productionRecordMap.get(String(sector.id));
+          const marginRow = rawMarginRows.find((row) => row.season === season && row.sector_id === sector.id) || null;
+          return {
+            fieldId: String(field.id),
+            fieldName: String(field.name || '-'),
+            sectorId: String(sector.id),
+            sectorName: String(sector.name || '-'),
+            hectares: Number(sector.hectares || 0),
+            kgProduced: Number(record?.kg_produced || 0),
+            pricePerKg: Number(record?.price_per_kg || 0),
+            hasRecord: Boolean(record),
+            productionSource: marginRow?.production_source || 'sin_produccion',
+            totalCost: Number(marginRow?.total_cost || 0),
+            totalIncome: Number(marginRow?.total_income_clp || 0),
+            marginPct: Number(marginRow?.margin_pct || 0),
+            recordId: record?.id || null
+          };
+        })
+      )
+      .filter((row) => executiveFieldFilter === 'all' || row.fieldId === executiveFieldFilter);
     const closedRows = visibleRows.filter((row) => row.hasRecord && row.totalIncome > 0 && row.totalCost > 0);
     const pendingProductionRows = visibleRows.filter((row) => row.totalIncome > 0 && !row.hasRecord);
     const pendingIncomeRows = visibleRows.filter((row) => row.hasRecord && row.totalIncome <= 0);
@@ -1683,6 +1709,7 @@ export const Reports: React.FC = () => {
         : `La temporada muestra un cierre económico de ${closurePct.toFixed(1)}%. Conviene regularizar ${pendingProductionRows.length + pendingIncomeRows.length + costWithoutIncomeRows.length} focos antes de presentar el margen como definitivo.`;
 
     return {
+      season,
       visibleRows,
       closedRows,
       pendingProductionRows,
@@ -1697,7 +1724,47 @@ export const Reports: React.FC = () => {
       topFocusRows,
       conclusion
     };
-  }, [executiveFieldFilter, productionCoverageRows]);
+  }, [executiveFieldFilter, rawFields, rawMarginRows, rawProductionRecords]);
+
+  const executiveEconomicClosureData = useMemo(
+    () => buildEconomicClosureSummary(selectedSeason),
+    [buildEconomicClosureSummary, selectedSeason]
+  );
+
+  const executiveEconomicClosureHistoryRows = useMemo(() => (
+    Array.from(new Set([selectedSeason, ...availableSeasons]))
+      .map((season) => {
+        const summary = buildEconomicClosureSummary(season);
+        return {
+          season,
+          visibleSectorCount: summary.visibleRows.length,
+          closedSectorCount: summary.closedRows.length,
+          closurePct: summary.closurePct,
+          pendingProductionCount: summary.pendingProductionRows.length,
+          pendingIncomeCount: summary.pendingIncomeRows.length,
+          costWithoutIncomeCount: summary.costWithoutIncomeRows.length,
+          pendingProductionAmount: summary.pendingProductionAmount,
+          pendingIncomeCost: summary.pendingIncomeCost,
+          costWithoutIncomeAmount: summary.costWithoutIncomeAmount,
+          toneLabel: summary.tone.label
+        };
+      })
+      .sort((a, b) => b.season.localeCompare(a.season))
+  ), [availableSeasons, buildEconomicClosureSummary, selectedSeason]);
+
+  const bestClosureHistoryRow = useMemo(
+    () => executiveEconomicClosureHistoryRows.slice().sort((a, b) => b.closurePct - a.closurePct)[0] || null,
+    [executiveEconomicClosureHistoryRows]
+  );
+
+  const widestClosureGapHistoryRow = useMemo(
+    () => executiveEconomicClosureHistoryRows.slice().sort(
+      (a, b) =>
+        (b.pendingProductionCount + b.pendingIncomeCount + b.costWithoutIncomeCount) -
+        (a.pendingProductionCount + a.pendingIncomeCount + a.costWithoutIncomeCount)
+    )[0] || null,
+    [executiveEconomicClosureHistoryRows]
+  );
 
   const executiveCategoryComparisonRows = useMemo(() => {
     const currentMap = new Map(executiveViewData.categoryRows.map((row) => [row.category, row.total]));
@@ -1884,6 +1951,7 @@ export const Reports: React.FC = () => {
         { Indicador: 'Sectores cerrados', Valor: executiveEconomicClosureData.closedRows.length },
         { Indicador: 'Pendientes producción', Valor: executiveEconomicClosureData.pendingProductionRows.length },
         { Indicador: 'Pendientes ingreso', Valor: executiveEconomicClosureData.pendingIncomeRows.length },
+        { Indicador: 'Mejor cierre histórico', Valor: bestClosureHistoryRow ? `${bestClosureHistoryRow.season} (${bestClosureHistoryRow.closurePct.toFixed(2)}%)` : 'Sin datos' },
         { Indicador: 'Conclusión ejecutiva', Valor: executiveInsights.conclusion }
       ];
       const historicalRows = executiveHistoricalSeasonRows.map((row) => ({
@@ -2032,6 +2100,19 @@ export const Reports: React.FC = () => {
         Sector: row.sectorName,
         Referencia: row.unitLabel
       }));
+      const historicalClosureRows = executiveEconomicClosureHistoryRows.map((row) => ({
+        Temporada: row.season,
+        Estado: row.toneLabel,
+        'Sectores visibles': row.visibleSectorCount,
+        'Sectores cerrados': row.closedSectorCount,
+        'Cierre %': Number(row.closurePct.toFixed(2)),
+        'Pend. producción': row.pendingProductionCount,
+        'Pend. ingreso': row.pendingIncomeCount,
+        'Costo sin ingreso': row.costWithoutIncomeCount,
+        'Monto pend. producción': Number(row.pendingProductionAmount.toFixed(0)),
+        'Monto pend. ingreso': Number(row.pendingIncomeCost.toFixed(0)),
+        'Monto costo sin ingreso': Number(row.costWithoutIncomeAmount.toFixed(0))
+      }));
 
       await exportWorkbookToXlsx({
         filename: `Reporte_Ejecutivo_${companySlug}_${selectedSeason}${executiveFieldFilter !== 'all' ? `_campo_${executiveFieldFilter}` : ''}.xlsx`,
@@ -2044,6 +2125,7 @@ export const Reports: React.FC = () => {
           { name: 'Top Campos', rows: topFieldsRows },
           { name: 'Top Sectores', rows: topSectorsRows },
           { name: 'Alertas', rows: alertRows },
+          ...(historicalClosureRows.length > 0 ? [{ name: 'Historial Cierre', rows: historicalClosureRows }] : []),
           ...(economicClosureRows.length > 0 ? [{ name: 'Cierre Economico', rows: economicClosureRows }] : []),
           ...(economicFocusRows.length > 0 ? [{ name: 'Focos Economicos', rows: economicFocusRows }] : []),
           ...(auditSummaryRows.length > 0 ? [{ name: 'Auditoria Costos', rows: auditSummaryRows }] : []),
@@ -2844,6 +2926,7 @@ export const Reports: React.FC = () => {
             ['Sectores cerrados', `${executiveEconomicClosureData.closedRows.length} / ${executiveEconomicClosureData.visibleRows.length}`],
             ['Pendientes producción', String(executiveEconomicClosureData.pendingProductionRows.length)],
             ['Pendientes ingreso', String(executiveEconomicClosureData.pendingIncomeRows.length)],
+            ['Historial visible', `${executiveEconomicClosureHistoryRows.length} temporadas`],
             ['Hallazgo 1', executiveInsights.findings[0]?.description || '-'],
             ['Hallazgo 2', executiveInsights.findings[1]?.description || '-'],
             ['Hallazgo 3', executiveInsights.findings[2]?.description || '-'],
@@ -2994,6 +3077,32 @@ export const Reports: React.FC = () => {
             ]),
             theme: 'grid',
             headStyles: { fillColor: [79, 70, 229] },
+            styles: { fontSize: 8 }
+          });
+
+          yPos = (doc as any).lastAutoTable.finalY + 8;
+        }
+
+        if (executiveEconomicClosureHistoryRows.length > 0) {
+          if (yPos > 140) {
+            doc.addPage();
+            yPos = 20;
+          }
+
+          autoTable(doc, {
+            startY: yPos,
+            head: [['Temporada', 'Estado', 'Cierre %', 'Cerrados', 'Pend. prod.', 'Pend. ingreso', 'Costo sin ingreso']],
+            body: executiveEconomicClosureHistoryRows.map((row) => [
+              row.season,
+              row.toneLabel,
+              `${row.closurePct.toFixed(1)}%`,
+              `${row.closedSectorCount}/${row.visibleSectorCount}`,
+              String(row.pendingProductionCount),
+              String(row.pendingIncomeCount),
+              String(row.costWithoutIncomeCount)
+            ]),
+            theme: 'grid',
+            headStyles: { fillColor: [8, 145, 178] },
             styles: { fontSize: 8 }
           });
 
@@ -4677,6 +4786,96 @@ export const Reports: React.FC = () => {
                           <tr>
                             <td colSpan={3} className="px-4 py-4 text-center text-sm text-slate-500">
                               No hay focos económicos visibles para el filtro actual.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Historial de cierre del dato</h3>
+                      <p className="text-sm text-gray-500">Sigue cómo evoluciona el cierre económico por temporada para la empresa activa y el campo visible.</p>
+                    </div>
+                    <div className="text-sm text-slate-500">
+                      {executiveEconomicClosureHistoryRows.length} temporadas visibles
+                    </div>
+                  </div>
+                </div>
+                <div className="p-6 space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Temporada actual</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{selectedSeason}</div>
+                      <div className="mt-1 text-sm text-slate-500">{executiveEconomicClosureData.closurePct.toFixed(1)}% de cierre</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Mejor cierre visible</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">
+                        {bestClosureHistoryRow
+                          ? `${bestClosureHistoryRow.closurePct.toFixed(1)}%`
+                          : '-'}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {bestClosureHistoryRow
+                          ? bestClosureHistoryRow.season
+                          : 'Sin temporadas'}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Mayor brecha visible</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">
+                        {widestClosureGapHistoryRow
+                          ? `${widestClosureGapHistoryRow.pendingProductionCount + widestClosureGapHistoryRow.pendingIncomeCount + widestClosureGapHistoryRow.costWithoutIncomeCount} focos`
+                          : '-'}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {widestClosureGapHistoryRow
+                          ? widestClosureGapHistoryRow.season
+                          : 'Sin temporadas'}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Campo visible</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveFieldLabel}</div>
+                      <div className="mt-1 text-sm text-slate-500">Seguimiento histórico del cierre económico</div>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Temporada</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Estado</th>
+                          <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Cierre %</th>
+                          <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Cerrados</th>
+                          <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Pend. prod.</th>
+                          <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Pend. ingreso</th>
+                          <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Costo sin ingreso</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 bg-white">
+                        {executiveEconomicClosureHistoryRows.map((row) => (
+                          <tr key={row.season} className={row.season === selectedSeason ? 'bg-purple-50/50' : ''}>
+                            <td className="px-4 py-3 font-medium text-slate-900">{row.season}</td>
+                            <td className="px-4 py-3 text-slate-700">{row.toneLabel}</td>
+                            <td className="px-4 py-3 text-right font-medium text-slate-900">{row.closurePct.toFixed(1)}%</td>
+                            <td className="px-4 py-3 text-right text-slate-700">{row.closedSectorCount} / {row.visibleSectorCount}</td>
+                            <td className="px-4 py-3 text-right text-slate-700">{row.pendingProductionCount}</td>
+                            <td className="px-4 py-3 text-right text-slate-700">{row.pendingIncomeCount}</td>
+                            <td className="px-4 py-3 text-right text-slate-700">{row.costWithoutIncomeCount}</td>
+                          </tr>
+                        ))}
+                        {executiveEconomicClosureHistoryRows.length === 0 && (
+                          <tr>
+                            <td colSpan={7} className="px-4 py-4 text-center text-sm text-slate-500">
+                              No hay temporadas suficientes para construir historial de cierre.
                             </td>
                           </tr>
                         )}
@@ -7676,7 +7875,7 @@ export const Reports: React.FC = () => {
                   </div>
                 )}
 
-                {currentSlide >= 1 && currentSlide <= 7 && (
+                {currentSlide >= 1 && currentSlide <= 8 && (
                   <div className="w-full h-full flex flex-col animate-fade-in-up pt-4">
                     <h2 className="text-3xl lg:text-4xl font-bold text-slate-800 mb-6 text-center">Resumen Ejecutivo</h2>
                     <div className="flex-1 bg-white rounded-3xl shadow-xl p-6 overflow-y-auto pb-24" style={{ maxHeight: 'calc(100vh - 120px)' }}>
@@ -8109,6 +8308,84 @@ export const Reports: React.FC = () => {
                           <div className="rounded-2xl bg-slate-950 text-white p-6">
                             <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Cierre De Temporada</div>
                             <p className="mt-4 text-2xl leading-10">{executiveEconomicClosureData.conclusion}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {currentSlide === 8 && (
+                        <div className="space-y-6">
+                          <div className="flex items-start justify-between gap-6">
+                            <div>
+                              <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Historial De Cierre</div>
+                              <div className="mt-2 text-3xl font-bold text-slate-900">Madurez del dato por temporada</div>
+                              <div className="mt-2 text-lg text-slate-500">{executiveFieldLabel} · {companyName}</div>
+                            </div>
+                            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${executiveEconomicClosureData.tone.badge}`}>
+                              <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveEconomicClosureData.tone.dot}`} />
+                              {bestClosureHistoryRow ? `Mejor: ${bestClosureHistoryRow.season}` : 'Sin historial'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Temporadas</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{executiveEconomicClosureHistoryRows.length}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Mejor cierre</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{bestClosureHistoryRow ? `${bestClosureHistoryRow.closurePct.toFixed(1)}%` : '-'}</div>
+                              <div className="text-sm text-slate-500">{bestClosureHistoryRow?.season || 'Sin datos'}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Mayor brecha</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">
+                                {widestClosureGapHistoryRow
+                                  ? widestClosureGapHistoryRow.pendingProductionCount + widestClosureGapHistoryRow.pendingIncomeCount + widestClosureGapHistoryRow.costWithoutIncomeCount
+                                  : 0}
+                              </div>
+                              <div className="text-sm text-slate-500">{widestClosureGapHistoryRow?.season || 'Sin datos'}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Temporada actual</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{executiveEconomicClosureData.closurePct.toFixed(1)}%</div>
+                              <div className="text-sm text-slate-500">{selectedSeason}</div>
+                            </div>
+                          </div>
+                          <div className="rounded-2xl border border-slate-200 p-6">
+                            <div className="text-2xl font-bold text-slate-800 mb-5">Evolución del cierre</div>
+                            <table className="w-full text-left text-sm">
+                              <thead className="text-base text-slate-500 bg-slate-50 sticky top-0">
+                                <tr>
+                                  <th className="p-3">Temporada</th>
+                                  <th className="p-3">Estado</th>
+                                  <th className="p-3 text-right">Cierre %</th>
+                                  <th className="p-3 text-right">Cerrados</th>
+                                  <th className="p-3 text-right">Pend. prod.</th>
+                                  <th className="p-3 text-right">Pend. ingreso</th>
+                                  <th className="p-3 text-right">Costo sin ingreso</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {executiveEconomicClosureHistoryRows.map((row) => (
+                                  <tr key={row.season} className={`border-b border-slate-100 ${row.season === selectedSeason ? 'bg-purple-50' : ''}`}>
+                                    <td className="p-3 font-semibold text-slate-900">{row.season}</td>
+                                    <td className="p-3 text-slate-700">{row.toneLabel}</td>
+                                    <td className="p-3 text-right font-semibold text-slate-900">{row.closurePct.toFixed(1)}%</td>
+                                    <td className="p-3 text-right text-slate-700">{row.closedSectorCount}/{row.visibleSectorCount}</td>
+                                    <td className="p-3 text-right text-slate-700">{row.pendingProductionCount}</td>
+                                    <td className="p-3 text-right text-slate-700">{row.pendingIncomeCount}</td>
+                                    <td className="p-3 text-right text-slate-700">{row.costWithoutIncomeCount}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div className="rounded-2xl bg-slate-950 text-white p-6">
+                            <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Lectura Histórica</div>
+                            <p className="mt-4 text-2xl leading-10">
+                              {bestClosureHistoryRow
+                                ? `La mejor temporada visible es ${bestClosureHistoryRow.season} con ${bestClosureHistoryRow.closurePct.toFixed(1)}% de cierre. La referencia más débil sigue siendo ${widestClosureGapHistoryRow?.season || selectedSeason}, por lo que conviene sostener el seguimiento histórico antes de cerrar comité.`
+                                : 'Todavía no hay historial suficiente para una lectura de cierre del dato.'}
+                            </p>
                           </div>
                         </div>
                       )}
