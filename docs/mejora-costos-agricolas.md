@@ -243,9 +243,34 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - dejar el error lo más cerca posible de la base de datos
   - reducir la necesidad de corregir datos ya contaminados en reportes
 
+## Captura Formal De Produccion
+- Se agrego el servicio `src/services/productionRecords.ts`.
+- `Reportes` ahora permite:
+  - registrar produccion formal por sector y temporada
+  - editar produccion cargada
+  - eliminar produccion cargada
+- La captura se hace dentro de la pestaña de rentabilidad para que la correccion del dato ocurra en el mismo contexto donde se analiza el margen.
+- La tabla visible de produccion formal muestra:
+  - campo
+  - sector
+  - hectareas
+  - kg producidos
+  - precio de referencia por kg
+  - estado formal o pendiente
+
+## Alertas De Completitud Economica
+- `Reportes` ahora muestra alertas para:
+  - sectores con costo sin ingreso
+  - sectores con ingreso sin produccion formal
+  - sectores con produccion formal sin ingreso
+- Objetivo:
+  - detectar rapido donde el margen visible aun esta incompleto
+  - priorizar regularizacion del dato antes de usarlo como lectura ejecutiva final
+
 ## Siguiente Paso Recomendado
-- Crear captura y mantenimiento formal de `production_records` en interfaz.
-- Agregar alertas de completitud economica:
-  - sectores con costo pero sin ingresos
-  - sectores con ingresos pero sin produccion formal
-  - sectores con margen visible en respaldo y no en base formal
+- Llevar estas alertas de completitud a la vista ejecutiva fullscreen y exportaciones.
+- Agregar una capa de seguimiento de cierre del dato por temporada:
+  - porcentaje de sectores cerrados
+  - pendientes de produccion
+  - pendientes de ingreso
+  - pendientes de trazabilidad de costo

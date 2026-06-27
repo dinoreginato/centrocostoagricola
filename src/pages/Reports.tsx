@@ -5,13 +5,14 @@ import { formatCLP } from '../lib/utils';
 import { getSeasonFromDate, isDateInSeason } from '../lib/seasonUtils';
 import { aggregateCostMovementsBySector, type AgriculturalCostMovement } from '../lib/costMovements';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Loader2, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer, Settings, DollarSign, Scale, Play, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
+import { Loader2, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer, Settings, DollarSign, Scale, Play, ChevronLeft, ChevronRight, Layers, Plus, Pencil, Trash2, Database } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { loadReportsRawData } from '../services/reports';
 import { loadAgriculturalCostAudit, loadAgriculturalCostAuditSummary, type AgriculturalCostAuditRow, type AgriculturalCostAuditSummaryRow } from '../services/costAudit';
 import { loadAgriculturalMarginRows, type AgriculturalMarginRow } from '../services/agriculturalMargin';
+import { loadProductionRecords, upsertProductionRecord, deleteProductionRecord, type ProductionRecord } from '../services/productionRecords';
 import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
 interface ReportData {
@@ -125,6 +126,13 @@ interface IncomeEntry {
     amount_usd?: number;
     price_per_kg?: number;
     export_percentage?: number;
+}
+
+interface EditingProductionRecord {
+  id?: string | null;
+  sector_id?: string;
+  kg_produced?: number;
+  price_per_kg?: number;
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#8dd1e1', '#a4de6c', '#d0ed57'];
@@ -411,9 +419,13 @@ export const Reports: React.FC = () => {
   const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([]);
   const [rawProducts, setRawProducts] = useState<any[]>([]);
   const [rawMarginRows, setRawMarginRows] = useState<AgriculturalMarginRow[]>([]);
+  const [rawProductionRecords, setRawProductionRecords] = useState<ProductionRecord[]>([]);
   const [costAuditRows, setCostAuditRows] = useState<AgriculturalCostAuditRow[]>([]);
   const [costAuditSummary, setCostAuditSummary] = useState<AgriculturalCostAuditSummaryRow[]>([]);
   const [costAuditLoading, setCostAuditLoading] = useState(false);
+  const [showProductionModal, setShowProductionModal] = useState(false);
+  const [savingProductionRecord, setSavingProductionRecord] = useState(false);
+  const [editingProductionRecord, setEditingProductionRecord] = useState<EditingProductionRecord>({});
 
   // Comparative State
   const [comparativeData, setComparativeData] = useState<any[]>([]);
@@ -532,6 +544,7 @@ export const Reports: React.FC = () => {
     setPresentationMode(false);
     setRawCostMovements([]);
     setRawMarginRows([]);
+    setRawProductionRecords([]);
     setCostAuditRows([]);
     setCostAuditSummary([]);
     setReportData([]);
@@ -575,6 +588,11 @@ export const Reports: React.FC = () => {
     () => companies.filter((company) => company.id !== selectedCompany?.id),
     [companies, selectedCompany?.id]
   );
+
+  const selectedSeasonStartYear = useMemo(() => {
+    const [startYear] = String(selectedSeason || '').split('-');
+    return Number(startYear) || new Date().getFullYear();
+  }, [selectedSeason]);
 
   useEffect(() => {
     if (executiveCompareCompanyId === 'none') {
@@ -1518,6 +1536,64 @@ export const Reports: React.FC = () => {
     };
   }, [executiveFieldFilter, rawMarginRows, selectedSeason]);
 
+  const productionRecordsForSeason = useMemo(() => (
+    rawProductionRecords.filter((row) => Number(row.season_year || 0) === selectedSeasonStartYear)
+  ), [rawProductionRecords, selectedSeasonStartYear]);
+
+  const productionRecordBySector = useMemo(
+    () => new Map(productionRecordsForSeason.map((row) => [String(row.sector_id), row])),
+    [productionRecordsForSeason]
+  );
+
+  const productionCoverageRows = useMemo(() => (
+    rawFields.flatMap((field) =>
+      (field.sectors || [])
+        .map((sector: any) => {
+          const record = productionRecordBySector.get(String(sector.id));
+          const marginRow = rawMarginRows.find((row) => row.season === selectedSeason && row.sector_id === sector.id) || null;
+          return {
+            fieldId: String(field.id),
+            fieldName: String(field.name || '-'),
+            sectorId: String(sector.id),
+            sectorName: String(sector.name || '-'),
+            hectares: Number(sector.hectares || 0),
+            kgProduced: Number(record?.kg_produced || 0),
+            pricePerKg: Number(record?.price_per_kg || 0),
+            hasRecord: Boolean(record),
+            productionSource: marginRow?.production_source || 'sin_produccion',
+            totalCost: Number(marginRow?.total_cost || 0),
+            totalIncome: Number(marginRow?.total_income_clp || 0),
+            marginPct: Number(marginRow?.margin_pct || 0),
+            recordId: record?.id || null
+          };
+        })
+    )
+  ), [productionRecordBySector, rawFields, rawMarginRows, selectedSeason]);
+
+  const economicCompletionData = useMemo(() => {
+    const sectorsWithCostNoIncome = productionCoverageRows.filter((row) => row.totalCost > 0 && row.totalIncome <= 0);
+    const sectorsWithIncomeNoFormalProduction = productionCoverageRows.filter((row) => row.totalIncome > 0 && !row.hasRecord);
+    const sectorsWithFormalProductionNoIncome = productionCoverageRows.filter((row) => row.hasRecord && row.totalIncome <= 0);
+
+    return {
+      sectorsWithCostNoIncome,
+      sectorsWithIncomeNoFormalProduction,
+      sectorsWithFormalProductionNoIncome,
+      topCostNoIncome: sectorsWithCostNoIncome
+        .slice()
+        .sort((a, b) => b.totalCost - a.totalCost)
+        .slice(0, 5),
+      topIncomeNoProduction: sectorsWithIncomeNoFormalProduction
+        .slice()
+        .sort((a, b) => b.totalIncome - a.totalIncome)
+        .slice(0, 5),
+      topFormalNoIncome: sectorsWithFormalProductionNoIncome
+        .slice()
+        .sort((a, b) => b.kgProduced - a.kgProduced)
+        .slice(0, 5)
+    };
+  }, [productionCoverageRows]);
+
   const executiveCategoryComparisonRows = useMemo(() => {
     const currentMap = new Map(executiveViewData.categoryRows.map((row) => [row.category, row.total]));
     const previousCategories = (() => {
@@ -1854,6 +1930,83 @@ export const Reports: React.FC = () => {
     }
   };
 
+  const refreshProductionRecords = useCallback(async () => {
+    if (!selectedCompany?.id) return;
+    try {
+      const rows = await loadProductionRecords({ companyId: selectedCompany.id });
+      setRawProductionRecords(rows || []);
+    } catch {
+      toast.error('No se pudo refrescar la producción formal.');
+    }
+  }, [selectedCompany?.id]);
+
+  const openCreateProductionModal = () => {
+    setEditingProductionRecord({});
+    setShowProductionModal(true);
+  };
+
+  const openEditProductionModal = (row: ProductionRecord) => {
+    setEditingProductionRecord({
+      id: row.id,
+      sector_id: row.sector_id,
+      kg_produced: Number(row.kg_produced || 0),
+      price_per_kg: Number(row.price_per_kg || 0)
+    });
+    setShowProductionModal(true);
+  };
+
+  const handleSaveProductionRecord = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCompany?.id) return;
+    if (!editingProductionRecord.sector_id) {
+      toast.error('Debes seleccionar un sector.');
+      return;
+    }
+
+    setSavingProductionRecord(true);
+    try {
+      await upsertProductionRecord({
+        productionRecordId: editingProductionRecord.id || null,
+        payload: {
+          company_id: selectedCompany.id,
+          sector_id: editingProductionRecord.sector_id,
+          season_year: selectedSeasonStartYear,
+          kg_produced: Number(editingProductionRecord.kg_produced || 0),
+          price_per_kg: Number(editingProductionRecord.price_per_kg || 0)
+        }
+      });
+
+      await Promise.all([
+        refreshProductionRecords(),
+        loadAgriculturalMarginRows({ companyId: selectedCompany.id }).then((rows) => setRawMarginRows(rows || []))
+      ]);
+
+      setShowProductionModal(false);
+      setEditingProductionRecord({});
+      toast.success('Producción formal guardada.');
+    } catch (error: any) {
+      toast.error(`No se pudo guardar la producción: ${error?.message || 'intenta nuevamente.'}`);
+    } finally {
+      setSavingProductionRecord(false);
+    }
+  };
+
+  const handleDeleteProductionRecord = async (productionRecordId: string) => {
+    if (!selectedCompany?.id) return;
+    if (!window.confirm('¿Seguro que quieres eliminar este registro de producción?')) return;
+
+    try {
+      await deleteProductionRecord({ productionRecordId });
+      await Promise.all([
+        refreshProductionRecords(),
+        loadAgriculturalMarginRows({ companyId: selectedCompany.id }).then((rows) => setRawMarginRows(rows || []))
+      ]);
+      toast.success('Registro de producción eliminado.');
+    } catch (error: any) {
+      toast.error(`No se pudo eliminar la producción: ${error?.message || 'intenta nuevamente.'}`);
+    }
+  };
+
   const startPresentation = () => {
     setPresentationMode(true);
     setCurrentSlide(0);
@@ -1896,9 +2049,10 @@ export const Reports: React.FC = () => {
     const loadSeq = ++reportLoadSeqRef.current;
     setLoading(true);
     try {
-      const [reportsResult, marginResult] = await Promise.allSettled([
+      const [reportsResult, marginResult, productionResult] = await Promise.allSettled([
         loadReportsRawData({ companyId }),
-        loadAgriculturalMarginRows({ companyId })
+        loadAgriculturalMarginRows({ companyId }),
+        loadProductionRecords({ companyId })
       ]);
 
       if (reportsResult.status !== 'fulfilled') {
@@ -1921,6 +2075,7 @@ export const Reports: React.FC = () => {
       setRawInvoices(res.invoices || []);
       setRawProducts((res as any).products || []);
       setRawMarginRows(marginResult.status === 'fulfilled' ? (marginResult.value || []) : []);
+      setRawProductionRecords(productionResult.status === 'fulfilled' ? (productionResult.value || []) : []);
 
       setAvailableSeasons(res.availableSeasons || []);
       if (res.availableSeasons && res.availableSeasons.length > 0 && !res.availableSeasons.includes(selectedSeason)) {
@@ -1943,6 +2098,7 @@ export const Reports: React.FC = () => {
       setRawInvoices([]);
       setRawProducts([]);
       setRawMarginRows([]);
+      setRawProductionRecords([]);
       setAvailableSeasons([getSeasonFromDate(new Date())]);
       setReportData([]);
       setMonthlyExpenses([]);
@@ -3530,6 +3686,101 @@ export const Reports: React.FC = () => {
             title={previewTitle}
             pdfUrl={previewPdfUrl}
         />
+
+        {showProductionModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="w-full max-w-2xl rounded-xl bg-white shadow-2xl">
+              <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    {editingProductionRecord.id ? 'Editar producción formal' : 'Registrar producción formal'}
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-500">Temporada {selectedSeason} · Año base {selectedSeasonStartYear}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (savingProductionRecord) return;
+                    setShowProductionModal(false);
+                    setEditingProductionRecord({});
+                  }}
+                  className="rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <form onSubmit={handleSaveProductionRecord} className="space-y-5 px-6 py-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <label className="block">
+                    <span className="mb-1 block text-sm font-medium text-gray-700">Sector</span>
+                    <select
+                      value={editingProductionRecord.sector_id || ''}
+                      onChange={(e) => setEditingProductionRecord((prev) => ({ ...prev, sector_id: e.target.value }))}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      required
+                    >
+                      <option value="">Selecciona un sector</option>
+                      {rawFields.flatMap((field) =>
+                        (field.sectors || []).map((sector: any) => (
+                          <option key={sector.id} value={sector.id}>
+                            {field.name} / {sector.name}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-sm font-medium text-gray-700">Kg producidos</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={editingProductionRecord.kg_produced ?? ''}
+                      onChange={(e) => setEditingProductionRecord((prev) => ({ ...prev, kg_produced: Number(e.target.value || 0) }))}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                      required
+                    />
+                  </label>
+                  <label className="block md:col-span-2">
+                    <span className="mb-1 block text-sm font-medium text-gray-700">Precio de referencia por Kg</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={editingProductionRecord.price_per_kg ?? ''}
+                      onChange={(e) => setEditingProductionRecord((prev) => ({ ...prev, price_per_kg: Number(e.target.value || 0) }))}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                    />
+                  </label>
+                </div>
+                <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">
+                  Este registro alimenta la base formal de producción usada por el margen canónico y el costo por kilo.
+                </div>
+                <div className="flex items-center justify-end gap-3 border-t border-gray-200 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (savingProductionRecord) return;
+                      setShowProductionModal(false);
+                      setEditingProductionRecord({});
+                    }}
+                    className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingProductionRecord}
+                    className="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {savingProductionRecord && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Guardar producción
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center print:hidden">
         <div>
@@ -5655,37 +5906,46 @@ export const Reports: React.FC = () => {
                 <h3 className="text-lg leading-6 font-medium text-gray-900">Rentabilidad Neta ({selectedSeason})</h3>
                 <p className="mt-1 text-sm text-gray-500">Ingresos y costos por sector con prioridad a la base canónica de margen.</p>
               </div>
-              <button
-                onClick={() => {
-                  const { rows, totals } = getMarginRows();
-                  const csvRows = [['Campo', 'Sector', 'Base Producción', 'Has', 'Ingresos (CLP)', 'Costos (CLP)', 'Utilidad (CLP)', 'Utilidad/Ha', 'Margen %']];
-                  rows.forEach((r) => {
-                    csvRows.push([
-                      r.field_name,
-                      r.sector_name,
-                      r.production_source === 'production_records' ? 'Registro' : r.production_source === 'income_entries' ? 'Ingreso' : 'Sin base',
-                      r.hectares.toString(),
-                      r.income.toFixed(2),
-                      r.cost.toFixed(2),
-                      r.profit.toFixed(2),
-                      r.profit_per_ha.toFixed(2),
-                      r.margin_pct.toFixed(2)
-                    ]);
-                  });
-                  csvRows.push(['TOTAL', '', '-', totals.totalHa.toString(), totals.totalIncome.toFixed(2), totals.totalCost.toFixed(2), totals.totalProfit.toFixed(2), totals.totalProfitPerHa.toFixed(2), totals.totalMarginPct.toFixed(2)]);
-                  const csvContent = "data:text/csv;charset=utf-8," + csvRows.map(e => e.join(",")).join("\n");
-                  const encodedUri = encodeURI(csvContent);
-                  const link = document.createElement("a");
-                  link.setAttribute("href", encodedUri);
-                  link.setAttribute("download", `Rentabilidad_${companySlug}_${selectedSeason}.csv`);
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-                }}
-                className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-green-700 bg-green-100 hover:bg-green-200"
-              >
-                <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={openCreateProductionModal}
+                  className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-indigo-700 bg-indigo-100 hover:bg-indigo-200"
+                >
+                  <Plus className="mr-1.5 h-4 w-4" /> Registrar producción
+                </button>
+                <button
+                  onClick={() => {
+                    const { rows, totals } = getMarginRows();
+                    const csvRows = [['Campo', 'Sector', 'Base Producción', 'Has', 'Ingresos (CLP)', 'Costos (CLP)', 'Utilidad (CLP)', 'Utilidad/Ha', 'Margen %']];
+                    rows.forEach((r) => {
+                      csvRows.push([
+                        r.field_name,
+                        r.sector_name,
+                        r.production_source === 'production_records' ? 'Registro' : r.production_source === 'income_entries' ? 'Ingreso' : 'Sin base',
+                        r.hectares.toString(),
+                        r.income.toFixed(2),
+                        r.cost.toFixed(2),
+                        r.profit.toFixed(2),
+                        r.profit_per_ha.toFixed(2),
+                        r.margin_pct.toFixed(2)
+                      ]);
+                    });
+                    csvRows.push(['TOTAL', '', '-', totals.totalHa.toString(), totals.totalIncome.toFixed(2), totals.totalCost.toFixed(2), totals.totalProfit.toFixed(2), totals.totalProfitPerHa.toFixed(2), totals.totalMarginPct.toFixed(2)]);
+                    const csvContent = "data:text/csv;charset=utf-8," + csvRows.map(e => e.join(",")).join("\n");
+                    const encodedUri = encodeURI(csvContent);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", encodedUri);
+                    link.setAttribute("download", `Rentabilidad_${companySlug}_${selectedSeason}.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                  }}
+                  className="inline-flex items-center px-3 py-1.5 border border-transparent shadow-sm text-xs font-medium rounded text-green-700 bg-green-100 hover:bg-green-200"
+                >
+                  <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 px-4 py-4 border-b border-gray-200 bg-gray-50">
               {(() => {
@@ -5715,6 +5975,156 @@ export const Reports: React.FC = () => {
                   </>
                 );
               })()}
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-[0.9fr,1.1fr] gap-6 px-4 py-4 border-b border-gray-200 bg-white">
+              <div className="rounded-lg border border-gray-200 overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 text-amber-600" />
+                    <h4 className="text-sm font-semibold text-gray-900">Alertas de completitud económica</h4>
+                  </div>
+                  <p className="mt-1 text-sm text-gray-500">Sectores que todavía no tienen una base económica suficientemente completa.</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4">
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                    <div className="text-xs uppercase tracking-wide text-red-700">Costo sin ingreso</div>
+                    <div className="mt-2 text-2xl font-semibold text-red-700">{economicCompletionData.sectorsWithCostNoIncome.length}</div>
+                  </div>
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <div className="text-xs uppercase tracking-wide text-amber-700">Ingreso sin producción formal</div>
+                    <div className="mt-2 text-2xl font-semibold text-amber-700">{economicCompletionData.sectorsWithIncomeNoFormalProduction.length}</div>
+                  </div>
+                  <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4">
+                    <div className="text-xs uppercase tracking-wide text-indigo-700">Producción formal sin ingreso</div>
+                    <div className="mt-2 text-2xl font-semibold text-indigo-700">{economicCompletionData.sectorsWithFormalProductionNoIncome.length}</div>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-lg border border-gray-200 overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+                  <h4 className="text-sm font-semibold text-gray-900">Sectores prioritarios</h4>
+                  <p className="mt-1 text-sm text-gray-500">Focos para regularizar la base de producción e ingreso usada por el margen.</p>
+                </div>
+                <div className="p-4 space-y-3">
+                  {[
+                    ...economicCompletionData.topCostNoIncome.map((row) => ({
+                      key: `cost-${row.sectorId}`,
+                      tone: 'text-red-700',
+                      label: 'Costo sin ingreso',
+                      detail: `${row.fieldName} / ${row.sectorName}`,
+                      value: formatCLP(row.totalCost)
+                    })),
+                    ...economicCompletionData.topIncomeNoProduction.map((row) => ({
+                      key: `income-${row.sectorId}`,
+                      tone: 'text-amber-700',
+                      label: 'Ingreso sin producción formal',
+                      detail: `${row.fieldName} / ${row.sectorName}`,
+                      value: formatCLP(row.totalIncome)
+                    })),
+                    ...economicCompletionData.topFormalNoIncome.map((row) => ({
+                      key: `formal-${row.sectorId}`,
+                      tone: 'text-indigo-700',
+                      label: 'Producción formal sin ingreso',
+                      detail: `${row.fieldName} / ${row.sectorName}`,
+                      value: `${Number(row.kgProduced || 0).toLocaleString('es-CL')} Kg`
+                    }))
+                  ].slice(0, 6).map((item) => (
+                    <div key={item.key} className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 px-4 py-3">
+                      <div>
+                        <div className={`text-sm font-semibold ${item.tone}`}>{item.label}</div>
+                        <div className="text-sm text-gray-500">{item.detail}</div>
+                      </div>
+                      <div className="text-sm font-medium text-gray-900">{item.value}</div>
+                    </div>
+                  ))}
+                  {economicCompletionData.topCostNoIncome.length === 0 &&
+                    economicCompletionData.topIncomeNoProduction.length === 0 &&
+                    economicCompletionData.topFormalNoIncome.length === 0 && (
+                      <div className="rounded-lg bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                        No hay alertas de completitud económica visibles para el filtro actual.
+                      </div>
+                    )}
+                </div>
+              </div>
+            </div>
+            <div className="bg-white border-b border-gray-200">
+              <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
+                <div className="flex items-center gap-2">
+                  <Database className="h-4 w-4 text-indigo-600" />
+                  <h4 className="text-sm font-semibold text-gray-900">Producción formal por sector</h4>
+                </div>
+                <p className="mt-1 text-sm text-gray-500">Registra la producción oficial de la temporada para mejorar costo/kg y margen real.</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Campo / Sector</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Has</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Kg producidos</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Precio ref. / Kg</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 bg-white">
+                    {productionCoverageRows.map((row) => (
+                      <tr key={`prod-${row.sectorId}`} className="hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          <div className="text-sm font-medium text-gray-900">{row.sectorName}</div>
+                          <div className="text-xs text-gray-500">{row.fieldName}</div>
+                        </td>
+                        <td className="px-4 py-3 text-right text-sm text-gray-600">{row.hectares.toLocaleString('es-CL', { maximumFractionDigits: 2 })}</td>
+                        <td className="px-4 py-3 text-right text-sm text-gray-900">{row.kgProduced > 0 ? row.kgProduced.toLocaleString('es-CL') : '-'}</td>
+                        <td className="px-4 py-3 text-right text-sm text-gray-600">{row.pricePerKg > 0 ? formatCLP(row.pricePerKg) : '-'}</td>
+                        <td className="px-4 py-3 text-sm">
+                          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${
+                            row.hasRecord
+                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                              : 'border-amber-200 bg-amber-50 text-amber-700'
+                          }`}>
+                            {row.hasRecord ? 'Formal' : 'Pendiente'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openEditProductionModal({
+                                id: row.recordId || '',
+                                company_id: selectedCompany?.id || '',
+                                sector_id: row.sectorId,
+                                season_year: selectedSeasonStartYear,
+                                kg_produced: row.kgProduced,
+                                price_per_kg: row.pricePerKg
+                              })}
+                              className="inline-flex items-center rounded-md bg-indigo-50 px-2.5 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+                            >
+                              <Pencil className="mr-1 h-3.5 w-3.5" /> {row.hasRecord ? 'Editar' : 'Cargar'}
+                            </button>
+                            {row.recordId && (
+                              <button
+                                type="button"
+                                onClick={() => void handleDeleteProductionRecord(row.recordId!)}
+                                className="inline-flex items-center rounded-md bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
+                              >
+                                <Trash2 className="mr-1 h-3.5 w-3.5" /> Eliminar
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {productionCoverageRows.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-6 text-center text-sm text-gray-500">
+                          No hay sectores visibles para registrar producción en este filtro.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
