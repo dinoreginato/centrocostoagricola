@@ -1546,13 +1546,6 @@ export const Reports: React.FC = () => {
     rawApplications,
     rawCostMovements,
     rawInvoices,
-    rawLabor,
-    rawWorkerCosts,
-    rawFuel,
-    rawFuelConsumption,
-    rawMachinery,
-    rawIrrigation,
-    rawGeneralCosts,
     rawProducts,
     incomeEntries,
     selectedSeason,
@@ -1563,7 +1556,7 @@ export const Reports: React.FC = () => {
   useEffect(() => {
     // Only process if we have sectors/fields loaded, otherwise wait
     processReports();
-  }, [rawFields, rawApplications, rawCostMovements, rawInvoices, rawLabor, rawWorkerCosts, rawFuel, rawFuelConsumption, rawMachinery, rawIrrigation, rawGeneralCosts, rawProducts, incomeEntries, selectedSeason, processReports]);
+  }, [rawFields, rawApplications, rawCostMovements, rawInvoices, rawProducts, incomeEntries, selectedSeason, processReports]);
 
   async function loadRawDataImpl() {
     if (!selectedCompany) return;
@@ -1753,55 +1746,10 @@ export const Reports: React.FC = () => {
         });
     });
 
-    const avgPriceDiesel = totalDieselLiters > 0 ? totalDieselCost / totalDieselLiters : 0;
-    const avgPriceGasoline = totalGasLiters > 0 ? totalGasCost / totalGasLiters : 0;
-
     // Filter apps by season
     const filteredApps = rawApplications.filter(app => {
       if (!app.application_date) return false;
       return isDateInSeason(app.application_date, selectedSeason);
-    });
-
-    // Filter labor by season
-    const filteredLabor = rawLabor.filter(lab => {
-      if (!lab.assigned_date) return false;
-      return isDateInSeason(lab.assigned_date, selectedSeason);
-    });
-
-    // Filter Worker Costs by season
-    const filteredWorkerCosts = rawWorkerCosts.filter(w => {
-        if (!w.date) return false;
-        return isDateInSeason(w.date, selectedSeason);
-    });
-
-    // Filter Fuel by season (Direct)
-    const filteredFuel = rawFuel.filter(item => {
-      if (!item.assigned_date) return false;
-      return isDateInSeason(item.assigned_date, selectedSeason);
-    });
-
-    // Filter Fuel Consumption by season
-    const filteredFuelConsumption = rawFuelConsumption.filter(item => {
-      if (!item.date) return false; // column is 'date'
-      return isDateInSeason(item.date, selectedSeason);
-    });
-
-    // Filter Machinery by season
-    const filteredMachinery = rawMachinery.filter(item => {
-      if (!item.assigned_date) return false;
-      return isDateInSeason(item.assigned_date, selectedSeason);
-    });
-
-    // Filter Irrigation by season
-    const filteredIrrigation = rawIrrigation.filter(item => {
-      if (!item.assigned_date) return false;
-      return isDateInSeason(item.assigned_date, selectedSeason);
-    });
-
-    // Filter General Costs by season
-    const filteredGeneral = rawGeneralCosts.filter(item => {
-      if (!item.date) return false;
-      return isDateInSeason(item.date, selectedSeason);
     });
 
     const costMovements = rawCostMovements.filter((movement) => movement.season === selectedSeason);
@@ -1955,15 +1903,13 @@ export const Reports: React.FC = () => {
         compData.set(monthNames[m], { current: 0, prev: 0 });
     }
 
-    const filteredWorkerCostsCurrent = rawWorkerCosts.filter(w => {
-      if (!w.date) return false;
-      return isDateInSeason(w.date, selectedSeason);
-    });
+    const filteredWorkerCostsCurrent = rawCostMovements.filter((movement) =>
+      movement.category === 'Trabajadores' && movement.season === selectedSeason
+    );
 
-    const filteredWorkerCostsPrev = rawWorkerCosts.filter(w => {
-      if (!w.date) return false;
-      return isDateInSeason(w.date, prevSeason);
-    });
+    const filteredWorkerCostsPrev = rawCostMovements.filter((movement) =>
+      movement.category === 'Trabajadores' && movement.season === prevSeason
+    );
 
     filteredInvoices.forEach(inv => {
       try {
@@ -1989,9 +1935,9 @@ export const Reports: React.FC = () => {
       } catch (_e) { void _e; }
     });
 
-    filteredWorkerCostsCurrent.forEach(w => {
+    filteredWorkerCostsCurrent.forEach((w) => {
       try {
-        let date = new Date(w.date + 'T12:00:00');
+        let date = new Date(`${w.date}T12:00:00`);
         if (isNaN(date.getTime())) {
           const parts = String(w.date).split(/[-/]/);
           if (parts.length === 3) date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
@@ -1999,7 +1945,7 @@ export const Reports: React.FC = () => {
         if (!isNaN(date.getTime())) {
           const key = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
           const mKey = monthNames[date.getMonth()];
-          const amount = Number(w.amount) || 0;
+          const amount = Number(w.amount || 0);
 
           if (monthlyData.has(key)) {
             monthlyData.set(key, (monthlyData.get(key) || 0) + amount);
@@ -2031,16 +1977,16 @@ export const Reports: React.FC = () => {
       } catch (_e) { void _e; }
     });
 
-    filteredWorkerCostsPrev.forEach(w => {
+    filteredWorkerCostsPrev.forEach((w) => {
       try {
-        let date = new Date(w.date + 'T12:00:00');
+        let date = new Date(`${w.date}T12:00:00`);
         if (isNaN(date.getTime())) {
           const parts = String(w.date).split(/[-/]/);
           if (parts.length === 3) date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}T12:00:00`);
         }
         if (!isNaN(date.getTime())) {
           const mKey = monthNames[date.getMonth()];
-          const amount = Number(w.amount) || 0;
+          const amount = Number(w.amount || 0);
 
           if (compData.has(mKey)) {
             compData.get(mKey)!.prev += amount;
