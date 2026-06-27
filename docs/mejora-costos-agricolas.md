@@ -300,10 +300,27 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - seguir la madurez del dato economico en el tiempo
   - detectar temporadas con brechas persistentes antes de compararlas como si tuvieran la misma calidad
 
-## Siguiente Paso Recomendado
-- Crear una lectura consolidada de cierre total por temporada que combine:
+## Cierre Total Del Dato
+- `Reportes` ahora incorpora una lectura consolidada de cierre total del dato por temporada.
+- Esta capa combina:
   - cierre economico
   - trazabilidad de costo
-  - respaldo contable
+  - soporte oficial del costo auditado
+  - limpieza de focos de revision alta
+- Esta misma lectura ya se refleja en:
+  - pantalla ejecutiva
+  - exportacion Excel
+  - exportacion PDF
+  - presentacion fullscreen ejecutiva
+- Tambien expone un estado directo para presentacion:
+  - `Listo para comite`
+  - `Listo con advertencias`
+  - `No listo para comite`
+- Objetivo:
+  - evitar que una temporada se presente como definitiva cuando el dato aun esta incompleto
+  - resumir en un solo semaforo la calidad real del costo y del margen visible
+
+## Siguiente Paso Recomendado
 - Incorporar historial de avance por empresa para comparar calidad del dato entre empresas.
-- Incorporar reglas de bloqueo o advertencia fuerte antes de presentar temporadas con cierre insuficiente.
+- Crear una lectura comparativa entre empresas para ver cual presenta mejor cierre total del dato.
+- Agregar bloqueo operativo o confirmacion reforzada antes de exportar una temporada marcada como `No listo para comite`.

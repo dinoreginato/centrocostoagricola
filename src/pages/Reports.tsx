@@ -619,7 +619,7 @@ export const Reports: React.FC = () => {
     };
   }, [executiveCompareCompanyId]);
 
-  const presentationMaxSlide = activeTab === 'executive' ? 8 : activeTab === 'general' ? 3 : 1;
+  const presentationMaxSlide = activeTab === 'executive' ? 9 : activeTab === 'general' ? 3 : 1;
 
   // Update presentation logic to support executive slides and legacy tabs
   useEffect(() => {
@@ -1766,6 +1766,107 @@ export const Reports: React.FC = () => {
     [executiveEconomicClosureHistoryRows]
   );
 
+  const executiveTotalDataClosure = useMemo(() => {
+    const totalAudited = Number(executiveAuditData.totalAudited || 0);
+    const economicPct = Number(executiveEconomicClosureData.closurePct || 0);
+    const traceabilityPct = Number(executiveAuditData.traceabilityPct || 0);
+    const officialSupportPct = totalAudited > 0
+      ? (Number(executiveAuditData.officialAmount || 0) / totalAudited) * 100
+      : 0;
+    const reviewCleanPct = Math.max(0, 100 - Number(executiveAuditData.highReviewPct || 0));
+    const totalClosurePct =
+      economicPct * 0.45 +
+      traceabilityPct * 0.3 +
+      officialSupportPct * 0.15 +
+      reviewCleanPct * 0.1;
+
+    const blockers = [
+      executiveEconomicClosureData.pendingProductionRows.length > 0
+        ? `${executiveEconomicClosureData.pendingProductionRows.length} sectores con ingreso sin producción formal`
+        : null,
+      executiveEconomicClosureData.pendingIncomeRows.length > 0
+        ? `${executiveEconomicClosureData.pendingIncomeRows.length} sectores con producción formal sin ingreso`
+        : null,
+      executiveEconomicClosureData.costWithoutIncomeRows.length > 0
+        ? `${executiveEconomicClosureData.costWithoutIncomeRows.length} sectores con costo sin cierre comercial`
+        : null,
+      executiveAuditData.nonTraceableAmount > 0
+        ? `${formatCLP(executiveAuditData.nonTraceableAmount)} aún sin trazabilidad completa`
+        : null,
+      executiveAuditData.highReviewCount > 0
+        ? `${executiveAuditData.highReviewCount} focos de revisión alta siguen abiertos`
+        : null
+    ].filter(Boolean) as string[];
+
+    const readiness = (() => {
+      if (
+        totalClosurePct < 55 ||
+        economicPct < 50 ||
+        traceabilityPct < 60 ||
+        executiveAuditData.highReviewPct > 20
+      ) {
+        return {
+          badge: 'bg-red-100 text-red-700 border-red-200',
+          dot: 'bg-red-500',
+          title: 'No listo para comité',
+          detail: 'La temporada todavía no tiene calidad suficiente para presentarse como dato definitivo.'
+        };
+      }
+      if (
+        totalClosurePct < 75 ||
+        officialSupportPct < 60 ||
+        blockers.length > 0
+      ) {
+        return {
+          badge: 'bg-amber-100 text-amber-700 border-amber-200',
+          dot: 'bg-amber-500',
+          title: 'Listo con advertencias',
+          detail: 'La lectura sirve para seguimiento ejecutivo, pero todavía requiere contexto y cautela.'
+        };
+      }
+      return {
+        badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+        dot: 'bg-emerald-500',
+        title: 'Listo para comité',
+        detail: 'La temporada tiene un nivel de cierre y trazabilidad suficientemente sólido para presentarse como lectura principal.'
+      };
+    })();
+
+    const findings = [
+      {
+        title: 'Cierre integrado',
+        description: 'Combina cierre económico, trazabilidad, soporte oficial y limpieza de revisión.',
+        emphasis: `${totalClosurePct.toFixed(1)}% consolidado`
+      },
+      {
+        title: 'Soporte oficial',
+        description: 'Mide cuánto del costo auditado descansa en base oficial y no solo en respaldo o distribución.',
+        emphasis: `${officialSupportPct.toFixed(1)}% del costo auditado`
+      },
+      {
+        title: 'Lectura para comité',
+        description: readiness.detail,
+        emphasis: readiness.title
+      }
+    ];
+
+    const conclusion = blockers.length === 0
+      ? `La temporada presenta un cierre total del dato de ${totalClosurePct.toFixed(1)}% y no muestra bloqueos críticos visibles.`
+      : `La temporada presenta un cierre total del dato de ${totalClosurePct.toFixed(1)}%. Antes de considerarla definitiva conviene resolver ${blockers.length} bloqueos principales.`;
+
+    return {
+      economicPct,
+      traceabilityPct,
+      officialSupportPct,
+      reviewCleanPct,
+      totalClosurePct,
+      blockers,
+      readiness,
+      findings,
+      conclusion
+    };
+  }, [executiveAuditData, executiveEconomicClosureData]);
+
   const executiveCategoryComparisonRows = useMemo(() => {
     const currentMap = new Map(executiveViewData.categoryRows.map((row) => [row.category, row.total]));
     const previousCategories = (() => {
@@ -1951,6 +2052,9 @@ export const Reports: React.FC = () => {
         { Indicador: 'Sectores cerrados', Valor: executiveEconomicClosureData.closedRows.length },
         { Indicador: 'Pendientes producción', Valor: executiveEconomicClosureData.pendingProductionRows.length },
         { Indicador: 'Pendientes ingreso', Valor: executiveEconomicClosureData.pendingIncomeRows.length },
+        { Indicador: 'Cierre total dato %', Valor: Number(executiveTotalDataClosure.totalClosurePct.toFixed(2)) },
+        { Indicador: 'Soporte oficial %', Valor: Number(executiveTotalDataClosure.officialSupportPct.toFixed(2)) },
+        { Indicador: 'Estado comité', Valor: executiveTotalDataClosure.readiness.title },
         { Indicador: 'Mejor cierre histórico', Valor: bestClosureHistoryRow ? `${bestClosureHistoryRow.season} (${bestClosureHistoryRow.closurePct.toFixed(2)}%)` : 'Sin datos' },
         { Indicador: 'Conclusión ejecutiva', Valor: executiveInsights.conclusion }
       ];
@@ -2113,6 +2217,19 @@ export const Reports: React.FC = () => {
         'Monto pend. ingreso': Number(row.pendingIncomeCost.toFixed(0)),
         'Monto costo sin ingreso': Number(row.costWithoutIncomeAmount.toFixed(0))
       }));
+      const totalDataClosureRows = [
+        { Indicador: 'Cierre total del dato', Valor: `${executiveTotalDataClosure.totalClosurePct.toFixed(2)}%` },
+        { Indicador: 'Cierre económico', Valor: `${executiveTotalDataClosure.economicPct.toFixed(2)}%` },
+        { Indicador: 'Trazabilidad costo', Valor: `${executiveTotalDataClosure.traceabilityPct.toFixed(2)}%` },
+        { Indicador: 'Soporte oficial', Valor: `${executiveTotalDataClosure.officialSupportPct.toFixed(2)}%` },
+        { Indicador: 'Limpieza revisión', Valor: `${executiveTotalDataClosure.reviewCleanPct.toFixed(2)}%` },
+        { Indicador: 'Estado comité', Valor: executiveTotalDataClosure.readiness.title },
+        { Indicador: 'Conclusión', Valor: executiveTotalDataClosure.conclusion }
+      ];
+      const totalDataBlockerRows = executiveTotalDataClosure.blockers.map((item, index) => ({
+        Ranking: index + 1,
+        Bloqueo: item
+      }));
 
       await exportWorkbookToXlsx({
         filename: `Reporte_Ejecutivo_${companySlug}_${selectedSeason}${executiveFieldFilter !== 'all' ? `_campo_${executiveFieldFilter}` : ''}.xlsx`,
@@ -2125,6 +2242,8 @@ export const Reports: React.FC = () => {
           { name: 'Top Campos', rows: topFieldsRows },
           { name: 'Top Sectores', rows: topSectorsRows },
           { name: 'Alertas', rows: alertRows },
+          { name: 'Cierre Total', rows: totalDataClosureRows },
+          ...(totalDataBlockerRows.length > 0 ? [{ name: 'Bloqueos Dato', rows: totalDataBlockerRows }] : []),
           ...(historicalClosureRows.length > 0 ? [{ name: 'Historial Cierre', rows: historicalClosureRows }] : []),
           ...(economicClosureRows.length > 0 ? [{ name: 'Cierre Economico', rows: economicClosureRows }] : []),
           ...(economicFocusRows.length > 0 ? [{ name: 'Focos Economicos', rows: economicFocusRows }] : []),
@@ -2926,6 +3045,8 @@ export const Reports: React.FC = () => {
             ['Sectores cerrados', `${executiveEconomicClosureData.closedRows.length} / ${executiveEconomicClosureData.visibleRows.length}`],
             ['Pendientes producción', String(executiveEconomicClosureData.pendingProductionRows.length)],
             ['Pendientes ingreso', String(executiveEconomicClosureData.pendingIncomeRows.length)],
+            ['Cierre total dato', `${executiveTotalDataClosure.totalClosurePct.toFixed(1)}%`],
+            ['Estado comité', executiveTotalDataClosure.readiness.title],
             ['Historial visible', `${executiveEconomicClosureHistoryRows.length} temporadas`],
             ['Hallazgo 1', executiveInsights.findings[0]?.description || '-'],
             ['Hallazgo 2', executiveInsights.findings[1]?.description || '-'],
@@ -2954,6 +3075,9 @@ export const Reports: React.FC = () => {
             ['Costo sin ingreso', formatCLP(executiveEconomicClosureData.costWithoutIncomeAmount)],
             ['Pendiente producción', formatCLP(executiveEconomicClosureData.pendingProductionAmount)],
             ['Pendiente ingreso', formatCLP(executiveEconomicClosureData.pendingIncomeCost)],
+            ['Cierre total dato %', `${executiveTotalDataClosure.totalClosurePct.toFixed(1)}%`],
+            ['Soporte oficial %', `${executiveTotalDataClosure.officialSupportPct.toFixed(1)}%`],
+            ['Estado comité', executiveTotalDataClosure.readiness.title],
             ['Hectáreas reportadas', executiveViewData.kpis.totalHectares.toFixed(2)],
             ['Campo con mayor gasto', executiveViewData.kpis.topField ? `${executiveViewData.kpis.topField.fieldName} (${formatCLP(executiveViewData.kpis.topField.total)})` : '-'],
             ['Sector con mayor gasto', executiveViewData.kpis.topSector ? `${executiveViewData.kpis.topSector.sectorName} (${formatCLP(executiveViewData.kpis.topSector.total)})` : '-'],
@@ -3103,6 +3227,24 @@ export const Reports: React.FC = () => {
             ]),
             theme: 'grid',
             headStyles: { fillColor: [8, 145, 178] },
+            styles: { fontSize: 8 }
+          });
+
+          yPos = (doc as any).lastAutoTable.finalY + 8;
+        }
+
+        if (executiveTotalDataClosure.blockers.length > 0) {
+          if (yPos > 170) {
+            doc.addPage();
+            yPos = 20;
+          }
+
+          autoTable(doc, {
+            startY: yPos,
+            head: [['Bloqueo de calidad del dato']],
+            body: executiveTotalDataClosure.blockers.map((row) => [row]),
+            theme: 'grid',
+            headStyles: { fillColor: [185, 28, 28] },
             styles: { fontSize: 8 }
           });
 
@@ -4457,6 +4599,28 @@ export const Reports: React.FC = () => {
                     ))}
                   </div>
 
+                  <div className={`rounded-xl border px-5 py-4 ${executiveTotalDataClosure.readiness.badge}`}>
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <div className="text-xs uppercase tracking-wide">Estado del dato</div>
+                        <div className="mt-2 text-lg font-semibold">{executiveTotalDataClosure.readiness.title}</div>
+                        <p className="mt-2 text-sm">{executiveTotalDataClosure.readiness.detail}</p>
+                      </div>
+                      <div className="text-sm font-medium">
+                        Cierre total: {executiveTotalDataClosure.totalClosurePct.toFixed(1)}%
+                      </div>
+                    </div>
+                    {executiveTotalDataClosure.blockers.length > 0 && (
+                      <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-2 text-sm">
+                        {executiveTotalDataClosure.blockers.map((blocker) => (
+                          <div key={blocker} className="rounded-lg bg-white/70 px-3 py-2">
+                            {blocker}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="grid grid-cols-1 lg:grid-cols-[1.2fr,0.8fr] gap-4">
                     <div className="rounded-xl border border-slate-200 p-5">
                       <div className="flex items-center justify-between gap-4">
@@ -4501,6 +4665,89 @@ export const Reports: React.FC = () => {
                         </div>
                       </div>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Cierre total del dato</h3>
+                      <p className="text-sm text-gray-500">Unifica cierre económico, trazabilidad de costo, soporte oficial y limpieza de revisión para decidir si la temporada está lista para comité.</p>
+                    </div>
+                    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${executiveTotalDataClosure.readiness.badge}`}>
+                      <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveTotalDataClosure.readiness.dot}`} />
+                      {executiveTotalDataClosure.readiness.title}
+                    </span>
+                  </div>
+                </div>
+                <div className="p-6 space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Cierre total</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveTotalDataClosure.totalClosurePct.toFixed(1)}%</div>
+                      <div className="mt-1 text-sm text-slate-500">Semáforo consolidado</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Cierre económico</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveTotalDataClosure.economicPct.toFixed(1)}%</div>
+                      <div className="mt-1 text-sm text-slate-500">Costo, ingreso y producción formal</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Trazabilidad costo</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveTotalDataClosure.traceabilityPct.toFixed(1)}%</div>
+                      <div className="mt-1 text-sm text-slate-500">Costo conciliado y soportado</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Soporte oficial</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveTotalDataClosure.officialSupportPct.toFixed(1)}%</div>
+                      <div className="mt-1 text-sm text-slate-500">Participación oficial del costo auditado</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Limpieza revisión</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveTotalDataClosure.reviewCleanPct.toFixed(1)}%</div>
+                      <div className="mt-1 text-sm text-slate-500">Focos críticos ya resueltos</div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    {executiveTotalDataClosure.findings.map((finding, index) => (
+                      <div key={finding.title} className="rounded-xl border border-slate-200 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Dato {index + 1}</div>
+                        <div className="mt-2 text-lg font-semibold text-slate-900">{finding.title}</div>
+                        <div className="mt-2 text-sm text-slate-600">{finding.description}</div>
+                        <div className="mt-3 text-sm font-semibold text-slate-900">{finding.emphasis}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className={`rounded-xl border px-4 py-4 text-sm ${executiveTotalDataClosure.readiness.badge}`}>
+                    {executiveTotalDataClosure.conclusion}
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Bloqueos visibles</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 bg-white">
+                        {executiveTotalDataClosure.blockers.map((row) => (
+                          <tr key={row}>
+                            <td className="px-4 py-3 text-slate-700">{row}</td>
+                          </tr>
+                        ))}
+                        {executiveTotalDataClosure.blockers.length === 0 && (
+                          <tr>
+                            <td className="px-4 py-4 text-center text-sm text-slate-500">
+                              No hay bloqueos críticos visibles para el filtro actual.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </div>
@@ -7875,7 +8122,7 @@ export const Reports: React.FC = () => {
                   </div>
                 )}
 
-                {currentSlide >= 1 && currentSlide <= 8 && (
+                {currentSlide >= 1 && currentSlide <= 9 && (
                   <div className="w-full h-full flex flex-col animate-fade-in-up pt-4">
                     <h2 className="text-3xl lg:text-4xl font-bold text-slate-800 mb-6 text-center">Resumen Ejecutivo</h2>
                     <div className="flex-1 bg-white rounded-3xl shadow-xl p-6 overflow-y-auto pb-24" style={{ maxHeight: 'calc(100vh - 120px)' }}>
@@ -8386,6 +8633,77 @@ export const Reports: React.FC = () => {
                                 ? `La mejor temporada visible es ${bestClosureHistoryRow.season} con ${bestClosureHistoryRow.closurePct.toFixed(1)}% de cierre. La referencia más débil sigue siendo ${widestClosureGapHistoryRow?.season || selectedSeason}, por lo que conviene sostener el seguimiento histórico antes de cerrar comité.`
                                 : 'Todavía no hay historial suficiente para una lectura de cierre del dato.'}
                             </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {currentSlide === 9 && (
+                        <div className="space-y-6">
+                          <div className="flex items-start justify-between gap-6">
+                            <div>
+                              <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Cierre Total Del Dato</div>
+                              <div className="mt-2 text-3xl font-bold text-slate-900">¿La temporada está lista para comité?</div>
+                              <div className="mt-2 text-lg text-slate-500">{companyName} · {selectedSeason} · {executiveFieldLabel}</div>
+                            </div>
+                            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${executiveTotalDataClosure.readiness.badge}`}>
+                              <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveTotalDataClosure.readiness.dot}`} />
+                              {executiveTotalDataClosure.readiness.title}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Cierre total</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{executiveTotalDataClosure.totalClosurePct.toFixed(1)}%</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Cierre económico</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{executiveTotalDataClosure.economicPct.toFixed(1)}%</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Trazabilidad</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{executiveTotalDataClosure.traceabilityPct.toFixed(1)}%</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Soporte oficial</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{executiveTotalDataClosure.officialSupportPct.toFixed(1)}%</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Limpieza revisión</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{executiveTotalDataClosure.reviewCleanPct.toFixed(1)}%</div>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 xl:grid-cols-[0.9fr,1.1fr] gap-6">
+                            <div className="rounded-2xl border border-slate-200 p-6">
+                              <div className="text-2xl font-bold text-slate-800 mb-5">Lectura consolidada</div>
+                              <div className="space-y-4">
+                                {executiveTotalDataClosure.findings.map((finding) => (
+                                  <div key={finding.title} className="rounded-2xl bg-slate-50 p-5">
+                                    <div className="text-lg font-semibold text-slate-900">{finding.title}</div>
+                                    <div className="mt-2 text-base text-slate-600">{finding.description}</div>
+                                    <div className="mt-3 text-xl font-bold text-purple-700">{finding.emphasis}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 p-6">
+                              <div className="text-2xl font-bold text-slate-800 mb-5">Bloqueos que siguen abiertos</div>
+                              <div className="space-y-3">
+                                {executiveTotalDataClosure.blockers.map((row) => (
+                                  <div key={row} className="rounded-2xl bg-slate-50 px-4 py-3">
+                                    <div className="font-semibold text-slate-900">{row}</div>
+                                  </div>
+                                ))}
+                                {executiveTotalDataClosure.blockers.length === 0 && (
+                                  <div className="rounded-2xl bg-slate-50 p-8 text-center text-xl text-slate-400">
+                                    No hay bloqueos críticos visibles para el filtro actual.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className={`rounded-2xl p-6 ${executiveTotalDataClosure.readiness.badge}`}>
+                            <div className="text-sm uppercase tracking-[0.25em]">Decisión De Presentación</div>
+                            <p className="mt-4 text-2xl leading-10">{executiveTotalDataClosure.conclusion}</p>
                           </div>
                         </div>
                       )}
