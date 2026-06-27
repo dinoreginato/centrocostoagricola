@@ -186,6 +186,40 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - monto con revision alta
 - Usar esta capa para alertas de calidad del dato antes de presentar reportes al directorio.
 
+## Capa De Margen Canonico
+- Se agrego la migracion `supabase/migrations/20260627123000_create_agricultural_margin_view.sql`.
+- Esta vista crea una lectura comun de rentabilidad por:
+  - empresa
+  - campo
+  - sector
+  - temporada
+- La vista une:
+  - `v_agricultural_cost_movements` como base oficial de costos
+  - `income_entries` como base comercial de ingresos
+  - `production_records` como fuente prioritaria de produccion cuando exista
+- La vista entrega:
+  - costo total
+  - ingreso total CLP y USD
+  - kg exportados
+  - kg jugo
+  - kg vendidos
+  - kg producidos
+  - costo por ha
+  - costo por kg
+  - utilidad
+  - margen porcentual
+  - `production_source`
+- Regla clave:
+  - si existe `production_records`, la produccion oficial se toma desde ahi
+  - si no existe, se usa respaldo inferido desde ingresos para no romper continuidad historica
+
+## Uso Recomendado Del Margen
+- Hacer que `Reportes` lea esta vista antes de recalcular margen en frontend.
+- Mostrar explicitamente si la produccion viene de:
+  - registro formal
+  - respaldo por ingresos
+- Usar el porcentaje de sectores con `production_records` como indicador de madurez del dato economico.
+
 ## Siguiente Paso Recomendado
 - Llevar la conciliacion a interfaz:
   - tablero de auditoria de costos

@@ -11,6 +11,7 @@ import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
 import { loadReportsRawData } from '../services/reports';
 import { loadAgriculturalCostAudit, loadAgriculturalCostAuditSummary, type AgriculturalCostAuditRow, type AgriculturalCostAuditSummaryRow } from '../services/costAudit';
+import { loadAgriculturalMarginRows, type AgriculturalMarginRow } from '../services/agriculturalMargin';
 import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
 interface ReportData {
@@ -24,6 +25,7 @@ interface ReportData {
   cost_per_kg: number;
   application_count: number;
   kg_produced?: number;
+  kg_sold?: number;
   // Separate costs for specific reports
   app_cost_only: number;
   app_cost_per_ha: number;
@@ -50,6 +52,10 @@ interface ReportData {
   price_jugo?: number;
   income_usd_jugo?: number;
   income_estimated: number;
+  production_source?: string;
+  has_production_record?: boolean;
+  profit_clp?: number;
+  margin_pct?: number;
 }
 
 interface MonthlyExpense {
@@ -404,6 +410,7 @@ export const Reports: React.FC = () => {
   const [rawGeneralCosts, setRawGeneralCosts] = useState<any[]>([]); // New state
   const [incomeEntries, setIncomeEntries] = useState<IncomeEntry[]>([]);
   const [rawProducts, setRawProducts] = useState<any[]>([]);
+  const [rawMarginRows, setRawMarginRows] = useState<AgriculturalMarginRow[]>([]);
   const [costAuditRows, setCostAuditRows] = useState<AgriculturalCostAuditRow[]>([]);
   const [costAuditSummary, setCostAuditSummary] = useState<AgriculturalCostAuditSummaryRow[]>([]);
   const [costAuditLoading, setCostAuditLoading] = useState(false);
@@ -524,6 +531,7 @@ export const Reports: React.FC = () => {
     setCurrentSlide(0);
     setPresentationMode(false);
     setRawCostMovements([]);
+    setRawMarginRows([]);
     setCostAuditRows([]);
     setCostAuditSummary([]);
     setReportData([]);
@@ -1456,6 +1464,60 @@ export const Reports: React.FC = () => {
     executiveFieldLabel
   ]);
 
+  const executiveMarginData = useMemo(() => {
+    const visibleRows = rawMarginRows.filter((row) => {
+      if (row.season !== selectedSeason) return false;
+      if (executiveFieldFilter !== 'all' && row.field_id !== executiveFieldFilter) return false;
+      return true;
+    });
+
+    const totalIncome = visibleRows.reduce((sum, row) => sum + Number(row.total_income_clp || 0), 0);
+    const totalCost = visibleRows.reduce((sum, row) => sum + Number(row.total_cost || 0), 0);
+    const totalProfit = visibleRows.reduce((sum, row) => sum + Number(row.profit_clp || 0), 0);
+    const totalKg = visibleRows.reduce((sum, row) => sum + Number(row.kg_produced || 0), 0);
+    const productionRecordCount = visibleRows.filter((row) => row.production_source === 'production_records').length;
+    const inferredCount = visibleRows.filter((row) => row.production_source === 'income_entries').length;
+    const marginPct = totalIncome > 0 ? (totalProfit / totalIncome) * 100 : 0;
+    const productionCoveragePct = visibleRows.length > 0 ? (productionRecordCount / visibleRows.length) * 100 : 0;
+    const averageIncomePerKg = totalKg > 0 ? totalIncome / totalKg : 0;
+
+    const tone = (() => {
+      if (totalProfit < 0 || marginPct < 0 || productionCoveragePct < 40) {
+        return {
+          badge: 'bg-red-100 text-red-700 border-red-200',
+          dot: 'bg-red-500',
+          label: 'Riesgo alto'
+        };
+      }
+      if (marginPct < 12 || productionCoveragePct < 75) {
+        return {
+          badge: 'bg-amber-100 text-amber-700 border-amber-200',
+          dot: 'bg-amber-500',
+          label: 'Atención'
+        };
+      }
+      return {
+        badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+        dot: 'bg-emerald-500',
+        label: 'Controlado'
+      };
+    })();
+
+    return {
+      visibleRows,
+      totalIncome,
+      totalCost,
+      totalProfit,
+      totalKg,
+      marginPct,
+      productionRecordCount,
+      inferredCount,
+      productionCoveragePct,
+      averageIncomePerKg,
+      tone
+    };
+  }, [executiveFieldFilter, rawMarginRows, selectedSeason]);
+
   const executiveCategoryComparisonRows = useMemo(() => {
     const currentMap = new Map(executiveViewData.categoryRows.map((row) => [row.category, row.total]));
     const previousCategories = (() => {
@@ -1633,6 +1695,10 @@ export const Reports: React.FC = () => {
         { Indicador: 'Monto respaldo', Valor: Number(executiveAuditData.backupAmount.toFixed(0)) },
         { Indicador: 'Monto distribución', Valor: Number(executiveAuditData.distributedAmount.toFixed(0)) },
         { Indicador: 'Monto revisión alta', Valor: Number(executiveAuditData.highReviewAmount.toFixed(0)) },
+        { Indicador: 'Ingreso total', Valor: Number(executiveMarginData.totalIncome.toFixed(0)) },
+        { Indicador: 'Utilidad neta', Valor: Number(executiveMarginData.totalProfit.toFixed(0)) },
+        { Indicador: 'Margen neto %', Valor: Number(executiveMarginData.marginPct.toFixed(2)) },
+        { Indicador: 'Cobertura producción %', Valor: Number(executiveMarginData.productionCoveragePct.toFixed(2)) },
         { Indicador: 'Conclusión ejecutiva', Valor: executiveInsights.conclusion }
       ];
       const historicalRows = executiveHistoricalSeasonRows.map((row) => ({
@@ -1822,7 +1888,7 @@ export const Reports: React.FC = () => {
   useEffect(() => {
     // Only process if we have sectors/fields loaded, otherwise wait
     processReports();
-  }, [rawFields, rawApplications, rawCostMovements, rawInvoices, rawProducts, incomeEntries, selectedSeason, processReports]);
+  }, [rawFields, rawApplications, rawCostMovements, rawInvoices, rawProducts, rawMarginRows, incomeEntries, selectedSeason, processReports]);
 
   async function loadRawDataImpl() {
     if (!selectedCompany) return;
@@ -1830,7 +1896,16 @@ export const Reports: React.FC = () => {
     const loadSeq = ++reportLoadSeqRef.current;
     setLoading(true);
     try {
-      const res = await loadReportsRawData({ companyId });
+      const [reportsResult, marginResult] = await Promise.allSettled([
+        loadReportsRawData({ companyId }),
+        loadAgriculturalMarginRows({ companyId })
+      ]);
+
+      if (reportsResult.status !== 'fulfilled') {
+        throw reportsResult.reason;
+      }
+
+      const res = reportsResult.value;
       if (reportLoadSeqRef.current !== loadSeq || selectedCompany?.id !== companyId) return;
       setRawFields(res.fields || []);
       setRawApplications(res.applications || []);
@@ -1845,6 +1920,7 @@ export const Reports: React.FC = () => {
       setIncomeEntries(res.incomeEntries || []);
       setRawInvoices(res.invoices || []);
       setRawProducts((res as any).products || []);
+      setRawMarginRows(marginResult.status === 'fulfilled' ? (marginResult.value || []) : []);
 
       setAvailableSeasons(res.availableSeasons || []);
       if (res.availableSeasons && res.availableSeasons.length > 0 && !res.availableSeasons.includes(selectedSeason)) {
@@ -1866,6 +1942,7 @@ export const Reports: React.FC = () => {
       setIncomeEntries([]);
       setRawInvoices([]);
       setRawProducts([]);
+      setRawMarginRows([]);
       setAvailableSeasons([getSeasonFromDate(new Date())]);
       setReportData([]);
       setMonthlyExpenses([]);
@@ -2020,6 +2097,11 @@ export const Reports: React.FC = () => {
 
     const costMovements = rawCostMovements.filter((movement) => movement.season === selectedSeason);
     const sectorCostSummary = aggregateCostMovementsBySector(costMovements);
+    const marginRowsBySector = new Map(
+      rawMarginRows
+        .filter((row) => row.season === selectedSeason)
+        .map((row) => [String(row.sector_id), row])
+    );
 
     const data: ReportData[] = [];
 
@@ -2043,7 +2125,10 @@ export const Reports: React.FC = () => {
         const generalCost = Number(sectorSummary?.byCategory?.Generales || 0);
 
         // For General Report: Total Cost = Apps + Labor + Workers + Fuel + Machinery + Irrigation + General
-        const totalCostGeneral = Number(sectorSummary?.total || 0);
+        const marginRow = marginRowsBySector.get(String(sector.id));
+        const totalCostGeneral = marginRow
+          ? Number(marginRow.total_cost || 0)
+          : Number(sectorSummary?.total || 0);
         const totalCostAppsOnly = appCost;
         
         const hectares = Number(sector.hectares);
@@ -2081,6 +2166,26 @@ export const Reports: React.FC = () => {
         const totalIncomeUsd = usdExport + usdJugo;
         const kgSold = kgExport + kgJugo;
         const pricePerKg = kgSold > 0 ? totalIncomeUsd / kgSold : 0;
+        const finalKgProduced = marginRow ? Number(marginRow.kg_produced || 0) : kgProduced;
+        const finalKgSold = marginRow ? Number(marginRow.kg_sold || 0) : kgSold;
+        const finalKgExport = marginRow ? Number(marginRow.kg_export || 0) : kgExport;
+        const finalUsdExport = marginRow ? Number(marginRow.income_usd_export || 0) : usdExport;
+        const finalPriceExport = marginRow ? Number(marginRow.price_export_usd_per_kg || 0) : priceExport;
+        const finalKgJugo = marginRow ? Number(marginRow.kg_juice || 0) : kgJugo;
+        const finalUsdJugo = marginRow ? Number(marginRow.income_usd_juice || 0) : usdJugo;
+        const finalPriceJugo = marginRow ? Number(marginRow.price_juice_usd_per_kg || 0) : priceJugo;
+        const finalPricePerKg = marginRow ? Number(marginRow.income_price_usd_per_kg || 0) : pricePerKg;
+        const finalIncomeClp = marginRow ? Number(marginRow.total_income_clp || 0) : (kgSold * pricePerKg * (usdExchangeRate || 1));
+        const finalCostPerHa = marginRow
+          ? Number(marginRow.cost_per_ha || 0)
+          : (hectares > 0 ? totalCostGeneral / hectares : 0);
+        const finalCostPerKg = marginRow
+          ? Number(marginRow.cost_per_kg || 0)
+          : (finalKgProduced > 0 ? totalCostGeneral / finalKgProduced : 0);
+        const finalProfitClp = marginRow ? Number(marginRow.profit_clp || 0) : (finalIncomeClp - totalCostGeneral);
+        const finalMarginPct = marginRow
+          ? Number(marginRow.margin_pct || 0)
+          : (finalIncomeClp > 0 ? (finalProfitClp / finalIncomeClp) * 100 : 0);
         
         const budgetPerHa = Number(sector.budget) || 0;
         
@@ -2091,20 +2196,25 @@ export const Reports: React.FC = () => {
           fruit_type: String((field as any).fruit_type || ''),
           hectares: hectares,
           total_cost: totalCostGeneral, // Default for General Table
-          cost_per_ha: hectares > 0 ? totalCostGeneral / hectares : 0, // Default for General Table
-          cost_per_kg: kgProduced > 0 ? totalCostGeneral / kgProduced : 0, // NEW: Cost per Kg
+          cost_per_ha: finalCostPerHa,
+          cost_per_kg: finalCostPerKg,
           application_count: sectorApps.length,
-          kg_produced: kgProduced,
-          price_per_kg: pricePerKg,
-          kg_export: kgExport,
-          price_export: priceExport,
-          income_usd_export: usdExport,
-          kg_jugo: kgJugo,
-          price_jugo: priceJugo,
-          income_usd_jugo: usdJugo,
+          kg_produced: finalKgProduced,
+          kg_sold: finalKgSold,
+          price_per_kg: finalPricePerKg,
+          kg_export: finalKgExport,
+          price_export: finalPriceExport,
+          income_usd_export: finalUsdExport,
+          kg_jugo: finalKgJugo,
+          price_jugo: finalPriceJugo,
+          income_usd_jugo: finalUsdJugo,
           budget_per_ha: budgetPerHa,
           total_budget: budgetPerHa * hectares,
-          income_estimated: kgSold * pricePerKg * (usdExchangeRate || 1), // New pre-calculated field
+          income_estimated: finalIncomeClp,
+          production_source: marginRow?.production_source || 'income_entries',
+          has_production_record: Boolean(marginRow?.has_production_record),
+          profit_clp: finalProfitClp,
+          margin_pct: finalMarginPct,
           // Specific Costs
           app_cost_only: totalCostAppsOnly,
           app_cost_per_ha: hectares > 0 ? totalCostAppsOnly / hectares : 0,
@@ -2441,6 +2551,10 @@ export const Reports: React.FC = () => {
             ['Trazabilidad %', `${executiveAuditData.traceabilityPct.toFixed(1)}%`],
             ['Monto respaldo', formatCLP(executiveAuditData.backupAmount)],
             ['Monto revisión alta', formatCLP(executiveAuditData.highReviewAmount)],
+            ['Ingreso total', formatCLP(executiveMarginData.totalIncome)],
+            ['Utilidad neta', formatCLP(executiveMarginData.totalProfit)],
+            ['Margen neto', `${executiveMarginData.marginPct.toFixed(1)}%`],
+            ['Cobertura producción', `${executiveMarginData.productionCoveragePct.toFixed(1)}%`],
             ['Hallazgo 1', executiveInsights.findings[0]?.description || '-'],
             ['Hallazgo 2', executiveInsights.findings[1]?.description || '-'],
             ['Hallazgo 3', executiveInsights.findings[2]?.description || '-'],
@@ -2779,6 +2893,7 @@ export const Reports: React.FC = () => {
         const { rows, totals } = getMarginRows();
         const tableBody = rows.map((r) => [
             `${r.sector_name}\n(${r.field_name})`,
+            r.production_source === 'production_records' ? 'Registro' : r.production_source === 'income_entries' ? 'Ingreso' : 'Sin base',
             r.hectares.toString(),
             formatCLP(r.income),
             formatCLP(r.cost),
@@ -2790,6 +2905,7 @@ export const Reports: React.FC = () => {
         if (rows.length > 0) {
             tableBody.push([
                 'TOTAL GENERAL',
+            '-',
                 totals.totalHa.toString(),
                 formatCLP(totals.totalIncome),
                 formatCLP(totals.totalCost),
@@ -2801,7 +2917,7 @@ export const Reports: React.FC = () => {
 
         autoTable(doc, {
             startY: yPos,
-            head: [['Sector/Campo', 'Has', 'Ingresos (CLP)', 'Costos (CLP)', 'Utilidad (CLP)', 'Utilidad/Ha', 'Margen %']],
+            head: [['Sector/Campo', 'Base prod.', 'Has', 'Ingresos (CLP)', 'Costos (CLP)', 'Utilidad (CLP)', 'Utilidad/Ha', 'Margen %']],
             body: tableBody,
             theme: 'grid',
             headStyles: { fillColor: [46, 125, 50], fontSize: 9 },
@@ -3286,21 +3402,24 @@ export const Reports: React.FC = () => {
     const rows = reportData.map((row) => {
       const income = Number(row.income_estimated || 0);
       const cost = Number(row.total_cost || 0);
-      const profit = income - cost;
+      const profit = Number(row.profit_clp ?? (income - cost));
       const ha = Number(row.hectares || 0);
       const profitPerHa = ha > 0 ? profit / ha : 0;
-      const marginPct = income > 0 ? (profit / income) * 100 : 0;
+      const marginPct = Number(row.margin_pct ?? (income > 0 ? (profit / income) * 100 : 0));
       return {
         field_name: row.field_name,
         sector_name: row.sector_name,
         hectares: ha,
         kg_produced: Number(row.kg_produced || 0),
+        kg_sold: Number(row.kg_sold || 0),
         price_per_kg: Number(row.price_per_kg || 0),
         income,
         cost,
         profit,
         profit_per_ha: profitPerHa,
-        margin_pct: marginPct
+        margin_pct: marginPct,
+        production_source: row.production_source || 'income_entries',
+        has_production_record: Boolean(row.has_production_record)
       };
     });
 
@@ -4004,6 +4123,68 @@ export const Reports: React.FC = () => {
                         )}
                       </tbody>
                     </table>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Salud económica del margen</h3>
+                      <p className="text-sm text-gray-500">Controla la utilidad visible y qué tan respaldada está la producción usada para costear por kilo.</p>
+                    </div>
+                    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${executiveMarginData.tone.badge}`}>
+                      <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveMarginData.tone.dot}`} />
+                      {executiveMarginData.tone.label}
+                    </span>
+                  </div>
+                </div>
+                <div className="p-6 space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Ingreso total</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{formatCLP(executiveMarginData.totalIncome)}</div>
+                      <div className="mt-1 text-sm text-slate-500">Venta visible del período</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Utilidad neta</div>
+                      <div className={`mt-2 text-2xl font-semibold ${executiveMarginData.totalProfit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatCLP(executiveMarginData.totalProfit)}</div>
+                      <div className="mt-1 text-sm text-slate-500">Ingreso menos costo consolidado</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Margen neto</div>
+                      <div className={`mt-2 text-2xl font-semibold ${executiveMarginData.marginPct >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{executiveMarginData.marginPct.toFixed(1)}%</div>
+                      <div className="mt-1 text-sm text-slate-500">Rentabilidad sobre venta visible</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Cobertura producción</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveMarginData.productionCoveragePct.toFixed(1)}%</div>
+                      <div className="mt-1 text-sm text-slate-500">{executiveMarginData.productionRecordCount} sectores con registro formal</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Ingreso / Kg</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveMarginData.averageIncomePerKg > 0 ? formatCLP(executiveMarginData.averageIncomePerKg) : '-'}</div>
+                      <div className="mt-1 text-sm text-slate-500">{executiveMarginData.totalKg.toLocaleString('es-CL')} Kg considerados</div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div className="rounded-xl border border-slate-200 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Campo visible</div>
+                      <div className="mt-2 text-lg font-semibold text-slate-900">{executiveFieldLabel}</div>
+                      <div className="mt-2 text-sm text-slate-600">{executiveMarginData.visibleRows.length} sectores con lectura económica visible.</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Registro formal</div>
+                      <div className="mt-2 text-lg font-semibold text-slate-900">{executiveMarginData.productionRecordCount}</div>
+                      <div className="mt-2 text-sm text-slate-600">Sectores cuya producción viene desde `production_records`.</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Respaldo por ingreso</div>
+                      <div className="mt-2 text-lg font-semibold text-slate-900">{executiveMarginData.inferredCount}</div>
+                      <div className="mt-2 text-sm text-slate-600">Sectores que todavía infieren producción desde ingresos.</div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -5472,16 +5653,17 @@ export const Reports: React.FC = () => {
             <div className="flex justify-between items-center px-4 py-5 sm:px-6 border-b border-gray-200">
               <div>
                 <h3 className="text-lg leading-6 font-medium text-gray-900">Rentabilidad Neta ({selectedSeason})</h3>
-                <p className="mt-1 text-sm text-gray-500">Ingresos estimados vs costos por sector</p>
+                <p className="mt-1 text-sm text-gray-500">Ingresos y costos por sector con prioridad a la base canónica de margen.</p>
               </div>
               <button
                 onClick={() => {
                   const { rows, totals } = getMarginRows();
-                  const csvRows = [['Campo', 'Sector', 'Has', 'Ingresos (CLP)', 'Costos (CLP)', 'Utilidad (CLP)', 'Utilidad/Ha', 'Margen %']];
+                  const csvRows = [['Campo', 'Sector', 'Base Producción', 'Has', 'Ingresos (CLP)', 'Costos (CLP)', 'Utilidad (CLP)', 'Utilidad/Ha', 'Margen %']];
                   rows.forEach((r) => {
                     csvRows.push([
                       r.field_name,
                       r.sector_name,
+                      r.production_source === 'production_records' ? 'Registro' : r.production_source === 'income_entries' ? 'Ingreso' : 'Sin base',
                       r.hectares.toString(),
                       r.income.toFixed(2),
                       r.cost.toFixed(2),
@@ -5490,7 +5672,7 @@ export const Reports: React.FC = () => {
                       r.margin_pct.toFixed(2)
                     ]);
                   });
-                  csvRows.push(['TOTAL', '', totals.totalHa.toString(), totals.totalIncome.toFixed(2), totals.totalCost.toFixed(2), totals.totalProfit.toFixed(2), totals.totalProfitPerHa.toFixed(2), totals.totalMarginPct.toFixed(2)]);
+                  csvRows.push(['TOTAL', '', '-', totals.totalHa.toString(), totals.totalIncome.toFixed(2), totals.totalCost.toFixed(2), totals.totalProfit.toFixed(2), totals.totalProfitPerHa.toFixed(2), totals.totalMarginPct.toFixed(2)]);
                   const csvContent = "data:text/csv;charset=utf-8," + csvRows.map(e => e.join(",")).join("\n");
                   const encodedUri = encodeURI(csvContent);
                   const link = document.createElement("a");
@@ -5505,11 +5687,41 @@ export const Reports: React.FC = () => {
                 <FileText className="mr-1.5 h-4 w-4" /> Exportar a CSV
               </button>
             </div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 px-4 py-4 border-b border-gray-200 bg-gray-50">
+              {(() => {
+                const { rows, totals } = getMarginRows();
+                const productionRecordCount = rows.filter((row) => row.production_source === 'production_records').length;
+                const inferredCount = rows.filter((row) => row.production_source === 'income_entries').length;
+                return (
+                  <>
+                    <div className="rounded-lg border border-gray-200 bg-white p-4">
+                      <div className="text-xs uppercase tracking-wide text-gray-500">Utilidad neta</div>
+                      <div className={`mt-2 text-2xl font-semibold ${totals.totalProfit >= 0 ? 'text-green-700' : 'text-red-700'}`}>{formatCLP(totals.totalProfit)}</div>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 bg-white p-4">
+                      <div className="text-xs uppercase tracking-wide text-gray-500">Margen total</div>
+                      <div className={`mt-2 text-2xl font-semibold ${totals.totalMarginPct >= 0 ? 'text-green-700' : 'text-red-700'}`}>{totals.totalMarginPct.toFixed(1)}%</div>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 bg-white p-4">
+                      <div className="text-xs uppercase tracking-wide text-gray-500">Sectores con registro</div>
+                      <div className="mt-2 text-2xl font-semibold text-gray-900">{productionRecordCount}</div>
+                      <div className="mt-1 text-sm text-gray-500">Producción desde `production_records`</div>
+                    </div>
+                    <div className="rounded-lg border border-gray-200 bg-white p-4">
+                      <div className="text-xs uppercase tracking-wide text-gray-500">Sectores en respaldo</div>
+                      <div className="mt-2 text-2xl font-semibold text-gray-900">{inferredCount}</div>
+                      <div className="mt-1 text-sm text-gray-500">Producción inferida desde ingresos</div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sector/Campo</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Base producción</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Has</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ingresos</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Costos</th>
@@ -5529,6 +5741,17 @@ export const Reports: React.FC = () => {
                               <div className="text-sm font-medium text-gray-900">{r.sector_name}</div>
                               <div className="text-xs text-gray-500">{r.field_name}</div>
                             </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                              <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${
+                                r.production_source === 'production_records'
+                                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                  : r.production_source === 'income_entries'
+                                    ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                    : 'border-gray-200 bg-gray-50 text-gray-600'
+                              }`}>
+                                {r.production_source === 'production_records' ? 'Registro' : r.production_source === 'income_entries' ? 'Ingreso' : 'Sin base'}
+                              </span>
+                            </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">{r.hectares}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{formatCLP(r.income)}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-700">{formatCLP(r.cost)}</td>
@@ -5540,6 +5763,7 @@ export const Reports: React.FC = () => {
                         {rows.length > 0 && (
                           <tr className="bg-gray-100 font-bold border-t-2 border-gray-300">
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">TOTAL GENERAL</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">-</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{totals.totalHa}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totals.totalIncome)}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">{formatCLP(totals.totalCost)}</td>
