@@ -220,8 +220,32 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - respaldo por ingresos
 - Usar el porcentaje de sectores con `production_records` como indicador de madurez del dato economico.
 
+## Guardas De Integridad Agricola
+- Se agrego la migracion `supabase/migrations/20260627133000_add_agricultural_data_integrity_guards.sql`.
+- Esta migracion incorpora triggers de validacion para:
+  - `income_entries`
+  - `production_records`
+- Reglas para `income_entries`:
+  - `amount`, `quantity_kg`, `amount_usd`, `price_per_kg` y `price_clp_per_kg` no pueden ser negativos
+  - `export_percentage` debe estar entre 0 y 100
+  - `season` debe coincidir con la fecha agricola real
+  - el `field_id` debe pertenecer a la misma empresa
+  - el `sector_id` debe pertenecer a la misma empresa
+  - si se informa `sector_id`, el `field_id` debe coincidir con el campo de ese sector
+  - si se informa `sector_id` y falta `field_id`, el trigger completa el campo automaticamente
+- Reglas para `production_records`:
+  - `sector_id` debe existir y pertenecer a la empresa indicada
+  - `season_year` debe caer en un rango razonable
+  - `kg_produced` no puede ser negativo
+  - `price_per_kg` no puede ser negativo
+- Objetivo:
+  - impedir que el margen canónico quede armado con ingresos o producción estructuralmente incoherentes
+  - dejar el error lo más cerca posible de la base de datos
+  - reducir la necesidad de corregir datos ya contaminados en reportes
+
 ## Siguiente Paso Recomendado
-- Llevar la conciliacion a interfaz:
-  - tablero de auditoria de costos
-  - semaforos de trazabilidad
-  - detalle filtrable por temporada, campo y sector
+- Crear captura y mantenimiento formal de `production_records` en interfaz.
+- Agregar alertas de completitud economica:
+  - sectores con costo pero sin ingresos
+  - sectores con ingresos pero sin produccion formal
+  - sectores con margen visible en respaldo y no en base formal
