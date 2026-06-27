@@ -619,7 +619,7 @@ export const Reports: React.FC = () => {
     };
   }, [executiveCompareCompanyId]);
 
-  const presentationMaxSlide = activeTab === 'executive' ? 6 : activeTab === 'general' ? 3 : 1;
+  const presentationMaxSlide = activeTab === 'executive' ? 7 : activeTab === 'general' ? 3 : 1;
 
   // Update presentation logic to support executive slides and legacy tabs
   useEffect(() => {
@@ -1594,6 +1594,111 @@ export const Reports: React.FC = () => {
     };
   }, [productionCoverageRows]);
 
+  const executiveEconomicClosureData = useMemo(() => {
+    const visibleRows = productionCoverageRows.filter((row) => (
+      executiveFieldFilter === 'all' || row.fieldId === executiveFieldFilter
+    ));
+    const closedRows = visibleRows.filter((row) => row.hasRecord && row.totalIncome > 0 && row.totalCost > 0);
+    const pendingProductionRows = visibleRows.filter((row) => row.totalIncome > 0 && !row.hasRecord);
+    const pendingIncomeRows = visibleRows.filter((row) => row.hasRecord && row.totalIncome <= 0);
+    const costWithoutIncomeRows = visibleRows.filter((row) => row.totalCost > 0 && row.totalIncome <= 0);
+    const closurePct = visibleRows.length > 0 ? (closedRows.length / visibleRows.length) * 100 : 0;
+    const pendingProductionAmount = pendingProductionRows.reduce((sum, row) => sum + Number(row.totalIncome || 0), 0);
+    const pendingIncomeCost = pendingIncomeRows.reduce((sum, row) => sum + Number(row.totalCost || 0), 0);
+    const costWithoutIncomeAmount = costWithoutIncomeRows.reduce((sum, row) => sum + Number(row.totalCost || 0), 0);
+
+    const tone = (() => {
+      if (closurePct < 40 || pendingProductionRows.length > 0 || costWithoutIncomeRows.length > 0) {
+        return {
+          badge: 'bg-red-100 text-red-700 border-red-200',
+          dot: 'bg-red-500',
+          label: 'Riesgo alto'
+        };
+      }
+      if (closurePct < 75 || pendingIncomeRows.length > 0) {
+        return {
+          badge: 'bg-amber-100 text-amber-700 border-amber-200',
+          dot: 'bg-amber-500',
+          label: 'Atención'
+        };
+      }
+      return {
+        badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+        dot: 'bg-emerald-500',
+        label: 'Controlado'
+      };
+    })();
+
+    const findings = [
+      {
+        title: 'Sectores cerrados',
+        description: 'Sectores con costo, ingreso y producción formal visibles.',
+        emphasis: `${closedRows.length} de ${visibleRows.length} sectores · ${closurePct.toFixed(1)}%`
+      },
+      {
+        title: 'Pendientes de producción',
+        description: 'Sectores con ingresos visibles, pero aún sin producción formal registrada.',
+        emphasis: `${pendingProductionRows.length} sectores · ${formatCLP(pendingProductionAmount)}`
+      },
+      {
+        title: 'Pendientes de ingreso',
+        description: 'Sectores con producción formal, pero sin ingresos visibles para cerrar margen.',
+        emphasis: `${pendingIncomeRows.length} sectores · ${formatCLP(pendingIncomeCost)}`
+      }
+    ];
+
+    const topFocusRows = [
+      ...pendingProductionRows.map((row) => ({
+        key: `prod-${row.sectorId}`,
+        status: 'Ingreso sin producción formal',
+        fieldName: row.fieldName,
+        sectorName: row.sectorName,
+        amount: row.totalIncome,
+        unitLabel: formatCLP(row.totalIncome)
+      })),
+      ...costWithoutIncomeRows.map((row) => ({
+        key: `income-${row.sectorId}`,
+        status: 'Costo sin ingreso',
+        fieldName: row.fieldName,
+        sectorName: row.sectorName,
+        amount: row.totalCost,
+        unitLabel: formatCLP(row.totalCost)
+      })),
+      ...pendingIncomeRows.map((row) => ({
+        key: `formal-${row.sectorId}`,
+        status: 'Producción formal sin ingreso',
+        fieldName: row.fieldName,
+        sectorName: row.sectorName,
+        amount: row.kgProduced,
+        unitLabel: `${Number(row.kgProduced || 0).toLocaleString('es-CL')} Kg`
+      }))
+    ]
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 6);
+
+    const conclusion = visibleRows.length <= 0
+      ? 'No hay sectores visibles para medir cierre económico.'
+      : closurePct >= 85 && pendingProductionRows.length === 0 && pendingIncomeRows.length === 0
+        ? `La temporada presenta un cierre económico de ${closurePct.toFixed(1)}% y ya puede usarse como lectura más confiable de margen.`
+        : `La temporada muestra un cierre económico de ${closurePct.toFixed(1)}%. Conviene regularizar ${pendingProductionRows.length + pendingIncomeRows.length + costWithoutIncomeRows.length} focos antes de presentar el margen como definitivo.`;
+
+    return {
+      visibleRows,
+      closedRows,
+      pendingProductionRows,
+      pendingIncomeRows,
+      costWithoutIncomeRows,
+      closurePct,
+      pendingProductionAmount,
+      pendingIncomeCost,
+      costWithoutIncomeAmount,
+      tone,
+      findings,
+      topFocusRows,
+      conclusion
+    };
+  }, [executiveFieldFilter, productionCoverageRows]);
+
   const executiveCategoryComparisonRows = useMemo(() => {
     const currentMap = new Map(executiveViewData.categoryRows.map((row) => [row.category, row.total]));
     const previousCategories = (() => {
@@ -1775,6 +1880,10 @@ export const Reports: React.FC = () => {
         { Indicador: 'Utilidad neta', Valor: Number(executiveMarginData.totalProfit.toFixed(0)) },
         { Indicador: 'Margen neto %', Valor: Number(executiveMarginData.marginPct.toFixed(2)) },
         { Indicador: 'Cobertura producción %', Valor: Number(executiveMarginData.productionCoveragePct.toFixed(2)) },
+        { Indicador: 'Cierre económico %', Valor: Number(executiveEconomicClosureData.closurePct.toFixed(2)) },
+        { Indicador: 'Sectores cerrados', Valor: executiveEconomicClosureData.closedRows.length },
+        { Indicador: 'Pendientes producción', Valor: executiveEconomicClosureData.pendingProductionRows.length },
+        { Indicador: 'Pendientes ingreso', Valor: executiveEconomicClosureData.pendingIncomeRows.length },
         { Indicador: 'Conclusión ejecutiva', Valor: executiveInsights.conclusion }
       ];
       const historicalRows = executiveHistoricalSeasonRows.map((row) => ({
@@ -1905,6 +2014,24 @@ export const Reports: React.FC = () => {
         Prioridad: row.review_priority,
         Monto: Number(row.amount || 0)
       }));
+      const economicClosureRows = executiveEconomicClosureData.visibleRows.map((row) => ({
+        Campo: row.fieldName,
+        Sector: row.sectorName,
+        Hectareas: Number(row.hectares || 0),
+        'Produccion formal': row.hasRecord ? 'Si' : 'No',
+        'Fuente margen': row.productionSource,
+        'Kg producidos': Number(row.kgProduced || 0),
+        'Ingreso CLP': Number(row.totalIncome || 0),
+        'Costo CLP': Number(row.totalCost || 0),
+        'Margen %': Number(row.marginPct || 0)
+      }));
+      const economicFocusRows = executiveEconomicClosureData.topFocusRows.map((row, index) => ({
+        Ranking: index + 1,
+        Estado: row.status,
+        Campo: row.fieldName,
+        Sector: row.sectorName,
+        Referencia: row.unitLabel
+      }));
 
       await exportWorkbookToXlsx({
         filename: `Reporte_Ejecutivo_${companySlug}_${selectedSeason}${executiveFieldFilter !== 'all' ? `_campo_${executiveFieldFilter}` : ''}.xlsx`,
@@ -1917,6 +2044,8 @@ export const Reports: React.FC = () => {
           { name: 'Top Campos', rows: topFieldsRows },
           { name: 'Top Sectores', rows: topSectorsRows },
           { name: 'Alertas', rows: alertRows },
+          ...(economicClosureRows.length > 0 ? [{ name: 'Cierre Economico', rows: economicClosureRows }] : []),
+          ...(economicFocusRows.length > 0 ? [{ name: 'Focos Economicos', rows: economicFocusRows }] : []),
           ...(auditSummaryRows.length > 0 ? [{ name: 'Auditoria Costos', rows: auditSummaryRows }] : []),
           ...(auditDetailRows.length > 0 ? [{ name: 'Focos Revision', rows: auditDetailRows }] : []),
           ...(comparisonRows.length > 0 ? [
@@ -2711,6 +2840,10 @@ export const Reports: React.FC = () => {
             ['Utilidad neta', formatCLP(executiveMarginData.totalProfit)],
             ['Margen neto', `${executiveMarginData.marginPct.toFixed(1)}%`],
             ['Cobertura producción', `${executiveMarginData.productionCoveragePct.toFixed(1)}%`],
+            ['Cierre económico', `${executiveEconomicClosureData.closurePct.toFixed(1)}%`],
+            ['Sectores cerrados', `${executiveEconomicClosureData.closedRows.length} / ${executiveEconomicClosureData.visibleRows.length}`],
+            ['Pendientes producción', String(executiveEconomicClosureData.pendingProductionRows.length)],
+            ['Pendientes ingreso', String(executiveEconomicClosureData.pendingIncomeRows.length)],
             ['Hallazgo 1', executiveInsights.findings[0]?.description || '-'],
             ['Hallazgo 2', executiveInsights.findings[1]?.description || '-'],
             ['Hallazgo 3', executiveInsights.findings[2]?.description || '-'],
@@ -2734,6 +2867,10 @@ export const Reports: React.FC = () => {
             ['Promedio mensual', formatCLP(executiveViewData.kpis.averageMonthlyCost)],
             ['Monto trazable', formatCLP(executiveAuditData.traceableAmount)],
             ['Monto no trazable', formatCLP(executiveAuditData.nonTraceableAmount)],
+            ['Cierre económico %', `${executiveEconomicClosureData.closurePct.toFixed(1)}%`],
+            ['Costo sin ingreso', formatCLP(executiveEconomicClosureData.costWithoutIncomeAmount)],
+            ['Pendiente producción', formatCLP(executiveEconomicClosureData.pendingProductionAmount)],
+            ['Pendiente ingreso', formatCLP(executiveEconomicClosureData.pendingIncomeCost)],
             ['Hectáreas reportadas', executiveViewData.kpis.totalHectares.toFixed(2)],
             ['Campo con mayor gasto', executiveViewData.kpis.topField ? `${executiveViewData.kpis.topField.fieldName} (${formatCLP(executiveViewData.kpis.topField.total)})` : '-'],
             ['Sector con mayor gasto', executiveViewData.kpis.topSector ? `${executiveViewData.kpis.topSector.sectorName} (${formatCLP(executiveViewData.kpis.topSector.total)})` : '-'],
@@ -2835,6 +2972,28 @@ export const Reports: React.FC = () => {
             ]),
             theme: 'grid',
             headStyles: { fillColor: [146, 64, 14] },
+            styles: { fontSize: 8 }
+          });
+
+          yPos = (doc as any).lastAutoTable.finalY + 8;
+        }
+
+        if (executiveEconomicClosureData.topFocusRows.length > 0) {
+          if (yPos > 150) {
+            doc.addPage();
+            yPos = 20;
+          }
+
+          autoTable(doc, {
+            startY: yPos,
+            head: [['Foco económico', 'Campo / Sector', 'Referencia']],
+            body: executiveEconomicClosureData.topFocusRows.map((row) => [
+              row.status,
+              `${row.fieldName} / ${row.sectorName}`,
+              row.unitLabel
+            ]),
+            theme: 'grid',
+            headStyles: { fillColor: [79, 70, 229] },
             styles: { fontSize: 8 }
           });
 
@@ -4436,6 +4595,93 @@ export const Reports: React.FC = () => {
                       <div className="mt-2 text-lg font-semibold text-slate-900">{executiveMarginData.inferredCount}</div>
                       <div className="mt-2 text-sm text-slate-600">Sectores que todavía infieren producción desde ingresos.</div>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Cierre económico de temporada</h3>
+                      <p className="text-sm text-gray-500">Mide qué parte del margen visible ya tiene costo, ingreso y producción formal suficientemente cerrados para comité.</p>
+                    </div>
+                    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${executiveEconomicClosureData.tone.badge}`}>
+                      <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveEconomicClosureData.tone.dot}`} />
+                      {executiveEconomicClosureData.tone.label}
+                    </span>
+                  </div>
+                </div>
+                <div className="p-6 space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Cierre económico</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveEconomicClosureData.closurePct.toFixed(1)}%</div>
+                      <div className="mt-1 text-sm text-slate-500">{executiveEconomicClosureData.closedRows.length} sectores cerrados</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Pendiente producción</div>
+                      <div className="mt-2 text-2xl font-semibold text-amber-700">{executiveEconomicClosureData.pendingProductionRows.length}</div>
+                      <div className="mt-1 text-sm text-slate-500">{formatCLP(executiveEconomicClosureData.pendingProductionAmount)} con venta visible</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Pendiente ingreso</div>
+                      <div className="mt-2 text-2xl font-semibold text-indigo-700">{executiveEconomicClosureData.pendingIncomeRows.length}</div>
+                      <div className="mt-1 text-sm text-slate-500">{formatCLP(executiveEconomicClosureData.pendingIncomeCost)} con producción formal</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Costo sin ingreso</div>
+                      <div className="mt-2 text-2xl font-semibold text-red-700">{executiveEconomicClosureData.costWithoutIncomeRows.length}</div>
+                      <div className="mt-1 text-sm text-slate-500">{formatCLP(executiveEconomicClosureData.costWithoutIncomeAmount)} pendiente de cierre comercial</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Sectores visibles</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveEconomicClosureData.visibleRows.length}</div>
+                      <div className="mt-1 text-sm text-slate-500">{executiveFieldLabel}</div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    {executiveEconomicClosureData.findings.map((finding, index) => (
+                      <div key={finding.title} className="rounded-xl border border-slate-200 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Cierre {index + 1}</div>
+                        <div className="mt-2 text-lg font-semibold text-slate-900">{finding.title}</div>
+                        <div className="mt-2 text-sm text-slate-600">{finding.description}</div>
+                        <div className="mt-3 text-sm font-semibold text-slate-900">{finding.emphasis}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-700">
+                    {executiveEconomicClosureData.conclusion}
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Foco</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Campo / Sector</th>
+                          <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Referencia</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 bg-white">
+                        {executiveEconomicClosureData.topFocusRows.map((row) => (
+                          <tr key={row.key}>
+                            <td className="px-4 py-3 text-slate-900">{row.status}</td>
+                            <td className="px-4 py-3 text-slate-700">{row.fieldName} / {row.sectorName}</td>
+                            <td className="px-4 py-3 text-right font-medium text-slate-900">{row.unitLabel}</td>
+                          </tr>
+                        ))}
+                        {executiveEconomicClosureData.topFocusRows.length === 0 && (
+                          <tr>
+                            <td colSpan={3} className="px-4 py-4 text-center text-sm text-slate-500">
+                              No hay focos económicos visibles para el filtro actual.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </div>
@@ -7430,7 +7676,7 @@ export const Reports: React.FC = () => {
                   </div>
                 )}
 
-                {currentSlide >= 1 && currentSlide <= 5 && (
+                {currentSlide >= 1 && currentSlide <= 7 && (
                   <div className="w-full h-full flex flex-col animate-fade-in-up pt-4">
                     <h2 className="text-3xl lg:text-4xl font-bold text-slate-800 mb-6 text-center">Resumen Ejecutivo</h2>
                     <div className="flex-1 bg-white rounded-3xl shadow-xl p-6 overflow-y-auto pb-24" style={{ maxHeight: 'calc(100vh - 120px)' }}>
@@ -7784,6 +8030,85 @@ export const Reports: React.FC = () => {
                           <div className="rounded-2xl bg-slate-950 text-white p-6">
                             <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Cierre De Auditoría</div>
                             <p className="mt-4 text-2xl leading-10">{executiveAuditData.conclusion}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {currentSlide === 7 && (
+                        <div className="space-y-6">
+                          <div className="flex items-start justify-between gap-6">
+                            <div>
+                              <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Cierre Económico</div>
+                              <div className="mt-2 text-3xl font-bold text-slate-900">Producción, ingresos y margen cerrados</div>
+                              <div className="mt-2 text-lg text-slate-500">{executiveFieldLabel} · Temporada {selectedSeason}</div>
+                            </div>
+                            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${executiveEconomicClosureData.tone.badge}`}>
+                              <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveEconomicClosureData.tone.dot}`} />
+                              {executiveEconomicClosureData.tone.label}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Cierre económico</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{executiveEconomicClosureData.closurePct.toFixed(1)}%</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Sectores cerrados</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{executiveEconomicClosureData.closedRows.length}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Pend. producción</div>
+                              <div className="mt-3 text-3xl font-bold text-amber-700">{executiveEconomicClosureData.pendingProductionRows.length}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Pend. ingreso</div>
+                              <div className="mt-3 text-3xl font-bold text-indigo-700">{executiveEconomicClosureData.pendingIncomeRows.length}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Costo sin ingreso</div>
+                              <div className="mt-3 text-3xl font-bold text-red-700">{executiveEconomicClosureData.costWithoutIncomeRows.length}</div>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 xl:grid-cols-[0.9fr,1.1fr] gap-6">
+                            <div className="rounded-2xl border border-slate-200 p-6">
+                              <div className="text-2xl font-bold text-slate-800 mb-5">Hallazgos de cierre</div>
+                              <div className="space-y-4">
+                                {executiveEconomicClosureData.findings.map((finding) => (
+                                  <div key={finding.title} className="rounded-2xl bg-slate-50 p-5">
+                                    <div className="text-lg font-semibold text-slate-900">{finding.title}</div>
+                                    <div className="mt-2 text-base text-slate-600">{finding.description}</div>
+                                    <div className="mt-3 text-xl font-bold text-purple-700">{finding.emphasis}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 p-6">
+                              <div className="text-2xl font-bold text-slate-800 mb-5">Focos económicos visibles</div>
+                              <div className="space-y-3">
+                                {executiveEconomicClosureData.topFocusRows.map((row) => (
+                                  <div key={row.key} className="rounded-2xl bg-slate-50 px-4 py-3">
+                                    <div className="flex items-center justify-between gap-4">
+                                      <div>
+                                        <div className="font-semibold text-slate-900">{row.status}</div>
+                                        <div className="mt-1 text-sm text-slate-500">{row.fieldName} / {row.sectorName}</div>
+                                      </div>
+                                      <div className="text-right">
+                                        <div className="font-semibold text-slate-900">{row.unitLabel}</div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                                {executiveEconomicClosureData.topFocusRows.length === 0 && (
+                                  <div className="rounded-2xl bg-slate-50 p-8 text-center text-xl text-slate-400">
+                                    No hay focos económicos visibles para el filtro actual.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="rounded-2xl bg-slate-950 text-white p-6">
+                            <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Cierre De Temporada</div>
+                            <p className="mt-4 text-2xl leading-10">{executiveEconomicClosureData.conclusion}</p>
                           </div>
                         </div>
                       )}

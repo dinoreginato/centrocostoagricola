@@ -267,10 +267,27 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - detectar rapido donde el margen visible aun esta incompleto
   - priorizar regularizacion del dato antes de usarlo como lectura ejecutiva final
 
-## Siguiente Paso Recomendado
-- Llevar estas alertas de completitud a la vista ejecutiva fullscreen y exportaciones.
-- Agregar una capa de seguimiento de cierre del dato por temporada:
+## Cierre Economico Ejecutivo
+- La vista ejecutiva ahora incorpora una lectura de cierre economico por temporada.
+- Esta capa resume:
   - porcentaje de sectores cerrados
+  - pendientes de produccion formal
+  - pendientes de ingreso
+  - costo visible sin cierre comercial
+- Esta misma lectura ya se refleja en:
+  - pantalla ejecutiva
+  - exportacion Excel
+  - exportacion PDF
+  - presentacion fullscreen ejecutiva
+- Objetivo:
+  - evitar que el directorio vea solo margen y costo sin entender el nivel real de cierre del dato
+  - exponer en el mismo tablero los focos economicos que todavia impiden tomar el margen como definitivo
+
+## Siguiente Paso Recomendado
+- Crear una capa de seguimiento de cierre del dato por temporada y por empresa.
+- Agregar historial de avance del cierre:
+  - porcentaje de sectores cerrados por temporada
   - pendientes de produccion
   - pendientes de ingreso
   - pendientes de trazabilidad de costo
+- Incorporar reglas de bloqueo o advertencia fuerte antes de presentar temporadas con cierre insuficiente.
