@@ -204,6 +204,7 @@ type ExecutiveSortKey = 'total' | 'variation' | 'budget' | 'cost_ha' | 'cost_kg'
 type ExecutiveAuditPriorityFilter = 'all' | 'alta' | 'media' | 'baja';
 type ExecutiveAuditLayerFilter = 'all' | AgriculturalCostAuditRow['source_layer'];
 type ExecutiveExportAction = 'pdf' | 'excel';
+type ExecutiveExportCirculationReason = 'comite' | 'directorio' | 'revision_interna' | 'banco_inversionista' | 'otro';
 type ClosureTrendDirection = 'mejora' | 'estable' | 'deterioro' | 'sin_base';
 type ExecutiveRecommendationDecision = 'presentar' | 'presentar_con_cautela' | 'no_presentar';
 type ExecutiveRankingTier = 'fuerte' | 'intermedio' | 'fragil';
@@ -237,6 +238,14 @@ const EXECUTIVE_EXPORT_WARNING_TYPE_LABELS: Record<string, string> = {
   trend_deterioration_high_closure: 'Deterioro con cierre alto'
 };
 
+const EXECUTIVE_EXPORT_CIRCULATION_REASON_OPTIONS: Array<{ value: ExecutiveExportCirculationReason; label: string }> = [
+  { value: 'comite', label: 'Comité' },
+  { value: 'directorio', label: 'Directorio' },
+  { value: 'revision_interna', label: 'Revisión interna' },
+  { value: 'banco_inversionista', label: 'Banco / inversionista' },
+  { value: 'otro', label: 'Otro' }
+];
+
 const formatExecutiveExportWarningType = (value: string) => (
   EXECUTIVE_EXPORT_WARNING_TYPE_LABELS[value]
   || value
@@ -249,6 +258,18 @@ const formatExecutiveExportWarningType = (value: string) => (
 const formatExecutiveExportActor = (value: string | null | undefined) => (
   value ? `Usuario ${value.slice(0, 8)}` : 'Sin usuario'
 );
+
+const formatExecutiveExportCirculationReason = (value: string | null | undefined) => {
+  if (!value) return 'Sin motivo';
+  return EXECUTIVE_EXPORT_CIRCULATION_REASON_OPTIONS.find((option) => option.value === value)?.label || value;
+};
+
+const formatExecutiveExportCirculationTarget = (row: Pick<ExecutiveExportWarningEventRow, 'circulation_recipient' | 'circulation_reason' | 'circulation_notes'>) => {
+  const recipient = row.circulation_recipient?.trim() || 'Sin destinatario';
+  const reason = formatExecutiveExportCirculationReason(row.circulation_reason);
+  const notes = row.circulation_notes?.trim();
+  return notes ? `${recipient} · ${reason} · ${notes}` : `${recipient} · ${reason}`;
+};
 
 const buildExecutiveExportWarningAnalytics = (
   rows: ExecutiveExportWarningEventRow[],
@@ -272,6 +293,15 @@ const buildExecutiveExportWarningAnalytics = (
   )
     .map(([type, count]) => ({ type, count }))
     .sort((a, b) => b.count - a.count);
+  const circulationReasonSummary = Array.from(
+    rows.reduce((map, row) => {
+      const reason = row.circulation_reason || 'sin_motivo';
+      map.set(reason, (map.get(reason) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  )
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count);
   const seasonSummary = Array.from(
     rows.reduce((map, row) => {
       const current = map.get(row.season) || { season: row.season, count: 0 };
@@ -288,9 +318,10 @@ const buildExecutiveExportWarningAnalytics = (
       ? 'PDF'
       : 'Excel';
   const topWarningType = warningTypeSummary[0] || null;
+  const topCirculationReason = circulationReasonSummary[0] || null;
   const topSeason = seasonSummary[0] || null;
   const summaryLine = latestEvent
-    ? `Se registran ${rows.length} exportaciones ejecutivas bajo advertencia para ${scopeLabel}. La última ocurrió en ${latestEvent.season} vía ${latestEvent.export_format.toUpperCase()} con estado ${latestEvent.readiness_title}.`
+    ? `Se registran ${rows.length} exportaciones ejecutivas bajo advertencia para ${scopeLabel}. La última ocurrió en ${latestEvent.season} vía ${latestEvent.export_format.toUpperCase()} con estado ${latestEvent.readiness_title} hacia ${latestEvent.circulation_recipient || 'destinatario no indicado'}.`
     : `No hay exportaciones ejecutivas bajo advertencia para ${scopeLabel}.`;
 
   return {
@@ -305,6 +336,8 @@ const buildExecutiveExportWarningAnalytics = (
     topSeason,
     warningTypeSummary,
     topWarningType,
+    circulationReasonSummary,
+    topCirculationReason,
     totalEvents: rows.length,
     summaryLine
   };
@@ -833,6 +866,9 @@ export const Reports: React.FC = () => {
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState('');
   const [pendingExecutiveExportAction, setPendingExecutiveExportAction] = useState<ExecutiveExportAction | null>(null);
+  const [executiveExportRecipient, setExecutiveExportRecipient] = useState('');
+  const [executiveExportCirculationReason, setExecutiveExportCirculationReason] = useState<ExecutiveExportCirculationReason>('comite');
+  const [executiveExportCirculationNotes, setExecutiveExportCirculationNotes] = useState('');
   const reportLoadSeqRef = useRef(0);
   const costAuditLoadSeqRef = useRef(0);
 
@@ -909,6 +945,10 @@ export const Reports: React.FC = () => {
     setExecutiveExportWarningFormatFilter('all');
     setExecutiveExportWarningTypeFilter('all');
     setExecutiveExportWarningActorFilter('all');
+    setExecutiveExportRecipient('');
+    setExecutiveExportCirculationReason('comite');
+    setExecutiveExportCirculationNotes('');
+    setPendingExecutiveExportAction(null);
     setCurrentSlide(0);
     setPresentationMode(false);
     setRawCostMovements([]);
@@ -2873,7 +2913,14 @@ export const Reports: React.FC = () => {
     };
   }, [executiveTotalDataClosure.readiness.title, executiveTrendWarning]);
 
-  const logExecutiveExportWarningEvent = useCallback(async (format: ExecutiveExportAction) => {
+  const logExecutiveExportWarningEvent = useCallback(async (
+    format: ExecutiveExportAction,
+    circulationContext?: {
+      recipient: string;
+      reason: ExecutiveExportCirculationReason;
+      notes?: string;
+    }
+  ) => {
     if (!selectedCompany?.id || !executiveExportWarningContext.hasWarning) return;
 
     try {
@@ -2890,6 +2937,9 @@ export const Reports: React.FC = () => {
         fieldLabel: executiveFieldLabel,
         compareCompanyId: executiveCompareCompanyId !== 'none' ? executiveCompareCompanyId : null,
         compareCompanyName: executiveCompareCompanyName || null,
+        circulationRecipient: circulationContext?.recipient || null,
+        circulationReason: circulationContext?.reason || null,
+        circulationNotes: circulationContext?.notes || null,
         metadata: {
           company_name: companyName,
           economic_pct: Number(executiveTotalDataClosure.economicPct.toFixed(2)),
@@ -2905,7 +2955,10 @@ export const Reports: React.FC = () => {
           compare_company_trend_delta: executiveCompareCompanyTrend ? Number(executiveCompareCompanyTrend.delta.toFixed(2)) : null,
           compare_company_readiness: executiveCompareCompanyTotalClosure?.readiness.title || null,
           trend_alert_detail: executiveTrendWarning?.detail || null,
-          trend_alert_compare_line: executiveTrendWarning?.compareLine || null
+          trend_alert_compare_line: executiveTrendWarning?.compareLine || null,
+          circulation_recipient: circulationContext?.recipient || null,
+          circulation_reason: circulationContext?.reason || null,
+          circulation_notes: circulationContext?.notes || null
         }
       });
     } catch (error) {
@@ -3006,7 +3059,7 @@ export const Reports: React.FC = () => {
       ? executiveTrendWarning.detail
       : executiveCurrentCompanyTrend.narrative;
     const exportControlSummary = executiveExportWarningFilteredData.latestEvent
-      ? `Última exportación advertida visible: ${executiveExportWarningFilteredData.latestEvent.export_format.toUpperCase()} · ${executiveExportWarningFilteredData.latestEvent.season} · ${formatExecutiveExportActor(executiveExportWarningFilteredData.latestEvent.created_by)}.`
+      ? `Última exportación advertida visible: ${executiveExportWarningFilteredData.latestEvent.export_format.toUpperCase()} · ${executiveExportWarningFilteredData.latestEvent.season} · ${formatExecutiveExportActor(executiveExportWarningFilteredData.latestEvent.created_by)} · ${formatExecutiveExportCirculationTarget(executiveExportWarningFilteredData.latestEvent)}.`
       : 'No hay exportaciones advertidas visibles para los filtros actuales.';
     const compareSummary = executiveCompareCompanyRecommendation
       ? `${companyName}: ${executiveCurrentRecommendation.tone.title}. ${executiveCompareCompanyName}: ${executiveCompareCompanyRecommendation.tone.title}.`
@@ -3316,6 +3369,8 @@ export const Reports: React.FC = () => {
         { Indicador: 'Recomendación automática', Valor: executiveCurrentRecommendation.tone.title },
         { Indicador: 'Resumen recomendación', Valor: executiveCurrentRecommendation.summary },
         { Indicador: 'Siguiente paso', Valor: executiveCurrentRecommendation.nextStep },
+        { Indicador: 'Último destinatario advertido', Valor: executiveExportWarningFilteredData.latestEvent?.circulation_recipient || 'Sin destinatario' },
+        { Indicador: 'Motivo circulación dominante', Valor: executiveExportWarningFilteredData.topCirculationReason ? formatExecutiveExportCirculationReason(executiveExportWarningFilteredData.topCirculationReason.reason) : 'Sin motivo' },
         { Indicador: 'Alerta tendencia', Valor: executiveTrendWarning?.shortLabel || 'Sin alerta' },
         { Indicador: 'Detalle alerta tendencia', Valor: executiveTrendWarning?.detail || 'Sin alerta preventiva visible' },
         { Indicador: 'Conclusión', Valor: executiveTotalDataClosure.conclusion }
@@ -3376,6 +3431,9 @@ export const Reports: React.FC = () => {
         Temporada: row.season,
         Formato: row.export_format.toUpperCase(),
         Emisor: formatExecutiveExportActor(row.created_by),
+        Destinatario: row.circulation_recipient || 'Sin destinatario',
+        Motivo: formatExecutiveExportCirculationReason(row.circulation_reason),
+        Nota: row.circulation_notes || '',
         Estado: row.readiness_title,
         'Cierre total': Number(Number(row.total_closure_pct || 0).toFixed(2)),
         Advertencias: (row.warning_types || []).map((item) => formatExecutiveExportWarningType(item)).join(', ') || 'Sin detalle',
@@ -4672,8 +4730,10 @@ export const Reports: React.FC = () => {
               ['Filtros aplicados', executiveExportWarningFiltersLabel],
               ['Temporada actual', `${selectedSeason} · ${executiveExportWarningFilteredData.currentSeasonRows.length} eventos`],
               ['Última exportación', executiveExportWarningFilteredData.latestEvent ? `${executiveExportWarningFilteredData.latestEvent.export_format.toUpperCase()} · ${executiveExportWarningFilteredData.latestEvent.season} · ${executiveExportWarningFilteredData.latestEvent.readiness_title}` : 'Sin eventos'],
+              ['Último destinatario', executiveExportWarningFilteredData.latestEvent ? formatExecutiveExportCirculationTarget(executiveExportWarningFilteredData.latestEvent) : 'Sin circulación registrada'],
               ['Formato dominante', executiveExportWarningFilteredData.dominantFormat],
               ['Advertencia dominante', executiveExportWarningFilteredData.topWarningType ? `${formatExecutiveExportWarningType(executiveExportWarningFilteredData.topWarningType.type)} (${executiveExportWarningFilteredData.topWarningType.count})` : 'Sin advertencias frecuentes'],
+              ['Motivo dominante', executiveExportWarningFilteredData.topCirculationReason ? `${formatExecutiveExportCirculationReason(executiveExportWarningFilteredData.topCirculationReason.reason)} (${executiveExportWarningFilteredData.topCirculationReason.count})` : 'Sin motivos frecuentes'],
               ['Temporada más expuesta', executiveExportWarningFilteredData.topSeason ? `${executiveExportWarningFilteredData.topSeason.season} (${executiveExportWarningFilteredData.topSeason.count})` : 'Sin temporadas'],
               ['Lectura', executiveExportWarningFilteredData.summaryLine]
             ],
@@ -4692,13 +4752,13 @@ export const Reports: React.FC = () => {
 
             autoTable(doc, {
               startY: yPos,
-              head: [['Fecha', 'Temporada', 'Formato', 'Emisor', 'Advertencias', 'Campo']],
+              head: [['Fecha', 'Temporada', 'Formato', 'Emisor', 'Circulación', 'Campo']],
               body: executiveExportWarningFilteredData.recentRows.slice(0, 6).map((row) => [
                 new Date(row.created_at).toLocaleDateString('es-CL'),
                 row.season,
                 row.export_format.toUpperCase(),
                 formatExecutiveExportActor(row.created_by),
-                (row.warning_types || []).map((item) => formatExecutiveExportWarningType(item)).join(', ') || 'Sin detalle',
+                formatExecutiveExportCirculationTarget(row),
                 row.field_label || 'Todos los campos'
               ]),
               theme: 'grid',
@@ -5439,10 +5499,24 @@ export const Reports: React.FC = () => {
     setShowPreview(true);
   };
 
-  const requiresExecutiveExportConfirmation = activeTab === 'executive' && executiveTotalDataClosure.readiness.title === 'No listo para comité';
+  const requiresExecutiveExportConfirmation = activeTab === 'executive' && executiveExportWarningContext.hasWarning;
+  const executiveExportHasCommitteeBlock = executiveTotalDataClosure.readiness.title === 'No listo para comité';
 
-  const runExecutiveExportAction = async (action: ExecutiveExportAction) => {
-    await logExecutiveExportWarningEvent(action);
+  const resetExecutiveExportTraceabilityForm = () => {
+    setExecutiveExportRecipient('');
+    setExecutiveExportCirculationReason('comite');
+    setExecutiveExportCirculationNotes('');
+  };
+
+  const runExecutiveExportAction = async (
+    action: ExecutiveExportAction,
+    circulationContext?: {
+      recipient: string;
+      reason: ExecutiveExportCirculationReason;
+      notes?: string;
+    }
+  ) => {
+    await logExecutiveExportWarningEvent(action, circulationContext);
 
     if (action === 'excel') {
       void exportExecutiveExcel();
@@ -5457,14 +5531,26 @@ export const Reports: React.FC = () => {
       return;
     }
 
+    resetExecutiveExportTraceabilityForm();
     setPendingExecutiveExportAction(action);
   };
 
   const confirmExecutiveExportAction = () => {
     if (!pendingExecutiveExportAction) return;
+    const recipient = executiveExportRecipient.trim();
+    const notes = executiveExportCirculationNotes.trim();
+    if (!recipient) {
+      toast.error('Debes indicar a quién se circulará el reporte.');
+      return;
+    }
     const action = pendingExecutiveExportAction;
     setPendingExecutiveExportAction(null);
-    void runExecutiveExportAction(action);
+    void runExecutiveExportAction(action, {
+      recipient,
+      reason: executiveExportCirculationReason,
+      notes
+    });
+    resetExecutiveExportTraceabilityForm();
   };
 
   if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
@@ -5627,32 +5713,39 @@ export const Reports: React.FC = () => {
             <div className="w-full max-w-2xl rounded-xl bg-white shadow-2xl">
               <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-6 py-4">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Confirmar exportación con dato no listo para comité</h3>
+                  <h3 className="text-lg font-semibold text-gray-900">Registrar circulación de exportación ejecutiva</h3>
                   <p className="mt-1 text-sm text-gray-500">
                     {pendingExecutiveExportAction === 'excel' ? 'Excel Ejecutivo' : 'PDF Ejecutivo'} · {selectedSeason} · {companyName}
                   </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setPendingExecutiveExportAction(null)}
+                  onClick={() => {
+                    setPendingExecutiveExportAction(null);
+                    resetExecutiveExportTraceabilityForm();
+                  }}
                   className="rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
                 >
                   <X className="h-5 w-5" />
                 </button>
               </div>
               <div className="space-y-5 px-6 py-5">
-                <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+                <div className={`rounded-xl border p-4 ${executiveExportHasCommitteeBlock ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
                   <div className="flex items-center justify-between gap-4">
                     <div>
-                      <div className="text-xs uppercase tracking-wide text-red-700">Estado comité</div>
-                      <div className="mt-2 text-xl font-semibold text-red-800">{executiveTotalDataClosure.readiness.title}</div>
+                      <div className={`text-xs uppercase tracking-wide ${executiveExportHasCommitteeBlock ? 'text-red-700' : 'text-amber-700'}`}>Estado comité</div>
+                      <div className={`mt-2 text-xl font-semibold ${executiveExportHasCommitteeBlock ? 'text-red-800' : 'text-amber-800'}`}>{executiveTotalDataClosure.readiness.title}</div>
                     </div>
                     <div className="text-right">
-                      <div className="text-xs uppercase tracking-wide text-red-700">Cierre total</div>
-                      <div className="mt-2 text-2xl font-semibold text-red-800">{executiveTotalDataClosure.totalClosurePct.toFixed(1)}%</div>
+                      <div className={`text-xs uppercase tracking-wide ${executiveExportHasCommitteeBlock ? 'text-red-700' : 'text-amber-700'}`}>Cierre total</div>
+                      <div className={`mt-2 text-2xl font-semibold ${executiveExportHasCommitteeBlock ? 'text-red-800' : 'text-amber-800'}`}>{executiveTotalDataClosure.totalClosurePct.toFixed(1)}%</div>
                     </div>
                   </div>
-                  <p className="mt-3 text-sm text-red-700">{executiveTotalDataClosure.readiness.detail}</p>
+                  <p className={`mt-3 text-sm ${executiveExportHasCommitteeBlock ? 'text-red-700' : 'text-amber-700'}`}>
+                    {executiveExportHasCommitteeBlock
+                      ? executiveTotalDataClosure.readiness.detail
+                      : executiveExportWarningContext.warningSummary}
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
@@ -5676,6 +5769,45 @@ export const Reports: React.FC = () => {
                 </div>
 
                 <div className="rounded-xl border border-slate-200 p-4">
+                  <div className="text-sm font-medium text-slate-900">Trazabilidad de circulación</div>
+                  <p className="mt-2 text-sm text-slate-500">Registra a quién se enviará este reporte y por qué se circulará aun con advertencias visibles.</p>
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label className="block">
+                      <span className="mb-1 block text-sm font-medium text-gray-700">Destinatario</span>
+                      <input
+                        type="text"
+                        value={executiveExportRecipient}
+                        onChange={(e) => setExecutiveExportRecipient(e.target.value)}
+                        placeholder="Ej: Comité agrícola, directorio o banco"
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-sm font-medium text-gray-700">Motivo de circulación</span>
+                      <select
+                        value={executiveExportCirculationReason}
+                        onChange={(e) => setExecutiveExportCirculationReason(e.target.value as ExecutiveExportCirculationReason)}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                      >
+                        {EXECUTIVE_EXPORT_CIRCULATION_REASON_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <label className="mt-4 block">
+                    <span className="mb-1 block text-sm font-medium text-gray-700">Nota breve</span>
+                    <textarea
+                      value={executiveExportCirculationNotes}
+                      onChange={(e) => setExecutiveExportCirculationNotes(e.target.value)}
+                      rows={3}
+                      placeholder="Ej: Se comparte para revisión previa de comité o validación financiera."
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                    />
+                  </label>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 p-4">
                   <div className="text-sm font-medium text-slate-900">Bloqueos actuales</div>
                   <div className="mt-3 space-y-2 text-sm">
                     {executiveTotalDataClosure.blockers.length > 0 ? executiveTotalDataClosure.blockers.map((blocker) => (
@@ -5689,7 +5821,10 @@ export const Reports: React.FC = () => {
                 <div className="flex items-center justify-end gap-3 border-t border-gray-200 pt-4">
                   <button
                     type="button"
-                    onClick={() => setPendingExecutiveExportAction(null)}
+                    onClick={() => {
+                      setPendingExecutiveExportAction(null);
+                      resetExecutiveExportTraceabilityForm();
+                    }}
                     className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                   >
                     Cancelar
@@ -5699,7 +5834,7 @@ export const Reports: React.FC = () => {
                     onClick={confirmExecutiveExportAction}
                     className="inline-flex items-center rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
                   >
-                    Continuar con {pendingExecutiveExportAction === 'excel' ? 'Excel' : 'PDF'}
+                    Registrar y continuar con {pendingExecutiveExportAction === 'excel' ? 'Excel' : 'PDF'}
                   </button>
                 </div>
               </div>
@@ -7482,7 +7617,7 @@ export const Reports: React.FC = () => {
                       </div>
                       <div className="mt-1 text-sm text-slate-500">
                         {executiveExportWarningFilteredData.latestEvent
-                          ? `${executiveExportWarningFilteredData.latestEvent.readiness_title} · ${formatExecutiveExportActor(executiveExportWarningFilteredData.latestEvent.created_by)}`
+                          ? `${executiveExportWarningFilteredData.latestEvent.readiness_title} · ${formatExecutiveExportActor(executiveExportWarningFilteredData.latestEvent.created_by)} · ${executiveExportWarningFilteredData.latestEvent.circulation_recipient || 'Sin destinatario'}`
                           : 'Aún sin exportaciones advertidas visibles'}
                       </div>
                     </div>
@@ -7493,7 +7628,7 @@ export const Reports: React.FC = () => {
                     <p className="mt-2">{executiveExportWarningFilteredData.summaryLine}</p>
                     <p className="mt-2">
                       {executiveExportWarningFilteredData.latestCurrentSeasonEvent
-                        ? `La última exportación advertida visible de la temporada ocurrió el ${new Date(executiveExportWarningFilteredData.latestCurrentSeasonEvent.created_at).toLocaleString('es-CL')} en formato ${executiveExportWarningFilteredData.latestCurrentSeasonEvent.export_format.toUpperCase()} por ${formatExecutiveExportActor(executiveExportWarningFilteredData.latestCurrentSeasonEvent.created_by)}.`
+                        ? `La última exportación advertida visible de la temporada ocurrió el ${new Date(executiveExportWarningFilteredData.latestCurrentSeasonEvent.created_at).toLocaleString('es-CL')} en formato ${executiveExportWarningFilteredData.latestCurrentSeasonEvent.export_format.toUpperCase()} por ${formatExecutiveExportActor(executiveExportWarningFilteredData.latestCurrentSeasonEvent.created_by)} hacia ${formatExecutiveExportCirculationTarget(executiveExportWarningFilteredData.latestCurrentSeasonEvent)}.`
                         : `La temporada ${selectedSeason} no registra exportaciones advertidas para los filtros actuales.`}
                     </p>
                   </div>
@@ -7529,21 +7664,21 @@ export const Reports: React.FC = () => {
                       <table className="min-w-full divide-y divide-slate-200 text-sm">
                         <thead className="bg-slate-50">
                           <tr>
-                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Advertencia frecuente</th>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Motivo frecuente</th>
                             <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Veces</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 bg-white">
-                          {executiveExportWarningFilteredData.warningTypeSummary.slice(0, 6).map((row) => (
-                            <tr key={row.type}>
-                              <td className="px-4 py-3 text-slate-900">{formatExecutiveExportWarningType(row.type)}</td>
+                          {executiveExportWarningFilteredData.circulationReasonSummary.slice(0, 6).map((row) => (
+                            <tr key={row.reason}>
+                              <td className="px-4 py-3 text-slate-900">{formatExecutiveExportCirculationReason(row.reason)}</td>
                               <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
                             </tr>
                           ))}
-                          {!executiveExportWarningLoading && executiveExportWarningFilteredData.warningTypeSummary.length === 0 && (
+                          {!executiveExportWarningLoading && executiveExportWarningFilteredData.circulationReasonSummary.length === 0 && (
                             <tr>
                               <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
-                                No hay advertencias visibles para los filtros seleccionados.
+                                No hay motivos de circulación visibles para los filtros seleccionados.
                               </td>
                             </tr>
                           )}
@@ -7560,6 +7695,7 @@ export const Reports: React.FC = () => {
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Temporada</th>
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Formato</th>
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Emisor</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Circulación</th>
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Estado</th>
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Advertencias</th>
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Campo</th>
@@ -7573,6 +7709,7 @@ export const Reports: React.FC = () => {
                             <td className="px-4 py-3 font-medium text-slate-900">{row.season}</td>
                             <td className="px-4 py-3 text-slate-700">{row.export_format.toUpperCase()}</td>
                             <td className="px-4 py-3 text-slate-700">{formatExecutiveExportActor(row.created_by)}</td>
+                            <td className="px-4 py-3 text-slate-700">{formatExecutiveExportCirculationTarget(row)}</td>
                             <td className="px-4 py-3 text-slate-700">{row.readiness_title}</td>
                             <td className="px-4 py-3 text-slate-700">{(row.warning_types || []).map((item) => formatExecutiveExportWarningType(item)).join(', ') || 'Sin detalle'}</td>
                             <td className="px-4 py-3 text-slate-700">{row.field_label || 'Todos los campos'}</td>
@@ -7581,14 +7718,14 @@ export const Reports: React.FC = () => {
                         ))}
                         {!executiveExportWarningLoading && executiveExportWarningFilteredData.recentRows.length === 0 && (
                           <tr>
-                            <td colSpan={8} className="px-4 py-4 text-center text-sm text-slate-500">
+                            <td colSpan={9} className="px-4 py-4 text-center text-sm text-slate-500">
                               No hay exportaciones bajo advertencia para los filtros seleccionados.
                             </td>
                           </tr>
                         )}
                         {executiveExportWarningLoading && (
                           <tr>
-                            <td colSpan={8} className="px-4 py-4 text-center text-sm text-slate-500">
+                            <td colSpan={9} className="px-4 py-4 text-center text-sm text-slate-500">
                               Cargando bitácora histórica de exportaciones...
                             </td>
                           </tr>

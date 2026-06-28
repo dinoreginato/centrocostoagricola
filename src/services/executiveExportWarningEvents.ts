@@ -13,6 +13,9 @@ export type ExecutiveExportWarningEventCreate = {
   fieldLabel?: string | null;
   compareCompanyId?: string | null;
   compareCompanyName?: string | null;
+  circulationRecipient?: string | null;
+  circulationReason?: string | null;
+  circulationNotes?: string | null;
   metadata?: Record<string, unknown>;
 };
 
@@ -32,6 +35,9 @@ export type ExecutiveExportWarningEventRow = {
   field_label: string | null;
   compare_company_id: string | null;
   compare_company_name: string | null;
+  circulation_recipient: string | null;
+  circulation_reason: string | null;
+  circulation_notes: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
 };
@@ -53,6 +59,9 @@ export async function createExecutiveExportWarningEvent(params: ExecutiveExportW
       field_label: params.fieldLabel || null,
       compare_company_id: params.compareCompanyId || null,
       compare_company_name: params.compareCompanyName || null,
+      circulation_recipient: params.circulationRecipient || null,
+      circulation_reason: params.circulationReason || null,
+      circulation_notes: params.circulationNotes || null,
       metadata: params.metadata || {}
     });
 

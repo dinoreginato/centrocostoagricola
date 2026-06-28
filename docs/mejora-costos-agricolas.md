@@ -490,6 +490,20 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - dejar una lectura sintetica y defendible de cual empresa llega mejor preparada al comite
   - evitar que la comparacion dependa solo de una lectura manual de tablas separadas
 
+## Trazabilidad De Circulacion Del Reporte
+- La exportacion ejecutiva bajo advertencia ahora registra tambien contexto de circulacion.
+- Antes de exportar con advertencias visibles, el flujo solicita:
+  - destinatario
+  - motivo de circulacion
+  - nota breve opcional
+- Este contexto queda guardado en `executive_export_warning_events` y se expone en:
+  - la bitacora visible de `Reportes`
+  - Excel en `Bitacora Exportaciones`
+  - PDF ejecutivo de auditoria
+- Objetivo:
+  - distinguir una exportacion tecnica de una circulacion real del reporte
+  - dejar evidencia de a quien se compartio el dato y bajo que justificacion
+
 ## Siguiente Paso Recomendado
-- Considerar trazabilidad ampliada por destinatario o motivo de circulacion del reporte exportado.
 - Evaluar un ranking multiempresa global cuando existan mas de dos empresas comparables en la misma temporada.
+- Considerar filtros especificos por destinatario o motivo dentro de la bitacora historica.
