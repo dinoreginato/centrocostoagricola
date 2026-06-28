@@ -549,6 +549,32 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - entender para que instancia se comparte mas el reporte bajo advertencia
   - conectar cada motivo con los actores realmente impactados
 
+## Ranking Multiempresa Global Por Temporada
+- `Reportes` ahora construye un ranking multiempresa usando todas las empresas accesibles con cierre disponible en la temporada seleccionada.
+- El ranking reutiliza la misma logica canonica ya usada en el comparativo entre dos empresas:
+  - cierre economico formal
+  - trazabilidad y soporte oficial
+  - cierre total del dato
+  - tendencia movil historica
+  - disciplina de bloqueos
+- La lectura se integra en:
+  - vista ejecutiva normal
+  - fullscreen con slide exclusivo
+  - Excel con hoja `Ranking Multiempresa`
+  - PDF ejecutivo con tabla y lectura de cobertura
+- El ranking expone:
+  - posicion global por empresa
+  - puntaje ponderado
+  - cierre total de la temporada
+  - tendencia reciente
+  - bloqueos visibles
+  - estado de comite
+  - posicion de la empresa activa dentro del universo
+- Objetivo:
+  - dejar de comparar solo empresa actual vs empresa comparada
+  - mostrar la foto completa del universo empresarial disponible para comite
+  - defender con una regla explicita que empresa llega mejor parada a la temporada visible
+
 ## Siguiente Paso Recomendado
-- Evaluar un ranking multiempresa global cuando existan mas de dos empresas comparables en la misma temporada.
-- Considerar un ranking multiempresa global por temporada usando todas las empresas con cierre disponible.
+- Evaluar una evolucion del ranking multiempresa hacia historial consolidado por temporada para ver rotacion de liderazgo entre empresas.
+- Considerar alertas automaticas cuando la empresa activa caiga fuera del cuartil superior del ranking global.

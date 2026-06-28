@@ -208,6 +208,20 @@ type ExecutiveExportCirculationReason = 'comite' | 'directorio' | 'revision_inte
 type ClosureTrendDirection = 'mejora' | 'estable' | 'deterioro' | 'sin_base';
 type ExecutiveRecommendationDecision = 'presentar' | 'presentar_con_cautela' | 'no_presentar';
 type ExecutiveRankingTier = 'fuerte' | 'intermedio' | 'fragil';
+type ExecutiveGlobalCompanyClosureRow = {
+  season: string;
+  totalClosurePct: number;
+  economicPct: number;
+  traceabilityPct: number;
+  officialSupportPct: number;
+  blockersCount: number;
+  readinessTitle: string;
+};
+type ExecutiveGlobalCompanySnapshot = {
+  companyId: string;
+  companyLabel: string;
+  totalClosureHistoryRows: ExecutiveGlobalCompanyClosureRow[];
+};
 
 const EXECUTIVE_SORT_OPTIONS: Array<{ value: ExecutiveSortKey; label: string }> = [
   { value: 'total', label: 'Mayor gasto' },
@@ -687,6 +701,290 @@ const buildExecutiveCompanyRanking = (params: {
   };
 };
 
+const buildAuditMetricsFromSummaryRowsForSeason = (
+  summaryRows: AgriculturalCostAuditSummaryRow[],
+  season: string
+) => {
+  const visibleRows = summaryRows.filter((row) => (row.season || season) === season);
+  const totalAudited = visibleRows.reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
+  const traceableAmount = visibleRows.reduce((sum, row) => sum + Number(row.traceable_amount || 0), 0);
+  const nonTraceableAmount = visibleRows.reduce((sum, row) => sum + Number(row.non_traceable_amount || 0), 0);
+  const officialAmount = visibleRows
+    .filter((row) => row.cost_role === 'oficial')
+    .reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
+  const highReviewAmount = visibleRows
+    .filter((row) => row.review_priority === 'alta')
+    .reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
+  const highReviewCount = visibleRows
+    .filter((row) => row.review_priority === 'alta')
+    .reduce((sum, row) => sum + Number(row.movement_count || 0), 0);
+
+  return {
+    totalAudited,
+    traceabilityPct: totalAudited > 0 ? (traceableAmount / totalAudited) * 100 : 0,
+    officialAmount,
+    nonTraceableAmount,
+    highReviewPct: totalAudited > 0 ? (highReviewAmount / totalAudited) * 100 : 0,
+    highReviewCount
+  };
+};
+
+const buildEconomicClosureSummaryFromReportSources = (params: {
+  season: string;
+  fields: any[];
+  marginRows: AgriculturalMarginRow[];
+  productionRecords: ProductionRecord[];
+  fieldFilter?: string;
+}) => {
+  const { season, fields, marginRows, productionRecords, fieldFilter = 'all' } = params;
+  const seasonStartYear = Number(String(season || '').split('-')[0]) || new Date().getFullYear();
+  const productionRecordMap = new Map(
+    productionRecords
+      .filter((row) => Number(row.season_year || 0) === seasonStartYear)
+      .map((row) => [String(row.sector_id), row])
+  );
+  const visibleRows = fields
+    .flatMap((field) =>
+      (field.sectors || []).map((sector: any) => {
+        const record = productionRecordMap.get(String(sector.id));
+        const marginRow = marginRows.find((row) => row.season === season && row.sector_id === sector.id) || null;
+        return {
+          fieldId: String(field.id),
+          fieldName: String(field.name || '-'),
+          sectorId: String(sector.id),
+          sectorName: String(sector.name || '-'),
+          hectares: Number(sector.hectares || 0),
+          kgProduced: Number(record?.kg_produced || 0),
+          pricePerKg: Number(record?.price_per_kg || 0),
+          hasRecord: Boolean(record),
+          productionSource: marginRow?.production_source || 'sin_produccion',
+          totalCost: Number(marginRow?.total_cost || 0),
+          totalIncome: Number(marginRow?.total_income_clp || 0),
+          marginPct: Number(marginRow?.margin_pct || 0),
+          recordId: record?.id || null
+        };
+      })
+    )
+    .filter((row) => fieldFilter === 'all' || row.fieldId === fieldFilter);
+  const closedRows = visibleRows.filter((row) => row.hasRecord && row.totalIncome > 0 && row.totalCost > 0);
+  const pendingProductionRows = visibleRows.filter((row) => row.totalIncome > 0 && !row.hasRecord);
+  const pendingIncomeRows = visibleRows.filter((row) => row.hasRecord && row.totalIncome <= 0);
+  const costWithoutIncomeRows = visibleRows.filter((row) => row.totalCost > 0 && row.totalIncome <= 0);
+  const closurePct = visibleRows.length > 0 ? (closedRows.length / visibleRows.length) * 100 : 0;
+  const pendingProductionAmount = pendingProductionRows.reduce((sum, row) => sum + Number(row.totalIncome || 0), 0);
+  const pendingIncomeCost = pendingIncomeRows.reduce((sum, row) => sum + Number(row.totalCost || 0), 0);
+  const costWithoutIncomeAmount = costWithoutIncomeRows.reduce((sum, row) => sum + Number(row.totalCost || 0), 0);
+
+  const tone = (() => {
+    if (closurePct < 40 || pendingProductionRows.length > 0 || costWithoutIncomeRows.length > 0) {
+      return {
+        badge: 'bg-red-100 text-red-700 border-red-200',
+        dot: 'bg-red-500',
+        label: 'Riesgo alto'
+      };
+    }
+    if (closurePct < 75 || pendingIncomeRows.length > 0) {
+      return {
+        badge: 'bg-amber-100 text-amber-700 border-amber-200',
+        dot: 'bg-amber-500',
+        label: 'Atención'
+      };
+    }
+    return {
+      badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+      dot: 'bg-emerald-500',
+      label: 'Controlado'
+    };
+  })();
+
+  const findings = [
+    {
+      title: 'Sectores cerrados',
+      description: 'Sectores con costo, ingreso y producción formal visibles.',
+      emphasis: `${closedRows.length} de ${visibleRows.length} sectores · ${closurePct.toFixed(1)}%`
+    },
+    {
+      title: 'Pendientes de producción',
+      description: 'Sectores con ingresos visibles, pero aún sin producción formal registrada.',
+      emphasis: `${pendingProductionRows.length} sectores · ${formatCLP(pendingProductionAmount)}`
+    },
+    {
+      title: 'Pendientes de ingreso',
+      description: 'Sectores con producción formal, pero sin ingresos visibles para cerrar margen.',
+      emphasis: `${pendingIncomeRows.length} sectores · ${formatCLP(pendingIncomeCost)}`
+    }
+  ];
+
+  const topFocusRows = [
+    ...pendingProductionRows.map((row) => ({
+      key: `prod-${row.sectorId}`,
+      status: 'Ingreso sin producción formal',
+      fieldName: row.fieldName,
+      sectorName: row.sectorName,
+      amount: row.totalIncome,
+      unitLabel: formatCLP(row.totalIncome)
+    })),
+    ...costWithoutIncomeRows.map((row) => ({
+      key: `income-${row.sectorId}`,
+      status: 'Costo sin ingreso',
+      fieldName: row.fieldName,
+      sectorName: row.sectorName,
+      amount: row.totalCost,
+      unitLabel: formatCLP(row.totalCost)
+    })),
+    ...pendingIncomeRows.map((row) => ({
+      key: `formal-${row.sectorId}`,
+      status: 'Producción formal sin ingreso',
+      fieldName: row.fieldName,
+      sectorName: row.sectorName,
+      amount: row.kgProduced,
+      unitLabel: `${Number(row.kgProduced || 0).toLocaleString('es-CL')} Kg`
+    }))
+  ]
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 6);
+
+  const conclusion = visibleRows.length <= 0
+    ? 'No hay sectores visibles para medir cierre económico.'
+    : closurePct >= 85 && pendingProductionRows.length === 0 && pendingIncomeRows.length === 0
+      ? `La temporada presenta un cierre económico de ${closurePct.toFixed(1)}% y ya puede usarse como lectura más confiable de margen.`
+      : `La temporada muestra un cierre económico de ${closurePct.toFixed(1)}%. Conviene regularizar ${pendingProductionRows.length + pendingIncomeRows.length + costWithoutIncomeRows.length} focos antes de presentar el margen como definitivo.`;
+
+  return {
+    season,
+    visibleRows,
+    closedRows,
+    pendingProductionRows,
+    pendingIncomeRows,
+    costWithoutIncomeRows,
+    closurePct,
+    pendingProductionAmount,
+    pendingIncomeCost,
+    costWithoutIncomeAmount,
+    tone,
+    findings,
+    topFocusRows,
+    conclusion
+  };
+};
+
+const buildTotalDataClosureSummary = (params: {
+  economicClosureData: {
+    closurePct: number;
+    pendingProductionRows: Array<any>;
+    pendingIncomeRows: Array<any>;
+    costWithoutIncomeRows: Array<any>;
+  };
+  auditMetrics: {
+    totalAudited: number;
+    traceabilityPct: number;
+    officialAmount: number;
+    nonTraceableAmount: number;
+    highReviewPct: number;
+    highReviewCount: number;
+  };
+}) => {
+  const { economicClosureData, auditMetrics } = params;
+  const totalAudited = Number(auditMetrics.totalAudited || 0);
+  const economicPct = Number(economicClosureData.closurePct || 0);
+  const traceabilityPct = Number(auditMetrics.traceabilityPct || 0);
+  const officialSupportPct = totalAudited > 0
+    ? (Number(auditMetrics.officialAmount || 0) / totalAudited) * 100
+    : 0;
+  const reviewCleanPct = Math.max(0, 100 - Number(auditMetrics.highReviewPct || 0));
+  const totalClosurePct =
+    economicPct * 0.45 +
+    traceabilityPct * 0.3 +
+    officialSupportPct * 0.15 +
+    reviewCleanPct * 0.1;
+
+  const blockers = [
+    economicClosureData.pendingProductionRows.length > 0
+      ? `${economicClosureData.pendingProductionRows.length} sectores con ingreso sin producción formal`
+      : null,
+    economicClosureData.pendingIncomeRows.length > 0
+      ? `${economicClosureData.pendingIncomeRows.length} sectores con producción formal sin ingreso`
+      : null,
+    economicClosureData.costWithoutIncomeRows.length > 0
+      ? `${economicClosureData.costWithoutIncomeRows.length} sectores con costo sin cierre comercial`
+      : null,
+    auditMetrics.nonTraceableAmount > 0
+      ? `${formatCLP(auditMetrics.nonTraceableAmount)} aún sin trazabilidad completa`
+      : null,
+    auditMetrics.highReviewCount > 0
+      ? `${auditMetrics.highReviewCount} focos de revisión alta siguen abiertos`
+      : null
+  ].filter(Boolean) as string[];
+
+  const readiness = (() => {
+    if (
+      totalClosurePct < 55 ||
+      economicPct < 50 ||
+      traceabilityPct < 60 ||
+      auditMetrics.highReviewPct > 20
+    ) {
+      return {
+        badge: 'bg-red-100 text-red-700 border-red-200',
+        dot: 'bg-red-500',
+        title: 'No listo para comité',
+        detail: 'La temporada todavía no tiene calidad suficiente para presentarse como dato definitivo.'
+      };
+    }
+    if (
+      totalClosurePct < 75 ||
+      officialSupportPct < 60 ||
+      blockers.length > 0
+    ) {
+      return {
+        badge: 'bg-amber-100 text-amber-700 border-amber-200',
+        dot: 'bg-amber-500',
+        title: 'Listo con advertencias',
+        detail: 'La lectura sirve para seguimiento ejecutivo, pero todavía requiere contexto y cautela.'
+      };
+    }
+    return {
+      badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+      dot: 'bg-emerald-500',
+      title: 'Listo para comité',
+      detail: 'La temporada tiene un nivel de cierre y trazabilidad suficientemente sólido para presentarse como lectura principal.'
+    };
+  })();
+
+  const findings = [
+    {
+      title: 'Cierre integrado',
+      description: 'Combina cierre económico, trazabilidad, soporte oficial y limpieza de revisión.',
+      emphasis: `${totalClosurePct.toFixed(1)}% consolidado`
+    },
+    {
+      title: 'Soporte oficial',
+      description: 'Mide cuánto del costo auditado descansa en base oficial y no solo en respaldo o distribución.',
+      emphasis: `${officialSupportPct.toFixed(1)}% del costo auditado`
+    },
+    {
+      title: 'Lectura para comité',
+      description: readiness.detail,
+      emphasis: readiness.title
+    }
+  ];
+
+  const conclusion = blockers.length === 0
+    ? `La temporada presenta un cierre total del dato de ${totalClosurePct.toFixed(1)}% y no muestra bloqueos críticos visibles.`
+    : `La temporada presenta un cierre total del dato de ${totalClosurePct.toFixed(1)}%. Antes de considerarla definitiva conviene resolver ${blockers.length} bloqueos principales.`;
+
+  return {
+    economicPct,
+    traceabilityPct,
+    officialSupportPct,
+    reviewCleanPct,
+    totalClosurePct,
+    blockers,
+    readiness,
+    findings,
+    conclusion
+  };
+};
+
 const sortExecutiveRows = <T extends Record<string, any>>(rows: T[], sortBy: ExecutiveSortKey) => {
   return rows.slice().sort((a, b) => {
     const primary = getExecutiveSortMetric(b, sortBy) - getExecutiveSortMetric(a, sortBy);
@@ -907,6 +1205,8 @@ export const Reports: React.FC = () => {
   const [executiveComparisonSeason, setExecutiveComparisonSeason] = useState<string>('');
   const [executiveCompareCompanyId, setExecutiveCompareCompanyId] = useState<string>('none');
   const [executiveCompareCompanyRaw, setExecutiveCompareCompanyRaw] = useState<any | null>(null);
+  const [executiveGlobalCompanySnapshots, setExecutiveGlobalCompanySnapshots] = useState<ExecutiveGlobalCompanySnapshot[]>([]);
+  const [executiveGlobalCompanyRankingLoading, setExecutiveGlobalCompanyRankingLoading] = useState(false);
   const [executiveCompareFieldA, setExecutiveCompareFieldA] = useState<string>('auto');
   const [executiveCompareFieldB, setExecutiveCompareFieldB] = useState<string>('auto');
   const [executiveFieldSortBy, setExecutiveFieldSortBy] = useState<ExecutiveSortKey>('total');
@@ -929,6 +1229,7 @@ export const Reports: React.FC = () => {
   const [executiveExportCirculationNotes, setExecutiveExportCirculationNotes] = useState('');
   const reportLoadSeqRef = useRef(0);
   const costAuditLoadSeqRef = useRef(0);
+  const executiveGlobalRankingLoadSeqRef = useRef(0);
 
   // Update orientation when tab changes
   useEffect(() => {
@@ -1089,6 +1390,86 @@ export const Reports: React.FC = () => {
     [companies, selectedCompany?.id]
   );
 
+  useEffect(() => {
+    if (companies.length <= 0) {
+      setExecutiveGlobalCompanySnapshots([]);
+      setExecutiveGlobalCompanyRankingLoading(false);
+      return;
+    }
+
+    const loadSeq = ++executiveGlobalRankingLoadSeqRef.current;
+    let cancelled = false;
+    setExecutiveGlobalCompanyRankingLoading(true);
+
+    void (async () => {
+      try {
+        const snapshots = await Promise.all(
+          companies.map(async (company) => {
+            try {
+              const [raw, marginRows, productionRecords, auditSummary] = await Promise.all([
+                loadReportsRawData({ companyId: company.id }),
+                loadAgriculturalMarginRows({ companyId: company.id }),
+                loadProductionRecords({ companyId: company.id }),
+                loadAgriculturalCostAuditSummary({ companyId: company.id })
+              ]);
+
+              const seasons = Array.from(new Set([
+                ...(Array.isArray(raw.availableSeasons) ? raw.availableSeasons : []),
+                ...(marginRows || []).map((row) => row.season).filter(Boolean),
+                ...(auditSummary || []).map((row) => row.season).filter(Boolean)
+              ]))
+                .sort((a, b) => String(b).localeCompare(String(a)));
+
+              const totalClosureHistoryRows = seasons.map((season) => {
+                const totalClosure = buildTotalDataClosureSummary({
+                  economicClosureData: buildEconomicClosureSummaryFromReportSources({
+                    season: String(season),
+                    fields: raw.fields || [],
+                    marginRows: marginRows || [],
+                    productionRecords: productionRecords || [],
+                    fieldFilter: 'all'
+                  }),
+                  auditMetrics: buildAuditMetricsFromSummaryRowsForSeason(auditSummary || [], String(season))
+                });
+
+                return {
+                  season: String(season),
+                  totalClosurePct: totalClosure.totalClosurePct,
+                  economicPct: totalClosure.economicPct,
+                  traceabilityPct: totalClosure.traceabilityPct,
+                  officialSupportPct: totalClosure.officialSupportPct,
+                  blockersCount: totalClosure.blockers.length,
+                  readinessTitle: totalClosure.readiness.title
+                };
+              });
+
+              return {
+                companyId: company.id,
+                companyLabel: company.name,
+                totalClosureHistoryRows
+              } satisfies ExecutiveGlobalCompanySnapshot;
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        if (cancelled || executiveGlobalRankingLoadSeqRef.current !== loadSeq) return;
+        setExecutiveGlobalCompanySnapshots(
+          snapshots.filter((item): item is ExecutiveGlobalCompanySnapshot => Boolean(item))
+        );
+      } finally {
+        if (!cancelled && executiveGlobalRankingLoadSeqRef.current === loadSeq) {
+          setExecutiveGlobalCompanyRankingLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [companies]);
+
   const selectedSeasonStartYear = useMemo(() => {
     const [startYear] = String(selectedSeason || '').split('-');
     return Number(startYear) || new Date().getFullYear();
@@ -1129,7 +1510,7 @@ export const Reports: React.FC = () => {
     };
   }, [executiveCompareCompanyId, selectedSeason]);
 
-  const presentationMaxSlide = activeTab === 'executive' ? 11 : activeTab === 'general' ? 3 : 1;
+  const presentationMaxSlide = activeTab === 'executive' ? 12 : activeTab === 'general' ? 3 : 1;
 
   // Update presentation logic to support executive slides and legacy tabs
   useEffect(() => {
@@ -1356,8 +1737,12 @@ export const Reports: React.FC = () => {
       };
     });
 
-    const previousFieldMap = new Map(executivePreviousBase.fieldRows.map((row) => [row.fieldId, row]));
-    const previousSectorMap = new Map(executivePreviousBase.sectorRows.map((row) => [row.sectorId, row]));
+    const previousFieldMap = new Map<string, typeof executivePreviousBase.fieldRows[number]>(
+      executivePreviousBase.fieldRows.map((row) => [row.fieldId, row])
+    );
+    const previousSectorMap = new Map<string, typeof executivePreviousBase.sectorRows[number]>(
+      executivePreviousBase.sectorRows.map((row) => [row.sectorId, row])
+    );
 
     const fieldRows = executiveCurrentBase.fieldRows.map((row) => {
       const previous = previousFieldMap.get(row.fieldId);
@@ -1993,29 +2378,8 @@ export const Reports: React.FC = () => {
   ]);
 
   const buildAuditMetricsFromSummaryRows = useCallback((summaryRows: AgriculturalCostAuditSummaryRow[], season: string) => {
-    const visibleRows = summaryRows.filter((row) => (row.season || selectedSeason) === season);
-    const totalAudited = visibleRows.reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
-    const traceableAmount = visibleRows.reduce((sum, row) => sum + Number(row.traceable_amount || 0), 0);
-    const nonTraceableAmount = visibleRows.reduce((sum, row) => sum + Number(row.non_traceable_amount || 0), 0);
-    const officialAmount = visibleRows
-      .filter((row) => row.cost_role === 'oficial')
-      .reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
-    const highReviewAmount = visibleRows
-      .filter((row) => row.review_priority === 'alta')
-      .reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
-    const highReviewCount = visibleRows
-      .filter((row) => row.review_priority === 'alta')
-      .reduce((sum, row) => sum + Number(row.movement_count || 0), 0);
-
-    return {
-      totalAudited,
-      traceabilityPct: totalAudited > 0 ? (traceableAmount / totalAudited) * 100 : 0,
-      officialAmount,
-      nonTraceableAmount,
-      highReviewPct: totalAudited > 0 ? (highReviewAmount / totalAudited) * 100 : 0,
-      highReviewCount
-    };
-  }, [selectedSeason]);
+    return buildAuditMetricsFromSummaryRowsForSeason(summaryRows, season);
+  }, []);
 
   const executiveMarginData = useMemo(() => {
     const visibleRows = rawMarginRows.filter((row) => {
@@ -2134,137 +2498,12 @@ export const Reports: React.FC = () => {
     fields: any[];
     marginRows: AgriculturalMarginRow[];
     productionRecords: ProductionRecord[];
+    fieldFilter?: string;
   }) => {
-    const { season, fields, marginRows, productionRecords } = params;
-    const seasonStartYear = Number(String(season || '').split('-')[0]) || new Date().getFullYear();
-    const productionRecordMap = new Map(
-      productionRecords
-        .filter((row) => Number(row.season_year || 0) === seasonStartYear)
-        .map((row) => [String(row.sector_id), row])
-    );
-    const visibleRows = fields
-      .flatMap((field) =>
-        (field.sectors || []).map((sector: any) => {
-          const record = productionRecordMap.get(String(sector.id));
-          const marginRow = marginRows.find((row) => row.season === season && row.sector_id === sector.id) || null;
-          return {
-            fieldId: String(field.id),
-            fieldName: String(field.name || '-'),
-            sectorId: String(sector.id),
-            sectorName: String(sector.name || '-'),
-            hectares: Number(sector.hectares || 0),
-            kgProduced: Number(record?.kg_produced || 0),
-            pricePerKg: Number(record?.price_per_kg || 0),
-            hasRecord: Boolean(record),
-            productionSource: marginRow?.production_source || 'sin_produccion',
-            totalCost: Number(marginRow?.total_cost || 0),
-            totalIncome: Number(marginRow?.total_income_clp || 0),
-            marginPct: Number(marginRow?.margin_pct || 0),
-            recordId: record?.id || null
-          };
-        })
-      )
-      .filter((row) => executiveFieldFilter === 'all' || row.fieldId === executiveFieldFilter);
-    const closedRows = visibleRows.filter((row) => row.hasRecord && row.totalIncome > 0 && row.totalCost > 0);
-    const pendingProductionRows = visibleRows.filter((row) => row.totalIncome > 0 && !row.hasRecord);
-    const pendingIncomeRows = visibleRows.filter((row) => row.hasRecord && row.totalIncome <= 0);
-    const costWithoutIncomeRows = visibleRows.filter((row) => row.totalCost > 0 && row.totalIncome <= 0);
-    const closurePct = visibleRows.length > 0 ? (closedRows.length / visibleRows.length) * 100 : 0;
-    const pendingProductionAmount = pendingProductionRows.reduce((sum, row) => sum + Number(row.totalIncome || 0), 0);
-    const pendingIncomeCost = pendingIncomeRows.reduce((sum, row) => sum + Number(row.totalCost || 0), 0);
-    const costWithoutIncomeAmount = costWithoutIncomeRows.reduce((sum, row) => sum + Number(row.totalCost || 0), 0);
-
-    const tone = (() => {
-      if (closurePct < 40 || pendingProductionRows.length > 0 || costWithoutIncomeRows.length > 0) {
-        return {
-          badge: 'bg-red-100 text-red-700 border-red-200',
-          dot: 'bg-red-500',
-          label: 'Riesgo alto'
-        };
-      }
-      if (closurePct < 75 || pendingIncomeRows.length > 0) {
-        return {
-          badge: 'bg-amber-100 text-amber-700 border-amber-200',
-          dot: 'bg-amber-500',
-          label: 'Atención'
-        };
-      }
-      return {
-        badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-        dot: 'bg-emerald-500',
-        label: 'Controlado'
-      };
-    })();
-
-    const findings = [
-      {
-        title: 'Sectores cerrados',
-        description: 'Sectores con costo, ingreso y producción formal visibles.',
-        emphasis: `${closedRows.length} de ${visibleRows.length} sectores · ${closurePct.toFixed(1)}%`
-      },
-      {
-        title: 'Pendientes de producción',
-        description: 'Sectores con ingresos visibles, pero aún sin producción formal registrada.',
-        emphasis: `${pendingProductionRows.length} sectores · ${formatCLP(pendingProductionAmount)}`
-      },
-      {
-        title: 'Pendientes de ingreso',
-        description: 'Sectores con producción formal, pero sin ingresos visibles para cerrar margen.',
-        emphasis: `${pendingIncomeRows.length} sectores · ${formatCLP(pendingIncomeCost)}`
-      }
-    ];
-
-    const topFocusRows = [
-      ...pendingProductionRows.map((row) => ({
-        key: `prod-${row.sectorId}`,
-        status: 'Ingreso sin producción formal',
-        fieldName: row.fieldName,
-        sectorName: row.sectorName,
-        amount: row.totalIncome,
-        unitLabel: formatCLP(row.totalIncome)
-      })),
-      ...costWithoutIncomeRows.map((row) => ({
-        key: `income-${row.sectorId}`,
-        status: 'Costo sin ingreso',
-        fieldName: row.fieldName,
-        sectorName: row.sectorName,
-        amount: row.totalCost,
-        unitLabel: formatCLP(row.totalCost)
-      })),
-      ...pendingIncomeRows.map((row) => ({
-        key: `formal-${row.sectorId}`,
-        status: 'Producción formal sin ingreso',
-        fieldName: row.fieldName,
-        sectorName: row.sectorName,
-        amount: row.kgProduced,
-        unitLabel: `${Number(row.kgProduced || 0).toLocaleString('es-CL')} Kg`
-      }))
-    ]
-      .sort((a, b) => b.amount - a.amount)
-      .slice(0, 6);
-
-    const conclusion = visibleRows.length <= 0
-      ? 'No hay sectores visibles para medir cierre económico.'
-      : closurePct >= 85 && pendingProductionRows.length === 0 && pendingIncomeRows.length === 0
-        ? `La temporada presenta un cierre económico de ${closurePct.toFixed(1)}% y ya puede usarse como lectura más confiable de margen.`
-        : `La temporada muestra un cierre económico de ${closurePct.toFixed(1)}%. Conviene regularizar ${pendingProductionRows.length + pendingIncomeRows.length + costWithoutIncomeRows.length} focos antes de presentar el margen como definitivo.`;
-
-    return {
-      season,
-      visibleRows,
-      closedRows,
-      pendingProductionRows,
-      pendingIncomeRows,
-      costWithoutIncomeRows,
-      closurePct,
-      pendingProductionAmount,
-      pendingIncomeCost,
-      costWithoutIncomeAmount,
-      tone,
-      findings,
-      topFocusRows,
-      conclusion
-    };
+    return buildEconomicClosureSummaryFromReportSources({
+      ...params,
+      fieldFilter: params.fieldFilter ?? executiveFieldFilter
+    });
   }, [executiveFieldFilter]);
 
   const buildEconomicClosureSummary = useCallback((season: string) => (
@@ -2331,107 +2570,7 @@ export const Reports: React.FC = () => {
       highReviewPct: number;
       highReviewCount: number;
     };
-  }) => {
-    const { economicClosureData, auditMetrics } = params;
-    const totalAudited = Number(auditMetrics.totalAudited || 0);
-    const economicPct = Number(economicClosureData.closurePct || 0);
-    const traceabilityPct = Number(auditMetrics.traceabilityPct || 0);
-    const officialSupportPct = totalAudited > 0
-      ? (Number(auditMetrics.officialAmount || 0) / totalAudited) * 100
-      : 0;
-    const reviewCleanPct = Math.max(0, 100 - Number(auditMetrics.highReviewPct || 0));
-    const totalClosurePct =
-      economicPct * 0.45 +
-      traceabilityPct * 0.3 +
-      officialSupportPct * 0.15 +
-      reviewCleanPct * 0.1;
-
-    const blockers = [
-      economicClosureData.pendingProductionRows.length > 0
-        ? `${economicClosureData.pendingProductionRows.length} sectores con ingreso sin producción formal`
-        : null,
-      economicClosureData.pendingIncomeRows.length > 0
-        ? `${economicClosureData.pendingIncomeRows.length} sectores con producción formal sin ingreso`
-        : null,
-      economicClosureData.costWithoutIncomeRows.length > 0
-        ? `${economicClosureData.costWithoutIncomeRows.length} sectores con costo sin cierre comercial`
-        : null,
-      auditMetrics.nonTraceableAmount > 0
-        ? `${formatCLP(auditMetrics.nonTraceableAmount)} aún sin trazabilidad completa`
-        : null,
-      auditMetrics.highReviewCount > 0
-        ? `${auditMetrics.highReviewCount} focos de revisión alta siguen abiertos`
-        : null
-    ].filter(Boolean) as string[];
-
-    const readiness = (() => {
-      if (
-        totalClosurePct < 55 ||
-        economicPct < 50 ||
-        traceabilityPct < 60 ||
-        auditMetrics.highReviewPct > 20
-      ) {
-        return {
-          badge: 'bg-red-100 text-red-700 border-red-200',
-          dot: 'bg-red-500',
-          title: 'No listo para comité',
-          detail: 'La temporada todavía no tiene calidad suficiente para presentarse como dato definitivo.'
-        };
-      }
-      if (
-        totalClosurePct < 75 ||
-        officialSupportPct < 60 ||
-        blockers.length > 0
-      ) {
-        return {
-          badge: 'bg-amber-100 text-amber-700 border-amber-200',
-          dot: 'bg-amber-500',
-          title: 'Listo con advertencias',
-          detail: 'La lectura sirve para seguimiento ejecutivo, pero todavía requiere contexto y cautela.'
-        };
-      }
-      return {
-        badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-        dot: 'bg-emerald-500',
-        title: 'Listo para comité',
-        detail: 'La temporada tiene un nivel de cierre y trazabilidad suficientemente sólido para presentarse como lectura principal.'
-      };
-    })();
-
-    const findings = [
-      {
-        title: 'Cierre integrado',
-        description: 'Combina cierre económico, trazabilidad, soporte oficial y limpieza de revisión.',
-        emphasis: `${totalClosurePct.toFixed(1)}% consolidado`
-      },
-      {
-        title: 'Soporte oficial',
-        description: 'Mide cuánto del costo auditado descansa en base oficial y no solo en respaldo o distribución.',
-        emphasis: `${officialSupportPct.toFixed(1)}% del costo auditado`
-      },
-      {
-        title: 'Lectura para comité',
-        description: readiness.detail,
-        emphasis: readiness.title
-      }
-    ];
-
-    const conclusion = blockers.length === 0
-      ? `La temporada presenta un cierre total del dato de ${totalClosurePct.toFixed(1)}% y no muestra bloqueos críticos visibles.`
-      : `La temporada presenta un cierre total del dato de ${totalClosurePct.toFixed(1)}%. Antes de considerarla definitiva conviene resolver ${blockers.length} bloqueos principales.`;
-
-    return {
-      economicPct,
-      traceabilityPct,
-      officialSupportPct,
-      reviewCleanPct,
-      totalClosurePct,
-      blockers,
-      readiness,
-      findings,
-      conclusion
-    };
-  }, []);
+  }) => buildTotalDataClosureSummary(params), []);
 
   const executiveTotalDataClosure = useMemo(() => {
     return buildTotalDataClosure({
@@ -2718,8 +2857,12 @@ export const Reports: React.FC = () => {
   const executiveCompareCompanyHistoryRows = useMemo(() => {
     if (!executiveCompareCompanyRaw) return [];
 
-    const currentMap = new Map(executiveTotalClosureHistoryRows.map((row) => [row.season, row]));
-    const compareMap = new Map(executiveCompareCompanyTotalClosureHistoryRows.map((row) => [row.season, row]));
+    const currentMap = new Map<string, typeof executiveTotalClosureHistoryRows[number]>(
+      executiveTotalClosureHistoryRows.map((row) => [row.season, row])
+    );
+    const compareMap = new Map<string, typeof executiveCompareCompanyTotalClosureHistoryRows[number]>(
+      executiveCompareCompanyTotalClosureHistoryRows.map((row) => [row.season, row])
+    );
 
     return Array.from(new Set([
       ...executiveTotalClosureHistoryRows.map((row) => row.season),
@@ -2817,6 +2960,81 @@ export const Reports: React.FC = () => {
       trend: executiveCurrentCompanyTrend
     })
   ), [companyName, executiveCurrentCompanyTrend, executiveTotalDataClosure.blockers.length, executiveTotalDataClosure.totalClosurePct]);
+
+  const executiveGlobalCompanyRanking = useMemo(() => {
+    const rows = executiveGlobalCompanySnapshots
+      .map((snapshot) => {
+        const seasonRow = snapshot.totalClosureHistoryRows.find((row) => row.season === selectedSeason);
+        if (!seasonRow) return null;
+        const trend = buildClosureTrendSummary(snapshot.totalClosureHistoryRows, snapshot.companyLabel, 3);
+        const ranking = buildExecutiveCompanyRanking({
+          companyLabel: snapshot.companyLabel,
+          totalClosurePct: seasonRow.totalClosurePct,
+          blockerCount: seasonRow.blockersCount,
+          trend
+        });
+
+        return {
+          ...ranking,
+          companyId: snapshot.companyId,
+          totalClosurePct: seasonRow.totalClosurePct,
+          blockersCount: seasonRow.blockersCount,
+          readinessTitle: seasonRow.readinessTitle,
+          trend,
+          historyCount: snapshot.totalClosureHistoryRows.length,
+          isSelectedCompany: snapshot.companyId === selectedCompany?.id
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => Number(b?.score || 0) - Number(a?.score || 0)) as Array<ReturnType<typeof buildExecutiveCompanyRanking> & {
+        companyId: string;
+        totalClosurePct: number;
+        blockersCount: number;
+        readinessTitle: string;
+        trend: ReturnType<typeof buildClosureTrendSummary>;
+        historyCount: number;
+        isSelectedCompany: boolean;
+      }>;
+
+    const leader = rows[0] || null;
+    const runnerUp = rows[1] || null;
+    const gap = leader && runnerUp ? leader.score - runnerUp.score : 0;
+    const selectedCompanyRankIndex = rows.findIndex((row) => row.companyId === selectedCompany?.id);
+    const selectedCompanyRow = selectedCompanyRankIndex >= 0 ? rows[selectedCompanyRankIndex] : null;
+    const readyCount = rows.filter((row) => row.readinessTitle === 'Listo para comité').length;
+    const warningCount = rows.filter((row) => row.readinessTitle === 'Listo con advertencias').length;
+    const blockedCount = rows.filter((row) => row.readinessTitle === 'No listo para comité').length;
+    const averageScore = rows.length > 0
+      ? rows.reduce((sum, row) => sum + row.score, 0) / rows.length
+      : 0;
+    const averageClosure = rows.length > 0
+      ? rows.reduce((sum, row) => sum + row.totalClosurePct, 0) / rows.length
+      : 0;
+    const summaryLine = rows.length <= 0
+      ? `No hay empresas con cierre disponible para ${selectedSeason}.`
+      : rows.length === 1
+        ? `${leader?.companyLabel || 'La empresa activa'} es la única empresa con cierre disponible en ${selectedSeason}.`
+        : `${leader?.companyLabel || 'Sin líder'} lidera el ranking multiempresa de ${selectedSeason}${runnerUp ? ` por ${Math.abs(gap).toFixed(1)} puntos sobre ${runnerUp.companyLabel}` : ''}.`;
+    const coverageLine = rows.length <= 0
+      ? 'Sin cobertura multiempresa disponible.'
+      : `${rows.length} empresas con cierre disponible. ${readyCount} listas para comité, ${warningCount} con advertencias y ${blockedCount} no listas.`;
+
+    return {
+      rows,
+      leader,
+      runnerUp,
+      gap,
+      selectedCompanyRow,
+      selectedCompanyRank: selectedCompanyRankIndex >= 0 ? selectedCompanyRankIndex + 1 : null,
+      readyCount,
+      warningCount,
+      blockedCount,
+      averageScore,
+      averageClosure,
+      summaryLine,
+      coverageLine
+    };
+  }, [executiveGlobalCompanySnapshots, selectedCompany?.id, selectedSeason]);
 
   const executiveCompareCompanyRanking = useMemo(() => {
     if (!executiveCompareCompanyTotalClosure || !executiveCompareCompanyTrend) return null;
@@ -3048,7 +3266,7 @@ export const Reports: React.FC = () => {
     ['all', ...Array.from(new Set(executiveExportWarningEvents.map((row) => row.export_format)))]
   ), [executiveExportWarningEvents]);
   const executiveExportWarningTypeOptions = useMemo(() => (
-    ['all', ...Array.from(new Set(
+    ['all', ...Array.from(new Set<string>(
       executiveExportWarningEvents.flatMap((row) => row.warning_types || [])
     )).sort((a, b) => formatExecutiveExportWarningType(a).localeCompare(formatExecutiveExportWarningType(b)))]
   ), [executiveExportWarningEvents]);
@@ -3157,6 +3375,9 @@ export const Reports: React.FC = () => {
     const rankingSummary = executiveCompanyRankingComparison
       ? executiveCompanyRankingComparison.summaryLine
       : 'No hay ranking comparado activo para este cierre.';
+    const globalRankingSummary = executiveGlobalCompanyRanking.rows.length > 0
+      ? executiveGlobalCompanyRanking.summaryLine
+      : 'No hay ranking multiempresa activo para esta temporada.';
     const finalMessage = `${decisionLabel}. ${executiveCurrentRecommendation.summary} ${executiveCurrentRecommendation.nextStep}`;
 
     return {
@@ -3166,6 +3387,7 @@ export const Reports: React.FC = () => {
       exportControlSummary,
       compareSummary,
       rankingSummary,
+      globalRankingSummary,
       finalMessage
     };
   }, [
@@ -3173,6 +3395,7 @@ export const Reports: React.FC = () => {
     executiveCompareCompanyName,
     executiveCompareCompanyRecommendation,
     executiveCompanyRankingComparison,
+    executiveGlobalCompanyRanking,
     executiveCurrentCompanyTrend.narrative,
     executiveCurrentRecommendation.nextStep,
     executiveCurrentRecommendation.summary,
@@ -3286,6 +3509,11 @@ export const Reports: React.FC = () => {
         { Indicador: 'Ranking actual', Valor: Number(executiveCurrentCompanyRanking.score.toFixed(2)) },
         { Indicador: 'Ranking comparado', Valor: executiveCompareCompanyRanking ? Number(executiveCompareCompanyRanking.score.toFixed(2)) : 'Sin datos' },
         { Indicador: 'Líder ranking', Valor: executiveCompanyRankingComparison?.leader || 'Sin comparar' },
+        { Indicador: 'Empresas ranking multiempresa', Valor: executiveGlobalCompanyRanking.rows.length },
+        { Indicador: 'Líder ranking multiempresa', Valor: executiveGlobalCompanyRanking.leader?.companyLabel || 'Sin datos' },
+        { Indicador: 'Posición empresa activa multiempresa', Valor: executiveGlobalCompanyRanking.selectedCompanyRank || 'Sin datos' },
+        { Indicador: 'Cobertura ranking multiempresa', Valor: executiveGlobalCompanyRanking.coverageLine },
+        { Indicador: 'Resumen ranking multiempresa', Valor: executiveGlobalCompanyRanking.summaryLine },
         { Indicador: 'Recomendación comparada', Valor: executiveCompareCompanyRecommendation?.tone.title || 'Sin datos' },
         { Indicador: 'Mejor cierre histórico', Valor: bestClosureHistoryRow ? `${bestClosureHistoryRow.season} (${bestClosureHistoryRow.closurePct.toFixed(2)}%)` : 'Sin datos' },
         { Indicador: 'Conclusión ejecutiva', Valor: executiveInsights.conclusion }
@@ -3517,6 +3745,21 @@ export const Reports: React.FC = () => {
           Lectura: executiveCompanyRankingComparison.summaryLine
         }] : [])
       ];
+      const globalRankingRows = executiveGlobalCompanyRanking.rows.map((row, index) => ({
+        Posición: index + 1,
+        Empresa: row.companyLabel,
+        'Empresa activa': row.isSelectedCompany ? 'Si' : 'No',
+        Puntaje: Number(row.score.toFixed(2)),
+        'Cierre total': Number(row.totalClosurePct.toFixed(2)),
+        'Cierre ponderado': Number(row.components.closure.toFixed(2)),
+        'Tendencia ponderada': Number(row.components.trend.toFixed(2)),
+        'Disciplina bloqueos': Number(row.components.blockers.toFixed(2)),
+        'Estado comité': row.readinessTitle,
+        Tendencia: row.trend.tone.label,
+        'Delta tendencia': Number(row.trend.delta.toFixed(2)),
+        'Temporadas base': row.historyCount,
+        Lectura: row.narrative
+      }));
       const exportWarningHistoryRows = executiveExportWarningFilteredData.rows.map((row) => ({
         Fecha: new Date(row.created_at).toLocaleString('es-CL'),
         Temporada: row.season,
@@ -3661,6 +3904,7 @@ export const Reports: React.FC = () => {
           { name: 'Cierre Total', rows: totalDataClosureRows },
           ...(recommendationRows.length > 0 ? [{ name: 'Recomendacion Ejecutiva', rows: recommendationRows }] : []),
           ...(rankingRows.length > 0 ? [{ name: 'Ranking Empresas', rows: rankingRows }] : []),
+          ...(globalRankingRows.length > 0 ? [{ name: 'Ranking Multiempresa', rows: globalRankingRows }] : []),
           ...(totalDataBlockerRows.length > 0 ? [{ name: 'Bloqueos Dato', rows: totalDataBlockerRows }] : []),
           ...(compareCompanyRows.length > 0 ? [{ name: 'Comparacion Empresas', rows: compareCompanyRows }] : []),
           ...(compareCompanyHistoryRows.length > 0 ? [{ name: 'Historial Empresas', rows: compareCompanyHistoryRows }] : []),
@@ -4796,6 +5040,51 @@ export const Reports: React.FC = () => {
 
             yPos = (doc as any).lastAutoTable.finalY + 8;
           }
+        }
+
+        if (executiveGlobalCompanyRanking.rows.length > 0) {
+          if (yPos > 150) {
+            doc.addPage();
+            yPos = 20;
+          }
+
+          autoTable(doc, {
+            startY: yPos,
+            head: [['Ranking multiempresa', 'Puntaje', 'Cierre total', 'Tendencia', 'Bloqueos', 'Estado comité']],
+            body: executiveGlobalCompanyRanking.rows.map((row) => [
+              `${row.isSelectedCompany ? '* ' : ''}${row.companyLabel}`,
+              row.score.toFixed(1),
+              `${row.totalClosurePct.toFixed(1)}%`,
+              `${row.trend.tone.label} (${row.trend.delta.toFixed(1)} pp)`,
+              String(row.blockersCount),
+              row.readinessTitle
+            ]),
+            theme: 'grid',
+            headStyles: { fillColor: [30, 64, 175] },
+            styles: { fontSize: 8 }
+          });
+
+          yPos = (doc as any).lastAutoTable.finalY + 8;
+
+          autoTable(doc, {
+            startY: yPos,
+            head: [['Lectura ranking multiempresa', 'Detalle']],
+            body: [
+              ['Cobertura', executiveGlobalCompanyRanking.coverageLine],
+              ['Líder', executiveGlobalCompanyRanking.leader?.companyLabel || 'Sin líder'],
+              ['Empresa activa', executiveGlobalCompanyRanking.selectedCompanyRow
+                ? `${executiveGlobalCompanyRanking.selectedCompanyRank}. ${executiveGlobalCompanyRanking.selectedCompanyRow.companyLabel}`
+                : 'Empresa activa fuera del ranking visible'],
+              ['Promedio puntaje', executiveGlobalCompanyRanking.averageScore.toFixed(1)],
+              ['Promedio cierre total', `${executiveGlobalCompanyRanking.averageClosure.toFixed(1)}%`],
+              ['Conclusión', executiveGlobalCompanyRanking.summaryLine]
+            ],
+            theme: 'grid',
+            headStyles: { fillColor: [37, 99, 235] },
+            styles: { fontSize: 8 }
+          });
+
+          yPos = (doc as any).lastAutoTable.finalY + 8;
         }
 
         if (executiveCompareCompanyHistoryInsights && executiveCompareCompanyHistoryRows.length > 0) {
@@ -7511,6 +7800,95 @@ export const Reports: React.FC = () => {
                           <div className="rounded-xl bg-slate-950 p-4 text-sm text-slate-200">
                             <div className="font-medium text-white">Resultado ejecutivo</div>
                             <p className="mt-2">{executiveCompanyRankingComparison.summaryLine}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {(executiveGlobalCompanyRankingLoading || executiveGlobalCompanyRanking.rows.length > 0) && (
+                    <div className="mt-6 rounded-xl border border-slate-200 overflow-hidden">
+                      <div className="px-4 py-4 border-b border-slate-200 bg-slate-50">
+                        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                          <div>
+                            <div className="text-sm font-medium text-slate-900">Ranking multiempresa global por temporada</div>
+                            <p className="text-sm text-slate-500">Ordena todas las empresas accesibles con cierre disponible en la temporada, usando cierre total, tendencia y disciplina de bloqueos.</p>
+                          </div>
+                          <div className="text-sm font-semibold text-slate-700">
+                            {executiveGlobalCompanyRankingLoading
+                              ? 'Actualizando ranking global...'
+                              : executiveGlobalCompanyRanking.summaryLine}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="p-4 grid grid-cols-1 xl:grid-cols-[1fr,0.9fr] gap-4">
+                        <div className="overflow-x-auto">
+                          {executiveGlobalCompanyRankingLoading && executiveGlobalCompanyRanking.rows.length === 0 ? (
+                            <div className="flex items-center gap-3 rounded-xl bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Construyendo ranking multiempresa con todas las empresas accesibles.
+                            </div>
+                          ) : (
+                            <table className="min-w-full divide-y divide-slate-200 text-sm">
+                              <thead className="bg-white">
+                                <tr>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Pos.</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Empresa</th>
+                                  <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Puntaje</th>
+                                  <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Cierre</th>
+                                  <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Tendencia</th>
+                                  <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Bloqueos</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Estado</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200 bg-white">
+                                {executiveGlobalCompanyRanking.rows.map((row, index) => (
+                                  <tr key={row.companyId} className={row.isSelectedCompany ? 'bg-purple-50/70' : ''}>
+                                    <td className="px-4 py-3 font-medium text-slate-900">{index + 1}</td>
+                                    <td className="px-4 py-3">
+                                      <div className="font-medium text-slate-900">{row.companyLabel}</div>
+                                      <div className="text-xs text-slate-500">{row.isSelectedCompany ? 'Empresa activa' : `${row.historyCount} temporadas base`}</div>
+                                    </td>
+                                    <td className="px-4 py-3 text-right font-semibold text-slate-900">{row.score.toFixed(1)}</td>
+                                    <td className="px-4 py-3 text-right text-slate-700">{row.totalClosurePct.toFixed(1)}%</td>
+                                    <td className="px-4 py-3 text-right text-slate-700">{row.trend.delta.toFixed(1)} pp</td>
+                                    <td className="px-4 py-3 text-right text-slate-700">{row.blockersCount}</td>
+                                    <td className="px-4 py-3">
+                                      <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${
+                                        row.readinessTitle === 'Listo para comité'
+                                          ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                                          : row.readinessTitle === 'Listo con advertencias'
+                                            ? 'bg-amber-100 text-amber-700 border-amber-200'
+                                            : 'bg-red-100 text-red-700 border-red-200'
+                                      }`}>
+                                        {row.readinessTitle}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                        <div className="space-y-3">
+                          <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                            <div className="font-medium text-slate-900">Cobertura del ranking</div>
+                            <p className="mt-2">{executiveGlobalCompanyRanking.coverageLine}</p>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                            <div className="font-medium text-slate-900">Empresa activa</div>
+                            <p className="mt-2">
+                              {executiveGlobalCompanyRanking.selectedCompanyRow
+                                ? `${executiveGlobalCompanyRanking.selectedCompanyRank}. ${executiveGlobalCompanyRanking.selectedCompanyRow.companyLabel} · ${executiveGlobalCompanyRanking.selectedCompanyRow.score.toFixed(1)} puntos`
+                                : 'La empresa activa no tiene cierre disponible para entrar al ranking global de la temporada.'}
+                            </p>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                            <div className="font-medium text-slate-900">Líder global</div>
+                            <p className="mt-2">{executiveGlobalCompanyRanking.leader?.narrative || 'Sin líder visible.'}</p>
+                          </div>
+                          <div className="rounded-xl bg-slate-950 p-4 text-sm text-slate-200">
+                            <div className="font-medium text-white">Conclusión multiempresa</div>
+                            <p className="mt-2">{executiveGlobalCompanyRanking.summaryLine}</p>
                           </div>
                         </div>
                       </div>
@@ -11583,6 +11961,114 @@ export const Reports: React.FC = () => {
                         <div className="space-y-6">
                           <div className="flex items-start justify-between gap-6">
                             <div>
+                              <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Ranking Multiempresa Global</div>
+                              <div className="mt-2 text-3xl font-bold text-slate-900">¿Cómo se ubica cada empresa en la temporada?</div>
+                              <div className="mt-2 text-lg text-slate-500">{selectedSeason} · Universo completo de empresas accesibles</div>
+                            </div>
+                            <span className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1 text-sm font-medium text-slate-700">
+                              {executiveGlobalCompanyRanking.rows.length} empresas
+                            </span>
+                          </div>
+
+                          {executiveGlobalCompanyRankingLoading && executiveGlobalCompanyRanking.rows.length === 0 ? (
+                            <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-12 text-center">
+                              <Loader2 className="mx-auto h-16 w-16 animate-spin text-slate-300" />
+                              <div className="mt-6 text-3xl font-bold text-slate-800">Actualizando ranking global</div>
+                              <p className="mt-4 text-xl text-slate-500">
+                                Se está recalculando la posición multiempresa con todas las compañías accesibles y su cierre disponible.
+                              </p>
+                            </div>
+                          ) : executiveGlobalCompanyRanking.rows.length > 0 ? (
+                            <>
+                              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                  <div className="text-sm uppercase tracking-wide text-slate-500">Líder global</div>
+                                  <div className="mt-3 text-3xl font-bold text-slate-900">{executiveGlobalCompanyRanking.leader?.companyLabel || '-'}</div>
+                                  <div className="text-sm text-slate-500">{executiveGlobalCompanyRanking.leader ? `${executiveGlobalCompanyRanking.leader.score.toFixed(1)} puntos` : 'Sin datos'}</div>
+                                </div>
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                  <div className="text-sm uppercase tracking-wide text-slate-500">Empresa activa</div>
+                                  <div className="mt-3 text-3xl font-bold text-slate-900">{executiveGlobalCompanyRanking.selectedCompanyRank || '-'}</div>
+                                  <div className="text-sm text-slate-500">
+                                    {executiveGlobalCompanyRanking.selectedCompanyRow
+                                      ? `${executiveGlobalCompanyRanking.selectedCompanyRow.companyLabel} · ${executiveGlobalCompanyRanking.selectedCompanyRow.score.toFixed(1)} puntos`
+                                      : 'Fuera del ranking visible'}
+                                  </div>
+                                </div>
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                  <div className="text-sm uppercase tracking-wide text-slate-500">Promedio puntaje</div>
+                                  <div className="mt-3 text-3xl font-bold text-slate-900">{executiveGlobalCompanyRanking.averageScore.toFixed(1)}</div>
+                                  <div className="text-sm text-slate-500">Promedio del universo visible</div>
+                                </div>
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                  <div className="text-sm uppercase tracking-wide text-slate-500">Promedio cierre</div>
+                                  <div className="mt-3 text-3xl font-bold text-slate-900">{executiveGlobalCompanyRanking.averageClosure.toFixed(1)}%</div>
+                                  <div className="text-sm text-slate-500">{executiveGlobalCompanyRanking.coverageLine}</div>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 xl:grid-cols-[1.15fr,0.85fr] gap-6">
+                                <div className="rounded-2xl border border-slate-200 p-6">
+                                  <div className="text-2xl font-bold text-slate-800 mb-5">Tabla multiempresa</div>
+                                  <table className="w-full text-left text-sm">
+                                    <thead className="text-base text-slate-500 bg-slate-50 sticky top-0">
+                                      <tr>
+                                        <th className="p-3">Pos.</th>
+                                        <th className="p-3">Empresa</th>
+                                        <th className="p-3 text-right">Puntaje</th>
+                                        <th className="p-3 text-right">Cierre</th>
+                                        <th className="p-3 text-right">Delta</th>
+                                        <th className="p-3 text-right">Bloq.</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {executiveGlobalCompanyRanking.rows.map((row, index) => (
+                                        <tr key={row.companyId} className={`border-b border-slate-100 ${row.isSelectedCompany ? 'bg-purple-50' : ''}`}>
+                                          <td className="p-3 font-semibold text-slate-900">{index + 1}</td>
+                                          <td className="p-3">
+                                            <div className="font-semibold text-slate-900">{row.companyLabel}</div>
+                                            <div className="text-xs text-slate-500">{row.readinessTitle}</div>
+                                          </td>
+                                          <td className="p-3 text-right font-semibold text-slate-900">{row.score.toFixed(1)}</td>
+                                          <td className="p-3 text-right text-slate-700">{row.totalClosurePct.toFixed(1)}%</td>
+                                          <td className={`p-3 text-right font-semibold ${row.trend.delta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{row.trend.delta.toFixed(1)} pp</td>
+                                          <td className="p-3 text-right text-slate-700">{row.blockersCount}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+
+                                <div className="space-y-6">
+                                  <div className="rounded-2xl border border-slate-200 p-6">
+                                    <div className="text-2xl font-bold text-slate-800 mb-5">Lectura global</div>
+                                    <p className="text-xl leading-9 text-slate-600">{executiveGlobalCompanyRanking.summaryLine}</p>
+                                    <p className="mt-5 text-lg text-slate-500">{executiveGlobalCompanyRanking.coverageLine}</p>
+                                    <p className="mt-5 text-lg text-slate-500">Ponderación: cierre total 60%, tendencia 25% y disciplina de bloqueos 15%.</p>
+                                  </div>
+                                  <div className="rounded-2xl bg-slate-950 text-white p-6">
+                                    <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Empresa Líder</div>
+                                    <p className="mt-4 text-2xl leading-10">{executiveGlobalCompanyRanking.leader?.narrative || 'Sin lectura líder disponible.'}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-12 text-center">
+                              <AlertCircle className="mx-auto h-16 w-16 text-slate-300" />
+                              <div className="mt-6 text-3xl font-bold text-slate-800">Sin ranking multiempresa visible</div>
+                              <p className="mt-4 text-xl text-slate-500">
+                                No hay suficientes empresas con cierre disponible para construir el ranking global de la temporada.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {currentSlide === 12 && (
+                        <div className="space-y-6">
+                          <div className="flex items-start justify-between gap-6">
+                            <div>
                               <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Decisión Final Para Comité</div>
                               <div className="mt-2 text-3xl font-bold text-slate-900">¿Qué decisión ejecutiva se recomienda presentar?</div>
                               <div className="mt-2 text-lg text-slate-500">{companyName} · {selectedSeason} · {executiveFieldLabel}</div>
@@ -11636,11 +12122,25 @@ export const Reports: React.FC = () => {
                                     <div className="text-3xl font-bold text-slate-900">{executiveCurrentCompanyRanking.score.toFixed(1)}</div>
                                     <div className="mt-2 text-base text-slate-500">{executiveCurrentCompanyRanking.tone.label}</div>
                                   </div>
-                                  {executiveCompanyRankingComparison && (
+                                  {(executiveCompanyRankingComparison || executiveGlobalCompanyRanking.selectedCompanyRank) && (
                                     <div className="text-right">
-                                      <div className="text-sm text-slate-500">Líder comparado</div>
-                                      <div className="mt-2 text-xl font-semibold text-slate-900">{executiveCompanyRankingComparison.leader}</div>
-                                      <div className="mt-1 text-sm text-slate-500">{Math.abs(executiveCompanyRankingComparison.gap).toFixed(1)} puntos</div>
+                                      <div className="text-sm text-slate-500">
+                                        {executiveGlobalCompanyRanking.selectedCompanyRank ? 'Posición global' : 'Líder comparado'}
+                                      </div>
+                                      <div className="mt-2 text-xl font-semibold text-slate-900">
+                                        {executiveGlobalCompanyRanking.selectedCompanyRank
+                                          ? `${executiveGlobalCompanyRanking.selectedCompanyRank}. ${companyName}`
+                                          : executiveCompanyRankingComparison?.leader}
+                                      </div>
+                                      <div className="mt-1 text-sm text-slate-500">
+                                        {executiveGlobalCompanyRanking.selectedCompanyRank
+                                          ? executiveGlobalCompanyRanking.leader
+                                            ? `Lidera ${executiveGlobalCompanyRanking.leader.companyLabel}`
+                                            : 'Sin líder global'
+                                          : executiveCompanyRankingComparison
+                                            ? `${Math.abs(executiveCompanyRankingComparison.gap).toFixed(1)} puntos`
+                                            : 'Sin comparación'}
+                                      </div>
                                     </div>
                                   )}
                                 </div>
@@ -11689,6 +12189,7 @@ export const Reports: React.FC = () => {
                                 <div className="text-2xl font-bold text-slate-800 mb-5">Contexto comparado</div>
                                 <p className="text-lg leading-8 text-slate-600">{executiveCommitteeSlideSummary.compareSummary}</p>
                                 <p className="mt-4 text-lg leading-8 text-slate-600">{executiveCommitteeSlideSummary.rankingSummary}</p>
+                                <p className="mt-4 text-lg leading-8 text-slate-600">{executiveCommitteeSlideSummary.globalRankingSummary}</p>
                                 {executiveCompareCompanyInsights && (
                                   <p className="mt-4 text-base leading-8 text-slate-500">{executiveCompareCompanyInsights.summaryLine}</p>
                                 )}
