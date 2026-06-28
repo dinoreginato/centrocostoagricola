@@ -969,7 +969,7 @@ export const Reports: React.FC = () => {
     };
   }, [executiveCompareCompanyId, selectedSeason]);
 
-  const presentationMaxSlide = activeTab === 'executive' ? 10 : activeTab === 'general' ? 3 : 1;
+  const presentationMaxSlide = activeTab === 'executive' ? 11 : activeTab === 'general' ? 3 : 1;
 
   // Update presentation logic to support executive slides and legacy tabs
   useEffect(() => {
@@ -2893,6 +2893,42 @@ export const Reports: React.FC = () => {
     executiveExportWarningActorFilter,
     executiveExportWarningFormatFilter,
     executiveExportWarningTypeFilter
+  ]);
+  const executiveCommitteeSlideSummary = useMemo(() => {
+    const decisionLabel = executiveCurrentRecommendation.tone.title;
+    const blockerSummary = executiveTotalDataClosure.blockers.length > 0
+      ? `${executiveTotalDataClosure.blockers.length} bloqueos visibles siguen abiertos.`
+      : 'No hay bloqueos críticos visibles para el filtro actual.';
+    const trendSummary = executiveTrendWarning
+      ? executiveTrendWarning.detail
+      : executiveCurrentCompanyTrend.narrative;
+    const exportControlSummary = executiveExportWarningFilteredData.latestEvent
+      ? `Última exportación advertida visible: ${executiveExportWarningFilteredData.latestEvent.export_format.toUpperCase()} · ${executiveExportWarningFilteredData.latestEvent.season} · ${formatExecutiveExportActor(executiveExportWarningFilteredData.latestEvent.created_by)}.`
+      : 'No hay exportaciones advertidas visibles para los filtros actuales.';
+    const compareSummary = executiveCompareCompanyRecommendation
+      ? `${companyName}: ${executiveCurrentRecommendation.tone.title}. ${executiveCompareCompanyName}: ${executiveCompareCompanyRecommendation.tone.title}.`
+      : 'No hay una empresa comparada activa para este cierre.';
+    const finalMessage = `${decisionLabel}. ${executiveCurrentRecommendation.summary} ${executiveCurrentRecommendation.nextStep}`;
+
+    return {
+      decisionLabel,
+      blockerSummary,
+      trendSummary,
+      exportControlSummary,
+      compareSummary,
+      finalMessage
+    };
+  }, [
+    companyName,
+    executiveCompareCompanyName,
+    executiveCompareCompanyRecommendation,
+    executiveCurrentCompanyTrend.narrative,
+    executiveCurrentRecommendation.nextStep,
+    executiveCurrentRecommendation.summary,
+    executiveCurrentRecommendation.tone.title,
+    executiveExportWarningFilteredData.latestEvent,
+    executiveTotalDataClosure.blockers.length,
+    executiveTrendWarning
   ]);
 
   const executiveHistoricalSeasonRows = useMemo(() => {
@@ -10067,7 +10103,7 @@ export const Reports: React.FC = () => {
                   </div>
                 )}
 
-                {currentSlide >= 1 && currentSlide <= 10 && (
+                {currentSlide >= 1 && currentSlide <= 11 && (
                   <div className="w-full h-full flex flex-col animate-fade-in-up pt-4">
                     <h2 className="text-3xl lg:text-4xl font-bold text-slate-800 mb-6 text-center">Resumen Ejecutivo</h2>
                     <div className="flex-1 bg-white rounded-3xl shadow-xl p-6 overflow-y-auto pb-24" style={{ maxHeight: 'calc(100vh - 120px)' }}>
@@ -10880,6 +10916,120 @@ export const Reports: React.FC = () => {
                               </p>
                             </div>
                           )}
+                        </div>
+                      )}
+
+                      {currentSlide === 11 && (
+                        <div className="space-y-6">
+                          <div className="flex items-start justify-between gap-6">
+                            <div>
+                              <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Decisión Final Para Comité</div>
+                              <div className="mt-2 text-3xl font-bold text-slate-900">¿Qué decisión ejecutiva se recomienda presentar?</div>
+                              <div className="mt-2 text-lg text-slate-500">{companyName} · {selectedSeason} · {executiveFieldLabel}</div>
+                            </div>
+                            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${executiveCurrentRecommendation.tone.badge}`}>
+                              <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveCurrentRecommendation.tone.dot}`} />
+                              {executiveCommitteeSlideSummary.decisionLabel}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 xl:grid-cols-[1.1fr,0.9fr] gap-6">
+                            <div className={`rounded-3xl border p-8 ${executiveCurrentRecommendation.tone.badge}`}>
+                              <div className="text-sm uppercase tracking-[0.25em]">Dictamen ejecutivo</div>
+                              <div className="mt-4 text-4xl font-extrabold">{executiveCurrentRecommendation.tone.title}</div>
+                              <p className="mt-6 text-2xl leading-10">{executiveCurrentRecommendation.summary}</p>
+                              <p className="mt-5 text-xl leading-9">{executiveCurrentRecommendation.nextStep}</p>
+                              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {executiveCurrentRecommendation.reasons.map((reason) => (
+                                  <div key={reason} className="rounded-2xl bg-white/70 px-4 py-3 text-lg">
+                                    {reason}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                <div className="text-sm uppercase tracking-wide text-slate-500">Cierre total</div>
+                                <div className="mt-3 text-3xl font-bold text-slate-900">{executiveTotalDataClosure.totalClosurePct.toFixed(1)}%</div>
+                                <div className="mt-2 text-base text-slate-500">{executiveTotalDataClosure.readiness.title}</div>
+                              </div>
+                              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                <div className="text-sm uppercase tracking-wide text-slate-500">Tendencia</div>
+                                <div className={`mt-3 text-3xl font-bold ${executiveCurrentCompanyTrend.tone.text}`}>{executiveCurrentCompanyTrend.tone.label}</div>
+                                <div className="mt-2 text-base text-slate-500">{executiveCurrentCompanyTrend.delta.toFixed(1)} pp</div>
+                              </div>
+                              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                <div className="text-sm uppercase tracking-wide text-slate-500">Bloqueos visibles</div>
+                                <div className="mt-3 text-3xl font-bold text-slate-900">{executiveTotalDataClosure.blockers.length}</div>
+                                <div className="mt-2 text-base text-slate-500">Control de calidad pendiente</div>
+                              </div>
+                              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                <div className="text-sm uppercase tracking-wide text-slate-500">Bitácora advertida</div>
+                                <div className="mt-3 text-3xl font-bold text-slate-900">{executiveExportWarningFilteredData.totalEvents}</div>
+                                <div className="mt-2 text-base text-slate-500">Eventos visibles</div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                            <div className="rounded-2xl border border-slate-200 p-6">
+                              <div className="text-2xl font-bold text-slate-800 mb-5">Soporte de la decisión</div>
+                              <div className="space-y-4">
+                                {executiveTotalDataClosure.findings.map((finding) => (
+                                  <div key={finding.title} className="rounded-2xl bg-slate-50 p-5">
+                                    <div className="text-lg font-semibold text-slate-900">{finding.title}</div>
+                                    <div className="mt-2 text-base text-slate-600">{finding.description}</div>
+                                    <div className="mt-3 text-lg font-bold text-purple-700">{finding.emphasis}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-slate-200 p-6">
+                              <div className="text-2xl font-bold text-slate-800 mb-5">Riesgos a gobernar</div>
+                              <div className="space-y-4">
+                                <div className="rounded-2xl bg-slate-50 p-5">
+                                  <div className="text-lg font-semibold text-slate-900">Bloqueos</div>
+                                  <p className="mt-3 text-base leading-8 text-slate-600">{executiveCommitteeSlideSummary.blockerSummary}</p>
+                                </div>
+                                <div className={`rounded-2xl border p-5 ${executiveTrendWarning ? executiveTrendWarning.badge : executiveCurrentCompanyTrend.tone.badge}`}>
+                                  <div className="text-lg font-semibold">Tendencia y cautelas</div>
+                                  <p className="mt-3 text-base leading-8">{executiveCommitteeSlideSummary.trendSummary}</p>
+                                  {executiveTrendWarning && (
+                                    <p className="mt-3 text-base leading-8">{executiveTrendWarning.recommendation}</p>
+                                  )}
+                                </div>
+                                <div className="rounded-2xl bg-slate-50 p-5">
+                                  <div className="text-lg font-semibold text-slate-900">Control de circulación</div>
+                                  <p className="mt-3 text-base leading-8 text-slate-600">{executiveCommitteeSlideSummary.exportControlSummary}</p>
+                                  <p className="mt-3 text-sm text-slate-500">{executiveExportWarningFiltersLabel}</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="space-y-6">
+                              <div className="rounded-2xl border border-slate-200 p-6">
+                                <div className="text-2xl font-bold text-slate-800 mb-5">Contexto comparado</div>
+                                <p className="text-lg leading-8 text-slate-600">{executiveCommitteeSlideSummary.compareSummary}</p>
+                                {executiveCompareCompanyInsights && (
+                                  <p className="mt-4 text-base leading-8 text-slate-500">{executiveCompareCompanyInsights.summaryLine}</p>
+                                )}
+                                {executiveCompareCompanyRecommendation && (
+                                  <div className={`mt-5 rounded-2xl border p-5 ${executiveCompareCompanyRecommendation.tone.badge}`}>
+                                    <div className="text-sm uppercase tracking-[0.25em]">Empresa comparada</div>
+                                    <div className="mt-3 text-2xl font-bold">{executiveCompareCompanyRecommendation.tone.title}</div>
+                                    <p className="mt-3 text-base leading-8">{executiveCompareCompanyRecommendation.summary}</p>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="rounded-2xl bg-slate-950 text-white p-6">
+                                <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Mensaje Final Para Comité</div>
+                                <p className="mt-5 text-2xl leading-10">{executiveCommitteeSlideSummary.finalMessage}</p>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>

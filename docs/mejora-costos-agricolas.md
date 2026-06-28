@@ -465,7 +465,16 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - dejar una pista de auditoria interna sobre circulacion de reportes emitidos con advertencias visibles
   - facilitar revision posterior por temporada, formato y contexto comparativo
 
+## Slide Final De Decision Ejecutiva
+- La presentacion fullscreen ejecutiva ahora cierra con un slide final exclusivo para comite.
+- Este slide consolida en una sola pantalla:
+  - decision ejecutiva final
+  - soporte de la decision
+  - bloqueos y riesgos a gobernar
+  - control de circulacion via bitacora advertida
+  - contexto comparado cuando existe otra empresa activa
+- La salida busca que la presentacion no termine solo en tablas o metricas, sino en una postura clara de presentacion frente a comite.
+
 ## Siguiente Paso Recomendado
-- Evaluar una portada o slide final exclusivo de decision ejecutiva para comite.
 - Considerar un ranking automatico entre empresas usando cierre total, tendencia y bloqueos ponderados.
 - Considerar trazabilidad ampliada por destinatario o motivo de circulacion del reporte exportado.
