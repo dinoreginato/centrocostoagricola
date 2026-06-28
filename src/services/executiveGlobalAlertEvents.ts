@@ -16,6 +16,7 @@ export type ExecutiveGlobalAlertEventCreate = {
 };
 
 export type ExecutiveGlobalAlertManagementStatus = 'pendiente' | 'reconocida' | 'comunicada' | 'cerrada';
+export type ExecutiveGlobalAlertTransitionStatus = ExecutiveGlobalAlertManagementStatus | 'sin_estado';
 
 export type ExecutiveGlobalAlertEventRow = {
   id: string;
@@ -39,8 +40,31 @@ export type ExecutiveGlobalAlertEventRow = {
   created_at: string;
 };
 
+export type ExecutiveGlobalAlertTransitionCreate = {
+  companyId: string;
+  eventId: string;
+  fromStatus: ExecutiveGlobalAlertTransitionStatus;
+  toStatus: ExecutiveGlobalAlertManagementStatus;
+  ownerLabel?: string | null;
+  note?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export type ExecutiveGlobalAlertTransitionRow = {
+  id: string;
+  company_id: string;
+  event_id: string;
+  created_by: string;
+  from_status: ExecutiveGlobalAlertTransitionStatus;
+  to_status: ExecutiveGlobalAlertManagementStatus;
+  owner_label: string | null;
+  note: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+};
+
 export async function createExecutiveGlobalAlertEvent(params: ExecutiveGlobalAlertEventCreate) {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('executive_global_alert_events')
     .insert({
       company_id: params.companyId,
@@ -56,9 +80,12 @@ export async function createExecutiveGlobalAlertEvent(params: ExecutiveGlobalAle
       recommendation: params.recommendation,
       management_status: 'pendiente',
       metadata: params.metadata || {}
-    });
+    })
+    .select('id')
+    .single();
 
   if (error) throw error;
+  return data as { id: string };
 }
 
 export async function updateExecutiveGlobalAlertEvent(params: {
@@ -78,6 +105,22 @@ export async function updateExecutiveGlobalAlertEvent(params: {
     })
     .eq('company_id', params.companyId)
     .eq('id', params.eventId);
+
+  if (error) throw error;
+}
+
+export async function createExecutiveGlobalAlertTransition(params: ExecutiveGlobalAlertTransitionCreate) {
+  const { error } = await supabase
+    .from('executive_global_alert_event_transitions')
+    .insert({
+      company_id: params.companyId,
+      event_id: params.eventId,
+      from_status: params.fromStatus,
+      to_status: params.toStatus,
+      owner_label: params.ownerLabel?.trim() || null,
+      note: params.note?.trim() || null,
+      metadata: params.metadata || {}
+    });
 
   if (error) throw error;
 }
@@ -104,4 +147,28 @@ export async function loadExecutiveGlobalAlertEvents(params: {
   const { data, error } = await query;
   if (error) throw error;
   return (data || []) as ExecutiveGlobalAlertEventRow[];
+}
+
+export async function loadExecutiveGlobalAlertTransitions(params: {
+  companyId: string;
+  eventIds?: string[];
+  limit?: number;
+}) {
+  let query = supabase
+    .from('executive_global_alert_event_transitions')
+    .select('*')
+    .eq('company_id', params.companyId)
+    .order('created_at', { ascending: false });
+
+  if (params.eventIds && params.eventIds.length > 0) {
+    query = query.in('event_id', params.eventIds);
+  }
+
+  if (params.limit && params.limit > 0) {
+    query = query.limit(params.limit);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []) as ExecutiveGlobalAlertTransitionRow[];
 }

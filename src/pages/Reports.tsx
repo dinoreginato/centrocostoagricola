@@ -20,10 +20,14 @@ import {
 } from '../services/executiveExportWarningEvents';
 import {
   createExecutiveGlobalAlertEvent,
+  createExecutiveGlobalAlertTransition,
   loadExecutiveGlobalAlertEvents,
+  loadExecutiveGlobalAlertTransitions,
   updateExecutiveGlobalAlertEvent,
   type ExecutiveGlobalAlertEventRow,
-  type ExecutiveGlobalAlertManagementStatus
+  type ExecutiveGlobalAlertManagementStatus,
+  type ExecutiveGlobalAlertTransitionRow,
+  type ExecutiveGlobalAlertTransitionStatus
 } from '../services/executiveGlobalAlertEvents';
 import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
@@ -303,6 +307,10 @@ const formatExecutiveGlobalAlertStatus = (value: string | null | undefined) => (
   EXECUTIVE_GLOBAL_ALERT_STATUS_OPTIONS.find((option) => option.value === value)?.label || 'Pendiente'
 );
 
+const formatExecutiveGlobalAlertTransitionStatus = (value: ExecutiveGlobalAlertTransitionStatus | string | null | undefined) => (
+  value === 'sin_estado' ? 'Sin estado previo' : formatExecutiveGlobalAlertStatus(value)
+);
+
 const getExecutiveGlobalAlertStatusTone = (value: string | null | undefined) => {
   switch (value) {
     case 'cerrada':
@@ -552,6 +560,65 @@ const buildExecutiveGlobalAlertAnalytics = (
     topOwner,
     pendingCount,
     totalEvents: rows.length,
+    summaryLine
+  };
+};
+
+const buildExecutiveGlobalAlertTransitionAnalytics = (
+  transitions: ExecutiveGlobalAlertTransitionRow[],
+  visibleEventIds: string[],
+  scopeLabel: string
+) => {
+  const visibleRows = visibleEventIds.length > 0
+    ? transitions.filter((row) => visibleEventIds.includes(row.event_id))
+    : transitions;
+  const latestTransition = visibleRows[0] || null;
+  const toStatusSummary = Array.from(
+    visibleRows.reduce((map, row) => {
+      map.set(row.to_status, (map.get(row.to_status) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  )
+    .map(([status, count]) => ({ status, count }))
+    .sort((a, b) => b.count - a.count);
+  const ownerSummary = Array.from(
+    visibleRows.reduce((map, row) => {
+      const owner = row.owner_label?.trim() || 'Sin responsable';
+      const current = map.get(owner) || { owner, count: 0, latestCreatedAt: row.created_at };
+      current.count += 1;
+      current.latestCreatedAt = current.latestCreatedAt > row.created_at ? current.latestCreatedAt : row.created_at;
+      map.set(owner, current);
+      return map;
+    }, new Map<string, { owner: string; count: number; latestCreatedAt: string }>())
+  )
+    .map(([, value]) => value)
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return b.latestCreatedAt.localeCompare(a.latestCreatedAt);
+    });
+  const transitionPairs = Array.from(
+    visibleRows.reduce((map, row) => {
+      const key = `${row.from_status}->${row.to_status}`;
+      map.set(key, (map.get(key) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  )
+    .map(([key, count]) => ({ key, count }))
+    .sort((a, b) => b.count - a.count);
+  const topPair = transitionPairs[0] || null;
+  const summaryLine = latestTransition
+    ? `Se registran ${visibleRows.length} transiciones de gestión para ${scopeLabel}. La última movió la alerta desde ${formatExecutiveGlobalAlertTransitionStatus(latestTransition.from_status)} hacia ${formatExecutiveGlobalAlertTransitionStatus(latestTransition.to_status)}.`
+    : `No hay transiciones de gestión visibles para ${scopeLabel}.`;
+
+  return {
+    rows: visibleRows,
+    latestTransition,
+    recentRows: visibleRows.slice(0, 12),
+    toStatusSummary,
+    ownerSummary,
+    transitionPairs,
+    topPair,
+    totalTransitions: visibleRows.length,
     summaryLine
   };
 };
@@ -1315,6 +1382,7 @@ export const Reports: React.FC = () => {
   const [executiveExportWarningEvents, setExecutiveExportWarningEvents] = useState<ExecutiveExportWarningEventRow[]>([]);
   const [executiveExportWarningLoading, setExecutiveExportWarningLoading] = useState(false);
   const [executiveGlobalAlertEvents, setExecutiveGlobalAlertEvents] = useState<ExecutiveGlobalAlertEventRow[]>([]);
+  const [executiveGlobalAlertTransitions, setExecutiveGlobalAlertTransitions] = useState<ExecutiveGlobalAlertTransitionRow[]>([]);
   const [executiveGlobalAlertLoading, setExecutiveGlobalAlertLoading] = useState(false);
   const [costAuditLoading, setCostAuditLoading] = useState(false);
   const [showProductionModal, setShowProductionModal] = useState(false);
@@ -1479,6 +1547,7 @@ export const Reports: React.FC = () => {
     setCostAuditHistorySummary([]);
     setExecutiveExportWarningEvents([]);
     setExecutiveGlobalAlertEvents([]);
+    setExecutiveGlobalAlertTransitions([]);
     setReportData([]);
     setMonthlyExpenses([]);
     setCategoryExpenses([]);
@@ -1553,12 +1622,17 @@ export const Reports: React.FC = () => {
 
     void (async () => {
       try {
-        const rows = await loadExecutiveGlobalAlertEvents({ companyId, limit: 100 });
+        const [rows, transitions] = await Promise.all([
+          loadExecutiveGlobalAlertEvents({ companyId, limit: 100 }),
+          loadExecutiveGlobalAlertTransitions({ companyId, limit: 300 })
+        ]);
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalAlertEvents(rows || []);
+        setExecutiveGlobalAlertTransitions(transitions || []);
       } catch {
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalAlertEvents([]);
+        setExecutiveGlobalAlertTransitions([]);
       } finally {
         if (!cancelled && selectedCompany?.id === companyId) {
           setExecutiveGlobalAlertLoading(false);
@@ -3739,7 +3813,7 @@ export const Reports: React.FC = () => {
     if (!selectedCompany?.id || !executiveGlobalAlertContext.hasAlert || !executiveGlobalAlertContext.severity) return;
 
     try {
-      await createExecutiveGlobalAlertEvent({
+      const createdEvent = await createExecutiveGlobalAlertEvent({
         companyId: selectedCompany.id,
         season: selectedSeason,
         severity: executiveGlobalAlertContext.severity,
@@ -3768,8 +3842,24 @@ export const Reports: React.FC = () => {
         }
       });
 
-      const rows = await loadExecutiveGlobalAlertEvents({ companyId: selectedCompany.id, limit: 100 });
+      await createExecutiveGlobalAlertTransition({
+        companyId: selectedCompany.id,
+        eventId: createdEvent.id,
+        fromStatus: 'sin_estado',
+        toStatus: 'pendiente',
+        note: executiveGlobalAlertContext.detail,
+        metadata: {
+          source: 'creacion_alerta_global',
+          event_signature: executiveGlobalAlertContext.signature
+        }
+      });
+
+      const [rows, transitions] = await Promise.all([
+        loadExecutiveGlobalAlertEvents({ companyId: selectedCompany.id, limit: 100 }),
+        loadExecutiveGlobalAlertTransitions({ companyId: selectedCompany.id, limit: 300 })
+      ]);
       setExecutiveGlobalAlertEvents(rows || []);
+      setExecutiveGlobalAlertTransitions(transitions || []);
     } catch (error) {
       console.error('No se pudo registrar la bitácora de alertas globales ejecutivas.', error);
     }
@@ -3829,7 +3919,7 @@ export const Reports: React.FC = () => {
   }, []);
 
   const saveExecutiveGlobalAlertLifecycle = useCallback(async () => {
-    if (!selectedCompany?.id || !editingExecutiveGlobalAlertId) return;
+    if (!selectedCompany?.id || !editingExecutiveGlobalAlertId || !selectedExecutiveGlobalAlertEvent) return;
 
     try {
       setSavingExecutiveGlobalAlert(true);
@@ -3841,8 +3931,27 @@ export const Reports: React.FC = () => {
         managementNote: editingExecutiveGlobalAlertNote
       });
 
-      const rows = await loadExecutiveGlobalAlertEvents({ companyId: selectedCompany.id, limit: 100 });
+      await createExecutiveGlobalAlertTransition({
+        companyId: selectedCompany.id,
+        eventId: editingExecutiveGlobalAlertId,
+        fromStatus: selectedExecutiveGlobalAlertEvent.management_status || 'pendiente',
+        toStatus: editingExecutiveGlobalAlertStatus,
+        ownerLabel: editingExecutiveGlobalAlertOwner,
+        note: editingExecutiveGlobalAlertNote,
+        metadata: {
+          source: 'gestion_manual_alerta_global',
+          previous_owner_label: selectedExecutiveGlobalAlertEvent.management_owner_label || null,
+          previous_note: selectedExecutiveGlobalAlertEvent.management_note || null,
+          previous_status: selectedExecutiveGlobalAlertEvent.management_status || 'pendiente'
+        }
+      });
+
+      const [rows, transitions] = await Promise.all([
+        loadExecutiveGlobalAlertEvents({ companyId: selectedCompany.id, limit: 100 }),
+        loadExecutiveGlobalAlertTransitions({ companyId: selectedCompany.id, limit: 300 })
+      ]);
       setExecutiveGlobalAlertEvents(rows || []);
+      setExecutiveGlobalAlertTransitions(transitions || []);
       toast.success('Se actualizó la gestión de la alerta global.');
       setEditingExecutiveGlobalAlertId(null);
     } catch (error) {
@@ -3856,6 +3965,7 @@ export const Reports: React.FC = () => {
     editingExecutiveGlobalAlertNote,
     editingExecutiveGlobalAlertOwner,
     editingExecutiveGlobalAlertStatus,
+    selectedExecutiveGlobalAlertEvent,
     selectedCompany?.id
   ]);
 
@@ -3898,6 +4008,18 @@ export const Reports: React.FC = () => {
       executiveGlobalAlertFiltersActive ? 'los filtros activos' : 'la empresa activa'
     ),
     [executiveGlobalAlertFilteredRows, executiveGlobalAlertFiltersActive, selectedSeason]
+  );
+  const executiveGlobalAlertTransitionData = useMemo(
+    () => buildExecutiveGlobalAlertTransitionAnalytics(
+      executiveGlobalAlertTransitions,
+      executiveGlobalAlertFilteredRows.map((row) => row.id),
+      executiveGlobalAlertFiltersActive ? 'los filtros activos' : 'la empresa activa'
+    ),
+    [executiveGlobalAlertFilteredRows, executiveGlobalAlertFiltersActive, executiveGlobalAlertTransitions]
+  );
+  const selectedExecutiveGlobalAlertTransitions = useMemo(
+    () => executiveGlobalAlertTransitions.filter((row) => row.event_id === editingExecutiveGlobalAlertId),
+    [editingExecutiveGlobalAlertId, executiveGlobalAlertTransitions]
   );
   const executiveGlobalAlertFiltersLabel = useMemo(() => {
     const parts: string[] = [];
@@ -4208,6 +4330,8 @@ export const Reports: React.FC = () => {
         { Indicador: 'Estado gestión dominante', Valor: executiveGlobalAlertFilteredData.topStatus ? formatExecutiveGlobalAlertStatus(executiveGlobalAlertFilteredData.topStatus.status) : 'Sin estado' },
         { Indicador: 'Responsable dominante', Valor: executiveGlobalAlertFilteredData.topOwner?.owner || 'Sin responsable' },
         { Indicador: 'Alertas pendientes', Valor: executiveGlobalAlertFilteredData.pendingCount },
+        { Indicador: 'Transiciones alertas globales', Valor: executiveGlobalAlertTransitionData.totalTransitions },
+        { Indicador: 'Última transición visible', Valor: executiveGlobalAlertTransitionData.latestTransition ? `${formatExecutiveGlobalAlertTransitionStatus(executiveGlobalAlertTransitionData.latestTransition.from_status)} -> ${formatExecutiveGlobalAlertTransitionStatus(executiveGlobalAlertTransitionData.latestTransition.to_status)}` : 'Sin transiciones' },
         { Indicador: 'Cruce alerta/exportación', Valor: executiveGlobalAlertExportLinkSummary },
         { Indicador: 'Recomendación comparada', Valor: executiveCompareCompanyRecommendation?.tone.title || 'Sin datos' },
         { Indicador: 'Mejor cierre histórico', Valor: bestClosureHistoryRow ? `${bestClosureHistoryRow.season} (${bestClosureHistoryRow.closurePct.toFixed(2)}%)` : 'Sin datos' },
@@ -4516,6 +4640,18 @@ export const Reports: React.FC = () => {
         Detalle: row.detail,
         Recomendación: row.recommendation
       }));
+      const globalAlertTransitionRows = executiveGlobalAlertTransitionData.recentRows.map((row) => ({
+        Fecha: new Date(row.created_at).toLocaleString('es-CL'),
+        'Desde': formatExecutiveGlobalAlertTransitionStatus(row.from_status),
+        'Hacia': formatExecutiveGlobalAlertTransitionStatus(row.to_status),
+        Responsable: row.owner_label || 'Sin responsable',
+        Nota: row.note || 'Sin nota',
+        Evento: row.event_id
+      }));
+      const globalAlertTransitionSummaryRows = executiveGlobalAlertTransitionData.toStatusSummary.map((row) => ({
+        Estado: formatExecutiveGlobalAlertStatus(row.status),
+        Transiciones: row.count
+      }));
       const exportWarningHistoryRows = executiveExportWarningFilteredData.rows.map((row) => ({
         Fecha: new Date(row.created_at).toLocaleString('es-CL'),
         Temporada: row.season,
@@ -4668,6 +4804,8 @@ export const Reports: React.FC = () => {
           ...(globalAlertStatusRows.length > 0 ? [{ name: 'Estados Alertas Globales', rows: globalAlertStatusRows }] : []),
           ...(globalAlertOwnerRows.length > 0 ? [{ name: 'Responsables Alertas', rows: globalAlertOwnerRows }] : []),
           ...(globalAlertRecentRows.length > 0 ? [{ name: 'Bitacora Alertas Globales', rows: globalAlertRecentRows }] : []),
+          ...(globalAlertTransitionSummaryRows.length > 0 ? [{ name: 'Estados Transiciones Alertas', rows: globalAlertTransitionSummaryRows }] : []),
+          ...(globalAlertTransitionRows.length > 0 ? [{ name: 'Transiciones Alertas Globales', rows: globalAlertTransitionRows }] : []),
           ...(totalDataBlockerRows.length > 0 ? [{ name: 'Bloqueos Dato', rows: totalDataBlockerRows }] : []),
           ...(compareCompanyRows.length > 0 ? [{ name: 'Comparacion Empresas', rows: compareCompanyRows }] : []),
           ...(compareCompanyHistoryRows.length > 0 ? [{ name: 'Historial Empresas', rows: compareCompanyHistoryRows }] : []),
@@ -5934,6 +6072,29 @@ export const Reports: React.FC = () => {
                 ]),
                 theme: 'grid',
                 headStyles: { fillColor: [76, 29, 149] },
+                styles: { fontSize: 8 }
+              });
+
+              yPos = (doc as any).lastAutoTable.finalY + 8;
+            }
+
+            if (executiveGlobalAlertTransitionData.totalTransitions > 0) {
+              autoTable(doc, {
+                startY: yPos,
+                head: [['Transiciones de gestión', 'Detalle']],
+                body: [
+                  ['Transiciones visibles', String(executiveGlobalAlertTransitionData.totalTransitions)],
+                  ['Última transición', executiveGlobalAlertTransitionData.latestTransition
+                    ? `${formatExecutiveGlobalAlertTransitionStatus(executiveGlobalAlertTransitionData.latestTransition.from_status)} -> ${formatExecutiveGlobalAlertTransitionStatus(executiveGlobalAlertTransitionData.latestTransition.to_status)}`
+                    : 'Sin transiciones'],
+                  ['Transición dominante', executiveGlobalAlertTransitionData.topPair
+                    ? executiveGlobalAlertTransitionData.topPair.key.replace('->', ' -> ')
+                    : 'Sin patrón dominante'],
+                  ['Responsable dominante', executiveGlobalAlertTransitionData.ownerSummary[0]?.owner || 'Sin responsable'],
+                  ['Lectura', executiveGlobalAlertTransitionData.summaryLine]
+                ],
+                theme: 'grid',
+                headStyles: { fillColor: [67, 56, 202] },
                 styles: { fontSize: 8 }
               });
 
@@ -9437,6 +9598,7 @@ export const Reports: React.FC = () => {
                     <div className="font-medium text-slate-900">Lectura de auditoría global</div>
                     <p className="mt-2">{executiveGlobalAlertFilteredData.summaryLine}</p>
                     <p className="mt-2">{executiveGlobalAlertExportLinkSummary}</p>
+                    <p className="mt-2">{executiveGlobalAlertTransitionData.summaryLine}</p>
                   </div>
 
                   {selectedExecutiveGlobalAlertEvent && (
@@ -9498,6 +9660,37 @@ export const Reports: React.FC = () => {
                         >
                           {savingExecutiveGlobalAlert ? 'Guardando...' : 'Guardar gestión'}
                         </button>
+                      </div>
+                      <div className="mt-4 overflow-x-auto rounded-xl border border-purple-200 bg-white">
+                        <table className="min-w-full divide-y divide-slate-200 text-sm">
+                          <thead className="bg-purple-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Cambio</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Responsable</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Nota</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200 bg-white">
+                            {selectedExecutiveGlobalAlertTransitions.map((row) => (
+                              <tr key={row.id}>
+                                <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                                <td className="px-4 py-3 font-medium text-slate-900">
+                                  {formatExecutiveGlobalAlertTransitionStatus(row.from_status)} {'->'} {formatExecutiveGlobalAlertTransitionStatus(row.to_status)}
+                                </td>
+                                <td className="px-4 py-3 text-slate-700">{row.owner_label || 'Sin responsable'}</td>
+                                <td className="px-4 py-3 text-slate-700">{row.note || 'Sin nota'}</td>
+                              </tr>
+                            ))}
+                            {selectedExecutiveGlobalAlertTransitions.length === 0 && (
+                              <tr>
+                                <td colSpan={4} className="px-4 py-4 text-center text-sm text-slate-500">
+                                  La alerta todavía no registra transiciones visibles.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   )}
@@ -9613,6 +9806,32 @@ export const Reports: React.FC = () => {
                         </tbody>
                       </table>
                     </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Transición frecuente</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Veces</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {executiveGlobalAlertTransitionData.transitionPairs.slice(0, 6).map((row) => (
+                            <tr key={row.key}>
+                              <td className="px-4 py-3 font-medium text-slate-900">{row.key.replace('->', ' -> ')}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                            </tr>
+                          ))}
+                          {!executiveGlobalAlertLoading && executiveGlobalAlertTransitionData.transitionPairs.length === 0 && (
+                            <tr>
+                              <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
+                                No hay transiciones visibles para los filtros actuales.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
 
                   <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -9672,6 +9891,38 @@ export const Reports: React.FC = () => {
                           <tr>
                             <td colSpan={9} className="px-4 py-4 text-center text-sm text-slate-500">
                               Cargando bitácora histórica de alertas globales...
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Cambio</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Responsable</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Nota</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 bg-white">
+                        {executiveGlobalAlertTransitionData.recentRows.map((row) => (
+                          <tr key={row.id}>
+                            <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                            <td className="px-4 py-3 font-medium text-slate-900">
+                              {formatExecutiveGlobalAlertTransitionStatus(row.from_status)} {'->'} {formatExecutiveGlobalAlertTransitionStatus(row.to_status)}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700">{row.owner_label || 'Sin responsable'}</td>
+                            <td className="px-4 py-3 text-slate-700">{row.note || 'Sin nota'}</td>
+                          </tr>
+                        ))}
+                        {!executiveGlobalAlertLoading && executiveGlobalAlertTransitionData.recentRows.length === 0 && (
+                          <tr>
+                            <td colSpan={4} className="px-4 py-4 text-center text-sm text-slate-500">
+                              No hay transiciones de gestión visibles para los filtros actuales.
                             </td>
                           </tr>
                         )}
@@ -13513,6 +13764,11 @@ export const Reports: React.FC = () => {
                                   {executiveGlobalAlertFilteredData.latestEvent
                                     ? `Última gestión visible: ${formatExecutiveGlobalAlertStatus(executiveGlobalAlertFilteredData.latestEvent.management_status)} por ${executiveGlobalAlertFilteredData.latestEvent.management_owner_label || 'sin responsable'}`
                                     : 'No hay alertas globales visibles para los filtros actuales.'}
+                                </p>
+                                <p className="mt-5 text-lg text-slate-500">
+                                  {executiveGlobalAlertTransitionData.latestTransition
+                                    ? `Última transición: ${formatExecutiveGlobalAlertTransitionStatus(executiveGlobalAlertTransitionData.latestTransition.from_status)} -> ${formatExecutiveGlobalAlertTransitionStatus(executiveGlobalAlertTransitionData.latestTransition.to_status)} por ${executiveGlobalAlertTransitionData.latestTransition.owner_label || 'sin responsable'}.`
+                                    : 'No hay transiciones visibles para los filtros actuales.'}
                                 </p>
                                 <p className="mt-5 text-lg text-slate-500">{executiveGlobalAlertExportLinkSummary}</p>
                               </div>

@@ -644,6 +644,26 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - dejar trazabilidad operativa del seguimiento ejecutivo
   - permitir auditoria de quien esta tomando cada alerta y en que estado queda
 
+## Historial De Transiciones De Gestión
+- Cada cambio de estado de una alerta global ahora genera una transición persistida.
+- La transición guarda:
+  - estado origen
+  - estado destino
+  - responsable asociado
+  - nota de gestión
+  - fecha del cambio
+- La creación inicial de una alerta también deja una transición desde `Sin estado previo` hacia `Pendiente`.
+- `Reportes` ahora expone:
+  - tabla histórica de transiciones
+  - patrón de cambio más frecuente
+  - última transición visible
+  - historial específico de la alerta que se está editando
+  - exportación de transiciones en Excel y resumen en PDF
+- Objetivo:
+  - reconstruir el recorrido completo de gestión de cada alerta
+  - distinguir el estado actual del camino seguido para llegar a ese estado
+  - reforzar auditoría ejecutiva y trazabilidad operativa real
+
 ## Siguiente Paso Recomendado
 - Evaluar persistencia historica del ranking global para medir cambios de liderazgo sin recalculo completo en tiempo real.
-- Considerar historial formal de transiciones por alerta para saber no solo el estado final, sino todo el recorrido de gestion.
+- Considerar métricas SLA de gestión sobre alertas globales para medir tiempo entre detección, reconocimiento, comunicación y cierre.
