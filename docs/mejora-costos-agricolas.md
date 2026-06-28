@@ -443,7 +443,24 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - cerrar la lectura tecnica con una decision concreta y defendible
   - reducir ambiguedad al momento de presentar el dato a directorio o comite
 
+## Historial De Exportaciones Bajo Advertencia
+- `Reportes` ahora carga la bitacora historica de `executive_export_warning_events` para la empresa activa.
+- La vista ejecutiva muestra:
+  - total de eventos historicos
+  - eventos de la temporada visible
+  - formato dominante entre PDF y Excel
+  - ultima exportacion advertida
+  - temporadas mas expuestas
+  - advertencias mas frecuentes
+  - tabla de ultimos eventos registrados
+- La lectura se integra tambien en exportaciones:
+  - Excel con hoja `Bitacora Exportaciones`
+  - PDF con resumen y ultimos eventos
+- Objetivo:
+  - dejar una pista de auditoria interna sobre circulacion de reportes emitidos con advertencias visibles
+  - facilitar revision posterior por temporada, formato y contexto comparativo
+
 ## Siguiente Paso Recomendado
-- Considerar una vista historica de exportaciones bajo advertencia para auditoria interna.
+- Agregar filtros adicionales por usuario, formato o tipo de advertencia dentro de la bitacora historica.
 - Evaluar una portada o slide final exclusivo de decision ejecutiva para comite.
 - Considerar un ranking automatico entre empresas usando cierre total, tendencia y bloqueos ponderados.

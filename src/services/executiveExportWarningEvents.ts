@@ -16,6 +16,26 @@ export type ExecutiveExportWarningEventCreate = {
   metadata?: Record<string, unknown>;
 };
 
+export type ExecutiveExportWarningEventRow = {
+  id: string;
+  company_id: string;
+  created_by: string;
+  season: string;
+  report_scope: 'executive';
+  export_format: 'pdf' | 'excel';
+  readiness_title: string;
+  total_closure_pct: number;
+  warning_types: string[];
+  warning_summary: string;
+  warning_detail: string | null;
+  field_filter: string | null;
+  field_label: string | null;
+  compare_company_id: string | null;
+  compare_company_name: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+};
+
 export async function createExecutiveExportWarningEvent(params: ExecutiveExportWarningEventCreate) {
   const { error } = await supabase
     .from('executive_export_warning_events')
@@ -37,4 +57,28 @@ export async function createExecutiveExportWarningEvent(params: ExecutiveExportW
     });
 
   if (error) throw error;
+}
+
+export async function loadExecutiveExportWarningEvents(params: {
+  companyId: string;
+  season?: string;
+  limit?: number;
+}) {
+  let query = supabase
+    .from('executive_export_warning_events')
+    .select('*')
+    .eq('company_id', params.companyId)
+    .order('created_at', { ascending: false });
+
+  if (params.season) {
+    query = query.eq('season', params.season);
+  }
+
+  if (params.limit && params.limit > 0) {
+    query = query.limit(params.limit);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []) as ExecutiveExportWarningEventRow[];
 }

@@ -13,7 +13,11 @@ import { loadReportsRawData } from '../services/reports';
 import { loadAgriculturalCostAudit, loadAgriculturalCostAuditSummary, type AgriculturalCostAuditRow, type AgriculturalCostAuditSummaryRow } from '../services/costAudit';
 import { loadAgriculturalMarginRows, type AgriculturalMarginRow } from '../services/agriculturalMargin';
 import { loadProductionRecords, upsertProductionRecord, deleteProductionRecord, type ProductionRecord } from '../services/productionRecords';
-import { createExecutiveExportWarningEvent } from '../services/executiveExportWarningEvents';
+import {
+  createExecutiveExportWarningEvent,
+  loadExecutiveExportWarningEvents,
+  type ExecutiveExportWarningEventRow
+} from '../services/executiveExportWarningEvents';
 import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
 interface ReportData {
@@ -226,6 +230,20 @@ const EXECUTIVE_AUDIT_LAYER_OPTIONS: Array<{ value: ExecutiveAuditLayerFilter; l
   { value: 'Contable', label: 'Contable' },
   { value: 'Otro', label: 'Otro' }
 ];
+
+const EXECUTIVE_EXPORT_WARNING_TYPE_LABELS: Record<string, string> = {
+  committee_not_ready: 'Comité no listo',
+  trend_deterioration_high_closure: 'Deterioro con cierre alto'
+};
+
+const formatExecutiveExportWarningType = (value: string) => (
+  EXECUTIVE_EXPORT_WARNING_TYPE_LABELS[value]
+  || value
+    .split('_')
+    .filter(Boolean)
+    .map((item) => item.charAt(0).toUpperCase() + item.slice(1))
+    .join(' ')
+);
 
 const getExecutiveSortMetric = (row: any, sortBy: ExecutiveSortKey) => {
   switch (sortBy) {
@@ -640,6 +658,8 @@ export const Reports: React.FC = () => {
   const [costAuditRows, setCostAuditRows] = useState<AgriculturalCostAuditRow[]>([]);
   const [costAuditSummary, setCostAuditSummary] = useState<AgriculturalCostAuditSummaryRow[]>([]);
   const [costAuditHistorySummary, setCostAuditHistorySummary] = useState<AgriculturalCostAuditSummaryRow[]>([]);
+  const [executiveExportWarningEvents, setExecutiveExportWarningEvents] = useState<ExecutiveExportWarningEventRow[]>([]);
+  const [executiveExportWarningLoading, setExecutiveExportWarningLoading] = useState(false);
   const [costAuditLoading, setCostAuditLoading] = useState(false);
   const [showProductionModal, setShowProductionModal] = useState(false);
   const [savingProductionRecord, setSavingProductionRecord] = useState(false);
@@ -767,6 +787,7 @@ export const Reports: React.FC = () => {
     setCostAuditRows([]);
     setCostAuditSummary([]);
     setCostAuditHistorySummary([]);
+    setExecutiveExportWarningEvents([]);
     setReportData([]);
     setMonthlyExpenses([]);
     setCategoryExpenses([]);
@@ -806,6 +827,32 @@ export const Reports: React.FC = () => {
       }
     })();
   }, [selectedCompany?.id, selectedSeason]);
+
+  useEffect(() => {
+    if (!selectedCompany?.id) return;
+    const companyId = selectedCompany.id;
+    let cancelled = false;
+    setExecutiveExportWarningLoading(true);
+
+    void (async () => {
+      try {
+        const rows = await loadExecutiveExportWarningEvents({ companyId, limit: 100 });
+        if (cancelled || selectedCompany?.id !== companyId) return;
+        setExecutiveExportWarningEvents(rows || []);
+      } catch {
+        if (cancelled || selectedCompany?.id !== companyId) return;
+        setExecutiveExportWarningEvents([]);
+      } finally {
+        if (!cancelled && selectedCompany?.id === companyId) {
+          setExecutiveExportWarningLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCompany?.id]);
 
   const executiveComparableCompanies = useMemo(
     () => companies.filter((company) => company.id !== selectedCompany?.id),
@@ -2707,6 +2754,63 @@ export const Reports: React.FC = () => {
     selectedSeason
   ]);
 
+  const executiveExportWarningHistoryData = useMemo(() => {
+    const allRows = executiveExportWarningEvents;
+    const currentSeasonRows = allRows.filter((row) => row.season === selectedSeason);
+    const latestEvent = allRows[0] || null;
+    const latestCurrentSeasonEvent = currentSeasonRows[0] || null;
+    const byFormat = {
+      pdf: allRows.filter((row) => row.export_format === 'pdf').length,
+      excel: allRows.filter((row) => row.export_format === 'excel').length
+    };
+    const warningTypeSummary = Array.from(
+      allRows.reduce((map, row) => {
+        (row.warning_types || []).forEach((warningType) => {
+          map.set(warningType, (map.get(warningType) || 0) + 1);
+        });
+        return map;
+      }, new Map<string, number>())
+    )
+      .map(([type, count]) => ({ type, count }))
+      .sort((a, b) => b.count - a.count);
+    const seasonSummary = Array.from(
+      allRows.reduce((map, row) => {
+        const current = map.get(row.season) || { season: row.season, count: 0 };
+        current.count += 1;
+        map.set(row.season, current);
+        return map;
+      }, new Map<string, { season: string; count: number }>())
+    )
+      .map(([, value]) => value)
+      .sort((a, b) => b.season.localeCompare(a.season));
+    const dominantFormat = byFormat.pdf === byFormat.excel
+      ? byFormat.pdf > 0 ? 'PDF y Excel' : 'Sin eventos'
+      : byFormat.pdf > byFormat.excel
+        ? 'PDF'
+        : 'Excel';
+    const topWarningType = warningTypeSummary[0] || null;
+    const topSeason = seasonSummary[0] || null;
+    const summaryLine = latestEvent
+      ? `Se registran ${allRows.length} exportaciones ejecutivas bajo advertencia. La última ocurrió en ${latestEvent.season} vía ${latestEvent.export_format.toUpperCase()} con estado ${latestEvent.readiness_title}.`
+      : 'Todavía no hay exportaciones ejecutivas registradas bajo advertencia para esta empresa.';
+
+    return {
+      allRows,
+      currentSeasonRows,
+      latestEvent,
+      latestCurrentSeasonEvent,
+      recentRows: allRows.slice(0, 12),
+      byFormat,
+      dominantFormat,
+      seasonSummary,
+      topSeason,
+      warningTypeSummary,
+      topWarningType,
+      totalEvents: allRows.length,
+      summaryLine
+    };
+  }, [executiveExportWarningEvents, selectedSeason]);
+
   const executiveHistoricalSeasonRows = useMemo(() => {
     return availablePreviousExecutiveSeasons.map((season) => {
       const base = aggregateExecutiveCosts({
@@ -2801,6 +2905,8 @@ export const Reports: React.FC = () => {
         { Indicador: 'Resumen recomendación', Valor: executiveCurrentRecommendation.summary },
         { Indicador: 'Alerta tendencia', Valor: executiveTrendWarning?.shortLabel || 'Sin alerta' },
         { Indicador: 'Detalle alerta tendencia', Valor: executiveTrendWarning?.detail || 'Sin alerta preventiva visible' },
+        { Indicador: 'Eventos bitácora advertencia', Valor: executiveExportWarningHistoryData.totalEvents },
+        { Indicador: 'Última exportación advertida', Valor: executiveExportWarningHistoryData.latestEvent ? `${executiveExportWarningHistoryData.latestEvent.export_format.toUpperCase()} · ${executiveExportWarningHistoryData.latestEvent.season}` : 'Sin eventos' },
         { Indicador: 'Empresa comparada', Valor: executiveCompareCompanyName || 'Sin comparar' },
         { Indicador: 'Cierre total empresa comparada', Valor: executiveCompareCompanyTotalClosure ? Number(executiveCompareCompanyTotalClosure.totalClosurePct.toFixed(2)) : 'Sin datos' },
         { Indicador: 'Estado comité comparado', Valor: executiveCompareCompanyTotalClosure?.readiness.title || 'Sin datos' },
@@ -3003,6 +3109,18 @@ export const Reports: React.FC = () => {
           'Razón 4': executiveCompareCompanyRecommendation.reasons[3] || '-'
         }] : [])
       ];
+      const exportWarningHistoryRows = executiveExportWarningHistoryData.allRows.map((row) => ({
+        Fecha: new Date(row.created_at).toLocaleString('es-CL'),
+        Temporada: row.season,
+        Formato: row.export_format.toUpperCase(),
+        Estado: row.readiness_title,
+        'Cierre total': Number(Number(row.total_closure_pct || 0).toFixed(2)),
+        Advertencias: (row.warning_types || []).map((item) => formatExecutiveExportWarningType(item)).join(', ') || 'Sin detalle',
+        Resumen: row.warning_summary,
+        Detalle: row.warning_detail || '',
+        Campo: row.field_label || 'Todos los campos',
+        'Empresa comparada': row.compare_company_name || 'Sin comparar'
+      }));
       const trendWarningRows = executiveTrendWarning ? [
         { Campo: 'Estado', Valor: executiveTrendWarning.shortLabel },
         { Campo: 'Detalle', Valor: executiveTrendWarning.detail },
@@ -3121,6 +3239,7 @@ export const Reports: React.FC = () => {
           ...(compareCompanyHistoryRows.length > 0 ? [{ name: 'Historial Empresas', rows: compareCompanyHistoryRows }] : []),
           ...(trendCompanyRows.length > 0 ? [{ name: 'Tendencia Empresas', rows: trendCompanyRows }] : []),
           ...(trendWarningRows.length > 0 ? [{ name: 'Alerta Tendencia', rows: trendWarningRows }] : []),
+          ...(exportWarningHistoryRows.length > 0 ? [{ name: 'Bitacora Exportaciones', rows: exportWarningHistoryRows }] : []),
           ...(historicalClosureRows.length > 0 ? [{ name: 'Historial Cierre', rows: historicalClosureRows }] : []),
           ...(economicClosureRows.length > 0 ? [{ name: 'Cierre Economico', rows: economicClosureRows }] : []),
           ...(economicFocusRows.length > 0 ? [{ name: 'Focos Economicos', rows: economicFocusRows }] : []),
@@ -4236,6 +4355,56 @@ export const Reports: React.FC = () => {
           });
 
           yPos = (doc as any).lastAutoTable.finalY + 8;
+        }
+
+        if (executiveExportWarningHistoryData.totalEvents > 0) {
+          if (yPos > 135) {
+            doc.addPage();
+            yPos = 20;
+          }
+
+          autoTable(doc, {
+            startY: yPos,
+            head: [['Bitácora exportación advertida', 'Detalle']],
+            body: [
+              ['Eventos totales', String(executiveExportWarningHistoryData.totalEvents)],
+              ['Temporada actual', `${selectedSeason} · ${executiveExportWarningHistoryData.currentSeasonRows.length} eventos`],
+              ['Última exportación', executiveExportWarningHistoryData.latestEvent ? `${executiveExportWarningHistoryData.latestEvent.export_format.toUpperCase()} · ${executiveExportWarningHistoryData.latestEvent.season} · ${executiveExportWarningHistoryData.latestEvent.readiness_title}` : 'Sin eventos'],
+              ['Formato dominante', executiveExportWarningHistoryData.dominantFormat],
+              ['Advertencia dominante', executiveExportWarningHistoryData.topWarningType ? `${formatExecutiveExportWarningType(executiveExportWarningHistoryData.topWarningType.type)} (${executiveExportWarningHistoryData.topWarningType.count})` : 'Sin advertencias frecuentes'],
+              ['Temporada más expuesta', executiveExportWarningHistoryData.topSeason ? `${executiveExportWarningHistoryData.topSeason.season} (${executiveExportWarningHistoryData.topSeason.count})` : 'Sin temporadas'],
+              ['Lectura', executiveExportWarningHistoryData.summaryLine]
+            ],
+            theme: 'grid',
+            headStyles: { fillColor: [146, 64, 14] },
+            styles: { fontSize: 8 }
+          });
+
+          yPos = (doc as any).lastAutoTable.finalY + 8;
+
+          if (executiveExportWarningHistoryData.recentRows.length > 0) {
+            if (yPos > 150) {
+              doc.addPage();
+              yPos = 20;
+            }
+
+            autoTable(doc, {
+              startY: yPos,
+              head: [['Fecha', 'Temporada', 'Formato', 'Advertencias', 'Campo']],
+              body: executiveExportWarningHistoryData.recentRows.slice(0, 6).map((row) => [
+                new Date(row.created_at).toLocaleDateString('es-CL'),
+                row.season,
+                row.export_format.toUpperCase(),
+                (row.warning_types || []).map((item) => formatExecutiveExportWarningType(item)).join(', ') || 'Sin detalle',
+                row.field_label || 'Todos los campos'
+              ]),
+              theme: 'grid',
+              headStyles: { fillColor: [120, 53, 15] },
+              styles: { fontSize: 8 }
+            });
+
+            yPos = (doc as any).lastAutoTable.finalY + 8;
+          }
         }
 
         if (yPos > 150) {
@@ -6859,6 +7028,161 @@ export const Reports: React.FC = () => {
                   </div>
                 </div>
               )}
+
+              <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Bitácora de exportaciones bajo advertencia</h3>
+                      <p className="text-sm text-gray-500">Permite auditoría interna de cuándo se exportó el reporte ejecutivo con alertas visibles, bajo qué formato y en qué contexto de cierre.</p>
+                    </div>
+                    <span className="text-sm text-slate-500">
+                      {executiveExportWarningLoading
+                        ? 'Cargando bitácora...'
+                        : `${executiveExportWarningHistoryData.totalEvents} eventos históricos`}
+                    </span>
+                  </div>
+                </div>
+                <div className="p-6 space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Eventos totales</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveExportWarningHistoryData.totalEvents}</div>
+                      <div className="mt-1 text-sm text-slate-500">Bitácora histórica de la empresa activa</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Temporada visible</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveExportWarningHistoryData.currentSeasonRows.length}</div>
+                      <div className="mt-1 text-sm text-slate-500">{selectedSeason} con exportaciones advertidas</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Formato dominante</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveExportWarningHistoryData.dominantFormat}</div>
+                      <div className="mt-1 text-sm text-slate-500">PDF: {executiveExportWarningHistoryData.byFormat.pdf} · Excel: {executiveExportWarningHistoryData.byFormat.excel}</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Última exportación</div>
+                      <div className="mt-2 text-lg font-semibold text-slate-900">
+                        {executiveExportWarningHistoryData.latestEvent
+                          ? `${executiveExportWarningHistoryData.latestEvent.export_format.toUpperCase()} · ${executiveExportWarningHistoryData.latestEvent.season}`
+                          : 'Sin eventos'}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {executiveExportWarningHistoryData.latestEvent
+                          ? executiveExportWarningHistoryData.latestEvent.readiness_title
+                          : 'Aún sin exportaciones advertidas'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+                    <div className="font-medium text-slate-900">Lectura de auditoría interna</div>
+                    <p className="mt-2">{executiveExportWarningHistoryData.summaryLine}</p>
+                    <p className="mt-2">
+                      {executiveExportWarningHistoryData.latestCurrentSeasonEvent
+                        ? `La última exportación advertida de la temporada visible ocurrió el ${new Date(executiveExportWarningHistoryData.latestCurrentSeasonEvent.created_at).toLocaleString('es-CL')} en formato ${executiveExportWarningHistoryData.latestCurrentSeasonEvent.export_format.toUpperCase()}.`
+                        : `La temporada ${selectedSeason} todavía no registra exportaciones advertidas.`}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Temporada</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Eventos</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {executiveExportWarningHistoryData.seasonSummary.slice(0, 6).map((row) => (
+                            <tr key={row.season} className={row.season === selectedSeason ? 'bg-purple-50/50' : ''}>
+                              <td className="px-4 py-3 font-medium text-slate-900">{row.season}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                            </tr>
+                          ))}
+                          {!executiveExportWarningLoading && executiveExportWarningHistoryData.seasonSummary.length === 0 && (
+                            <tr>
+                              <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
+                                No hay temporadas con exportaciones advertidas registradas.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Advertencia frecuente</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Veces</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {executiveExportWarningHistoryData.warningTypeSummary.slice(0, 6).map((row) => (
+                            <tr key={row.type}>
+                              <td className="px-4 py-3 text-slate-900">{formatExecutiveExportWarningType(row.type)}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                            </tr>
+                          ))}
+                          {!executiveExportWarningLoading && executiveExportWarningHistoryData.warningTypeSummary.length === 0 && (
+                            <tr>
+                              <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
+                                No hay advertencias repetidas registradas todavía.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Temporada</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Formato</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Estado</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Advertencias</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Campo</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Empresa comparada</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 bg-white">
+                        {executiveExportWarningHistoryData.recentRows.map((row) => (
+                          <tr key={row.id}>
+                            <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                            <td className="px-4 py-3 font-medium text-slate-900">{row.season}</td>
+                            <td className="px-4 py-3 text-slate-700">{row.export_format.toUpperCase()}</td>
+                            <td className="px-4 py-3 text-slate-700">{row.readiness_title}</td>
+                            <td className="px-4 py-3 text-slate-700">{(row.warning_types || []).map((item) => formatExecutiveExportWarningType(item)).join(', ') || 'Sin detalle'}</td>
+                            <td className="px-4 py-3 text-slate-700">{row.field_label || 'Todos los campos'}</td>
+                            <td className="px-4 py-3 text-slate-700">{row.compare_company_name || 'Sin comparar'}</td>
+                          </tr>
+                        ))}
+                        {!executiveExportWarningLoading && executiveExportWarningHistoryData.recentRows.length === 0 && (
+                          <tr>
+                            <td colSpan={7} className="px-4 py-4 text-center text-sm text-slate-500">
+                              No hay exportaciones bajo advertencia registradas para esta empresa.
+                            </td>
+                          </tr>
+                        )}
+                        {executiveExportWarningLoading && (
+                          <tr>
+                            <td colSpan={7} className="px-4 py-4 text-center text-sm text-slate-500">
+                              Cargando bitácora histórica de exportaciones...
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
 
               {executiveFieldComparison && (
                 <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
