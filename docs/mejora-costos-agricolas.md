@@ -393,7 +393,18 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - evitar leer el historial solo como una foto estatica
   - mostrar si una empresa realmente esta acelerando, frenando o deteriorando su calidad de dato en el tiempo
 
+## Alerta Preventiva Por Tendencia
+- `Reportes` ahora activa una advertencia cuando el cierre puntual de la temporada sigue viendose alto, pero la tendencia movil reciente empeora.
+- La alerta aparece en:
+  - resumen ejecutivo
+  - exportacion Excel
+  - exportacion PDF
+  - slide fullscreen de cierre total
+- Objetivo:
+  - evitar una falsa sensacion de control por una sola temporada puntual
+  - advertir cuando la calidad del dato empieza a deteriorarse aunque el semaforo actual aun parezca defendible
+
 ## Siguiente Paso Recomendado
 - Considerar registrar un evento o bitacora cada vez que se exporte bajo advertencia.
 - Evaluar una portada o slide final de decision ejecutiva con recomendacion automatica por empresa.
-- Considerar una alerta preventiva cuando la tendencia movil empeora aunque el cierre puntual de la temporada se vea alto.
+- Integrar esta alerta con una decision automatica de recomendacion ejecutiva por empresa.

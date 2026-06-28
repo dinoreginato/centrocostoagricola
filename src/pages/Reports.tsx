@@ -2438,6 +2438,36 @@ export const Reports: React.FC = () => {
     executiveCurrentCompanyTrend
   ]);
 
+  const executiveTrendWarning = useMemo(() => {
+    const isHighCurrentClosure = executiveTotalDataClosure.totalClosurePct >= 75;
+    const isNegativeTrend = executiveCurrentCompanyTrend.direction === 'deterioro';
+
+    if (!isHighCurrentClosure || !isNegativeTrend) return null;
+
+    const compareLine = executiveCompareCompanyTrend
+      ? executiveCompareCompanyTrend.direction === 'mejora'
+        ? `${executiveCompareCompanyName} mejora en la misma ventana, por lo que la brecha competitiva puede ampliarse.`
+        : executiveCompareCompanyTrend.direction === 'estable'
+          ? `${executiveCompareCompanyName} se mantiene estable en la misma ventana.`
+          : `${executiveCompareCompanyName} también deteriora su tendencia, aunque conviene revisar la velocidad relativa.`
+      : null;
+
+    return {
+      badge: 'bg-amber-100 text-amber-800 border-amber-300',
+      dot: 'bg-amber-500',
+      title: 'Alerta preventiva por tendencia',
+      shortLabel: 'Tendencia empeorando',
+      detail: `La temporada actual muestra ${executiveTotalDataClosure.totalClosurePct.toFixed(1)}% de cierre total, pero la ventana reciente cae ${Math.abs(executiveCurrentCompanyTrend.delta).toFixed(1)} puntos frente a la previa.`,
+      recommendation: 'Conviene presentar el dato con cautela, porque la foto puntual se ve alta pero la pendiente reciente pierde solidez.',
+      compareLine
+    };
+  }, [
+    executiveCompareCompanyName,
+    executiveCompareCompanyTrend,
+    executiveCurrentCompanyTrend,
+    executiveTotalDataClosure.totalClosurePct
+  ]);
+
   const executiveHistoricalSeasonRows = useMemo(() => {
     return availablePreviousExecutiveSeasons.map((season) => {
       const base = aggregateExecutiveCosts({
@@ -2528,6 +2558,8 @@ export const Reports: React.FC = () => {
         { Indicador: 'Cierre total dato %', Valor: Number(executiveTotalDataClosure.totalClosurePct.toFixed(2)) },
         { Indicador: 'Soporte oficial %', Valor: Number(executiveTotalDataClosure.officialSupportPct.toFixed(2)) },
         { Indicador: 'Estado comité', Valor: executiveTotalDataClosure.readiness.title },
+        { Indicador: 'Alerta tendencia', Valor: executiveTrendWarning?.shortLabel || 'Sin alerta' },
+        { Indicador: 'Detalle alerta tendencia', Valor: executiveTrendWarning?.detail || 'Sin alerta preventiva visible' },
         { Indicador: 'Empresa comparada', Valor: executiveCompareCompanyName || 'Sin comparar' },
         { Indicador: 'Cierre total empresa comparada', Valor: executiveCompareCompanyTotalClosure ? Number(executiveCompareCompanyTotalClosure.totalClosurePct.toFixed(2)) : 'Sin datos' },
         { Indicador: 'Estado comité comparado', Valor: executiveCompareCompanyTotalClosure?.readiness.title || 'Sin datos' },
@@ -2700,8 +2732,16 @@ export const Reports: React.FC = () => {
         { Indicador: 'Soporte oficial', Valor: `${executiveTotalDataClosure.officialSupportPct.toFixed(2)}%` },
         { Indicador: 'Limpieza revisión', Valor: `${executiveTotalDataClosure.reviewCleanPct.toFixed(2)}%` },
         { Indicador: 'Estado comité', Valor: executiveTotalDataClosure.readiness.title },
+        { Indicador: 'Alerta tendencia', Valor: executiveTrendWarning?.shortLabel || 'Sin alerta' },
+        { Indicador: 'Detalle alerta tendencia', Valor: executiveTrendWarning?.detail || 'Sin alerta preventiva visible' },
         { Indicador: 'Conclusión', Valor: executiveTotalDataClosure.conclusion }
       ];
+      const trendWarningRows = executiveTrendWarning ? [
+        { Campo: 'Estado', Valor: executiveTrendWarning.shortLabel },
+        { Campo: 'Detalle', Valor: executiveTrendWarning.detail },
+        { Campo: 'Recomendación', Valor: executiveTrendWarning.recommendation },
+        { Campo: 'Comparativo', Valor: executiveTrendWarning.compareLine || 'Sin comparativo adicional' }
+      ] : [];
       const totalDataBlockerRows = executiveTotalDataClosure.blockers.map((item, index) => ({
         Ranking: index + 1,
         Bloqueo: item
@@ -2812,6 +2852,7 @@ export const Reports: React.FC = () => {
           ...(compareCompanyRows.length > 0 ? [{ name: 'Comparacion Empresas', rows: compareCompanyRows }] : []),
           ...(compareCompanyHistoryRows.length > 0 ? [{ name: 'Historial Empresas', rows: compareCompanyHistoryRows }] : []),
           ...(trendCompanyRows.length > 0 ? [{ name: 'Tendencia Empresas', rows: trendCompanyRows }] : []),
+          ...(trendWarningRows.length > 0 ? [{ name: 'Alerta Tendencia', rows: trendWarningRows }] : []),
           ...(historicalClosureRows.length > 0 ? [{ name: 'Historial Cierre', rows: historicalClosureRows }] : []),
           ...(economicClosureRows.length > 0 ? [{ name: 'Cierre Economico', rows: economicClosureRows }] : []),
           ...(economicFocusRows.length > 0 ? [{ name: 'Focos Economicos', rows: economicFocusRows }] : []),
@@ -3615,6 +3656,7 @@ export const Reports: React.FC = () => {
             ['Pendientes ingreso', String(executiveEconomicClosureData.pendingIncomeRows.length)],
             ['Cierre total dato', `${executiveTotalDataClosure.totalClosurePct.toFixed(1)}%`],
             ['Estado comité', executiveTotalDataClosure.readiness.title],
+            ['Alerta tendencia', executiveTrendWarning?.shortLabel || 'Sin alerta'],
             ['Historial visible', `${executiveEconomicClosureHistoryRows.length} temporadas`],
             ['Hallazgo 1', executiveInsights.findings[0]?.description || '-'],
             ['Hallazgo 2', executiveInsights.findings[1]?.description || '-'],
@@ -3646,6 +3688,7 @@ export const Reports: React.FC = () => {
             ['Cierre total dato %', `${executiveTotalDataClosure.totalClosurePct.toFixed(1)}%`],
             ['Soporte oficial %', `${executiveTotalDataClosure.officialSupportPct.toFixed(1)}%`],
             ['Estado comité', executiveTotalDataClosure.readiness.title],
+            ['Alerta tendencia', executiveTrendWarning?.shortLabel || 'Sin alerta'],
             ['Hectáreas reportadas', executiveViewData.kpis.totalHectares.toFixed(2)],
             ['Campo con mayor gasto', executiveViewData.kpis.topField ? `${executiveViewData.kpis.topField.fieldName} (${formatCLP(executiveViewData.kpis.topField.total)})` : '-'],
             ['Sector con mayor gasto', executiveViewData.kpis.topSector ? `${executiveViewData.kpis.topSector.sectorName} (${formatCLP(executiveViewData.kpis.topSector.total)})` : '-'],
@@ -3656,6 +3699,23 @@ export const Reports: React.FC = () => {
         });
 
         yPos = (doc as any).lastAutoTable.finalY + 8;
+
+        if (executiveTrendWarning) {
+          autoTable(doc, {
+            startY: yPos,
+            head: [['Alerta preventiva de tendencia']],
+            body: [
+              [executiveTrendWarning.detail],
+              [executiveTrendWarning.recommendation],
+              [executiveTrendWarning.compareLine || 'Sin comparativo adicional para esta alerta.']
+            ],
+            theme: 'grid',
+            headStyles: { fillColor: [217, 119, 6] },
+            styles: { fontSize: 8 }
+          });
+
+          yPos = (doc as any).lastAutoTable.finalY + 8;
+        }
 
         autoTable(doc, {
           startY: yPos,
@@ -5390,6 +5450,25 @@ export const Reports: React.FC = () => {
                       </div>
                     )}
                   </div>
+
+                  {executiveTrendWarning && (
+                    <div className={`rounded-xl border px-5 py-4 ${executiveTrendWarning.badge}`}>
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <div className="text-xs uppercase tracking-wide">Alerta preventiva</div>
+                          <div className="mt-2 text-lg font-semibold">{executiveTrendWarning.title}</div>
+                          <p className="mt-2 text-sm">{executiveTrendWarning.detail}</p>
+                          <p className="mt-2 text-sm">{executiveTrendWarning.recommendation}</p>
+                          {executiveTrendWarning.compareLine && (
+                            <p className="mt-2 text-sm">{executiveTrendWarning.compareLine}</p>
+                          )}
+                        </div>
+                        <div className="text-sm font-medium">
+                          Delta tendencia: {executiveCurrentCompanyTrend.delta.toFixed(1)} pp
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 lg:grid-cols-[1.2fr,0.8fr] gap-4">
                     <div className="rounded-xl border border-slate-200 p-5">
@@ -9723,6 +9802,25 @@ export const Reports: React.FC = () => {
                               <div className="mt-3 text-3xl font-bold text-slate-900">{executiveTotalDataClosure.reviewCleanPct.toFixed(1)}%</div>
                             </div>
                           </div>
+                          {executiveTrendWarning && (
+                            <div className={`rounded-2xl border p-6 ${executiveTrendWarning.badge}`}>
+                              <div className="flex items-start justify-between gap-6">
+                                <div>
+                                  <div className="text-sm uppercase tracking-[0.25em]">Alerta Preventiva</div>
+                                  <div className="mt-3 text-2xl font-bold">{executiveTrendWarning.title}</div>
+                                  <p className="mt-4 text-xl leading-9">{executiveTrendWarning.detail}</p>
+                                  <p className="mt-4 text-lg leading-8">{executiveTrendWarning.recommendation}</p>
+                                  {executiveTrendWarning.compareLine && (
+                                    <p className="mt-4 text-lg leading-8">{executiveTrendWarning.compareLine}</p>
+                                  )}
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-sm uppercase tracking-[0.25em]">Delta</div>
+                                  <div className="mt-3 text-3xl font-bold">{executiveCurrentCompanyTrend.delta.toFixed(1)} pp</div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                           <div className="grid grid-cols-1 xl:grid-cols-[0.9fr,1.1fr] gap-6">
                             <div className="rounded-2xl border border-slate-200 p-6">
                               <div className="text-2xl font-bold text-slate-800 mb-5">Lectura consolidada</div>
