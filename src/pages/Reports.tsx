@@ -3123,6 +3123,22 @@ export const Reports: React.FC = () => {
     const selectedRows = comparableRows.filter((row) => row.selectedCompanyRank !== null);
     const selectedTopQuartileCount = selectedRows.filter((row) => row.selectedCompanyInTopQuartile).length;
     const selectedOutsideQuartileCount = selectedRows.filter((row) => !row.selectedCompanyInTopQuartile).length;
+    const selectedLeaderRows = selectedRows.filter((row) => row.leader?.companyId === selectedCompany?.id);
+    const selectedLeaderCount = selectedLeaderRows.length;
+    const currentOutsideTopQuartileStreak = selectedRows.reduce((count, row) => {
+      if (!row.selectedCompanyInTopQuartile) return count + 1;
+      return count;
+    }, 0);
+    const currentWithoutLeadershipStreak = selectedRows.reduce((count, row) => {
+      if (row.leader?.companyId !== selectedCompany?.id) return count + 1;
+      return count;
+    }, 0);
+    const currentTopQuartileStreak = selectedRows.reduce((count, row) => {
+      if (row.selectedCompanyInTopQuartile) return count + 1;
+      return count;
+    }, 0);
+    const lastLeaderSeason = selectedRows.find((row) => row.leader?.companyId === selectedCompany?.id)?.season || null;
+    const lastTopQuartileSeason = selectedRows.find((row) => row.selectedCompanyInTopQuartile)?.season || null;
     const strongestGapRow = comparableRows
       .filter((row) => row.leader && row.runnerUp)
       .slice()
@@ -3139,10 +3155,62 @@ export const Reports: React.FC = () => {
       dominantLeader,
       selectedTopQuartileCount,
       selectedOutsideQuartileCount,
+      selectedLeaderCount,
+      currentOutsideTopQuartileStreak,
+      currentWithoutLeadershipStreak,
+      currentTopQuartileStreak,
+      lastLeaderSeason,
+      lastTopQuartileSeason,
       strongestGapRow,
       summaryLine
     };
-  }, [executiveGlobalRankingHistory]);
+  }, [executiveGlobalRankingHistory, selectedCompany?.id]);
+
+  const executiveGlobalConsecutiveAlert = useMemo(() => {
+    const hasHistory = executiveGlobalHistoricalInsights.comparableRows.length > 1;
+    if (!hasHistory) return null;
+
+    if (executiveGlobalHistoricalInsights.currentOutsideTopQuartileStreak >= 2) {
+      const severity = executiveGlobalHistoricalInsights.currentOutsideTopQuartileStreak >= 3 ? 'alta' : 'media';
+      return {
+        severity,
+        tone: severity === 'alta'
+          ? {
+              badge: 'bg-red-100 text-red-700 border-red-200',
+              dot: 'bg-red-500',
+              title: 'Rezago consecutivo global'
+            }
+          : {
+              badge: 'bg-amber-100 text-amber-700 border-amber-200',
+              dot: 'bg-amber-500',
+              title: 'Salida repetida del top cuartil'
+            },
+        streak: executiveGlobalHistoricalInsights.currentOutsideTopQuartileStreak,
+        detail: `${companyName} acumula ${executiveGlobalHistoricalInsights.currentOutsideTopQuartileStreak} temporadas consecutivas fuera del top cuartil del ranking global.`,
+        recommendation: severity === 'alta'
+          ? 'Conviene tratar la pérdida de posicionamiento como alerta estratégica y no solo como una desviación puntual de temporada.'
+          : 'Conviene anticipar un plan de recuperación antes de consolidar otra temporada fuera del tramo líder.'
+      };
+    }
+
+    if (executiveGlobalHistoricalInsights.currentWithoutLeadershipStreak >= 3) {
+      return {
+        severity: 'media',
+        tone: {
+          badge: 'bg-amber-100 text-amber-700 border-amber-200',
+          dot: 'bg-amber-500',
+          title: 'Sin liderazgo global reciente'
+        },
+        streak: executiveGlobalHistoricalInsights.currentWithoutLeadershipStreak,
+        detail: `${companyName} no lidera el ranking multiempresa hace ${executiveGlobalHistoricalInsights.currentWithoutLeadershipStreak} temporadas consecutivas.`,
+        recommendation: executiveGlobalHistoricalInsights.lastLeaderSeason
+          ? `La última temporada con liderazgo visible fue ${executiveGlobalHistoricalInsights.lastLeaderSeason}; conviene explicar la pérdida relativa de competitividad.`
+          : 'No hay liderazgo histórico visible de la empresa activa en el universo comparable; conviene contextualizarlo antes de comité.'
+      };
+    }
+
+    return null;
+  }, [companyName, executiveGlobalHistoricalInsights]);
 
   const executiveGlobalRankingAlert = useMemo(() => {
     const currentSeasonRow = executiveGlobalRankingHistory.find((row) => row.season === selectedSeason) || null;
@@ -3528,7 +3596,9 @@ export const Reports: React.FC = () => {
         : executiveGlobalCompanyRanking.summaryLine
       : 'No hay ranking multiempresa activo para esta temporada.';
     const globalHistorySummary = executiveGlobalHistoricalInsights.comparableRows.length > 0
-      ? executiveGlobalHistoricalInsights.summaryLine
+      ? executiveGlobalConsecutiveAlert
+        ? `${executiveGlobalHistoricalInsights.summaryLine} ${executiveGlobalConsecutiveAlert.detail}`
+        : executiveGlobalHistoricalInsights.summaryLine
       : 'No hay historial multiempresa suficiente para una lectura de liderazgo.';
     const finalMessage = `${decisionLabel}. ${executiveCurrentRecommendation.summary} ${executiveCurrentRecommendation.nextStep}`;
 
@@ -3548,6 +3618,7 @@ export const Reports: React.FC = () => {
     executiveCompareCompanyName,
     executiveCompareCompanyRecommendation,
     executiveCompanyRankingComparison,
+    executiveGlobalConsecutiveAlert,
     executiveGlobalHistoricalInsights,
     executiveGlobalCompanyRanking,
     executiveGlobalRankingAlert,
@@ -3672,6 +3743,8 @@ export const Reports: React.FC = () => {
         { Indicador: 'Alerta ranking multiempresa', Valor: executiveGlobalRankingAlert?.tone.title || 'Sin alerta' },
         { Indicador: 'Detalle alerta ranking global', Valor: executiveGlobalRankingAlert?.detail || 'Empresa activa dentro del tramo superior o sin base comparable' },
         { Indicador: 'Historial liderazgo global', Valor: executiveGlobalHistoricalInsights.summaryLine },
+        { Indicador: 'Alerta consecutiva global', Valor: executiveGlobalConsecutiveAlert?.tone.title || 'Sin alerta' },
+        { Indicador: 'Racha consecutiva global', Valor: executiveGlobalConsecutiveAlert ? `${executiveGlobalConsecutiveAlert.streak} temporadas` : 'Sin racha crítica' },
         { Indicador: 'Recomendación comparada', Valor: executiveCompareCompanyRecommendation?.tone.title || 'Sin datos' },
         { Indicador: 'Mejor cierre histórico', Valor: bestClosureHistoryRow ? `${bestClosureHistoryRow.season} (${bestClosureHistoryRow.closurePct.toFixed(2)}%)` : 'Sin datos' },
         { Indicador: 'Conclusión ejecutiva', Valor: executiveInsights.conclusion }
@@ -3941,6 +4014,15 @@ export const Reports: React.FC = () => {
         Detalle: executiveGlobalRankingAlert.detail,
         Recomendación: executiveGlobalRankingAlert.recommendation
       }] : [];
+      const globalConsecutiveAlertRows = executiveGlobalConsecutiveAlert ? [{
+        Alerta: executiveGlobalConsecutiveAlert.tone.title,
+        Severidad: executiveGlobalConsecutiveAlert.severity,
+        Racha: executiveGlobalConsecutiveAlert.streak,
+        Detalle: executiveGlobalConsecutiveAlert.detail,
+        Recomendación: executiveGlobalConsecutiveAlert.recommendation,
+        'Última temporada líder': executiveGlobalHistoricalInsights.lastLeaderSeason || 'Sin liderazgo visible',
+        'Última temporada top cuartil': executiveGlobalHistoricalInsights.lastTopQuartileSeason || 'Sin top cuartil visible'
+      }] : [];
       const exportWarningHistoryRows = executiveExportWarningFilteredData.rows.map((row) => ({
         Fecha: new Date(row.created_at).toLocaleString('es-CL'),
         Temporada: row.season,
@@ -4088,6 +4170,7 @@ export const Reports: React.FC = () => {
           ...(globalRankingRows.length > 0 ? [{ name: 'Ranking Multiempresa', rows: globalRankingRows }] : []),
           ...(globalRankingHistoryRows.length > 0 ? [{ name: 'Historial Ranking Global', rows: globalRankingHistoryRows }] : []),
           ...(globalAlertRows.length > 0 ? [{ name: 'Alerta Ranking Global', rows: globalAlertRows }] : []),
+          ...(globalConsecutiveAlertRows.length > 0 ? [{ name: 'Alerta Consecutiva Global', rows: globalConsecutiveAlertRows }] : []),
           ...(totalDataBlockerRows.length > 0 ? [{ name: 'Bloqueos Dato', rows: totalDataBlockerRows }] : []),
           ...(compareCompanyRows.length > 0 ? [{ name: 'Comparacion Empresas', rows: compareCompanyRows }] : []),
           ...(compareCompanyHistoryRows.length > 0 ? [{ name: 'Historial Empresas', rows: compareCompanyHistoryRows }] : []),
@@ -5289,6 +5372,26 @@ export const Reports: React.FC = () => {
             yPos = (doc as any).lastAutoTable.finalY + 8;
           }
 
+          if (executiveGlobalConsecutiveAlert) {
+            autoTable(doc, {
+              startY: yPos,
+              head: [['Alerta consecutiva global', 'Detalle']],
+              body: [
+                ['Estado', executiveGlobalConsecutiveAlert.tone.title],
+                ['Racha activa', `${executiveGlobalConsecutiveAlert.streak} temporadas`],
+                ['Última temporada líder', executiveGlobalHistoricalInsights.lastLeaderSeason || 'Sin liderazgo visible'],
+                ['Última temporada top cuartil', executiveGlobalHistoricalInsights.lastTopQuartileSeason || 'Sin top cuartil visible'],
+                ['Detalle', executiveGlobalConsecutiveAlert.detail],
+                ['Recomendación', executiveGlobalConsecutiveAlert.recommendation]
+              ],
+              theme: 'grid',
+              headStyles: { fillColor: [161, 98, 7] },
+              styles: { fontSize: 8 }
+            });
+
+            yPos = (doc as any).lastAutoTable.finalY + 8;
+          }
+
           if (executiveGlobalRankingHistory.length > 0) {
             if (yPos > 145) {
               doc.addPage();
@@ -5321,8 +5424,11 @@ export const Reports: React.FC = () => {
                 ['Líder dominante', executiveGlobalHistoricalInsights.dominantLeader
                   ? `${executiveGlobalHistoricalInsights.dominantLeader.companyLabel} (${executiveGlobalHistoricalInsights.dominantLeader.ledCount} temporadas)`
                   : 'Sin líder dominante'],
+                ['Empresa activa lidera', `${executiveGlobalHistoricalInsights.selectedLeaderCount} temporadas`],
                 ['Empresa activa en top cuartil', `${executiveGlobalHistoricalInsights.selectedTopQuartileCount} temporadas`],
                 ['Empresa activa fuera del top cuartil', `${executiveGlobalHistoricalInsights.selectedOutsideQuartileCount} temporadas`],
+                ['Racha fuera del top cuartil', `${executiveGlobalHistoricalInsights.currentOutsideTopQuartileStreak} temporadas`],
+                ['Racha sin liderazgo', `${executiveGlobalHistoricalInsights.currentWithoutLeadershipStreak} temporadas`],
                 ['Mayor apertura', executiveGlobalHistoricalInsights.strongestGapRow
                   ? `${executiveGlobalHistoricalInsights.strongestGapRow.season} · ${executiveGlobalHistoricalInsights.strongestGapRow.gap.toFixed(1)} puntos`
                   : 'Sin brecha histórica visible']
@@ -8161,12 +8267,32 @@ export const Reports: React.FC = () => {
                             </div>
                           </div>
                         )}
+                        {executiveGlobalConsecutiveAlert && (
+                          <div className={`rounded-xl border p-5 ${executiveGlobalConsecutiveAlert.tone.badge}`}>
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <div className="text-sm font-semibold uppercase tracking-wide">{executiveGlobalConsecutiveAlert.tone.title}</div>
+                                <p className="mt-3 text-sm">{executiveGlobalConsecutiveAlert.detail}</p>
+                                <p className="mt-3 text-sm">{executiveGlobalConsecutiveAlert.recommendation}</p>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-xs uppercase tracking-wide opacity-80">Racha</div>
+                                <div className="mt-2 text-2xl font-bold">{executiveGlobalConsecutiveAlert.streak}</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                         <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
                           <div className="font-medium text-slate-900">Lectura histórica global</div>
                           <p className="mt-2">{executiveGlobalHistoricalInsights.summaryLine}</p>
                           <p className="mt-2">
-                            Empresa activa en top cuartil: {executiveGlobalHistoricalInsights.selectedTopQuartileCount}.
+                            Empresa activa lidera: {executiveGlobalHistoricalInsights.selectedLeaderCount}.
+                            En top cuartil: {executiveGlobalHistoricalInsights.selectedTopQuartileCount}.
                             Fuera del top cuartil: {executiveGlobalHistoricalInsights.selectedOutsideQuartileCount}.
+                          </p>
+                          <p className="mt-2">
+                            Racha fuera del top cuartil: {executiveGlobalHistoricalInsights.currentOutsideTopQuartileStreak}.
+                            Racha sin liderazgo: {executiveGlobalHistoricalInsights.currentWithoutLeadershipStreak}.
                           </p>
                           <p className="mt-2">
                             Mayor apertura histórica: {executiveGlobalHistoricalInsights.strongestGapRow
@@ -12368,6 +12494,13 @@ export const Reports: React.FC = () => {
                                         <p className="mt-3 text-lg leading-8">{executiveGlobalRankingAlert.detail}</p>
                                       </div>
                                     )}
+                                    {executiveGlobalConsecutiveAlert && (
+                                      <div className={`mt-5 rounded-2xl border p-5 ${executiveGlobalConsecutiveAlert.tone.badge}`}>
+                                        <div className="text-sm uppercase tracking-[0.25em]">{executiveGlobalConsecutiveAlert.tone.title}</div>
+                                        <p className="mt-3 text-lg leading-8">{executiveGlobalConsecutiveAlert.detail}</p>
+                                        <p className="mt-3 text-base leading-7">{executiveGlobalConsecutiveAlert.recommendation}</p>
+                                      </div>
+                                    )}
                                   </div>
                                   <div className="rounded-2xl bg-slate-950 text-white p-6">
                                     <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Empresa Líder</div>
@@ -12422,12 +12555,12 @@ export const Reports: React.FC = () => {
                               <div className="text-sm text-slate-500">Temporadas con rezago relativo</div>
                             </div>
                             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                              <div className="text-sm uppercase tracking-wide text-slate-500">Mayor apertura</div>
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Racha preventiva</div>
                               <div className="mt-3 text-3xl font-bold text-slate-900">
-                                {executiveGlobalHistoricalInsights.strongestGapRow ? executiveGlobalHistoricalInsights.strongestGapRow.gap.toFixed(1) : '-'}
+                                {executiveGlobalConsecutiveAlert ? executiveGlobalConsecutiveAlert.streak : executiveGlobalHistoricalInsights.currentWithoutLeadershipStreak}
                               </div>
                               <div className="text-sm text-slate-500">
-                                {executiveGlobalHistoricalInsights.strongestGapRow?.season || 'Sin brecha'}
+                                {executiveGlobalConsecutiveAlert?.tone.title || 'Sin alerta consecutiva'}
                               </div>
                             </div>
                           </div>
@@ -12469,11 +12602,21 @@ export const Reports: React.FC = () => {
                                   <p className="mt-4 text-lg leading-8">{executiveGlobalRankingAlert.recommendation}</p>
                                 </div>
                               )}
+                              {executiveGlobalConsecutiveAlert && (
+                                <div className={`rounded-2xl border p-6 ${executiveGlobalConsecutiveAlert.tone.badge}`}>
+                                  <div className="text-sm uppercase tracking-[0.25em]">{executiveGlobalConsecutiveAlert.tone.title}</div>
+                                  <p className="mt-4 text-2xl leading-10">{executiveGlobalConsecutiveAlert.detail}</p>
+                                  <p className="mt-4 text-lg leading-8">{executiveGlobalConsecutiveAlert.recommendation}</p>
+                                </div>
+                              )}
                               <div className="rounded-2xl border border-slate-200 p-6">
                                 <div className="text-2xl font-bold text-slate-800 mb-5">Lectura histórica</div>
                                 <p className="text-xl leading-9 text-slate-600">{executiveGlobalHistoricalInsights.summaryLine}</p>
                                 <p className="mt-5 text-lg text-slate-500">
-                                  La empresa activa entra al top cuartil en {executiveGlobalHistoricalInsights.selectedTopQuartileCount} temporadas y queda fuera en {executiveGlobalHistoricalInsights.selectedOutsideQuartileCount}.
+                                  La empresa activa lidera {executiveGlobalHistoricalInsights.selectedLeaderCount} temporadas, entra al top cuartil en {executiveGlobalHistoricalInsights.selectedTopQuartileCount} y queda fuera en {executiveGlobalHistoricalInsights.selectedOutsideQuartileCount}.
+                                </p>
+                                <p className="mt-5 text-lg text-slate-500">
+                                  Racha fuera del top cuartil: {executiveGlobalHistoricalInsights.currentOutsideTopQuartileStreak}. Racha sin liderazgo: {executiveGlobalHistoricalInsights.currentWithoutLeadershipStreak}.
                                 </p>
                               </div>
                             </div>
