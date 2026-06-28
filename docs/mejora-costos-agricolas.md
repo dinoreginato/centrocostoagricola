@@ -664,6 +664,29 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - distinguir el estado actual del camino seguido para llegar a ese estado
   - reforzar auditoría ejecutiva y trazabilidad operativa real
 
+## SLA De Gestión De Alertas Globales
+- `Reportes` ahora mide tiempos SLA sobre la gestión de alertas globales persistidas usando la fecha de detección y las transiciones formales.
+- La lectura calcula:
+  - tiempo hasta reconocimiento
+  - tiempo hasta comunicación
+  - tiempo hasta cierre
+  - alertas abiertas fuera de SLA
+  - responsables con mayor atraso visible
+- Se definieron objetivos visibles por etapa:
+  - reconocimiento en 72 horas
+  - comunicación en 120 horas
+  - cierre en 240 horas
+- La lectura se integra en:
+  - vista ejecutiva normal con tarjetas, tabla por etapa y ranking de responsables
+  - ficha de edición de cada alerta para ver su edad, atraso y tiempos ya consumidos
+  - PDF ejecutivo con resumen SLA y tabla de cumplimiento por etapa
+  - Excel con hojas `SLA Alertas Globales`, `SLA Responsables` y `SLA Eventos Globales`
+  - fullscreen con slide exclusivo de gobernanza SLA
+- Objetivo:
+  - medir no solo si la alerta existe, sino con qué velocidad real se está gestionando
+  - distinguir cuellos de botella entre reconocimiento, comunicación y cierre
+  - dejar una lectura ejecutiva clara sobre responsables y atrasos abiertos
+
 ## Siguiente Paso Recomendado
 - Evaluar persistencia historica del ranking global para medir cambios de liderazgo sin recalculo completo en tiempo real.
-- Considerar métricas SLA de gestión sobre alertas globales para medir tiempo entre detección, reconocimiento, comunicación y cierre.
+- Considerar escalamiento automatico de alertas globales vencidas con reglas por severidad y responsable.
