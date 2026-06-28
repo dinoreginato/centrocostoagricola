@@ -337,7 +337,23 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - evitar comparar gasto o margen entre empresas con distinta calidad de dato
   - mostrar que empresa esta mas lista para presentacion ejecutiva y donde estan las brechas principales
 
+## Historial Comparado Entre Empresas
+- `Reportes` ahora permite seguir el cierre total por temporada entre ambas empresas.
+- La lectura historica compara por temporada:
+  - cierre total del dato
+  - estado para comite
+  - bloqueos visibles
+  - liderazgo por temporada
+  - brecha historica entre empresas
+- Esta misma lectura ya se refleja en:
+  - pantalla ejecutiva
+  - exportacion Excel
+  - exportacion PDF
+- Objetivo:
+  - evitar sacar conclusiones por una sola temporada puntual
+  - ver si una empresa mejora, se estanca o retrocede en calidad de dato a traves del tiempo
+
 ## Siguiente Paso Recomendado
-- Incorporar historial de avance por empresa para ver si una empresa mejora o empeora su cierre total a traves de varias temporadas.
 - Agregar bloqueo operativo o confirmacion reforzada antes de exportar una temporada marcada como `No listo para comite`.
-- Llevar la comparacion entre empresas a una vista historica por temporada para comite.
+- Llevar esta comparacion historica a la presentacion fullscreen ejecutiva y a una alerta preventiva antes de exportar.
+- Agregar una tendencia de mejora o deterioro por empresa usando ventana movil de temporadas.

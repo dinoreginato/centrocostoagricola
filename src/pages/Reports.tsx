@@ -428,6 +428,7 @@ export const Reports: React.FC = () => {
   const [rawProductionRecords, setRawProductionRecords] = useState<ProductionRecord[]>([]);
   const [costAuditRows, setCostAuditRows] = useState<AgriculturalCostAuditRow[]>([]);
   const [costAuditSummary, setCostAuditSummary] = useState<AgriculturalCostAuditSummaryRow[]>([]);
+  const [costAuditHistorySummary, setCostAuditHistorySummary] = useState<AgriculturalCostAuditSummaryRow[]>([]);
   const [costAuditLoading, setCostAuditLoading] = useState(false);
   const [showProductionModal, setShowProductionModal] = useState(false);
   const [savingProductionRecord, setSavingProductionRecord] = useState(false);
@@ -553,6 +554,7 @@ export const Reports: React.FC = () => {
     setRawProductionRecords([]);
     setCostAuditRows([]);
     setCostAuditSummary([]);
+    setCostAuditHistorySummary([]);
     setReportData([]);
     setMonthlyExpenses([]);
     setCategoryExpenses([]);
@@ -570,16 +572,19 @@ export const Reports: React.FC = () => {
 
     void (async () => {
       try {
-        const [summary, auditRows] = await Promise.all([
-          loadAgriculturalCostAuditSummary({ companyId, season: selectedSeason }),
+        const [summaryHistory, auditRows] = await Promise.all([
+          loadAgriculturalCostAuditSummary({ companyId }),
           loadAgriculturalCostAudit({ companyId, season: selectedSeason })
         ]);
 
         if (costAuditLoadSeqRef.current !== loadSeq || selectedCompany?.id !== companyId) return;
-        setCostAuditSummary(summary || []);
+        const historyRows = summaryHistory || [];
+        setCostAuditHistorySummary(historyRows);
+        setCostAuditSummary(historyRows.filter((row) => row.season === selectedSeason));
         setCostAuditRows(auditRows || []);
       } catch {
         if (costAuditLoadSeqRef.current !== loadSeq || selectedCompany?.id !== companyId) return;
+        setCostAuditHistorySummary([]);
         setCostAuditSummary([]);
         setCostAuditRows([]);
       } finally {
@@ -613,7 +618,7 @@ export const Reports: React.FC = () => {
           loadReportsRawData({ companyId: executiveCompareCompanyId }),
           loadAgriculturalMarginRows({ companyId: executiveCompareCompanyId }),
           loadProductionRecords({ companyId: executiveCompareCompanyId }),
-          loadAgriculturalCostAuditSummary({ companyId: executiveCompareCompanyId, season: selectedSeason })
+          loadAgriculturalCostAuditSummary({ companyId: executiveCompareCompanyId })
         ]);
         if (!cancelled) {
           setExecutiveCompareCompanyRaw({
@@ -1498,6 +1503,31 @@ export const Reports: React.FC = () => {
     executiveFieldLabel
   ]);
 
+  const buildAuditMetricsFromSummaryRows = useCallback((summaryRows: AgriculturalCostAuditSummaryRow[], season: string) => {
+    const visibleRows = summaryRows.filter((row) => (row.season || selectedSeason) === season);
+    const totalAudited = visibleRows.reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
+    const traceableAmount = visibleRows.reduce((sum, row) => sum + Number(row.traceable_amount || 0), 0);
+    const nonTraceableAmount = visibleRows.reduce((sum, row) => sum + Number(row.non_traceable_amount || 0), 0);
+    const officialAmount = visibleRows
+      .filter((row) => row.cost_role === 'oficial')
+      .reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
+    const highReviewAmount = visibleRows
+      .filter((row) => row.review_priority === 'alta')
+      .reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
+    const highReviewCount = visibleRows
+      .filter((row) => row.review_priority === 'alta')
+      .reduce((sum, row) => sum + Number(row.movement_count || 0), 0);
+
+    return {
+      totalAudited,
+      traceabilityPct: totalAudited > 0 ? (traceableAmount / totalAudited) * 100 : 0,
+      officialAmount,
+      nonTraceableAmount,
+      highReviewPct: totalAudited > 0 ? (highReviewAmount / totalAudited) * 100 : 0,
+      highReviewCount
+    };
+  }, [selectedSeason]);
+
   const executiveMarginData = useMemo(() => {
     const visibleRows = rawMarginRows.filter((row) => {
       if (row.season !== selectedSeason) return false;
@@ -2039,29 +2069,11 @@ export const Reports: React.FC = () => {
 
   const executiveCompareCompanyAuditMetrics = useMemo(() => {
     if (!executiveCompareCompanyRaw) return null;
-    const summaryRows = (executiveCompareCompanyRaw.auditSummary || []) as AgriculturalCostAuditSummaryRow[];
-    const totalAudited = summaryRows.reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
-    const traceableAmount = summaryRows.reduce((sum, row) => sum + Number(row.traceable_amount || 0), 0);
-    const nonTraceableAmount = summaryRows.reduce((sum, row) => sum + Number(row.non_traceable_amount || 0), 0);
-    const officialAmount = summaryRows
-      .filter((row) => row.cost_role === 'oficial')
-      .reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
-    const highReviewAmount = summaryRows
-      .filter((row) => row.review_priority === 'alta')
-      .reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
-    const highReviewCount = summaryRows
-      .filter((row) => row.review_priority === 'alta')
-      .reduce((sum, row) => sum + Number(row.movement_count || 0), 0);
-
-    return {
-      totalAudited,
-      traceabilityPct: totalAudited > 0 ? (traceableAmount / totalAudited) * 100 : 0,
-      officialAmount,
-      nonTraceableAmount,
-      highReviewPct: totalAudited > 0 ? (highReviewAmount / totalAudited) * 100 : 0,
-      highReviewCount
-    };
-  }, [executiveCompareCompanyRaw]);
+    return buildAuditMetricsFromSummaryRows(
+      (executiveCompareCompanyRaw.auditSummary || []) as AgriculturalCostAuditSummaryRow[],
+      selectedSeason
+    );
+  }, [buildAuditMetricsFromSummaryRows, executiveCompareCompanyRaw, selectedSeason]);
 
   const executiveCompareCompanyTotalClosure = useMemo(() => {
     if (!executiveCompareCompanyEconomicClosure || !executiveCompareCompanyAuditMetrics) return null;
@@ -2144,6 +2156,155 @@ export const Reports: React.FC = () => {
     executiveCompareCompanyTotalClosureRows,
     executiveTotalDataClosure,
     selectedSeason
+  ]);
+
+  const executiveTotalClosureHistoryRows = useMemo(() => (
+    Array.from(new Set([selectedSeason, ...availableSeasons]))
+      .map((season) => {
+        const totalClosure = buildTotalDataClosure({
+          economicClosureData: buildEconomicClosureSummary(season),
+          auditMetrics: buildAuditMetricsFromSummaryRows(costAuditHistorySummary, season)
+        });
+        return {
+          season,
+          totalClosurePct: totalClosure.totalClosurePct,
+          economicPct: totalClosure.economicPct,
+          traceabilityPct: totalClosure.traceabilityPct,
+          officialSupportPct: totalClosure.officialSupportPct,
+          blockersCount: totalClosure.blockers.length,
+          readinessTitle: totalClosure.readiness.title
+        };
+      })
+      .sort((a, b) => b.season.localeCompare(a.season))
+  ), [
+    availableSeasons,
+    buildAuditMetricsFromSummaryRows,
+    buildEconomicClosureSummary,
+    buildTotalDataClosure,
+    costAuditHistorySummary,
+    selectedSeason
+  ]);
+
+  const executiveCompareCompanyTotalClosureHistoryRows = useMemo(() => {
+    if (!executiveCompareCompanyRaw) return [];
+
+    const compareAvailableSeasons = Array.isArray(executiveCompareCompanyRaw.availableSeasons)
+      ? executiveCompareCompanyRaw.availableSeasons
+      : [];
+
+    return Array.from(new Set([selectedSeason, ...compareAvailableSeasons]))
+      .map((season) => {
+        const totalClosure = buildTotalDataClosure({
+          economicClosureData: buildEconomicClosureSummaryFromSources({
+            season,
+            fields: executiveCompareCompanyRaw.fields || [],
+            marginRows: executiveCompareCompanyRaw.marginRows || [],
+            productionRecords: executiveCompareCompanyRaw.productionRecords || []
+          }),
+          auditMetrics: buildAuditMetricsFromSummaryRows(
+            (executiveCompareCompanyRaw.auditSummary || []) as AgriculturalCostAuditSummaryRow[],
+            season
+          )
+        });
+
+        return {
+          season,
+          totalClosurePct: totalClosure.totalClosurePct,
+          economicPct: totalClosure.economicPct,
+          traceabilityPct: totalClosure.traceabilityPct,
+          officialSupportPct: totalClosure.officialSupportPct,
+          blockersCount: totalClosure.blockers.length,
+          readinessTitle: totalClosure.readiness.title
+        };
+      })
+      .sort((a, b) => b.season.localeCompare(a.season));
+  }, [
+    buildAuditMetricsFromSummaryRows,
+    buildEconomicClosureSummaryFromSources,
+    buildTotalDataClosure,
+    executiveCompareCompanyRaw,
+    selectedSeason
+  ]);
+
+  const executiveCompareCompanyHistoryRows = useMemo(() => {
+    if (!executiveCompareCompanyRaw) return [];
+
+    const currentMap = new Map(executiveTotalClosureHistoryRows.map((row) => [row.season, row]));
+    const compareMap = new Map(executiveCompareCompanyTotalClosureHistoryRows.map((row) => [row.season, row]));
+
+    return Array.from(new Set([
+      ...executiveTotalClosureHistoryRows.map((row) => row.season),
+      ...executiveCompareCompanyTotalClosureHistoryRows.map((row) => row.season)
+    ]))
+      .sort((a, b) => b.localeCompare(a))
+      .map((season) => {
+        const current = currentMap.get(season) || null;
+        const compare = compareMap.get(season) || null;
+        const gap = current && compare ? current.totalClosurePct - compare.totalClosurePct : null;
+        const leader = gap === null
+          ? 'Sin base comparable'
+          : Math.abs(gap) < 0.05
+            ? 'Empate técnico'
+            : gap > 0
+              ? companyName
+              : executiveCompareCompanyName;
+
+        return {
+          season,
+          current,
+          compare,
+          gap,
+          leader
+        };
+      });
+  }, [
+    companyName,
+    executiveCompareCompanyName,
+    executiveCompareCompanyRaw,
+    executiveCompareCompanyTotalClosureHistoryRows,
+    executiveTotalClosureHistoryRows
+  ]);
+
+  const executiveCompareCompanyHistoryInsights = useMemo(() => {
+    if (!executiveCompareCompanyRaw) return null;
+
+    const comparableRows = executiveCompareCompanyHistoryRows.filter((row) => row.current && row.compare && row.gap !== null);
+    const strongestHistoricalGap = comparableRows
+      .slice()
+      .sort((a, b) => Math.abs(Number(b.gap || 0)) - Math.abs(Number(a.gap || 0)))[0] || null;
+    const currentLeadCount = comparableRows.filter((row) => Number(row.gap || 0) > 0.05).length;
+    const compareLeadCount = comparableRows.filter((row) => Number(row.gap || 0) < -0.05).length;
+    const tiedCount = comparableRows.filter((row) => Math.abs(Number(row.gap || 0)) <= 0.05).length;
+    const currentBest = executiveTotalClosureHistoryRows
+      .slice()
+      .sort((a, b) => b.totalClosurePct - a.totalClosurePct)[0] || null;
+    const compareBest = executiveCompareCompanyTotalClosureHistoryRows
+      .slice()
+      .sort((a, b) => b.totalClosurePct - a.totalClosurePct)[0] || null;
+
+    const summaryLine = comparableRows.length <= 0
+      ? 'Todavía no hay temporadas comparables suficientes para una lectura histórica entre empresas.'
+      : currentLeadCount === compareLeadCount
+        ? `Ambas empresas reparten el liderazgo histórico de cierre total en ${comparableRows.length} temporadas comparables.`
+        : `${currentLeadCount > compareLeadCount ? companyName : executiveCompareCompanyName} lidera el historial en ${Math.max(currentLeadCount, compareLeadCount)} de ${comparableRows.length} temporadas comparables.`;
+
+    return {
+      comparableRows,
+      strongestHistoricalGap,
+      currentLeadCount,
+      compareLeadCount,
+      tiedCount,
+      currentBest,
+      compareBest,
+      summaryLine
+    };
+  }, [
+    companyName,
+    executiveCompareCompanyName,
+    executiveCompareCompanyRaw,
+    executiveCompareCompanyHistoryRows,
+    executiveCompareCompanyTotalClosureHistoryRows,
+    executiveTotalClosureHistoryRows
   ]);
 
   const executiveHistoricalSeasonRows = useMemo(() => {
@@ -2454,6 +2615,17 @@ export const Reports: React.FC = () => {
             }
           ]
         : [];
+      const compareCompanyHistoryRows = executiveCompareCompanyHistoryRows.map((row) => ({
+        Temporada: row.season,
+        [companyName]: row.current ? Number(row.current.totalClosurePct.toFixed(2)) : 'Sin datos',
+        [executiveCompareCompanyName || 'Empresa comparada']: row.compare ? Number(row.compare.totalClosurePct.toFixed(2)) : 'Sin datos',
+        Brecha: row.gap !== null ? Number(row.gap.toFixed(2)) : 'Sin datos',
+        'Estado actual': row.current?.readinessTitle || 'Sin datos',
+        'Estado comparada': row.compare?.readinessTitle || 'Sin datos',
+        'Bloqueos actual': row.current?.blockersCount ?? 'Sin datos',
+        'Bloqueos comparada': row.compare?.blockersCount ?? 'Sin datos',
+        Lider: row.leader
+      }));
 
       await exportWorkbookToXlsx({
         filename: `Reporte_Ejecutivo_${companySlug}_${selectedSeason}${executiveFieldFilter !== 'all' ? `_campo_${executiveFieldFilter}` : ''}.xlsx`,
@@ -2469,6 +2641,7 @@ export const Reports: React.FC = () => {
           { name: 'Cierre Total', rows: totalDataClosureRows },
           ...(totalDataBlockerRows.length > 0 ? [{ name: 'Bloqueos Dato', rows: totalDataBlockerRows }] : []),
           ...(compareCompanyRows.length > 0 ? [{ name: 'Comparacion Empresas', rows: compareCompanyRows }] : []),
+          ...(compareCompanyHistoryRows.length > 0 ? [{ name: 'Historial Empresas', rows: compareCompanyHistoryRows }] : []),
           ...(historicalClosureRows.length > 0 ? [{ name: 'Historial Cierre', rows: historicalClosureRows }] : []),
           ...(economicClosureRows.length > 0 ? [{ name: 'Cierre Economico', rows: economicClosureRows }] : []),
           ...(economicFocusRows.length > 0 ? [{ name: 'Focos Economicos', rows: economicFocusRows }] : []),
@@ -3499,6 +3672,30 @@ export const Reports: React.FC = () => {
             ],
             theme: 'grid',
             headStyles: { fillColor: [88, 28, 135] },
+            styles: { fontSize: 8 }
+          });
+
+          yPos = (doc as any).lastAutoTable.finalY + 8;
+        }
+
+        if (executiveCompareCompanyHistoryInsights && executiveCompareCompanyHistoryRows.length > 0) {
+          if (yPos > 135) {
+            doc.addPage();
+            yPos = 20;
+          }
+
+          autoTable(doc, {
+            startY: yPos,
+            head: [['Historial entre empresas', 'Actual', 'Comparada', 'Brecha', 'Lider']],
+            body: executiveCompareCompanyHistoryRows.map((row) => [
+              row.season,
+              row.current ? `${row.current.totalClosurePct.toFixed(1)}% · ${row.current.readinessTitle}` : 'Sin datos',
+              row.compare ? `${row.compare.totalClosurePct.toFixed(1)}% · ${row.compare.readinessTitle}` : 'Sin datos',
+              row.gap === null ? 'Sin datos' : `${row.gap.toFixed(1)} pp`,
+              row.leader
+            ]),
+            theme: 'grid',
+            headStyles: { fillColor: [15, 23, 42] },
             styles: { fontSize: 8 }
           });
 
@@ -5748,6 +5945,111 @@ export const Reports: React.FC = () => {
                           <div className="flex items-center justify-between gap-4"><span>Mes más alto comparado</span><span className="font-medium text-slate-900">{executiveCompareCompanySummary.peakMonth ? `${executiveCompareCompanySummary.peakMonth.shortLabel} · ${formatCLP(executiveCompareCompanySummary.peakMonth.total)}` : '-'}</span></div>
                         </div>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {executiveCompareCompanyHistoryInsights && executiveCompareCompanyHistoryRows.length > 0 && (
+                <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">Historial comparado entre empresas</h3>
+                        <p className="text-sm text-gray-500">Compara temporada por temporada qué empresa llega con mejor cierre total del dato hacia comité.</p>
+                      </div>
+                      <div className="text-sm text-slate-500">
+                        {executiveCompareCompanyHistoryInsights.comparableRows.length} temporadas comparables
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Liderazgo histórico</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">
+                          {executiveCompareCompanyHistoryInsights.currentLeadCount === executiveCompareCompanyHistoryInsights.compareLeadCount
+                            ? 'Parejo'
+                            : executiveCompareCompanyHistoryInsights.currentLeadCount > executiveCompareCompanyHistoryInsights.compareLeadCount
+                              ? companyName
+                              : executiveCompareCompanyName}
+                        </div>
+                        <div className="mt-1 text-sm text-slate-500">
+                          {companyName}: {executiveCompareCompanyHistoryInsights.currentLeadCount} · {executiveCompareCompanyName}: {executiveCompareCompanyHistoryInsights.compareLeadCount}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Mejor temporada actual</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">
+                          {executiveCompareCompanyHistoryInsights.currentBest
+                            ? `${executiveCompareCompanyHistoryInsights.currentBest.totalClosurePct.toFixed(1)}%`
+                            : '-'}
+                        </div>
+                        <div className="mt-1 text-sm text-slate-500">{executiveCompareCompanyHistoryInsights.currentBest?.season || 'Sin datos'}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Mejor temporada comparada</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">
+                          {executiveCompareCompanyHistoryInsights.compareBest
+                            ? `${executiveCompareCompanyHistoryInsights.compareBest.totalClosurePct.toFixed(1)}%`
+                            : '-'}
+                        </div>
+                        <div className="mt-1 text-sm text-slate-500">{executiveCompareCompanyHistoryInsights.compareBest?.season || 'Sin datos'}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Mayor brecha histórica</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">
+                          {executiveCompareCompanyHistoryInsights.strongestHistoricalGap?.gap !== null && executiveCompareCompanyHistoryInsights.strongestHistoricalGap
+                            ? `${Math.abs(executiveCompareCompanyHistoryInsights.strongestHistoricalGap.gap || 0).toFixed(1)} pp`
+                            : '-'}
+                        </div>
+                        <div className="mt-1 text-sm text-slate-500">{executiveCompareCompanyHistoryInsights.strongestHistoricalGap?.season || 'Sin datos'}</div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+                      <div className="font-medium text-slate-900">Lectura histórica</div>
+                      <p className="mt-2">{executiveCompareCompanyHistoryInsights.summaryLine}</p>
+                      <p className="mt-2">
+                        Empates técnicos: {executiveCompareCompanyHistoryInsights.tiedCount}. Mayor apertura histórica: {executiveCompareCompanyHistoryInsights.strongestHistoricalGap
+                          ? `${executiveCompareCompanyHistoryInsights.strongestHistoricalGap.season} con ${Math.abs(executiveCompareCompanyHistoryInsights.strongestHistoricalGap.gap || 0).toFixed(1)} pp`
+                          : 'sin brecha comparable visible'}.
+                      </p>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Temporada</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">{companyName}</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">{executiveCompareCompanyName}</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Brecha</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Bloq. actual</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Bloq. comparada</th>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Lider</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {executiveCompareCompanyHistoryRows.map((row) => (
+                            <tr key={row.season} className={row.season === selectedSeason ? 'bg-purple-50/50' : ''}>
+                              <td className="px-4 py-3 font-medium text-slate-900">{row.season}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">
+                                {row.current ? `${row.current.totalClosurePct.toFixed(1)}% · ${row.current.readinessTitle}` : 'Sin datos'}
+                              </td>
+                              <td className="px-4 py-3 text-right text-slate-700">
+                                {row.compare ? `${row.compare.totalClosurePct.toFixed(1)}% · ${row.compare.readinessTitle}` : 'Sin datos'}
+                              </td>
+                              <td className="px-4 py-3 text-right font-medium text-slate-900">
+                                {row.gap === null ? '-' : `${row.gap.toFixed(1)} pp`}
+                              </td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.current?.blockersCount ?? '-'}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.compare?.blockersCount ?? '-'}</td>
+                              <td className="px-4 py-3 text-slate-700">{row.leader}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </div>
