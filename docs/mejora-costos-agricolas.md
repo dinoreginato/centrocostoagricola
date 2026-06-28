@@ -353,7 +353,21 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - evitar sacar conclusiones por una sola temporada puntual
   - ver si una empresa mejora, se estanca o retrocede en calidad de dato a traves del tiempo
 
+## Resguardo De Exportacion Ejecutiva
+- `Reportes` ahora frena la exportacion ejecutiva cuando la temporada sigue marcada como `No listo para comite`.
+- Antes de exportar a:
+  - PDF ejecutivo
+  - Excel ejecutivo
+- La pantalla ahora exige una confirmacion reforzada mostrando:
+  - estado para comite
+  - cierre total del dato
+  - conclusion ejecutiva
+  - bloqueos visibles
+- Objetivo:
+  - evitar circular un reporte como si fuera lectura definitiva cuando la calidad del dato aun no alcanza nivel de comite
+  - dejar una trazabilidad explicita de que la exportacion se hizo bajo advertencia
+
 ## Siguiente Paso Recomendado
-- Agregar bloqueo operativo o confirmacion reforzada antes de exportar una temporada marcada como `No listo para comite`.
 - Llevar esta comparacion historica a la presentacion fullscreen ejecutiva y a una alerta preventiva antes de exportar.
 - Agregar una tendencia de mejora o deterioro por empresa usando ventana movil de temporadas.
+- Considerar registrar un evento o bitacora cada vez que se exporte bajo advertencia.

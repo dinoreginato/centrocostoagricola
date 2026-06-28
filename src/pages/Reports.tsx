@@ -198,6 +198,7 @@ const getExecutiveTone = (variationPct: number) => {
 type ExecutiveSortKey = 'total' | 'variation' | 'budget' | 'cost_ha' | 'cost_kg';
 type ExecutiveAuditPriorityFilter = 'all' | 'alta' | 'media' | 'baja';
 type ExecutiveAuditLayerFilter = 'all' | AgriculturalCostAuditRow['source_layer'];
+type ExecutiveExportAction = 'pdf' | 'excel';
 
 const EXECUTIVE_SORT_OPTIONS: Array<{ value: ExecutiveSortKey; label: string }> = [
   { value: 'total', label: 'Mayor gasto' },
@@ -474,6 +475,7 @@ export const Reports: React.FC = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState('');
+  const [pendingExecutiveExportAction, setPendingExecutiveExportAction] = useState<ExecutiveExportAction | null>(null);
   const reportLoadSeqRef = useRef(0);
   const costAuditLoadSeqRef = useRef(0);
 
@@ -4393,6 +4395,32 @@ export const Reports: React.FC = () => {
     setShowPreview(true);
   };
 
+  const requiresExecutiveExportConfirmation = activeTab === 'executive' && executiveTotalDataClosure.readiness.title === 'No listo para comité';
+
+  const runExecutiveExportAction = (action: ExecutiveExportAction) => {
+    if (action === 'excel') {
+      void exportExecutiveExcel();
+      return;
+    }
+    handleGeneratePDF();
+  };
+
+  const requestExecutiveExportAction = (action: ExecutiveExportAction) => {
+    if (!requiresExecutiveExportConfirmation) {
+      runExecutiveExportAction(action);
+      return;
+    }
+
+    setPendingExecutiveExportAction(action);
+  };
+
+  const confirmExecutiveExportAction = () => {
+    if (!pendingExecutiveExportAction) return;
+    const action = pendingExecutiveExportAction;
+    setPendingExecutiveExportAction(null);
+    runExecutiveExportAction(action);
+  };
+
   if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
   
   const getReportTitle = () => {
@@ -4548,6 +4576,91 @@ export const Reports: React.FC = () => {
             pdfUrl={previewPdfUrl}
         />
 
+        {pendingExecutiveExportAction && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="w-full max-w-2xl rounded-xl bg-white shadow-2xl">
+              <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-6 py-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Confirmar exportación con dato no listo para comité</h3>
+                  <p className="mt-1 text-sm text-gray-500">
+                    {pendingExecutiveExportAction === 'excel' ? 'Excel Ejecutivo' : 'PDF Ejecutivo'} · {selectedSeason} · {companyName}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPendingExecutiveExportAction(null)}
+                  className="rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="space-y-5 px-6 py-5">
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-red-700">Estado comité</div>
+                      <div className="mt-2 text-xl font-semibold text-red-800">{executiveTotalDataClosure.readiness.title}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs uppercase tracking-wide text-red-700">Cierre total</div>
+                      <div className="mt-2 text-2xl font-semibold text-red-800">{executiveTotalDataClosure.totalClosurePct.toFixed(1)}%</div>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-sm text-red-700">{executiveTotalDataClosure.readiness.detail}</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Cierre económico</div>
+                    <div className="mt-2 text-xl font-semibold text-slate-900">{executiveTotalDataClosure.economicPct.toFixed(1)}%</div>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Trazabilidad</div>
+                    <div className="mt-2 text-xl font-semibold text-slate-900">{executiveTotalDataClosure.traceabilityPct.toFixed(1)}%</div>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-xs uppercase tracking-wide text-slate-500">Bloqueos visibles</div>
+                    <div className="mt-2 text-xl font-semibold text-slate-900">{executiveTotalDataClosure.blockers.length}</div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+                  <div className="font-medium text-slate-900">Conclusión ejecutiva</div>
+                  <p className="mt-2">{executiveTotalDataClosure.conclusion}</p>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <div className="text-sm font-medium text-slate-900">Bloqueos actuales</div>
+                  <div className="mt-3 space-y-2 text-sm">
+                    {executiveTotalDataClosure.blockers.length > 0 ? executiveTotalDataClosure.blockers.map((blocker) => (
+                      <div key={blocker} className="rounded-lg bg-slate-50 px-3 py-2 text-slate-700">{blocker}</div>
+                    )) : (
+                      <div className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-700">No hay bloqueos visibles, pero la temporada sigue sin quedar lista para comité.</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 border-t border-gray-200 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setPendingExecutiveExportAction(null)}
+                    className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmExecutiveExportAction}
+                    className="inline-flex items-center rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+                  >
+                    Continuar con {pendingExecutiveExportAction === 'excel' ? 'Excel' : 'PDF'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showProductionModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <div className="w-full max-w-2xl rounded-xl bg-white shadow-2xl">
@@ -4650,7 +4763,7 @@ export const Reports: React.FC = () => {
         </div>
         <div className="mt-4 sm:mt-0 flex flex-wrap items-center gap-3">
           <button
-            onClick={handleGeneratePDF}
+            onClick={() => requestExecutiveExportAction('pdf')}
             className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
             title="Generar y Previsualizar Informe PDF"
           >
@@ -4667,7 +4780,7 @@ export const Reports: React.FC = () => {
                 <Printer className="mr-2 h-4 w-4" /> Imprimir Vista
               </button>
               <button
-                onClick={() => void exportExecutiveExcel()}
+                onClick={() => requestExecutiveExportAction('excel')}
                 className="inline-flex items-center px-4 py-2 border border-green-300 shadow-sm text-sm font-medium rounded-md text-green-700 bg-white hover:bg-green-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                 title="Exportar tablas ejecutivas a Excel"
               >
