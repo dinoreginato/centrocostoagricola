@@ -245,6 +245,70 @@ const formatExecutiveExportWarningType = (value: string) => (
     .join(' ')
 );
 
+const formatExecutiveExportActor = (value: string | null | undefined) => (
+  value ? `Usuario ${value.slice(0, 8)}` : 'Sin usuario'
+);
+
+const buildExecutiveExportWarningAnalytics = (
+  rows: ExecutiveExportWarningEventRow[],
+  selectedSeason: string,
+  scopeLabel: string
+) => {
+  const currentSeasonRows = rows.filter((row) => row.season === selectedSeason);
+  const latestEvent = rows[0] || null;
+  const latestCurrentSeasonEvent = currentSeasonRows[0] || null;
+  const byFormat = {
+    pdf: rows.filter((row) => row.export_format === 'pdf').length,
+    excel: rows.filter((row) => row.export_format === 'excel').length
+  };
+  const warningTypeSummary = Array.from(
+    rows.reduce((map, row) => {
+      (row.warning_types || []).forEach((warningType) => {
+        map.set(warningType, (map.get(warningType) || 0) + 1);
+      });
+      return map;
+    }, new Map<string, number>())
+  )
+    .map(([type, count]) => ({ type, count }))
+    .sort((a, b) => b.count - a.count);
+  const seasonSummary = Array.from(
+    rows.reduce((map, row) => {
+      const current = map.get(row.season) || { season: row.season, count: 0 };
+      current.count += 1;
+      map.set(row.season, current);
+      return map;
+    }, new Map<string, { season: string; count: number }>())
+  )
+    .map(([, value]) => value)
+    .sort((a, b) => b.season.localeCompare(a.season));
+  const dominantFormat = byFormat.pdf === byFormat.excel
+    ? byFormat.pdf > 0 ? 'PDF y Excel' : 'Sin eventos'
+    : byFormat.pdf > byFormat.excel
+      ? 'PDF'
+      : 'Excel';
+  const topWarningType = warningTypeSummary[0] || null;
+  const topSeason = seasonSummary[0] || null;
+  const summaryLine = latestEvent
+    ? `Se registran ${rows.length} exportaciones ejecutivas bajo advertencia para ${scopeLabel}. La última ocurrió en ${latestEvent.season} vía ${latestEvent.export_format.toUpperCase()} con estado ${latestEvent.readiness_title}.`
+    : `No hay exportaciones ejecutivas bajo advertencia para ${scopeLabel}.`;
+
+  return {
+    rows,
+    currentSeasonRows,
+    latestEvent,
+    latestCurrentSeasonEvent,
+    recentRows: rows.slice(0, 12),
+    byFormat,
+    dominantFormat,
+    seasonSummary,
+    topSeason,
+    warningTypeSummary,
+    topWarningType,
+    totalEvents: rows.length,
+    summaryLine
+  };
+};
+
 const getExecutiveSortMetric = (row: any, sortBy: ExecutiveSortKey) => {
   switch (sortBy) {
     case 'variation':
@@ -700,6 +764,9 @@ export const Reports: React.FC = () => {
   const [executiveSectorSortBy, setExecutiveSectorSortBy] = useState<ExecutiveSortKey>('total');
   const [executiveAuditPriorityFilter, setExecutiveAuditPriorityFilter] = useState<ExecutiveAuditPriorityFilter>('all');
   const [executiveAuditLayerFilter, setExecutiveAuditLayerFilter] = useState<ExecutiveAuditLayerFilter>('all');
+  const [executiveExportWarningFormatFilter, setExecutiveExportWarningFormatFilter] = useState<'all' | 'pdf' | 'excel'>('all');
+  const [executiveExportWarningTypeFilter, setExecutiveExportWarningTypeFilter] = useState<string>('all');
+  const [executiveExportWarningActorFilter, setExecutiveExportWarningActorFilter] = useState<string>('all');
 
   // Preview Modal State
   const [showPreview, setShowPreview] = useState(false);
@@ -779,6 +846,9 @@ export const Reports: React.FC = () => {
     setExecutiveSectorSortBy('total');
     setExecutiveAuditPriorityFilter('all');
     setExecutiveAuditLayerFilter('all');
+    setExecutiveExportWarningFormatFilter('all');
+    setExecutiveExportWarningTypeFilter('all');
+    setExecutiveExportWarningActorFilter('all');
     setCurrentSlide(0);
     setPresentationMode(false);
     setRawCostMovements([]);
@@ -2754,62 +2824,76 @@ export const Reports: React.FC = () => {
     selectedSeason
   ]);
 
-  const executiveExportWarningHistoryData = useMemo(() => {
-    const allRows = executiveExportWarningEvents;
-    const currentSeasonRows = allRows.filter((row) => row.season === selectedSeason);
-    const latestEvent = allRows[0] || null;
-    const latestCurrentSeasonEvent = currentSeasonRows[0] || null;
-    const byFormat = {
-      pdf: allRows.filter((row) => row.export_format === 'pdf').length,
-      excel: allRows.filter((row) => row.export_format === 'excel').length
-    };
-    const warningTypeSummary = Array.from(
-      allRows.reduce((map, row) => {
-        (row.warning_types || []).forEach((warningType) => {
-          map.set(warningType, (map.get(warningType) || 0) + 1);
-        });
-        return map;
-      }, new Map<string, number>())
-    )
-      .map(([type, count]) => ({ type, count }))
-      .sort((a, b) => b.count - a.count);
-    const seasonSummary = Array.from(
-      allRows.reduce((map, row) => {
-        const current = map.get(row.season) || { season: row.season, count: 0 };
-        current.count += 1;
-        map.set(row.season, current);
-        return map;
-      }, new Map<string, { season: string; count: number }>())
-    )
-      .map(([, value]) => value)
-      .sort((a, b) => b.season.localeCompare(a.season));
-    const dominantFormat = byFormat.pdf === byFormat.excel
-      ? byFormat.pdf > 0 ? 'PDF y Excel' : 'Sin eventos'
-      : byFormat.pdf > byFormat.excel
-        ? 'PDF'
-        : 'Excel';
-    const topWarningType = warningTypeSummary[0] || null;
-    const topSeason = seasonSummary[0] || null;
-    const summaryLine = latestEvent
-      ? `Se registran ${allRows.length} exportaciones ejecutivas bajo advertencia. La última ocurrió en ${latestEvent.season} vía ${latestEvent.export_format.toUpperCase()} con estado ${latestEvent.readiness_title}.`
-      : 'Todavía no hay exportaciones ejecutivas registradas bajo advertencia para esta empresa.';
-
-    return {
-      allRows,
-      currentSeasonRows,
-      latestEvent,
-      latestCurrentSeasonEvent,
-      recentRows: allRows.slice(0, 12),
-      byFormat,
-      dominantFormat,
-      seasonSummary,
-      topSeason,
-      warningTypeSummary,
-      topWarningType,
-      totalEvents: allRows.length,
-      summaryLine
-    };
-  }, [executiveExportWarningEvents, selectedSeason]);
+  const executiveExportWarningHistoryData = useMemo(
+    () => buildExecutiveExportWarningAnalytics(executiveExportWarningEvents, selectedSeason, 'la empresa activa'),
+    [executiveExportWarningEvents, selectedSeason]
+  );
+  const executiveExportWarningFormatOptions = useMemo(() => (
+    ['all', ...Array.from(new Set(executiveExportWarningEvents.map((row) => row.export_format)))]
+  ), [executiveExportWarningEvents]);
+  const executiveExportWarningTypeOptions = useMemo(() => (
+    ['all', ...Array.from(new Set(
+      executiveExportWarningEvents.flatMap((row) => row.warning_types || [])
+    )).sort((a, b) => formatExecutiveExportWarningType(a).localeCompare(formatExecutiveExportWarningType(b)))]
+  ), [executiveExportWarningEvents]);
+  const executiveExportWarningActorOptions = useMemo(() => (
+    ['all', ...Array.from(new Set(
+      executiveExportWarningEvents.map((row) => row.created_by).filter(Boolean)
+    )).sort((a, b) => String(a).localeCompare(String(b)))]
+  ), [executiveExportWarningEvents]);
+  const executiveExportWarningFiltersActive = useMemo(() => (
+    executiveExportWarningFormatFilter !== 'all'
+    || executiveExportWarningTypeFilter !== 'all'
+    || executiveExportWarningActorFilter !== 'all'
+  ), [
+    executiveExportWarningActorFilter,
+    executiveExportWarningFormatFilter,
+    executiveExportWarningTypeFilter
+  ]);
+  const executiveExportWarningFilteredRows = useMemo(() => (
+    executiveExportWarningEvents.filter((row) => {
+      if (executiveExportWarningFormatFilter !== 'all' && row.export_format !== executiveExportWarningFormatFilter) {
+        return false;
+      }
+      if (executiveExportWarningTypeFilter !== 'all' && !(row.warning_types || []).includes(executiveExportWarningTypeFilter)) {
+        return false;
+      }
+      if (executiveExportWarningActorFilter !== 'all' && row.created_by !== executiveExportWarningActorFilter) {
+        return false;
+      }
+      return true;
+    })
+  ), [
+    executiveExportWarningActorFilter,
+    executiveExportWarningEvents,
+    executiveExportWarningFormatFilter,
+    executiveExportWarningTypeFilter
+  ]);
+  const executiveExportWarningFilteredData = useMemo(
+    () => buildExecutiveExportWarningAnalytics(
+      executiveExportWarningFilteredRows,
+      selectedSeason,
+      executiveExportWarningFiltersActive ? 'los filtros activos' : 'la empresa activa'
+    ),
+    [executiveExportWarningFilteredRows, executiveExportWarningFiltersActive, selectedSeason]
+  );
+  const executiveExportWarningFiltersLabel = useMemo(() => {
+    const parts: string[] = [];
+    if (executiveExportWarningFormatFilter !== 'all') {
+      parts.push(`Formato: ${executiveExportWarningFormatFilter.toUpperCase()}`);
+    }
+    if (executiveExportWarningTypeFilter !== 'all') {
+      parts.push(`Advertencia: ${formatExecutiveExportWarningType(executiveExportWarningTypeFilter)}`);
+    }
+    if (executiveExportWarningActorFilter !== 'all') {
+      parts.push(`Emisor: ${formatExecutiveExportActor(executiveExportWarningActorFilter)}`);
+    }
+    return parts.length > 0 ? parts.join(' · ') : 'Todos los eventos';
+  }, [
+    executiveExportWarningActorFilter,
+    executiveExportWarningFormatFilter,
+    executiveExportWarningTypeFilter
+  ]);
 
   const executiveHistoricalSeasonRows = useMemo(() => {
     return availablePreviousExecutiveSeasons.map((season) => {
@@ -2906,7 +2990,9 @@ export const Reports: React.FC = () => {
         { Indicador: 'Alerta tendencia', Valor: executiveTrendWarning?.shortLabel || 'Sin alerta' },
         { Indicador: 'Detalle alerta tendencia', Valor: executiveTrendWarning?.detail || 'Sin alerta preventiva visible' },
         { Indicador: 'Eventos bitácora advertencia', Valor: executiveExportWarningHistoryData.totalEvents },
-        { Indicador: 'Última exportación advertida', Valor: executiveExportWarningHistoryData.latestEvent ? `${executiveExportWarningHistoryData.latestEvent.export_format.toUpperCase()} · ${executiveExportWarningHistoryData.latestEvent.season}` : 'Sin eventos' },
+        { Indicador: 'Eventos bitácora visibles', Valor: executiveExportWarningFilteredData.totalEvents },
+        { Indicador: 'Filtros bitácora', Valor: executiveExportWarningFiltersLabel },
+        { Indicador: 'Última exportación advertida', Valor: executiveExportWarningFilteredData.latestEvent ? `${executiveExportWarningFilteredData.latestEvent.export_format.toUpperCase()} · ${executiveExportWarningFilteredData.latestEvent.season}` : 'Sin eventos' },
         { Indicador: 'Empresa comparada', Valor: executiveCompareCompanyName || 'Sin comparar' },
         { Indicador: 'Cierre total empresa comparada', Valor: executiveCompareCompanyTotalClosure ? Number(executiveCompareCompanyTotalClosure.totalClosurePct.toFixed(2)) : 'Sin datos' },
         { Indicador: 'Estado comité comparado', Valor: executiveCompareCompanyTotalClosure?.readiness.title || 'Sin datos' },
@@ -3109,10 +3195,11 @@ export const Reports: React.FC = () => {
           'Razón 4': executiveCompareCompanyRecommendation.reasons[3] || '-'
         }] : [])
       ];
-      const exportWarningHistoryRows = executiveExportWarningHistoryData.allRows.map((row) => ({
+      const exportWarningHistoryRows = executiveExportWarningFilteredData.rows.map((row) => ({
         Fecha: new Date(row.created_at).toLocaleString('es-CL'),
         Temporada: row.season,
         Formato: row.export_format.toUpperCase(),
+        Emisor: formatExecutiveExportActor(row.created_by),
         Estado: row.readiness_title,
         'Cierre total': Number(Number(row.total_closure_pct || 0).toFixed(2)),
         Advertencias: (row.warning_types || []).map((item) => formatExecutiveExportWarningType(item)).join(', ') || 'Sin detalle',
@@ -4357,7 +4444,7 @@ export const Reports: React.FC = () => {
           yPos = (doc as any).lastAutoTable.finalY + 8;
         }
 
-        if (executiveExportWarningHistoryData.totalEvents > 0) {
+        if (executiveExportWarningFilteredData.totalEvents > 0) {
           if (yPos > 135) {
             doc.addPage();
             yPos = 20;
@@ -4367,13 +4454,15 @@ export const Reports: React.FC = () => {
             startY: yPos,
             head: [['Bitácora exportación advertida', 'Detalle']],
             body: [
-              ['Eventos totales', String(executiveExportWarningHistoryData.totalEvents)],
-              ['Temporada actual', `${selectedSeason} · ${executiveExportWarningHistoryData.currentSeasonRows.length} eventos`],
-              ['Última exportación', executiveExportWarningHistoryData.latestEvent ? `${executiveExportWarningHistoryData.latestEvent.export_format.toUpperCase()} · ${executiveExportWarningHistoryData.latestEvent.season} · ${executiveExportWarningHistoryData.latestEvent.readiness_title}` : 'Sin eventos'],
-              ['Formato dominante', executiveExportWarningHistoryData.dominantFormat],
-              ['Advertencia dominante', executiveExportWarningHistoryData.topWarningType ? `${formatExecutiveExportWarningType(executiveExportWarningHistoryData.topWarningType.type)} (${executiveExportWarningHistoryData.topWarningType.count})` : 'Sin advertencias frecuentes'],
-              ['Temporada más expuesta', executiveExportWarningHistoryData.topSeason ? `${executiveExportWarningHistoryData.topSeason.season} (${executiveExportWarningHistoryData.topSeason.count})` : 'Sin temporadas'],
-              ['Lectura', executiveExportWarningHistoryData.summaryLine]
+              ['Eventos históricos', String(executiveExportWarningHistoryData.totalEvents)],
+              ['Eventos visibles', String(executiveExportWarningFilteredData.totalEvents)],
+              ['Filtros aplicados', executiveExportWarningFiltersLabel],
+              ['Temporada actual', `${selectedSeason} · ${executiveExportWarningFilteredData.currentSeasonRows.length} eventos`],
+              ['Última exportación', executiveExportWarningFilteredData.latestEvent ? `${executiveExportWarningFilteredData.latestEvent.export_format.toUpperCase()} · ${executiveExportWarningFilteredData.latestEvent.season} · ${executiveExportWarningFilteredData.latestEvent.readiness_title}` : 'Sin eventos'],
+              ['Formato dominante', executiveExportWarningFilteredData.dominantFormat],
+              ['Advertencia dominante', executiveExportWarningFilteredData.topWarningType ? `${formatExecutiveExportWarningType(executiveExportWarningFilteredData.topWarningType.type)} (${executiveExportWarningFilteredData.topWarningType.count})` : 'Sin advertencias frecuentes'],
+              ['Temporada más expuesta', executiveExportWarningFilteredData.topSeason ? `${executiveExportWarningFilteredData.topSeason.season} (${executiveExportWarningFilteredData.topSeason.count})` : 'Sin temporadas'],
+              ['Lectura', executiveExportWarningFilteredData.summaryLine]
             ],
             theme: 'grid',
             headStyles: { fillColor: [146, 64, 14] },
@@ -4382,7 +4471,7 @@ export const Reports: React.FC = () => {
 
           yPos = (doc as any).lastAutoTable.finalY + 8;
 
-          if (executiveExportWarningHistoryData.recentRows.length > 0) {
+          if (executiveExportWarningFilteredData.recentRows.length > 0) {
             if (yPos > 150) {
               doc.addPage();
               yPos = 20;
@@ -4390,11 +4479,12 @@ export const Reports: React.FC = () => {
 
             autoTable(doc, {
               startY: yPos,
-              head: [['Fecha', 'Temporada', 'Formato', 'Advertencias', 'Campo']],
-              body: executiveExportWarningHistoryData.recentRows.slice(0, 6).map((row) => [
+              head: [['Fecha', 'Temporada', 'Formato', 'Emisor', 'Advertencias', 'Campo']],
+              body: executiveExportWarningFilteredData.recentRows.slice(0, 6).map((row) => [
                 new Date(row.created_at).toLocaleDateString('es-CL'),
                 row.season,
                 row.export_format.toUpperCase(),
+                formatExecutiveExportActor(row.created_by),
                 (row.warning_types || []).map((item) => formatExecutiveExportWarningType(item)).join(', ') || 'Sin detalle',
                 row.field_label || 'Todos los campos'
               ]),
@@ -7039,49 +7129,99 @@ export const Reports: React.FC = () => {
                     <span className="text-sm text-slate-500">
                       {executiveExportWarningLoading
                         ? 'Cargando bitácora...'
-                        : `${executiveExportWarningHistoryData.totalEvents} eventos históricos`}
+                        : `${executiveExportWarningFilteredData.totalEvents} visibles de ${executiveExportWarningHistoryData.totalEvents} históricos`}
                     </span>
                   </div>
                 </div>
                 <div className="p-6 space-y-6">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <label className="text-sm text-slate-600">
+                        <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">Formato</span>
+                        <select
+                          value={executiveExportWarningFormatFilter}
+                          onChange={(e) => setExecutiveExportWarningFormatFilter(e.target.value as 'all' | 'pdf' | 'excel')}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                        >
+                          {executiveExportWarningFormatOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option === 'all' ? 'Todos los formatos' : option.toUpperCase()}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-sm text-slate-600">
+                        <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">Advertencia</span>
+                        <select
+                          value={executiveExportWarningTypeFilter}
+                          onChange={(e) => setExecutiveExportWarningTypeFilter(e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                        >
+                          {executiveExportWarningTypeOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option === 'all' ? 'Todas las advertencias' : formatExecutiveExportWarningType(option)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-sm text-slate-600">
+                        <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">Emisor</span>
+                        <select
+                          value={executiveExportWarningActorFilter}
+                          onChange={(e) => setExecutiveExportWarningActorFilter(e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                        >
+                          {executiveExportWarningActorOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option === 'all' ? 'Todos los emisores' : formatExecutiveExportActor(option)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="mt-3 text-sm text-slate-500">
+                      {executiveExportWarningFiltersLabel}
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Eventos totales</div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveExportWarningHistoryData.totalEvents}</div>
-                      <div className="mt-1 text-sm text-slate-500">Bitácora histórica de la empresa activa</div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Eventos visibles</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveExportWarningFilteredData.totalEvents}</div>
+                      <div className="mt-1 text-sm text-slate-500">Lectura resultante según filtros activos</div>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <div className="text-xs uppercase tracking-wide text-slate-500">Temporada visible</div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveExportWarningHistoryData.currentSeasonRows.length}</div>
-                      <div className="mt-1 text-sm text-slate-500">{selectedSeason} con exportaciones advertidas</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveExportWarningFilteredData.currentSeasonRows.length}</div>
+                      <div className="mt-1 text-sm text-slate-500">{selectedSeason} con exportaciones advertidas visibles</div>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <div className="text-xs uppercase tracking-wide text-slate-500">Formato dominante</div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveExportWarningHistoryData.dominantFormat}</div>
-                      <div className="mt-1 text-sm text-slate-500">PDF: {executiveExportWarningHistoryData.byFormat.pdf} · Excel: {executiveExportWarningHistoryData.byFormat.excel}</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveExportWarningFilteredData.dominantFormat}</div>
+                      <div className="mt-1 text-sm text-slate-500">PDF: {executiveExportWarningFilteredData.byFormat.pdf} · Excel: {executiveExportWarningFilteredData.byFormat.excel}</div>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <div className="text-xs uppercase tracking-wide text-slate-500">Última exportación</div>
                       <div className="mt-2 text-lg font-semibold text-slate-900">
-                        {executiveExportWarningHistoryData.latestEvent
-                          ? `${executiveExportWarningHistoryData.latestEvent.export_format.toUpperCase()} · ${executiveExportWarningHistoryData.latestEvent.season}`
+                        {executiveExportWarningFilteredData.latestEvent
+                          ? `${executiveExportWarningFilteredData.latestEvent.export_format.toUpperCase()} · ${executiveExportWarningFilteredData.latestEvent.season}`
                           : 'Sin eventos'}
                       </div>
                       <div className="mt-1 text-sm text-slate-500">
-                        {executiveExportWarningHistoryData.latestEvent
-                          ? executiveExportWarningHistoryData.latestEvent.readiness_title
-                          : 'Aún sin exportaciones advertidas'}
+                        {executiveExportWarningFilteredData.latestEvent
+                          ? `${executiveExportWarningFilteredData.latestEvent.readiness_title} · ${formatExecutiveExportActor(executiveExportWarningFilteredData.latestEvent.created_by)}`
+                          : 'Aún sin exportaciones advertidas visibles'}
                       </div>
                     </div>
                   </div>
 
                   <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
                     <div className="font-medium text-slate-900">Lectura de auditoría interna</div>
-                    <p className="mt-2">{executiveExportWarningHistoryData.summaryLine}</p>
+                    <p className="mt-2">{executiveExportWarningFilteredData.summaryLine}</p>
                     <p className="mt-2">
-                      {executiveExportWarningHistoryData.latestCurrentSeasonEvent
-                        ? `La última exportación advertida de la temporada visible ocurrió el ${new Date(executiveExportWarningHistoryData.latestCurrentSeasonEvent.created_at).toLocaleString('es-CL')} en formato ${executiveExportWarningHistoryData.latestCurrentSeasonEvent.export_format.toUpperCase()}.`
-                        : `La temporada ${selectedSeason} todavía no registra exportaciones advertidas.`}
+                      {executiveExportWarningFilteredData.latestCurrentSeasonEvent
+                        ? `La última exportación advertida visible de la temporada ocurrió el ${new Date(executiveExportWarningFilteredData.latestCurrentSeasonEvent.created_at).toLocaleString('es-CL')} en formato ${executiveExportWarningFilteredData.latestCurrentSeasonEvent.export_format.toUpperCase()} por ${formatExecutiveExportActor(executiveExportWarningFilteredData.latestCurrentSeasonEvent.created_by)}.`
+                        : `La temporada ${selectedSeason} no registra exportaciones advertidas para los filtros actuales.`}
                     </p>
                   </div>
 
@@ -7095,16 +7235,16 @@ export const Reports: React.FC = () => {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 bg-white">
-                          {executiveExportWarningHistoryData.seasonSummary.slice(0, 6).map((row) => (
+                          {executiveExportWarningFilteredData.seasonSummary.slice(0, 6).map((row) => (
                             <tr key={row.season} className={row.season === selectedSeason ? 'bg-purple-50/50' : ''}>
                               <td className="px-4 py-3 font-medium text-slate-900">{row.season}</td>
                               <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
                             </tr>
                           ))}
-                          {!executiveExportWarningLoading && executiveExportWarningHistoryData.seasonSummary.length === 0 && (
+                          {!executiveExportWarningLoading && executiveExportWarningFilteredData.seasonSummary.length === 0 && (
                             <tr>
                               <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
-                                No hay temporadas con exportaciones advertidas registradas.
+                                No hay temporadas visibles para los filtros seleccionados.
                               </td>
                             </tr>
                           )}
@@ -7121,16 +7261,16 @@ export const Reports: React.FC = () => {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 bg-white">
-                          {executiveExportWarningHistoryData.warningTypeSummary.slice(0, 6).map((row) => (
+                          {executiveExportWarningFilteredData.warningTypeSummary.slice(0, 6).map((row) => (
                             <tr key={row.type}>
                               <td className="px-4 py-3 text-slate-900">{formatExecutiveExportWarningType(row.type)}</td>
                               <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
                             </tr>
                           ))}
-                          {!executiveExportWarningLoading && executiveExportWarningHistoryData.warningTypeSummary.length === 0 && (
+                          {!executiveExportWarningLoading && executiveExportWarningFilteredData.warningTypeSummary.length === 0 && (
                             <tr>
                               <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
-                                No hay advertencias repetidas registradas todavía.
+                                No hay advertencias visibles para los filtros seleccionados.
                               </td>
                             </tr>
                           )}
@@ -7146,6 +7286,7 @@ export const Reports: React.FC = () => {
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Temporada</th>
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Formato</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Emisor</th>
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Estado</th>
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Advertencias</th>
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Campo</th>
@@ -7153,27 +7294,28 @@ export const Reports: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200 bg-white">
-                        {executiveExportWarningHistoryData.recentRows.map((row) => (
+                        {executiveExportWarningFilteredData.recentRows.map((row) => (
                           <tr key={row.id}>
                             <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
                             <td className="px-4 py-3 font-medium text-slate-900">{row.season}</td>
                             <td className="px-4 py-3 text-slate-700">{row.export_format.toUpperCase()}</td>
+                            <td className="px-4 py-3 text-slate-700">{formatExecutiveExportActor(row.created_by)}</td>
                             <td className="px-4 py-3 text-slate-700">{row.readiness_title}</td>
                             <td className="px-4 py-3 text-slate-700">{(row.warning_types || []).map((item) => formatExecutiveExportWarningType(item)).join(', ') || 'Sin detalle'}</td>
                             <td className="px-4 py-3 text-slate-700">{row.field_label || 'Todos los campos'}</td>
                             <td className="px-4 py-3 text-slate-700">{row.compare_company_name || 'Sin comparar'}</td>
                           </tr>
                         ))}
-                        {!executiveExportWarningLoading && executiveExportWarningHistoryData.recentRows.length === 0 && (
+                        {!executiveExportWarningLoading && executiveExportWarningFilteredData.recentRows.length === 0 && (
                           <tr>
-                            <td colSpan={7} className="px-4 py-4 text-center text-sm text-slate-500">
-                              No hay exportaciones bajo advertencia registradas para esta empresa.
+                            <td colSpan={8} className="px-4 py-4 text-center text-sm text-slate-500">
+                              No hay exportaciones bajo advertencia para los filtros seleccionados.
                             </td>
                           </tr>
                         )}
                         {executiveExportWarningLoading && (
                           <tr>
-                            <td colSpan={7} className="px-4 py-4 text-center text-sm text-slate-500">
+                            <td colSpan={8} className="px-4 py-4 text-center text-sm text-slate-500">
                               Cargando bitácora histórica de exportaciones...
                             </td>
                           </tr>

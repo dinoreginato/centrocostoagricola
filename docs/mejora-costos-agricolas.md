@@ -456,11 +456,16 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
 - La lectura se integra tambien en exportaciones:
   - Excel con hoja `Bitacora Exportaciones`
   - PDF con resumen y ultimos eventos
+- La vista ahora admite filtros por:
+  - formato de exportacion
+  - tipo de advertencia
+  - emisor del evento
+- Los filtros aplicados gobiernan la lectura visible y tambien la exportacion del bloque historico.
 - Objetivo:
   - dejar una pista de auditoria interna sobre circulacion de reportes emitidos con advertencias visibles
   - facilitar revision posterior por temporada, formato y contexto comparativo
 
 ## Siguiente Paso Recomendado
-- Agregar filtros adicionales por usuario, formato o tipo de advertencia dentro de la bitacora historica.
 - Evaluar una portada o slide final exclusivo de decision ejecutiva para comite.
 - Considerar un ranking automatico entre empresas usando cierre total, tendencia y bloqueos ponderados.
+- Considerar trazabilidad ampliada por destinatario o motivo de circulacion del reporte exportado.
