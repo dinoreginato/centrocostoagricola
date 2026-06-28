@@ -302,6 +302,32 @@ const buildExecutiveExportWarningAnalytics = (
   )
     .map(([reason, count]) => ({ reason, count }))
     .sort((a, b) => b.count - a.count);
+  const recipientSummary = Array.from(
+    rows.reduce((map, row) => {
+      const recipient = row.circulation_recipient?.trim() || 'Sin destinatario';
+      const current = map.get(recipient) || {
+        recipient,
+        count: 0,
+        latestCreatedAt: row.created_at,
+        formats: new Set<string>()
+      };
+      current.count += 1;
+      current.latestCreatedAt = current.latestCreatedAt > row.created_at ? current.latestCreatedAt : row.created_at;
+      current.formats.add(row.export_format.toUpperCase());
+      map.set(recipient, current);
+      return map;
+    }, new Map<string, { recipient: string; count: number; latestCreatedAt: string; formats: Set<string> }>())
+  )
+    .map(([, value]) => ({
+      recipient: value.recipient,
+      count: value.count,
+      latestCreatedAt: value.latestCreatedAt,
+      formats: Array.from(value.formats).sort().join(', ')
+    }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return b.latestCreatedAt.localeCompare(a.latestCreatedAt);
+    });
   const seasonSummary = Array.from(
     rows.reduce((map, row) => {
       const current = map.get(row.season) || { season: row.season, count: 0 };
@@ -319,6 +345,7 @@ const buildExecutiveExportWarningAnalytics = (
       : 'Excel';
   const topWarningType = warningTypeSummary[0] || null;
   const topCirculationReason = circulationReasonSummary[0] || null;
+  const topRecipient = recipientSummary[0] || null;
   const topSeason = seasonSummary[0] || null;
   const summaryLine = latestEvent
     ? `Se registran ${rows.length} exportaciones ejecutivas bajo advertencia para ${scopeLabel}. La última ocurrió en ${latestEvent.season} vía ${latestEvent.export_format.toUpperCase()} con estado ${latestEvent.readiness_title} hacia ${latestEvent.circulation_recipient || 'destinatario no indicado'}.`
@@ -338,6 +365,8 @@ const buildExecutiveExportWarningAnalytics = (
     topWarningType,
     circulationReasonSummary,
     topCirculationReason,
+    recipientSummary,
+    topRecipient,
     totalEvents: rows.length,
     summaryLine
   };
@@ -3405,6 +3434,7 @@ export const Reports: React.FC = () => {
         { Indicador: 'Siguiente paso', Valor: executiveCurrentRecommendation.nextStep },
         { Indicador: 'Último destinatario advertido', Valor: executiveExportWarningFilteredData.latestEvent?.circulation_recipient || 'Sin destinatario' },
         { Indicador: 'Motivo circulación dominante', Valor: executiveExportWarningFilteredData.topCirculationReason ? formatExecutiveExportCirculationReason(executiveExportWarningFilteredData.topCirculationReason.reason) : 'Sin motivo' },
+        { Indicador: 'Destinatario dominante', Valor: executiveExportWarningFilteredData.topRecipient?.recipient || 'Sin destinatario' },
         { Indicador: 'Alerta tendencia', Valor: executiveTrendWarning?.shortLabel || 'Sin alerta' },
         { Indicador: 'Detalle alerta tendencia', Valor: executiveTrendWarning?.detail || 'Sin alerta preventiva visible' },
         { Indicador: 'Conclusión', Valor: executiveTotalDataClosure.conclusion }
@@ -3475,6 +3505,12 @@ export const Reports: React.FC = () => {
         Detalle: row.warning_detail || '',
         Campo: row.field_label || 'Todos los campos',
         'Empresa comparada': row.compare_company_name || 'Sin comparar'
+      }));
+      const exportWarningRecipientRows = executiveExportWarningFilteredData.recipientSummary.map((row) => ({
+        Destinatario: row.recipient,
+        Eventos: row.count,
+        Formatos: row.formats || '-',
+        'Última circulación': new Date(row.latestCreatedAt).toLocaleString('es-CL')
       }));
       const trendWarningRows = executiveTrendWarning ? [
         { Campo: 'Estado', Valor: executiveTrendWarning.shortLabel },
@@ -3595,6 +3631,7 @@ export const Reports: React.FC = () => {
           ...(compareCompanyHistoryRows.length > 0 ? [{ name: 'Historial Empresas', rows: compareCompanyHistoryRows }] : []),
           ...(trendCompanyRows.length > 0 ? [{ name: 'Tendencia Empresas', rows: trendCompanyRows }] : []),
           ...(trendWarningRows.length > 0 ? [{ name: 'Alerta Tendencia', rows: trendWarningRows }] : []),
+          ...(exportWarningRecipientRows.length > 0 ? [{ name: 'Destinatarios Bitacora', rows: exportWarningRecipientRows }] : []),
           ...(exportWarningHistoryRows.length > 0 ? [{ name: 'Bitacora Exportaciones', rows: exportWarningHistoryRows }] : []),
           ...(historicalClosureRows.length > 0 ? [{ name: 'Historial Cierre', rows: historicalClosureRows }] : []),
           ...(economicClosureRows.length > 0 ? [{ name: 'Cierre Economico', rows: economicClosureRows }] : []),
@@ -4768,6 +4805,7 @@ export const Reports: React.FC = () => {
               ['Formato dominante', executiveExportWarningFilteredData.dominantFormat],
               ['Advertencia dominante', executiveExportWarningFilteredData.topWarningType ? `${formatExecutiveExportWarningType(executiveExportWarningFilteredData.topWarningType.type)} (${executiveExportWarningFilteredData.topWarningType.count})` : 'Sin advertencias frecuentes'],
               ['Motivo dominante', executiveExportWarningFilteredData.topCirculationReason ? `${formatExecutiveExportCirculationReason(executiveExportWarningFilteredData.topCirculationReason.reason)} (${executiveExportWarningFilteredData.topCirculationReason.count})` : 'Sin motivos frecuentes'],
+              ['Destinatario dominante', executiveExportWarningFilteredData.topRecipient ? `${executiveExportWarningFilteredData.topRecipient.recipient} (${executiveExportWarningFilteredData.topRecipient.count})` : 'Sin destinatarios frecuentes'],
               ['Temporada más expuesta', executiveExportWarningFilteredData.topSeason ? `${executiveExportWarningFilteredData.topSeason.season} (${executiveExportWarningFilteredData.topSeason.count})` : 'Sin temporadas'],
               ['Lectura', executiveExportWarningFilteredData.summaryLine]
             ],
@@ -4797,6 +4835,29 @@ export const Reports: React.FC = () => {
               ]),
               theme: 'grid',
               headStyles: { fillColor: [120, 53, 15] },
+              styles: { fontSize: 8 }
+            });
+
+            yPos = (doc as any).lastAutoTable.finalY + 8;
+          }
+
+          if (executiveExportWarningFilteredData.recipientSummary.length > 0) {
+            if (yPos > 150) {
+              doc.addPage();
+              yPos = 20;
+            }
+
+            autoTable(doc, {
+              startY: yPos,
+              head: [['Destinatario', 'Eventos', 'Formatos', 'Última circulación']],
+              body: executiveExportWarningFilteredData.recipientSummary.slice(0, 6).map((row) => [
+                row.recipient,
+                String(row.count),
+                row.formats || '-',
+                new Date(row.latestCreatedAt).toLocaleDateString('es-CL')
+              ]),
+              theme: 'grid',
+              headStyles: { fillColor: [83, 109, 254] },
               styles: { fontSize: 8 }
             });
 
@@ -7708,7 +7769,7 @@ export const Reports: React.FC = () => {
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
                     <div className="overflow-x-auto rounded-xl border border-slate-200">
                       <table className="min-w-full divide-y divide-slate-200 text-sm">
                         <thead className="bg-slate-50">
@@ -7754,6 +7815,35 @@ export const Reports: React.FC = () => {
                             <tr>
                               <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
                                 No hay motivos de circulación visibles para los filtros seleccionados.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Destinatario frecuente</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Veces</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {executiveExportWarningFilteredData.recipientSummary.slice(0, 6).map((row) => (
+                            <tr key={row.recipient}>
+                              <td className="px-4 py-3 text-slate-900">
+                                <div className="font-medium">{row.recipient}</div>
+                                <div className="text-xs text-slate-500">{row.formats || 'Sin formato'} · {new Date(row.latestCreatedAt).toLocaleDateString('es-CL')}</div>
+                              </td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                            </tr>
+                          ))}
+                          {!executiveExportWarningLoading && executiveExportWarningFilteredData.recipientSummary.length === 0 && (
+                            <tr>
+                              <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
+                                No hay destinatarios visibles para los filtros seleccionados.
                               </td>
                             </tr>
                           )}

@@ -518,6 +518,21 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - acotar rapidamente la auditoria a circulaciones especificas
   - revisar que reportes fueron compartidos con un actor o fin determinado
 
+## Agrupacion Historica Por Destinatario
+- La bitacora ahora resume tambien la circulacion por destinatario.
+- La vista expone:
+  - destinatarios mas frecuentes
+  - cantidad de eventos por destinatario
+  - formatos en que se les circulo informacion
+  - ultima fecha visible de circulacion
+- La lectura se integra en:
+  - vista ejecutiva
+  - PDF ejecutivo de auditoria
+  - Excel con hoja `Destinatarios Bitacora`
+- Objetivo:
+  - detectar concentracion de reportes advertidos en ciertos actores
+  - facilitar auditoria historica de a quien se comparte mas informacion sensible
+
 ## Siguiente Paso Recomendado
 - Evaluar un ranking multiempresa global cuando existan mas de dos empresas comparables en la misma temporada.
-- Considerar una agrupacion historica por destinatario para medir frecuencia de circulacion por actor.
+- Considerar una agrupacion adicional por motivo para medir para que tipo de instancia circula mas el reporte.
