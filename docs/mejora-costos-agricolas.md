@@ -3,6 +3,71 @@
 ## Objetivo
 Dejar la aplicacion mas confiable para gestion agricola real, con costos mas verdaderos, menos duplicidad y una mejor resolucion de datos para toma de decisiones.
 
+## Estado General
+- Avance general estimado del roadmap activo: `85%`
+- Estado actual:
+  - `[x]` base canonica de temporadas y costos
+  - `[x]` conciliacion y auditoria ejecutiva
+  - `[x]` margen canonico con produccion e ingresos
+  - `[x]` cierre economico y cierre total de datos
+  - `[x]` comparativos historicos entre empresas
+  - `[x]` ranking multiempresa y alertas globales
+  - `[x]` bitacora, ciclo de vida y transiciones de alertas globales
+  - `[x]` SLA y escalamiento automatico de alertas globales
+  - `[x]` reescalamiento por cambio de responsable o aumento de severidad
+  - `[ ]` persistencia historica materializada del ranking global
+  - `[ ]` cierre asistido o reescalamiento automatico con sugerencia de cierre
+
+## Avance Del Plan
+### Fase 1
+- `[x]` Centralizar temporadas disponibles y filtros compartidos.
+- `[x]` Hacer que dashboard y reportes consuman la misma logica base.
+- `[x]` Incorporar todos los costos visibles al consolidado.
+
+### Fase 2
+- `[x]` Crear una utilidad o vista canonica de movimientos de costo.
+- `[x]` Trazar para cada registro:
+  - `[x]` fecha
+  - `[x]` temporada
+  - `[x]` empresa
+  - `[x]` campo
+  - `[x]` sector
+  - `[x]` categoria
+  - `[x]` subcategoria
+  - `[x]` monto
+  - `[x]` origen
+  - `[x]` id_origen
+
+### Fase 3
+- `[x]` Eliminar duplicidades de mano de obra.
+- `[x]` Definir una regla oficial entre `labor_assignments` y `worker_costs`.
+- `[x]` Eliminar duplicidades de combustible y definir valorizacion historica.
+
+### Fase 4
+- `[x]` Integrar produccion a todas las metricas economicas.
+- `[x]` Hacer obligatoria la coherencia entre kilos, ingresos y temporada.
+
+### Fase 5
+- `[x]` Agregar validaciones fuertes en base de datos:
+  - `[x]` porcentajes 0 a 100
+  - `[x]` montos no negativos cuando corresponda
+  - `[x]` coherencia campo/sector/empresa
+  - `[ ]` coherencia hectareas campo vs sectores
+
+### Fases Ejecutivas Adicionales
+- `[x]` Cierre economico ejecutivo.
+- `[x]` Cierre total de datos y estado para comite.
+- `[x]` Comparacion entre empresas y comparacion historica.
+- `[x]` Ranking multiempresa por temporada.
+- `[x]` Historial global de liderazgo y alertas preventivas.
+- `[x]` Bitacora persistida de alertas globales.
+- `[x]` Ciclo de vida y transiciones de gestion.
+- `[x]` SLA de gestion por etapa.
+- `[x]` Escalamiento automatico por vencimiento SLA.
+- `[x]` Reescalamiento por cambio de responsable o cambio de severidad.
+- `[ ]` Persistencia materializada del ranking global para reducir recalculo.
+- `[ ]` Cierre asistido y sugerencias automáticas de normalizacion.
+
 ## Lo Que Ya Esta Bien
 - Modelo predial correcto: `empresa -> campo -> sector`.
 - Buen nivel operativo en aplicaciones, ordenes, inventario y reportes ejecutivos.
@@ -53,42 +118,6 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
    - dashboard
    - reportes
    - exportaciones
-
-## Plan De Implementacion
-### Fase 1
-- Centralizar temporadas disponibles y filtros compartidos.
-- Hacer que dashboard y reportes consuman la misma logica base.
-- Incorporar todos los costos visibles al consolidado.
-
-### Fase 2
-- Crear una utilidad o vista canonica de movimientos de costo.
-- Trazar para cada registro:
-  - fecha
-  - temporada
-  - empresa
-  - campo
-  - sector
-  - categoria
-  - subcategoria
-  - monto
-  - origen
-  - id_origen
-
-### Fase 3
-- Eliminar duplicidades de mano de obra.
-- Definir una regla oficial entre `labor_assignments` y `worker_costs`.
-- Eliminar duplicidades de combustible y definir valorizacion historica.
-
-### Fase 4
-- Integrar produccion a todas las metricas economicas.
-- Hacer obligatoria la coherencia entre kilos, ingresos y temporada.
-
-### Fase 5
-- Agregar validaciones fuertes en base de datos:
-  - porcentajes 0 a 100
-  - montos no negativos cuando corresponda
-  - coherencia campo/sector/empresa
-  - coherencia hectareas campo vs sectores
 
 ## Acciones Prioritarias
 - Prioridad alta: capa compartida de temporadas y costos.
@@ -665,6 +694,7 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - reforzar auditoría ejecutiva y trazabilidad operativa real
 
 ## SLA De Gestión De Alertas Globales
+- Estado: `[x] Implementado`
 - `Reportes` ahora mide tiempos SLA sobre la gestión de alertas globales persistidas usando la fecha de detección y las transiciones formales.
 - La lectura calcula:
   - tiempo hasta reconocimiento
@@ -688,6 +718,7 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - dejar una lectura ejecutiva clara sobre responsables y atrasos abiertos
 
 ## Escalamiento Automático Por SLA
+- Estado: `[x] Implementado`
 - Cuando una alerta global sigue abierta y supera el SLA de su etapa activa, `Reportes` crea una escalación persistida en una bitácora separada.
 - La nueva capa usa la migración `supabase/migrations/20260628130000_create_executive_global_alert_sla_escalations.sql`.
 - Cada escalación guarda:
@@ -709,6 +740,27 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - dejar trazabilidad formal de cada incumplimiento SLA
   - distinguir entre atraso operativo y deterioro ya escalado
 
+## Reescalamiento Y Reincidencia SLA
+- Estado: `[x] Implementado`
+- La firma de escalación ahora considera:
+  - alerta
+  - etapa vencida
+  - responsable visible
+  - severidad del escalamiento
+- Esto permite registrar un nuevo evento cuando:
+  - cambia el responsable visible y el atraso persiste
+  - el atraso sube de nivel y pasa de alta a critica
+- `Reportes` ahora expone:
+  - total de reescalamientos visibles
+  - reescalamientos con cambio de responsable
+  - evento mas reescalado por etapa
+  - historial de escalaciones dentro de la ficha de una alerta
+  - hojas Excel con reescalamientos por evento y etapa
+  - lectura reforzada en fullscreen y PDF ejecutivo
+- Objetivo:
+  - distinguir una alerta vencida aislada de una alerta que ya cambio de dueño o empeoro sin resolverse
+  - dar una senal clara de reincidencia operativa para comite y seguimiento
+
 ## Siguiente Paso Recomendado
 - Evaluar persistencia historica del ranking global para medir cambios de liderazgo sin recalculo completo en tiempo real.
-- Considerar cierre asistido o reescalamiento automatico cuando una alerta cambie de responsable y el atraso persista.
+- Considerar cierre asistido automatico cuando una alerta deje de incumplir SLA o cambie a `cerrada`.

@@ -963,6 +963,64 @@ const buildExecutiveGlobalAlertSlaEscalationAnalytics = (
   )
     .map(([stageKey, count]) => ({ stageKey, count }))
     .sort((a, b) => b.count - a.count);
+  const eventStageSummary = Array.from(
+    visibleRows.reduce((map, row) => {
+      const key = `${row.event_id}::${row.stage_key}`;
+      const current = map.get(key) || {
+        eventId: row.event_id,
+        stageKey: row.stage_key,
+        season: row.metadata && typeof row.metadata === 'object'
+          ? String((row.metadata as Record<string, unknown>).season || '')
+          : '',
+        ownerSet: new Set<string>(),
+        severitySet: new Set<string>(),
+        count: 0,
+        activeCount: 0,
+        maxOverdueHours: 0,
+        latestCreatedAt: row.created_at
+      };
+      const signature = row.metadata && typeof row.metadata === 'object'
+        ? String((row.metadata as Record<string, unknown>).sla_signature || '')
+        : '';
+      current.ownerSet.add(row.owner_label?.trim() || 'Sin responsable');
+      current.severitySet.add(row.escalation_severity);
+      current.count += 1;
+      current.activeCount += signature && activeSignatureSet.has(signature) ? 1 : 0;
+      current.maxOverdueHours = Math.max(current.maxOverdueHours, Number(row.overdue_hours || 0));
+      current.latestCreatedAt = current.latestCreatedAt > row.created_at ? current.latestCreatedAt : row.created_at;
+      map.set(key, current);
+      return map;
+    }, new Map<string, {
+      eventId: string;
+      stageKey: string;
+      season: string;
+      ownerSet: Set<string>;
+      severitySet: Set<string>;
+      count: number;
+      activeCount: number;
+      maxOverdueHours: number;
+      latestCreatedAt: string;
+    }>())
+  )
+    .map(([, value]) => ({
+      eventId: value.eventId,
+      stageKey: value.stageKey,
+      season: value.season || 'Sin temporada',
+      count: value.count,
+      activeCount: value.activeCount,
+      maxOverdueHours: value.maxOverdueHours,
+      ownerCount: value.ownerSet.size,
+      owners: Array.from(value.ownerSet).sort().join(', '),
+      severities: Array.from(value.severitySet).sort().join(', '),
+      latestCreatedAt: value.latestCreatedAt,
+      isReescalated: value.count > 1
+    }))
+    .sort((a, b) => {
+      if (b.activeCount !== a.activeCount) return b.activeCount - a.activeCount;
+      if (b.count !== a.count) return b.count - a.count;
+      if (Math.abs(b.maxOverdueHours - a.maxOverdueHours) > 0.001) return b.maxOverdueHours - a.maxOverdueHours;
+      return b.latestCreatedAt.localeCompare(a.latestCreatedAt);
+    });
   const ownerSummary = Array.from(
     visibleRows.reduce((map, row) => {
       const owner = row.owner_label?.trim() || 'Sin responsable';
@@ -970,15 +1028,18 @@ const buildExecutiveGlobalAlertSlaEscalationAnalytics = (
         owner,
         count: 0,
         activeCount: 0,
+        reescalatedCount: 0,
         maxOverdueHours: 0,
         latestCreatedAt: row.created_at,
-        stageSet: new Set<string>()
+        stageSet: new Set<string>(),
+        eventStageSet: new Set<string>()
       };
       const signature = row.metadata && typeof row.metadata === 'object'
         ? String((row.metadata as Record<string, unknown>).sla_signature || '')
         : '';
       current.count += 1;
       current.activeCount += signature && activeSignatureSet.has(signature) ? 1 : 0;
+      current.eventStageSet.add(`${row.event_id}::${row.stage_key}`);
       current.maxOverdueHours = Math.max(current.maxOverdueHours, Number(row.overdue_hours || 0));
       current.latestCreatedAt = current.latestCreatedAt > row.created_at ? current.latestCreatedAt : row.created_at;
       current.stageSet.add(formatExecutiveGlobalAlertSlaStage(row.stage_key));
@@ -988,21 +1049,28 @@ const buildExecutiveGlobalAlertSlaEscalationAnalytics = (
       owner: string;
       count: number;
       activeCount: number;
+        reescalatedCount: number;
       maxOverdueHours: number;
       latestCreatedAt: string;
       stageSet: Set<string>;
+        eventStageSet: Set<string>;
     }>())
   )
-    .map(([, value]) => ({
-      owner: value.owner,
-      count: value.count,
-      activeCount: value.activeCount,
-      maxOverdueHours: value.maxOverdueHours,
-      latestCreatedAt: value.latestCreatedAt,
-      stages: Array.from(value.stageSet).sort().join(', ')
-    }))
+    .map(([, value]) => {
+      const reescalatedCount = eventStageSummary.filter((row) => row.isReescalated && row.owners.split(', ').includes(value.owner)).length;
+      return {
+        owner: value.owner,
+        count: value.count,
+        activeCount: value.activeCount,
+        reescalatedCount,
+        maxOverdueHours: value.maxOverdueHours,
+        latestCreatedAt: value.latestCreatedAt,
+        stages: Array.from(value.stageSet).sort().join(', ')
+      };
+    })
     .sort((a, b) => {
       if (b.activeCount !== a.activeCount) return b.activeCount - a.activeCount;
+      if (b.reescalatedCount !== a.reescalatedCount) return b.reescalatedCount - a.reescalatedCount;
       if (Math.abs(b.maxOverdueHours - a.maxOverdueHours) > 0.001) return b.maxOverdueHours - a.maxOverdueHours;
       if (b.count !== a.count) return b.count - a.count;
       return b.latestCreatedAt.localeCompare(a.latestCreatedAt);
@@ -1010,8 +1078,11 @@ const buildExecutiveGlobalAlertSlaEscalationAnalytics = (
   const topSeverity = severitySummary[0] || null;
   const topStage = stageSummary[0] || null;
   const topOwner = ownerSummary[0] || null;
+  const reescalatedRows = eventStageSummary.filter((row) => row.isReescalated);
+  const ownerChangeCount = reescalatedRows.filter((row) => row.ownerCount > 1).length;
+  const topReescalated = reescalatedRows[0] || null;
   const summaryLine = latestEscalation
-    ? `Se registran ${visibleRows.length} escalaciones SLA para ${scopeLabel}. Actualmente siguen activas ${activeRows.length} y la etapa más expuesta es ${topStage ? formatExecutiveGlobalAlertSlaStage(topStage.stageKey).toLowerCase() : 'sin etapa dominante'}.`
+    ? `Se registran ${visibleRows.length} escalaciones SLA para ${scopeLabel}. Actualmente siguen activas ${activeRows.length}, hay ${reescalatedRows.length} reescalamientos y la etapa más expuesta es ${topStage ? formatExecutiveGlobalAlertSlaStage(topStage.stageKey).toLowerCase() : 'sin etapa dominante'}.`
     : `No hay escalaciones SLA persistidas para ${scopeLabel}.`;
 
   return {
@@ -1021,11 +1092,16 @@ const buildExecutiveGlobalAlertSlaEscalationAnalytics = (
     recentRows: visibleRows.slice(0, 12),
     severitySummary,
     stageSummary,
+    eventStageSummary,
+    reescalatedRows,
     ownerSummary,
     topSeverity,
     topStage,
     topOwner,
+    topReescalated,
     activeCount: activeRows.length,
+    reescalatedCount: reescalatedRows.length,
+    ownerChangeCount,
     totalEscalations: visibleRows.length,
     summaryLine
   };
@@ -4353,23 +4429,25 @@ export const Reports: React.FC = () => {
     executiveGlobalAlertSlaData.eventRows
       .filter((row) => row.isCurrentlyBreached && row.currentStageKey)
       .map((row) => {
-        const signature = `${row.id}::${row.currentStageKey}`;
+        const normalizedOwner = (row.owner || 'Sin responsable').trim() || 'Sin responsable';
         const escalationSeverity = row.currentStageOverdueHours >= 72 || row.severity === 'alta'
           ? 'critica'
           : 'alta';
         const stageLabel = formatExecutiveGlobalAlertSlaStage(row.currentStageKey);
+        const signature = `${row.id}::${row.currentStageKey}::${normalizedOwner}::${escalationSeverity}`;
         return {
           signature,
           eventId: row.id,
           stageKey: row.currentStageKey,
           stageLabel,
           escalationSeverity,
-          ownerLabel: row.owner,
+          ownerLabel: normalizedOwner,
           overdueHours: row.currentStageOverdueHours,
           targetHours: row.currentStageTargetHours,
+          season: row.season,
           detail: `${stageLabel} supera su SLA por ${formatExecutiveGlobalAlertSlaHours(row.currentStageOverdueHours)} en la alerta global de ${row.season}.`,
           recommendation: escalationSeverity === 'critica'
-            ? `Escalar de inmediato con ${row.owner || 'responsable no asignado'} y dejar compromiso formal para cerrar la etapa ${stageLabel.toLowerCase()}.`
+            ? `Escalar de inmediato con ${normalizedOwner || 'responsable no asignado'} y dejar compromiso formal para cerrar la etapa ${stageLabel.toLowerCase()}.`
             : `Acelerar la etapa ${stageLabel.toLowerCase()} y formalizar responsable antes de la próxima circulación ejecutiva.`
         };
       })
@@ -4521,7 +4599,8 @@ export const Reports: React.FC = () => {
             sla_signature: escalation.signature,
             stage_label: escalation.stageLabel,
             owner_label: escalation.ownerLabel,
-            company_name: companyName
+            company_name: companyName,
+            season: escalation.season
           }
         });
       }
@@ -4563,6 +4642,10 @@ export const Reports: React.FC = () => {
   const selectedExecutiveGlobalAlertTransitions = useMemo(
     () => executiveGlobalAlertTransitions.filter((row) => row.event_id === editingExecutiveGlobalAlertId),
     [editingExecutiveGlobalAlertId, executiveGlobalAlertTransitions]
+  );
+  const selectedExecutiveGlobalAlertEscalations = useMemo(
+    () => executiveGlobalAlertEscalations.filter((row) => row.event_id === editingExecutiveGlobalAlertId),
+    [editingExecutiveGlobalAlertId, executiveGlobalAlertEscalations]
   );
   const selectedExecutiveGlobalAlertSlaEvent = useMemo(
     () => executiveGlobalAlertSlaData.eventRows.find((row) => row.id === editingExecutiveGlobalAlertId) || null,
@@ -4889,9 +4972,12 @@ export const Reports: React.FC = () => {
         { Indicador: 'Resumen SLA global', Valor: executiveGlobalAlertSlaData.summaryLine },
         { Indicador: 'Escalaciones SLA históricas', Valor: executiveGlobalAlertSlaEscalationData.totalEscalations },
         { Indicador: 'Escalaciones SLA activas', Valor: executiveGlobalAlertSlaEscalationData.activeCount },
+        { Indicador: 'Reescalamientos SLA', Valor: executiveGlobalAlertSlaEscalationData.reescalatedCount },
+        { Indicador: 'Reescalamientos con cambio de responsable', Valor: executiveGlobalAlertSlaEscalationData.ownerChangeCount },
         { Indicador: 'Severidad escalación dominante', Valor: executiveGlobalAlertSlaEscalationData.topSeverity ? formatExecutiveGlobalAlertSlaEscalationSeverity(executiveGlobalAlertSlaEscalationData.topSeverity.severity) : 'Sin escalaciones' },
         { Indicador: 'Etapa escalada dominante', Valor: executiveGlobalAlertSlaEscalationData.topStage ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaEscalationData.topStage.stageKey) : 'Sin etapa' },
         { Indicador: 'Responsable escalado dominante', Valor: executiveGlobalAlertSlaEscalationData.topOwner?.owner || 'Sin responsable' },
+        { Indicador: 'Evento más reescalado', Valor: executiveGlobalAlertSlaEscalationData.topReescalated ? `${executiveGlobalAlertSlaEscalationData.topReescalated.season} · ${formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaEscalationData.topReescalated.stageKey)} · ${executiveGlobalAlertSlaEscalationData.topReescalated.count} veces` : 'Sin reescalamientos' },
         { Indicador: 'Resumen escalación SLA', Valor: executiveGlobalAlertSlaEscalationData.summaryLine },
         { Indicador: 'Cruce alerta/exportación', Valor: executiveGlobalAlertExportLinkSummary },
         { Indicador: 'Recomendación comparada', Valor: executiveCompareCompanyRecommendation?.tone.title || 'Sin datos' },
@@ -5271,9 +5357,22 @@ export const Reports: React.FC = () => {
         Responsable: row.owner,
         Escalaciones: row.count,
         Activas: row.activeCount,
+        Reescalamientos: row.reescalatedCount,
         'Mayor atraso': formatExecutiveGlobalAlertSlaHours(row.maxOverdueHours),
         Etapas: row.stages || 'Sin etapa',
         'Última escalación': new Date(row.latestCreatedAt).toLocaleString('es-CL')
+      }));
+      const globalAlertReescalationRows = executiveGlobalAlertSlaEscalationData.eventStageSummary.map((row) => ({
+        Temporada: row.season,
+        Etapa: formatExecutiveGlobalAlertSlaStage(row.stageKey),
+        Escalaciones: row.count,
+        Activas: row.activeCount,
+        Responsables: row.owners || 'Sin responsable',
+        'Cambios responsable': row.ownerCount,
+        Severidades: row.severities,
+        'Mayor atraso': formatExecutiveGlobalAlertSlaHours(row.maxOverdueHours),
+        Reescalada: row.isReescalated ? 'Sí' : 'No',
+        'Última vez': new Date(row.latestCreatedAt).toLocaleString('es-CL')
       }));
       const exportWarningHistoryRows = executiveExportWarningFilteredData.rows.map((row) => ({
         Fecha: new Date(row.created_at).toLocaleString('es-CL'),
@@ -5435,6 +5534,7 @@ export const Reports: React.FC = () => {
           ...(globalAlertEscalationStageRows.length > 0 ? [{ name: 'Escalaciones SLA', rows: globalAlertEscalationStageRows }] : []),
           ...(globalAlertEscalationSeverityRows.length > 0 ? [{ name: 'Severidad Escalaciones', rows: globalAlertEscalationSeverityRows }] : []),
           ...(globalAlertEscalationOwnerRows.length > 0 ? [{ name: 'Responsables Escalados', rows: globalAlertEscalationOwnerRows }] : []),
+          ...(globalAlertReescalationRows.length > 0 ? [{ name: 'Reescalamientos SLA', rows: globalAlertReescalationRows }] : []),
           ...(globalAlertEscalationRows.length > 0 ? [{ name: 'Bitacora Escalaciones', rows: globalAlertEscalationRows }] : []),
           ...(totalDataBlockerRows.length > 0 ? [{ name: 'Bloqueos Dato', rows: totalDataBlockerRows }] : []),
           ...(compareCompanyRows.length > 0 ? [{ name: 'Comparacion Empresas', rows: compareCompanyRows }] : []),
@@ -6779,6 +6879,8 @@ export const Reports: React.FC = () => {
                   ['Resumen', executiveGlobalAlertSlaEscalationData.summaryLine],
                   ['Escalaciones históricas', String(executiveGlobalAlertSlaEscalationData.totalEscalations)],
                   ['Escalaciones activas', String(executiveGlobalAlertSlaEscalationData.activeCount)],
+                  ['Reescalamientos', String(executiveGlobalAlertSlaEscalationData.reescalatedCount)],
+                  ['Con cambio de responsable', String(executiveGlobalAlertSlaEscalationData.ownerChangeCount)],
                   ['Severidad dominante', executiveGlobalAlertSlaEscalationData.topSeverity
                     ? `${formatExecutiveGlobalAlertSlaEscalationSeverity(executiveGlobalAlertSlaEscalationData.topSeverity.severity)} (${executiveGlobalAlertSlaEscalationData.topSeverity.count})`
                     : 'Sin severidad dominante'],
@@ -6786,7 +6888,7 @@ export const Reports: React.FC = () => {
                     ? `${formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaEscalationData.topStage.stageKey)} (${executiveGlobalAlertSlaEscalationData.topStage.count})`
                     : 'Sin etapa dominante'],
                   ['Responsable dominante', executiveGlobalAlertSlaEscalationData.topOwner
-                    ? `${executiveGlobalAlertSlaEscalationData.topOwner.owner} · ${executiveGlobalAlertSlaEscalationData.topOwner.activeCount} activas`
+                    ? `${executiveGlobalAlertSlaEscalationData.topOwner.owner} · ${executiveGlobalAlertSlaEscalationData.topOwner.activeCount} activas · ${executiveGlobalAlertSlaEscalationData.topOwner.reescalatedCount} reescaladas`
                     : 'Sin responsable dominante']
                 ],
                 theme: 'grid',
@@ -10372,7 +10474,7 @@ export const Reports: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-4">
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <div className="text-xs uppercase tracking-wide text-slate-500">Escalaciones históricas</div>
                       <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveGlobalAlertSlaEscalationData.totalEscalations}</div>
@@ -10416,8 +10518,22 @@ export const Reports: React.FC = () => {
                       </div>
                       <div className="mt-1 text-sm text-slate-500">
                         {executiveGlobalAlertSlaEscalationData.topOwner
-                          ? `${executiveGlobalAlertSlaEscalationData.topOwner.activeCount} activas · atraso máximo ${formatExecutiveGlobalAlertSlaHours(executiveGlobalAlertSlaEscalationData.topOwner.maxOverdueHours)}`
+                          ? `${executiveGlobalAlertSlaEscalationData.topOwner.activeCount} activas · ${executiveGlobalAlertSlaEscalationData.topOwner.reescalatedCount} reescaladas`
                           : 'Sin foco activo visible'}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-amber-700">Reescalamientos</div>
+                      <div className="mt-2 text-2xl font-semibold text-amber-800">{executiveGlobalAlertSlaEscalationData.reescalatedCount}</div>
+                      <div className="mt-1 text-sm text-amber-700">
+                        Etapas que se escalaron más de una vez
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-amber-700">Cambio de responsable</div>
+                      <div className="mt-2 text-2xl font-semibold text-amber-800">{executiveGlobalAlertSlaEscalationData.ownerChangeCount}</div>
+                      <div className="mt-1 text-sm text-amber-700">
+                        Reescalamientos con más de un responsable visible
                       </div>
                     </div>
                   </div>
@@ -10526,6 +10642,63 @@ export const Reports: React.FC = () => {
                           </div>
                         </div>
                       )}
+                      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                        <div className="rounded-xl border border-purple-200 bg-white p-4">
+                          <div className="text-xs uppercase tracking-wide text-slate-500">Escalaciones visibles</div>
+                          <div className="mt-2 text-lg font-semibold text-slate-900">{selectedExecutiveGlobalAlertEscalations.length}</div>
+                        </div>
+                        <div className="rounded-xl border border-purple-200 bg-white p-4">
+                          <div className="text-xs uppercase tracking-wide text-slate-500">Reescalada</div>
+                          <div className="mt-2 text-lg font-semibold text-slate-900">
+                            {selectedExecutiveGlobalAlertEscalations.length > 1 ? 'Sí' : 'No'}
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-purple-200 bg-white p-4">
+                          <div className="text-xs uppercase tracking-wide text-slate-500">Responsables visibles</div>
+                          <div className="mt-2 text-lg font-semibold text-slate-900">
+                            {new Set(selectedExecutiveGlobalAlertEscalations.map((row) => row.owner_label || 'Sin responsable')).size}
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-purple-200 bg-white p-4">
+                          <div className="text-xs uppercase tracking-wide text-slate-500">Mayor atraso escalado</div>
+                          <div className="mt-2 text-lg font-semibold text-slate-900">
+                            {selectedExecutiveGlobalAlertEscalations.length > 0
+                              ? formatExecutiveGlobalAlertSlaHours(Math.max(...selectedExecutiveGlobalAlertEscalations.map((row) => Number(row.overdue_hours || 0))))
+                              : 'Sin escalación'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 overflow-x-auto rounded-xl border border-purple-200 bg-white">
+                        <table className="min-w-full divide-y divide-slate-200 text-sm">
+                          <thead className="bg-purple-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Etapa</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Severidad</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Responsable</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Atraso</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200 bg-white">
+                            {selectedExecutiveGlobalAlertEscalations.map((row) => (
+                              <tr key={row.id}>
+                                <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                                <td className="px-4 py-3 font-medium text-slate-900">{formatExecutiveGlobalAlertSlaStage(row.stage_key)}</td>
+                                <td className="px-4 py-3 text-slate-700">{formatExecutiveGlobalAlertSlaEscalationSeverity(row.escalation_severity)}</td>
+                                <td className="px-4 py-3 text-slate-700">{row.owner_label || 'Sin responsable'}</td>
+                                <td className="px-4 py-3 text-slate-700">{formatExecutiveGlobalAlertSlaHours(Number(row.overdue_hours || 0))}</td>
+                              </tr>
+                            ))}
+                            {selectedExecutiveGlobalAlertEscalations.length === 0 && (
+                              <tr>
+                                <td colSpan={5} className="px-4 py-4 text-center text-sm text-slate-500">
+                                  La alerta todavía no registra escalaciones SLA visibles.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
                       <div className="mt-4 overflow-x-auto rounded-xl border border-purple-200 bg-white">
                         <table className="min-w-full divide-y divide-slate-200 text-sm">
                           <thead className="bg-purple-50">
@@ -14859,6 +15032,9 @@ export const Reports: React.FC = () => {
                                   : 'sin responsable crítico visible'}.
                               </p>
                               <p className="mt-5 text-lg text-slate-500">{executiveGlobalAlertSlaEscalationData.summaryLine}</p>
+                              <p className="mt-5 text-lg text-slate-500">
+                                Reescalamientos visibles: {executiveGlobalAlertSlaEscalationData.reescalatedCount}. Con cambio de responsable: {executiveGlobalAlertSlaEscalationData.ownerChangeCount}.
+                              </p>
                               <p className="mt-5 text-lg text-slate-500">{executiveGlobalAlertExportLinkSummary}</p>
                             </div>
 
@@ -14921,6 +15097,19 @@ export const Reports: React.FC = () => {
                               <div className="mt-3 text-3xl font-bold text-slate-900">
                                 {executiveGlobalAlertSlaEscalationData.topOwner?.owner || '-'}
                               </div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-amber-700">Reescalamientos</div>
+                              <div className="mt-3 text-3xl font-bold text-amber-800">{executiveGlobalAlertSlaEscalationData.reescalatedCount}</div>
+                              <div className="mt-2 text-sm text-amber-700">Etapas que ya se elevaron más de una vez</div>
+                            </div>
+                            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-amber-700">Cambios de responsable</div>
+                              <div className="mt-3 text-3xl font-bold text-amber-800">{executiveGlobalAlertSlaEscalationData.ownerChangeCount}</div>
+                              <div className="mt-2 text-sm text-amber-700">Reescalamientos con más de un dueño visible</div>
                             </div>
                           </div>
                         </div>
