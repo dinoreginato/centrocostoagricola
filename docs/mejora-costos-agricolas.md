@@ -320,7 +320,24 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - evitar que una temporada se presente como definitiva cuando el dato aun esta incompleto
   - resumir en un solo semaforo la calidad real del costo y del margen visible
 
+## Comparacion Entre Empresas Del Cierre Total
+- `Reportes` ahora compara la misma temporada entre la empresa activa y otra empresa seleccionada.
+- La comparacion ejecutiva ya contrasta:
+  - cierre total del dato
+  - cierre economico
+  - trazabilidad de costo
+  - soporte oficial
+  - bloqueos visibles
+  - estado para comite
+- Esta misma lectura ya se refleja en:
+  - pantalla ejecutiva
+  - exportacion Excel
+  - exportacion PDF
+- Objetivo:
+  - evitar comparar gasto o margen entre empresas con distinta calidad de dato
+  - mostrar que empresa esta mas lista para presentacion ejecutiva y donde estan las brechas principales
+
 ## Siguiente Paso Recomendado
-- Incorporar historial de avance por empresa para comparar calidad del dato entre empresas.
-- Crear una lectura comparativa entre empresas para ver cual presenta mejor cierre total del dato.
+- Incorporar historial de avance por empresa para ver si una empresa mejora o empeora su cierre total a traves de varias temporadas.
 - Agregar bloqueo operativo o confirmacion reforzada antes de exportar una temporada marcada como `No listo para comite`.
+- Llevar la comparacion entre empresas a una vista historica por temporada para comite.

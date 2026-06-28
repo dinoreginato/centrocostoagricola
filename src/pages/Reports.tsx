@@ -239,6 +239,12 @@ const getExecutiveSortMetric = (row: any, sortBy: ExecutiveSortKey) => {
   }
 };
 
+const formatExecutiveCompareMetric = (value: number, format: 'percent' | 'number') => (
+  format === 'percent'
+    ? `${Number(value || 0).toFixed(1)}%`
+    : Number(value || 0).toLocaleString('es-CL')
+);
+
 const sortExecutiveRows = <T extends Record<string, any>>(rows: T[], sortBy: ExecutiveSortKey) => {
   return rows.slice().sort((a, b) => {
     const primary = getExecutiveSortMetric(b, sortBy) - getExecutiveSortMetric(a, sortBy);
@@ -603,9 +609,19 @@ export const Reports: React.FC = () => {
     let cancelled = false;
     void (async () => {
       try {
-        const raw = await loadReportsRawData({ companyId: executiveCompareCompanyId });
+        const [raw, marginRows, productionRecords, auditSummary] = await Promise.all([
+          loadReportsRawData({ companyId: executiveCompareCompanyId }),
+          loadAgriculturalMarginRows({ companyId: executiveCompareCompanyId }),
+          loadProductionRecords({ companyId: executiveCompareCompanyId }),
+          loadAgriculturalCostAuditSummary({ companyId: executiveCompareCompanyId, season: selectedSeason })
+        ]);
         if (!cancelled) {
-          setExecutiveCompareCompanyRaw(raw);
+          setExecutiveCompareCompanyRaw({
+            ...raw,
+            marginRows: marginRows || [],
+            productionRecords: productionRecords || [],
+            auditSummary: auditSummary || []
+          });
         }
       } catch {
         if (!cancelled) {
@@ -617,7 +633,7 @@ export const Reports: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [executiveCompareCompanyId]);
+  }, [executiveCompareCompanyId, selectedSeason]);
 
   const presentationMaxSlide = activeTab === 'executive' ? 9 : activeTab === 'general' ? 3 : 1;
 
@@ -1594,18 +1610,24 @@ export const Reports: React.FC = () => {
     };
   }, [productionCoverageRows]);
 
-  const buildEconomicClosureSummary = useCallback((season: string) => {
+  const buildEconomicClosureSummaryFromSources = useCallback((params: {
+    season: string;
+    fields: any[];
+    marginRows: AgriculturalMarginRow[];
+    productionRecords: ProductionRecord[];
+  }) => {
+    const { season, fields, marginRows, productionRecords } = params;
     const seasonStartYear = Number(String(season || '').split('-')[0]) || new Date().getFullYear();
     const productionRecordMap = new Map(
-      rawProductionRecords
+      productionRecords
         .filter((row) => Number(row.season_year || 0) === seasonStartYear)
         .map((row) => [String(row.sector_id), row])
     );
-    const visibleRows = rawFields
+    const visibleRows = fields
       .flatMap((field) =>
         (field.sectors || []).map((sector: any) => {
           const record = productionRecordMap.get(String(sector.id));
-          const marginRow = rawMarginRows.find((row) => row.season === season && row.sector_id === sector.id) || null;
+          const marginRow = marginRows.find((row) => row.season === season && row.sector_id === sector.id) || null;
           return {
             fieldId: String(field.id),
             fieldName: String(field.name || '-'),
@@ -1724,7 +1746,16 @@ export const Reports: React.FC = () => {
       topFocusRows,
       conclusion
     };
-  }, [executiveFieldFilter, rawFields, rawMarginRows, rawProductionRecords]);
+  }, [executiveFieldFilter]);
+
+  const buildEconomicClosureSummary = useCallback((season: string) => (
+    buildEconomicClosureSummaryFromSources({
+      season,
+      fields: rawFields,
+      marginRows: rawMarginRows,
+      productionRecords: rawProductionRecords
+    })
+  ), [buildEconomicClosureSummaryFromSources, rawFields, rawMarginRows, rawProductionRecords]);
 
   const executiveEconomicClosureData = useMemo(
     () => buildEconomicClosureSummary(selectedSeason),
@@ -1766,14 +1797,30 @@ export const Reports: React.FC = () => {
     [executiveEconomicClosureHistoryRows]
   );
 
-  const executiveTotalDataClosure = useMemo(() => {
-    const totalAudited = Number(executiveAuditData.totalAudited || 0);
-    const economicPct = Number(executiveEconomicClosureData.closurePct || 0);
-    const traceabilityPct = Number(executiveAuditData.traceabilityPct || 0);
+  const buildTotalDataClosure = useCallback((params: {
+    economicClosureData: {
+      closurePct: number;
+      pendingProductionRows: Array<any>;
+      pendingIncomeRows: Array<any>;
+      costWithoutIncomeRows: Array<any>;
+    };
+    auditMetrics: {
+      totalAudited: number;
+      traceabilityPct: number;
+      officialAmount: number;
+      nonTraceableAmount: number;
+      highReviewPct: number;
+      highReviewCount: number;
+    };
+  }) => {
+    const { economicClosureData, auditMetrics } = params;
+    const totalAudited = Number(auditMetrics.totalAudited || 0);
+    const economicPct = Number(economicClosureData.closurePct || 0);
+    const traceabilityPct = Number(auditMetrics.traceabilityPct || 0);
     const officialSupportPct = totalAudited > 0
-      ? (Number(executiveAuditData.officialAmount || 0) / totalAudited) * 100
+      ? (Number(auditMetrics.officialAmount || 0) / totalAudited) * 100
       : 0;
-    const reviewCleanPct = Math.max(0, 100 - Number(executiveAuditData.highReviewPct || 0));
+    const reviewCleanPct = Math.max(0, 100 - Number(auditMetrics.highReviewPct || 0));
     const totalClosurePct =
       economicPct * 0.45 +
       traceabilityPct * 0.3 +
@@ -1781,20 +1828,20 @@ export const Reports: React.FC = () => {
       reviewCleanPct * 0.1;
 
     const blockers = [
-      executiveEconomicClosureData.pendingProductionRows.length > 0
-        ? `${executiveEconomicClosureData.pendingProductionRows.length} sectores con ingreso sin producción formal`
+      economicClosureData.pendingProductionRows.length > 0
+        ? `${economicClosureData.pendingProductionRows.length} sectores con ingreso sin producción formal`
         : null,
-      executiveEconomicClosureData.pendingIncomeRows.length > 0
-        ? `${executiveEconomicClosureData.pendingIncomeRows.length} sectores con producción formal sin ingreso`
+      economicClosureData.pendingIncomeRows.length > 0
+        ? `${economicClosureData.pendingIncomeRows.length} sectores con producción formal sin ingreso`
         : null,
-      executiveEconomicClosureData.costWithoutIncomeRows.length > 0
-        ? `${executiveEconomicClosureData.costWithoutIncomeRows.length} sectores con costo sin cierre comercial`
+      economicClosureData.costWithoutIncomeRows.length > 0
+        ? `${economicClosureData.costWithoutIncomeRows.length} sectores con costo sin cierre comercial`
         : null,
-      executiveAuditData.nonTraceableAmount > 0
-        ? `${formatCLP(executiveAuditData.nonTraceableAmount)} aún sin trazabilidad completa`
+      auditMetrics.nonTraceableAmount > 0
+        ? `${formatCLP(auditMetrics.nonTraceableAmount)} aún sin trazabilidad completa`
         : null,
-      executiveAuditData.highReviewCount > 0
-        ? `${executiveAuditData.highReviewCount} focos de revisión alta siguen abiertos`
+      auditMetrics.highReviewCount > 0
+        ? `${auditMetrics.highReviewCount} focos de revisión alta siguen abiertos`
         : null
     ].filter(Boolean) as string[];
 
@@ -1803,7 +1850,7 @@ export const Reports: React.FC = () => {
         totalClosurePct < 55 ||
         economicPct < 50 ||
         traceabilityPct < 60 ||
-        executiveAuditData.highReviewPct > 20
+        auditMetrics.highReviewPct > 20
       ) {
         return {
           badge: 'bg-red-100 text-red-700 border-red-200',
@@ -1865,7 +1912,21 @@ export const Reports: React.FC = () => {
       findings,
       conclusion
     };
-  }, [executiveAuditData, executiveEconomicClosureData]);
+  }, []);
+
+  const executiveTotalDataClosure = useMemo(() => {
+    return buildTotalDataClosure({
+      economicClosureData: executiveEconomicClosureData,
+      auditMetrics: {
+        totalAudited: Number(executiveAuditData.totalAudited || 0),
+        traceabilityPct: Number(executiveAuditData.traceabilityPct || 0),
+        officialAmount: Number(executiveAuditData.officialAmount || 0),
+        nonTraceableAmount: Number(executiveAuditData.nonTraceableAmount || 0),
+        highReviewPct: Number(executiveAuditData.highReviewPct || 0),
+        highReviewCount: Number(executiveAuditData.highReviewCount || 0)
+      }
+    });
+  }, [buildTotalDataClosure, executiveAuditData, executiveEconomicClosureData]);
 
   const executiveCategoryComparisonRows = useMemo(() => {
     const currentMap = new Map(executiveViewData.categoryRows.map((row) => [row.category, row.total]));
@@ -1961,9 +2022,129 @@ export const Reports: React.FC = () => {
       totalHectares,
       averageCostPerHa: totalHectares > 0 ? aggregated.totalSeasonCost / totalHectares : 0,
       averageMonthlyCost: aggregated.averageMonthlyCost,
+      peakMonth: aggregated.peakMonth,
       topField: aggregated.topField
     };
   }, [executiveCompareCompanyRaw, executiveFuelPrices.diesel, executiveFuelPrices.gasoline, executiveSeasonMonths]);
+
+  const executiveCompareCompanyEconomicClosure = useMemo(() => {
+    if (!executiveCompareCompanyRaw) return null;
+    return buildEconomicClosureSummaryFromSources({
+      season: selectedSeason,
+      fields: executiveCompareCompanyRaw.fields || [],
+      marginRows: executiveCompareCompanyRaw.marginRows || [],
+      productionRecords: executiveCompareCompanyRaw.productionRecords || []
+    });
+  }, [buildEconomicClosureSummaryFromSources, executiveCompareCompanyRaw, selectedSeason]);
+
+  const executiveCompareCompanyAuditMetrics = useMemo(() => {
+    if (!executiveCompareCompanyRaw) return null;
+    const summaryRows = (executiveCompareCompanyRaw.auditSummary || []) as AgriculturalCostAuditSummaryRow[];
+    const totalAudited = summaryRows.reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
+    const traceableAmount = summaryRows.reduce((sum, row) => sum + Number(row.traceable_amount || 0), 0);
+    const nonTraceableAmount = summaryRows.reduce((sum, row) => sum + Number(row.non_traceable_amount || 0), 0);
+    const officialAmount = summaryRows
+      .filter((row) => row.cost_role === 'oficial')
+      .reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
+    const highReviewAmount = summaryRows
+      .filter((row) => row.review_priority === 'alta')
+      .reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
+    const highReviewCount = summaryRows
+      .filter((row) => row.review_priority === 'alta')
+      .reduce((sum, row) => sum + Number(row.movement_count || 0), 0);
+
+    return {
+      totalAudited,
+      traceabilityPct: totalAudited > 0 ? (traceableAmount / totalAudited) * 100 : 0,
+      officialAmount,
+      nonTraceableAmount,
+      highReviewPct: totalAudited > 0 ? (highReviewAmount / totalAudited) * 100 : 0,
+      highReviewCount
+    };
+  }, [executiveCompareCompanyRaw]);
+
+  const executiveCompareCompanyTotalClosure = useMemo(() => {
+    if (!executiveCompareCompanyEconomicClosure || !executiveCompareCompanyAuditMetrics) return null;
+    return buildTotalDataClosure({
+      economicClosureData: executiveCompareCompanyEconomicClosure,
+      auditMetrics: executiveCompareCompanyAuditMetrics
+    });
+  }, [buildTotalDataClosure, executiveCompareCompanyAuditMetrics, executiveCompareCompanyEconomicClosure]);
+
+  const executiveCompareCompanyTotalClosureRows = useMemo(() => {
+    if (!executiveCompareCompanyTotalClosure) return [];
+    return [
+      {
+        metric: 'Cierre total',
+        currentValue: executiveTotalDataClosure.totalClosurePct,
+        compareValue: executiveCompareCompanyTotalClosure.totalClosurePct,
+        format: 'percent' as const
+      },
+      {
+        metric: 'Cierre económico',
+        currentValue: executiveTotalDataClosure.economicPct,
+        compareValue: executiveCompareCompanyTotalClosure.economicPct,
+        format: 'percent' as const
+      },
+      {
+        metric: 'Trazabilidad costo',
+        currentValue: executiveTotalDataClosure.traceabilityPct,
+        compareValue: executiveCompareCompanyTotalClosure.traceabilityPct,
+        format: 'percent' as const
+      },
+      {
+        metric: 'Soporte oficial',
+        currentValue: executiveTotalDataClosure.officialSupportPct,
+        compareValue: executiveCompareCompanyTotalClosure.officialSupportPct,
+        format: 'percent' as const
+      },
+      {
+        metric: 'Bloqueos visibles',
+        currentValue: executiveTotalDataClosure.blockers.length,
+        compareValue: executiveCompareCompanyTotalClosure.blockers.length,
+        format: 'number' as const
+      }
+    ].map((row) => ({
+      ...row,
+      gap: row.currentValue - row.compareValue
+    }));
+  }, [executiveCompareCompanyTotalClosure, executiveTotalDataClosure]);
+
+  const executiveCompareCompanyInsights = useMemo(() => {
+    if (!executiveCompareCompanySummary || !executiveCompareCompanyTotalClosure) return null;
+
+    const totalGap = executiveTotalDataClosure.totalClosurePct - executiveCompareCompanyTotalClosure.totalClosurePct;
+    const blockerGap = executiveTotalDataClosure.blockers.length - executiveCompareCompanyTotalClosure.blockers.length;
+    const strongestGap = executiveCompareCompanyTotalClosureRows
+      .slice()
+      .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap))[0] || null;
+    const leaderName = totalGap >= 0 ? companyName : executiveCompareCompanyName;
+    const lowerBlockerCompanyName = blockerGap <= 0 ? companyName : executiveCompareCompanyName;
+    const blockerNarrative = blockerGap === 0
+      ? 'Ambas empresas muestran la misma cantidad de bloqueos visibles.'
+      : `${lowerBlockerCompanyName} opera con ${Math.abs(blockerGap)} bloqueo${Math.abs(blockerGap) === 1 ? '' : 's'} menos en la temporada.`;
+    const summaryLine = Math.abs(totalGap) < 0.05
+      ? `Ambas empresas muestran un cierre total prácticamente equivalente para la temporada ${selectedSeason}.`
+      : `${leaderName} lidera el cierre total del dato por ${Math.abs(totalGap).toFixed(1)} puntos para la temporada ${selectedSeason}.`;
+
+    return {
+      totalGap,
+      blockerGap,
+      strongestGap,
+      summaryLine,
+      blockerNarrative,
+      currentBlockers: executiveTotalDataClosure.blockers,
+      compareBlockers: executiveCompareCompanyTotalClosure.blockers
+    };
+  }, [
+    companyName,
+    executiveCompareCompanyName,
+    executiveCompareCompanySummary,
+    executiveCompareCompanyTotalClosure,
+    executiveCompareCompanyTotalClosureRows,
+    executiveTotalDataClosure,
+    selectedSeason
+  ]);
 
   const executiveHistoricalSeasonRows = useMemo(() => {
     return availablePreviousExecutiveSeasons.map((season) => {
@@ -2055,6 +2236,9 @@ export const Reports: React.FC = () => {
         { Indicador: 'Cierre total dato %', Valor: Number(executiveTotalDataClosure.totalClosurePct.toFixed(2)) },
         { Indicador: 'Soporte oficial %', Valor: Number(executiveTotalDataClosure.officialSupportPct.toFixed(2)) },
         { Indicador: 'Estado comité', Valor: executiveTotalDataClosure.readiness.title },
+        { Indicador: 'Empresa comparada', Valor: executiveCompareCompanyName || 'Sin comparar' },
+        { Indicador: 'Cierre total empresa comparada', Valor: executiveCompareCompanyTotalClosure ? Number(executiveCompareCompanyTotalClosure.totalClosurePct.toFixed(2)) : 'Sin datos' },
+        { Indicador: 'Estado comité comparado', Valor: executiveCompareCompanyTotalClosure?.readiness.title || 'Sin datos' },
         { Indicador: 'Mejor cierre histórico', Valor: bestClosureHistoryRow ? `${bestClosureHistoryRow.season} (${bestClosureHistoryRow.closurePct.toFixed(2)}%)` : 'Sin datos' },
         { Indicador: 'Conclusión ejecutiva', Valor: executiveInsights.conclusion }
       ];
@@ -2230,6 +2414,46 @@ export const Reports: React.FC = () => {
         Ranking: index + 1,
         Bloqueo: item
       }));
+      const compareCompanyRows = executiveCompareCompanyTotalClosure
+        ? [
+            {
+              Indicador: 'Cierre total',
+              [companyName]: Number(executiveTotalDataClosure.totalClosurePct.toFixed(2)),
+              [executiveCompareCompanyName]: Number(executiveCompareCompanyTotalClosure.totalClosurePct.toFixed(2)),
+              Brecha: Number((executiveTotalDataClosure.totalClosurePct - executiveCompareCompanyTotalClosure.totalClosurePct).toFixed(2))
+            },
+            {
+              Indicador: 'Cierre económico',
+              [companyName]: Number(executiveTotalDataClosure.economicPct.toFixed(2)),
+              [executiveCompareCompanyName]: Number(executiveCompareCompanyTotalClosure.economicPct.toFixed(2)),
+              Brecha: Number((executiveTotalDataClosure.economicPct - executiveCompareCompanyTotalClosure.economicPct).toFixed(2))
+            },
+            {
+              Indicador: 'Trazabilidad costo',
+              [companyName]: Number(executiveTotalDataClosure.traceabilityPct.toFixed(2)),
+              [executiveCompareCompanyName]: Number(executiveCompareCompanyTotalClosure.traceabilityPct.toFixed(2)),
+              Brecha: Number((executiveTotalDataClosure.traceabilityPct - executiveCompareCompanyTotalClosure.traceabilityPct).toFixed(2))
+            },
+            {
+              Indicador: 'Soporte oficial',
+              [companyName]: Number(executiveTotalDataClosure.officialSupportPct.toFixed(2)),
+              [executiveCompareCompanyName]: Number(executiveCompareCompanyTotalClosure.officialSupportPct.toFixed(2)),
+              Brecha: Number((executiveTotalDataClosure.officialSupportPct - executiveCompareCompanyTotalClosure.officialSupportPct).toFixed(2))
+            },
+            {
+              Indicador: 'Bloqueos visibles',
+              [companyName]: executiveTotalDataClosure.blockers.length,
+              [executiveCompareCompanyName]: executiveCompareCompanyTotalClosure.blockers.length,
+              Brecha: executiveTotalDataClosure.blockers.length - executiveCompareCompanyTotalClosure.blockers.length
+            },
+            {
+              Indicador: 'Estado comité',
+              [companyName]: executiveTotalDataClosure.readiness.title,
+              [executiveCompareCompanyName]: executiveCompareCompanyTotalClosure.readiness.title,
+              Brecha: '-'
+            }
+          ]
+        : [];
 
       await exportWorkbookToXlsx({
         filename: `Reporte_Ejecutivo_${companySlug}_${selectedSeason}${executiveFieldFilter !== 'all' ? `_campo_${executiveFieldFilter}` : ''}.xlsx`,
@@ -2244,6 +2468,7 @@ export const Reports: React.FC = () => {
           { name: 'Alertas', rows: alertRows },
           { name: 'Cierre Total', rows: totalDataClosureRows },
           ...(totalDataBlockerRows.length > 0 ? [{ name: 'Bloqueos Dato', rows: totalDataBlockerRows }] : []),
+          ...(compareCompanyRows.length > 0 ? [{ name: 'Comparacion Empresas', rows: compareCompanyRows }] : []),
           ...(historicalClosureRows.length > 0 ? [{ name: 'Historial Cierre', rows: historicalClosureRows }] : []),
           ...(economicClosureRows.length > 0 ? [{ name: 'Cierre Economico', rows: economicClosureRows }] : []),
           ...(economicFocusRows.length > 0 ? [{ name: 'Focos Economicos', rows: economicFocusRows }] : []),
@@ -3245,6 +3470,35 @@ export const Reports: React.FC = () => {
             body: executiveTotalDataClosure.blockers.map((row) => [row]),
             theme: 'grid',
             headStyles: { fillColor: [185, 28, 28] },
+            styles: { fontSize: 8 }
+          });
+
+          yPos = (doc as any).lastAutoTable.finalY + 8;
+        }
+
+        if (executiveCompareCompanyTotalClosure) {
+          if (yPos > 150) {
+            doc.addPage();
+            yPos = 20;
+          }
+
+          autoTable(doc, {
+            startY: yPos,
+            head: [['Comparacion entre empresas', 'Actual', 'Comparada', 'Brecha actual - comparada']],
+            body: [
+              ...executiveCompareCompanyTotalClosureRows.map((row) => [
+                row.metric,
+                formatExecutiveCompareMetric(row.currentValue, row.format),
+                formatExecutiveCompareMetric(row.compareValue, row.format),
+                row.format === 'percent'
+                  ? `${row.gap.toFixed(1)} pp`
+                  : row.gap.toLocaleString('es-CL')
+              ]),
+              ['Estado comité', executiveTotalDataClosure.readiness.title, executiveCompareCompanyTotalClosure.readiness.title, '-'],
+              ['Conclusión', companyName, executiveCompareCompanyName, executiveCompareCompanyInsights?.summaryLine || '-']
+            ],
+            theme: 'grid',
+            headStyles: { fillColor: [88, 28, 135] },
             styles: { fontSize: 8 }
           });
 
@@ -5351,30 +5605,148 @@ export const Reports: React.FC = () => {
                 </div>
               </div>
 
-              {executiveCompareCompanySummary && (
+              {executiveCompareCompanySummary && executiveCompareCompanyTotalClosure && executiveCompareCompanyInsights && (
                 <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
                   <div className="flex items-start justify-between gap-4 mb-4">
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900">Comparación entre empresas</h3>
-                      <p className="text-sm text-gray-500">Comparativa de la misma temporada entre la empresa activa y la empresa seleccionada.</p>
+                      <p className="text-sm text-gray-500">Contrasta costo visible con cierre total del dato para no comparar empresas con distinta calidad de información.</p>
                     </div>
                     <div className="text-sm text-gray-500">{selectedSeason}</div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="rounded-xl border border-purple-200 bg-purple-50 p-4">
-                      <div className="text-xs uppercase tracking-wide text-purple-700">{companyName}</div>
-                      <div className="mt-3 space-y-2 text-sm">
-                        <div className="flex items-center justify-between"><span>Gasto total</span><span className="font-semibold">{formatCLP(executiveViewData.kpis.totalSeasonCost)}</span></div>
-                        <div className="flex items-center justify-between"><span>Costo / Ha</span><span className="font-semibold">{formatCLP(executiveViewData.kpis.averageCostPerHa || 0)}</span></div>
-                        <div className="flex items-center justify-between"><span>Promedio mensual</span><span className="font-semibold">{formatCLP(executiveViewData.kpis.averageMonthlyCost)}</span></div>
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <div className="rounded-xl border border-purple-200 bg-purple-50 p-5">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-xs uppercase tracking-wide text-purple-700">{companyName}</div>
+                        <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${executiveTotalDataClosure.readiness.badge}`}>
+                          <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveTotalDataClosure.readiness.dot}`} />
+                          {executiveTotalDataClosure.readiness.title}
+                        </span>
+                      </div>
+                      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                        <div className="rounded-xl bg-white/70 p-3">
+                          <div className="text-xs uppercase tracking-wide text-slate-500">Cierre total</div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveTotalDataClosure.totalClosurePct.toFixed(1)}%</div>
+                        </div>
+                        <div className="rounded-xl bg-white/70 p-3">
+                          <div className="text-xs uppercase tracking-wide text-slate-500">Bloqueos visibles</div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveTotalDataClosure.blockers.length}</div>
+                        </div>
+                      </div>
+                      <div className="mt-4 space-y-2 text-sm">
+                        <div className="flex items-center justify-between gap-4"><span>Gasto total</span><span className="font-semibold">{formatCLP(executiveViewData.kpis.totalSeasonCost)}</span></div>
+                        <div className="flex items-center justify-between gap-4"><span>Costo / Ha</span><span className="font-semibold">{formatCLP(executiveViewData.kpis.averageCostPerHa || 0)}</span></div>
+                        <div className="flex items-center justify-between gap-4"><span>Promedio mensual</span><span className="font-semibold">{formatCLP(executiveViewData.kpis.averageMonthlyCost)}</span></div>
+                        <div className="flex items-center justify-between gap-4"><span>Trazabilidad</span><span className="font-semibold">{executiveTotalDataClosure.traceabilityPct.toFixed(1)}%</span></div>
+                        <div className="flex items-center justify-between gap-4"><span>Soporte oficial</span><span className="font-semibold">{executiveTotalDataClosure.officialSupportPct.toFixed(1)}%</span></div>
                       </div>
                     </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="text-xs uppercase tracking-wide text-slate-700">{executiveCompareCompanyName}</div>
-                      <div className="mt-3 space-y-2 text-sm">
-                        <div className="flex items-center justify-between"><span>Gasto total</span><span className="font-semibold">{formatCLP(executiveCompareCompanySummary.totalSeasonCost)}</span></div>
-                        <div className="flex items-center justify-between"><span>Costo / Ha</span><span className="font-semibold">{formatCLP(executiveCompareCompanySummary.averageCostPerHa || 0)}</span></div>
-                        <div className="flex items-center justify-between"><span>Promedio mensual</span><span className="font-semibold">{formatCLP(executiveCompareCompanySummary.averageMonthlyCost)}</span></div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-xs uppercase tracking-wide text-slate-700">{executiveCompareCompanyName}</div>
+                        <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${executiveCompareCompanyTotalClosure.readiness.badge}`}>
+                          <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveCompareCompanyTotalClosure.readiness.dot}`} />
+                          {executiveCompareCompanyTotalClosure.readiness.title}
+                        </span>
+                      </div>
+                      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                        <div className="rounded-xl bg-white/80 p-3">
+                          <div className="text-xs uppercase tracking-wide text-slate-500">Cierre total</div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveCompareCompanyTotalClosure.totalClosurePct.toFixed(1)}%</div>
+                        </div>
+                        <div className="rounded-xl bg-white/80 p-3">
+                          <div className="text-xs uppercase tracking-wide text-slate-500">Bloqueos visibles</div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveCompareCompanyTotalClosure.blockers.length}</div>
+                        </div>
+                      </div>
+                      <div className="mt-4 space-y-2 text-sm">
+                        <div className="flex items-center justify-between gap-4"><span>Gasto total</span><span className="font-semibold">{formatCLP(executiveCompareCompanySummary.totalSeasonCost)}</span></div>
+                        <div className="flex items-center justify-between gap-4"><span>Costo / Ha</span><span className="font-semibold">{formatCLP(executiveCompareCompanySummary.averageCostPerHa || 0)}</span></div>
+                        <div className="flex items-center justify-between gap-4"><span>Promedio mensual</span><span className="font-semibold">{formatCLP(executiveCompareCompanySummary.averageMonthlyCost)}</span></div>
+                        <div className="flex items-center justify-between gap-4"><span>Trazabilidad</span><span className="font-semibold">{executiveCompareCompanyTotalClosure.traceabilityPct.toFixed(1)}%</span></div>
+                        <div className="flex items-center justify-between gap-4"><span>Soporte oficial</span><span className="font-semibold">{executiveCompareCompanyTotalClosure.officialSupportPct.toFixed(1)}%</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-6 grid grid-cols-1 xl:grid-cols-[1.1fr,0.9fr] gap-6">
+                    <div className="rounded-xl border border-slate-200 p-4">
+                      <div className="text-sm font-medium text-slate-900">Brechas del cierre total</div>
+                      <div className="mt-4 space-y-3">
+                        {executiveCompareCompanyTotalClosureRows.map((row) => {
+                          const isBlockerMetric = row.metric === 'Bloqueos visibles';
+                          const currentBetter = isBlockerMetric ? row.gap <= 0 : row.gap >= 0;
+                          const gapClass = Math.abs(row.gap) < 0.05
+                            ? 'text-slate-600'
+                            : currentBetter
+                              ? 'text-emerald-600'
+                              : 'text-red-600';
+                          return (
+                            <div key={row.metric} className="rounded-xl bg-slate-50 p-4">
+                              <div className="flex items-start justify-between gap-4">
+                                <div>
+                                  <div className="font-medium text-slate-900">{row.metric}</div>
+                                  <div className="mt-1 text-sm text-slate-500">{companyName}: {formatExecutiveCompareMetric(row.currentValue, row.format)}</div>
+                                  <div className="text-sm text-slate-500">{executiveCompareCompanyName}: {formatExecutiveCompareMetric(row.compareValue, row.format)}</div>
+                                </div>
+                                <div className={`text-right font-semibold ${gapClass}`}>
+                                  {row.format === 'percent'
+                                    ? `${row.gap.toFixed(1)} pp`
+                                    : row.gap.toLocaleString('es-CL')}
+                                  <div className="text-xs text-slate-500">Brecha actual - comparada</div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="space-y-4">
+                      <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+                        <div className="font-medium text-slate-900">Lectura ejecutiva</div>
+                        <p className="mt-2">{executiveCompareCompanyInsights.summaryLine}</p>
+                        <p className="mt-2">{executiveCompareCompanyInsights.blockerNarrative}</p>
+                        <p className="mt-2">
+                          Mayor brecha actual: {executiveCompareCompanyInsights.strongestGap
+                            ? `${executiveCompareCompanyInsights.strongestGap.metric} (${executiveCompareCompanyInsights.strongestGap.format === 'percent'
+                              ? `${Math.abs(executiveCompareCompanyInsights.strongestGap.gap).toFixed(1)} pp`
+                              : Math.abs(executiveCompareCompanyInsights.strongestGap.gap).toLocaleString('es-CL')
+                            })`
+                            : 'Sin brechas relevantes visibles'}.
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 p-4">
+                        <div className="text-sm font-medium text-slate-900">Bloqueos visibles</div>
+                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <div className="font-medium text-slate-700">{companyName}</div>
+                            <div className="mt-2 space-y-2">
+                              {executiveCompareCompanyInsights.currentBlockers.length > 0
+                                ? executiveCompareCompanyInsights.currentBlockers.map((blocker) => (
+                                    <div key={blocker} className="rounded-lg bg-purple-50 px-3 py-2 text-slate-700">{blocker}</div>
+                                  ))
+                                : <div className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-700">Sin bloqueos visibles.</div>}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="font-medium text-slate-700">{executiveCompareCompanyName}</div>
+                            <div className="mt-2 space-y-2">
+                              {executiveCompareCompanyInsights.compareBlockers.length > 0
+                                ? executiveCompareCompanyInsights.compareBlockers.map((blocker) => (
+                                    <div key={blocker} className="rounded-lg bg-slate-100 px-3 py-2 text-slate-700">{blocker}</div>
+                                  ))
+                                : <div className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-700">Sin bloqueos visibles.</div>}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                        <div className="font-medium text-slate-900">Contexto operativo comparado</div>
+                        <div className="mt-2 space-y-2">
+                          <div className="flex items-center justify-between gap-4"><span>Campo con mayor presión actual</span><span className="font-medium text-slate-900">{executiveViewData.kpis.topField?.fieldName || '-'}</span></div>
+                          <div className="flex items-center justify-between gap-4"><span>Campo con mayor presión comparado</span><span className="font-medium text-slate-900">{executiveCompareCompanySummary.topField?.fieldName || '-'}</span></div>
+                          <div className="flex items-center justify-between gap-4"><span>Mes más alto actual</span><span className="font-medium text-slate-900">{executiveViewData.kpis.peakMonth ? `${executiveViewData.kpis.peakMonth.shortLabel} · ${formatCLP(executiveViewData.kpis.peakMonth.total)}` : '-'}</span></div>
+                          <div className="flex items-center justify-between gap-4"><span>Mes más alto comparado</span><span className="font-medium text-slate-900">{executiveCompareCompanySummary.peakMonth ? `${executiveCompareCompanySummary.peakMonth.shortLabel} · ${formatCLP(executiveCompareCompanySummary.peakMonth.total)}` : '-'}</span></div>
+                        </div>
                       </div>
                     </div>
                   </div>
