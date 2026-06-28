@@ -296,12 +296,39 @@ const buildExecutiveExportWarningAnalytics = (
   const circulationReasonSummary = Array.from(
     rows.reduce((map, row) => {
       const reason = row.circulation_reason || 'sin_motivo';
-      map.set(reason, (map.get(reason) || 0) + 1);
+      const current = map.get(reason) || {
+        reason,
+        count: 0,
+        latestCreatedAt: row.created_at,
+        formats: new Set<string>(),
+        recipients: new Set<string>()
+      };
+      current.count += 1;
+      current.latestCreatedAt = current.latestCreatedAt > row.created_at ? current.latestCreatedAt : row.created_at;
+      current.formats.add(row.export_format.toUpperCase());
+      current.recipients.add(row.circulation_recipient?.trim() || 'Sin destinatario');
+      map.set(reason, current);
       return map;
-    }, new Map<string, number>())
+    }, new Map<string, {
+      reason: string;
+      count: number;
+      latestCreatedAt: string;
+      formats: Set<string>;
+      recipients: Set<string>;
+    }>())
   )
-    .map(([reason, count]) => ({ reason, count }))
-    .sort((a, b) => b.count - a.count);
+    .map(([, value]) => ({
+      reason: value.reason,
+      count: value.count,
+      latestCreatedAt: value.latestCreatedAt,
+      formats: Array.from(value.formats).sort().join(', '),
+      recipients: Array.from(value.recipients).sort(),
+      recipientCount: value.recipients.size
+    }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return b.latestCreatedAt.localeCompare(a.latestCreatedAt);
+    });
   const recipientSummary = Array.from(
     rows.reduce((map, row) => {
       const recipient = row.circulation_recipient?.trim() || 'Sin destinatario';
@@ -3512,6 +3539,14 @@ export const Reports: React.FC = () => {
         Formatos: row.formats || '-',
         'Última circulación': new Date(row.latestCreatedAt).toLocaleString('es-CL')
       }));
+      const exportWarningReasonRows = executiveExportWarningFilteredData.circulationReasonSummary.map((row) => ({
+        Motivo: formatExecutiveExportCirculationReason(row.reason),
+        Eventos: row.count,
+        Formatos: row.formats || '-',
+        Destinatarios: row.recipients.join(', ') || 'Sin destinatarios',
+        'Cantidad destinatarios': row.recipientCount,
+        'Última circulación': new Date(row.latestCreatedAt).toLocaleString('es-CL')
+      }));
       const trendWarningRows = executiveTrendWarning ? [
         { Campo: 'Estado', Valor: executiveTrendWarning.shortLabel },
         { Campo: 'Detalle', Valor: executiveTrendWarning.detail },
@@ -3631,6 +3666,7 @@ export const Reports: React.FC = () => {
           ...(compareCompanyHistoryRows.length > 0 ? [{ name: 'Historial Empresas', rows: compareCompanyHistoryRows }] : []),
           ...(trendCompanyRows.length > 0 ? [{ name: 'Tendencia Empresas', rows: trendCompanyRows }] : []),
           ...(trendWarningRows.length > 0 ? [{ name: 'Alerta Tendencia', rows: trendWarningRows }] : []),
+          ...(exportWarningReasonRows.length > 0 ? [{ name: 'Motivos Bitacora', rows: exportWarningReasonRows }] : []),
           ...(exportWarningRecipientRows.length > 0 ? [{ name: 'Destinatarios Bitacora', rows: exportWarningRecipientRows }] : []),
           ...(exportWarningHistoryRows.length > 0 ? [{ name: 'Bitacora Exportaciones', rows: exportWarningHistoryRows }] : []),
           ...(historicalClosureRows.length > 0 ? [{ name: 'Historial Cierre', rows: historicalClosureRows }] : []),
@@ -4858,6 +4894,30 @@ export const Reports: React.FC = () => {
               ]),
               theme: 'grid',
               headStyles: { fillColor: [83, 109, 254] },
+              styles: { fontSize: 8 }
+            });
+
+            yPos = (doc as any).lastAutoTable.finalY + 8;
+          }
+
+          if (executiveExportWarningFilteredData.circulationReasonSummary.length > 0) {
+            if (yPos > 150) {
+              doc.addPage();
+              yPos = 20;
+            }
+
+            autoTable(doc, {
+              startY: yPos,
+              head: [['Motivo', 'Eventos', 'Formatos', 'Destinatarios', 'Última circulación']],
+              body: executiveExportWarningFilteredData.circulationReasonSummary.slice(0, 6).map((row) => [
+                formatExecutiveExportCirculationReason(row.reason),
+                String(row.count),
+                row.formats || '-',
+                row.recipients.slice(0, 2).join(', ') || 'Sin destinatarios',
+                new Date(row.latestCreatedAt).toLocaleDateString('es-CL')
+              ]),
+              theme: 'grid',
+              headStyles: { fillColor: [124, 58, 237] },
               styles: { fontSize: 8 }
             });
 
@@ -7807,7 +7867,15 @@ export const Reports: React.FC = () => {
                         <tbody className="divide-y divide-slate-200 bg-white">
                           {executiveExportWarningFilteredData.circulationReasonSummary.slice(0, 6).map((row) => (
                             <tr key={row.reason}>
-                              <td className="px-4 py-3 text-slate-900">{formatExecutiveExportCirculationReason(row.reason)}</td>
+                              <td className="px-4 py-3 text-slate-900">
+                                <div className="font-medium">{formatExecutiveExportCirculationReason(row.reason)}</div>
+                                <div className="text-xs text-slate-500">
+                                  {row.formats || 'Sin formato'} · {row.recipientCount} destinatario{row.recipientCount === 1 ? '' : 's'} · {new Date(row.latestCreatedAt).toLocaleDateString('es-CL')}
+                                </div>
+                                <div className="text-xs text-slate-500">
+                                  {(row.recipients || []).slice(0, 2).join(', ') || 'Sin destinatarios'}
+                                </div>
+                              </td>
                               <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
                             </tr>
                           ))}

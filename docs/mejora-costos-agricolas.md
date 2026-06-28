@@ -533,6 +533,22 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - detectar concentracion de reportes advertidos en ciertos actores
   - facilitar auditoria historica de a quien se comparte mas informacion sensible
 
+## Agrupacion Historica Por Motivo
+- La bitacora ahora resume el motivo de circulacion con una lectura mas rica que un simple conteo.
+- La vista expone por motivo:
+  - cantidad de eventos
+  - formatos asociados
+  - destinatarios vinculados
+  - cantidad de destinatarios alcanzados
+  - ultima circulacion visible
+- La lectura se integra en:
+  - vista ejecutiva
+  - PDF ejecutivo de auditoria
+  - Excel con hoja `Motivos Bitacora`
+- Objetivo:
+  - entender para que instancia se comparte mas el reporte bajo advertencia
+  - conectar cada motivo con los actores realmente impactados
+
 ## Siguiente Paso Recomendado
 - Evaluar un ranking multiempresa global cuando existan mas de dos empresas comparables en la misma temporada.
-- Considerar una agrupacion adicional por motivo para medir para que tipo de instancia circula mas el reporte.
+- Considerar un ranking multiempresa global por temporada usando todas las empresas con cierre disponible.
