@@ -575,6 +575,25 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - mostrar la foto completa del universo empresarial disponible para comite
   - defender con una regla explicita que empresa llega mejor parada a la temporada visible
 
+## Historial Global Y Alertas De Posicion
+- El ranking multiempresa ahora tambien expone una lectura historica por temporada para ver rotacion del liderazgo entre empresas.
+- La empresa activa se mide contra el cuartil superior del ranking global y genera alerta automatica cuando cae fuera del tramo lider.
+- La lectura se integra en:
+  - vista ejecutiva normal con alerta y tabla historica
+  - fullscreen con slide exclusivo de historial global
+  - Excel con hojas `Historial Ranking Global` y `Alerta Ranking Global`
+  - PDF ejecutivo con bloque historico y recomendacion asociada
+- La lectura historica resume:
+  - empresa lider por temporada
+  - brecha contra el segundo lugar
+  - posicion historica de la empresa activa
+  - temporadas dentro y fuera del top cuartil
+  - liderazgo dominante del universo comparable
+- Objetivo:
+  - detectar si la empresa actual compite en el tramo alto o queda rezagada frente al universo
+  - mostrar si el liderazgo es estable o va rotando entre temporadas
+  - reforzar la narrativa de comite con contexto global y no solo bilateral
+
 ## Siguiente Paso Recomendado
-- Evaluar una evolucion del ranking multiempresa hacia historial consolidado por temporada para ver rotacion de liderazgo entre empresas.
-- Considerar alertas automaticas cuando la empresa activa caiga fuera del cuartil superior del ranking global.
+- Evaluar persistencia historica del ranking global para medir cambios de liderazgo sin recalculo completo en tiempo real.
+- Considerar alertas preventivas cuando una empresa pierda dos temporadas seguidas dentro del top cuartil global.
