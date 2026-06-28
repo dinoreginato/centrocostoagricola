@@ -404,7 +404,24 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - evitar una falsa sensacion de control por una sola temporada puntual
   - advertir cuando la calidad del dato empieza a deteriorarse aunque el semaforo actual aun parezca defendible
 
+## Bitacora De Exportacion Bajo Advertencia
+- `Reportes` ahora registra una bitacora cuando se exporta el reporte ejecutivo bajo advertencia.
+- La bitacora se activa cuando existe al menos una de estas condiciones:
+  - temporada `No listo para comite`
+  - alerta preventiva por tendencia negativa
+- Cada evento guarda:
+  - empresa
+  - temporada
+  - formato exportado (`PDF` o `Excel`)
+  - estado para comite
+  - cierre total
+  - tipos de advertencia
+  - contexto ejecutivo y comparativo disponible
+- Objetivo:
+  - dejar trazabilidad de que un reporte fue exportado pese a advertencias visibles
+  - permitir futuras revisiones o auditorias de circulacion del dato ejecutivo
+
 ## Siguiente Paso Recomendado
-- Considerar registrar un evento o bitacora cada vez que se exporte bajo advertencia.
 - Evaluar una portada o slide final de decision ejecutiva con recomendacion automatica por empresa.
 - Integrar esta alerta con una decision automatica de recomendacion ejecutiva por empresa.
+- Considerar una vista historica de exportaciones bajo advertencia para auditoria interna.

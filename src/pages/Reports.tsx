@@ -13,6 +13,7 @@ import { loadReportsRawData } from '../services/reports';
 import { loadAgriculturalCostAudit, loadAgriculturalCostAuditSummary, type AgriculturalCostAuditRow, type AgriculturalCostAuditSummaryRow } from '../services/costAudit';
 import { loadAgriculturalMarginRows, type AgriculturalMarginRow } from '../services/agriculturalMargin';
 import { loadProductionRecords, upsertProductionRecord, deleteProductionRecord, type ProductionRecord } from '../services/productionRecords';
+import { createExecutiveExportWarningEvent } from '../services/executiveExportWarningEvents';
 import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
 interface ReportData {
@@ -2468,6 +2469,88 @@ export const Reports: React.FC = () => {
     executiveTotalDataClosure.totalClosurePct
   ]);
 
+  const executiveExportWarningContext = useMemo(() => {
+    const warningTypes: string[] = [];
+
+    if (executiveTotalDataClosure.readiness.title === 'No listo para comité') {
+      warningTypes.push('committee_not_ready');
+    }
+
+    if (executiveTrendWarning) {
+      warningTypes.push('trend_deterioration_high_closure');
+    }
+
+    const hasWarning = warningTypes.length > 0;
+    const warningSummary = !hasWarning
+      ? 'Sin advertencias activas para exportación ejecutiva.'
+      : [
+          executiveTotalDataClosure.readiness.title === 'No listo para comité'
+            ? `La temporada sigue en ${executiveTotalDataClosure.readiness.title}.`
+            : null,
+          executiveTrendWarning?.detail || null
+        ].filter(Boolean).join(' ');
+
+    return {
+      hasWarning,
+      warningTypes,
+      warningSummary
+    };
+  }, [executiveTotalDataClosure.readiness.title, executiveTrendWarning]);
+
+  const logExecutiveExportWarningEvent = useCallback(async (format: ExecutiveExportAction) => {
+    if (!selectedCompany?.id || !executiveExportWarningContext.hasWarning) return;
+
+    try {
+      await createExecutiveExportWarningEvent({
+        companyId: selectedCompany.id,
+        season: selectedSeason,
+        exportFormat: format,
+        readinessTitle: executiveTotalDataClosure.readiness.title,
+        totalClosurePct: Number(executiveTotalDataClosure.totalClosurePct.toFixed(2)),
+        warningTypes: executiveExportWarningContext.warningTypes,
+        warningSummary: executiveExportWarningContext.warningSummary,
+        warningDetail: executiveTrendWarning?.recommendation || executiveTotalDataClosure.readiness.detail,
+        fieldFilter: executiveFieldFilter,
+        fieldLabel: executiveFieldLabel,
+        compareCompanyId: executiveCompareCompanyId !== 'none' ? executiveCompareCompanyId : null,
+        compareCompanyName: executiveCompareCompanyName || null,
+        metadata: {
+          company_name: companyName,
+          economic_pct: Number(executiveTotalDataClosure.economicPct.toFixed(2)),
+          traceability_pct: Number(executiveTotalDataClosure.traceabilityPct.toFixed(2)),
+          official_support_pct: Number(executiveTotalDataClosure.officialSupportPct.toFixed(2)),
+          review_clean_pct: Number(executiveTotalDataClosure.reviewCleanPct.toFixed(2)),
+          blockers: executiveTotalDataClosure.blockers,
+          trend_direction: executiveCurrentCompanyTrend.direction,
+          trend_delta: Number(executiveCurrentCompanyTrend.delta.toFixed(2)),
+          trend_recent_window: executiveCurrentCompanyTrend.recentWindowLabel,
+          trend_previous_window: executiveCurrentCompanyTrend.previousWindowLabel,
+          compare_company_trend_direction: executiveCompareCompanyTrend?.direction || null,
+          compare_company_trend_delta: executiveCompareCompanyTrend ? Number(executiveCompareCompanyTrend.delta.toFixed(2)) : null,
+          compare_company_readiness: executiveCompareCompanyTotalClosure?.readiness.title || null,
+          trend_alert_detail: executiveTrendWarning?.detail || null,
+          trend_alert_compare_line: executiveTrendWarning?.compareLine || null
+        }
+      });
+    } catch (error) {
+      console.error('No se pudo registrar la bitácora de exportación bajo advertencia.', error);
+    }
+  }, [
+    companyName,
+    executiveCompareCompanyId,
+    executiveCompareCompanyName,
+    executiveCompareCompanyTotalClosure,
+    executiveCompareCompanyTrend,
+    executiveCurrentCompanyTrend,
+    executiveExportWarningContext,
+    executiveFieldFilter,
+    executiveFieldLabel,
+    executiveTotalDataClosure,
+    executiveTrendWarning,
+    selectedCompany?.id,
+    selectedSeason
+  ]);
+
   const executiveHistoricalSeasonRows = useMemo(() => {
     return availablePreviousExecutiveSeasons.map((season) => {
       const base = aggregateExecutiveCosts({
@@ -4663,7 +4746,9 @@ export const Reports: React.FC = () => {
 
   const requiresExecutiveExportConfirmation = activeTab === 'executive' && executiveTotalDataClosure.readiness.title === 'No listo para comité';
 
-  const runExecutiveExportAction = (action: ExecutiveExportAction) => {
+  const runExecutiveExportAction = async (action: ExecutiveExportAction) => {
+    await logExecutiveExportWarningEvent(action);
+
     if (action === 'excel') {
       void exportExecutiveExcel();
       return;
@@ -4673,7 +4758,7 @@ export const Reports: React.FC = () => {
 
   const requestExecutiveExportAction = (action: ExecutiveExportAction) => {
     if (!requiresExecutiveExportConfirmation) {
-      runExecutiveExportAction(action);
+      void runExecutiveExportAction(action);
       return;
     }
 
@@ -4684,7 +4769,7 @@ export const Reports: React.FC = () => {
     if (!pendingExecutiveExportAction) return;
     const action = pendingExecutiveExportAction;
     setPendingExecutiveExportAction(null);
-    runExecutiveExportAction(action);
+    void runExecutiveExportAction(action);
   };
 
   if (!selectedCompany) return <div className="p-8">Seleccione una empresa</div>;
