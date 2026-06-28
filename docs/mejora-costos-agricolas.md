@@ -421,7 +421,29 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - dejar trazabilidad de que un reporte fue exportado pese a advertencias visibles
   - permitir futuras revisiones o auditorias de circulacion del dato ejecutivo
 
+## Recomendacion Ejecutiva Automatica
+- `Reportes` ahora emite una recomendacion automatica por empresa para resumir la decision final hacia comite.
+- La recomendacion consolida:
+  - cierre total del dato
+  - bloqueos visibles
+  - tendencia movil
+  - alerta preventiva por tendencia
+  - posicion relativa frente a la empresa comparada
+- La salida clasifica cada empresa en:
+  - `Presentar a comite`
+  - `Presentar con cautela`
+  - `No presentar todavia`
+- Esta lectura ya aparece en:
+  - resumen ejecutivo
+  - comparacion entre empresas
+  - exportacion Excel
+  - exportacion PDF
+  - presentacion fullscreen
+- Objetivo:
+  - cerrar la lectura tecnica con una decision concreta y defendible
+  - reducir ambiguedad al momento de presentar el dato a directorio o comite
+
 ## Siguiente Paso Recomendado
-- Evaluar una portada o slide final de decision ejecutiva con recomendacion automatica por empresa.
-- Integrar esta alerta con una decision automatica de recomendacion ejecutiva por empresa.
 - Considerar una vista historica de exportaciones bajo advertencia para auditoria interna.
+- Evaluar una portada o slide final exclusivo de decision ejecutiva para comite.
+- Considerar un ranking automatico entre empresas usando cierre total, tendencia y bloqueos ponderados.

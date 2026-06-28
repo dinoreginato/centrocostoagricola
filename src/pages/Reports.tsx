@@ -201,6 +201,7 @@ type ExecutiveAuditPriorityFilter = 'all' | 'alta' | 'media' | 'baja';
 type ExecutiveAuditLayerFilter = 'all' | AgriculturalCostAuditRow['source_layer'];
 type ExecutiveExportAction = 'pdf' | 'excel';
 type ClosureTrendDirection = 'mejora' | 'estable' | 'deterioro' | 'sin_base';
+type ExecutiveRecommendationDecision = 'presentar' | 'presentar_con_cautela' | 'no_presentar';
 
 const EXECUTIVE_SORT_OPTIONS: Array<{ value: ExecutiveSortKey; label: string }> = [
   { value: 'total', label: 'Mayor gasto' },
@@ -338,6 +339,120 @@ const buildClosureTrendSummary = (
     previousRows,
     latest,
     narrative
+  };
+};
+
+const buildHighClosureTrendWarning = (params: {
+  totalClosurePct: number;
+  trend: ReturnType<typeof buildClosureTrendSummary>;
+  compareCompanyLabel?: string | null;
+  compareTrend?: ReturnType<typeof buildClosureTrendSummary> | null;
+}) => {
+  const isHighCurrentClosure = Number(params.totalClosurePct || 0) >= 75;
+  const isNegativeTrend = params.trend.direction === 'deterioro';
+
+  if (!isHighCurrentClosure || !isNegativeTrend) return null;
+
+  const compareLine = params.compareTrend && params.compareCompanyLabel
+    ? params.compareTrend.direction === 'mejora'
+      ? `${params.compareCompanyLabel} mejora en la misma ventana, por lo que la brecha competitiva puede ampliarse.`
+      : params.compareTrend.direction === 'estable'
+        ? `${params.compareCompanyLabel} se mantiene estable en la misma ventana.`
+        : `${params.compareCompanyLabel} también deteriora su tendencia, aunque conviene revisar la velocidad relativa.`
+    : null;
+
+  return {
+    badge: 'bg-amber-100 text-amber-800 border-amber-300',
+    dot: 'bg-amber-500',
+    title: 'Alerta preventiva por tendencia',
+    shortLabel: 'Tendencia empeorando',
+    detail: `La temporada actual muestra ${Number(params.totalClosurePct || 0).toFixed(1)}% de cierre total, pero la ventana reciente cae ${Math.abs(Number(params.trend.delta || 0)).toFixed(1)} puntos frente a la previa.`,
+    recommendation: 'Conviene presentar el dato con cautela, porque la foto puntual se ve alta pero la pendiente reciente pierde solidez.',
+    compareLine
+  };
+};
+
+const buildExecutiveRecommendation = (params: {
+  companyLabel: string;
+  totalClosure: {
+    totalClosurePct: number;
+    economicPct: number;
+    traceabilityPct: number;
+    officialSupportPct: number;
+    blockers: string[];
+    readiness: { title: string };
+  };
+  trend: ReturnType<typeof buildClosureTrendSummary>;
+  trendWarning: ReturnType<typeof buildHighClosureTrendWarning> | null;
+  compareCompanyLabel?: string | null;
+  compareTotalClosurePct?: number | null;
+  compareTrend?: ReturnType<typeof buildClosureTrendSummary> | null;
+}) => {
+  const closurePct = Number(params.totalClosure.totalClosurePct || 0);
+  const blockerCount = params.totalClosure.blockers.length;
+  const compareGap = params.compareTotalClosurePct === null || params.compareTotalClosurePct === undefined
+    ? null
+    : closurePct - Number(params.compareTotalClosurePct || 0);
+
+  const decision: ExecutiveRecommendationDecision = params.totalClosure.readiness.title === 'No listo para comité'
+    ? 'no_presentar'
+    : params.totalClosure.readiness.title === 'Listo con advertencias' || Boolean(params.trendWarning)
+      ? 'presentar_con_cautela'
+      : 'presentar';
+
+  const tone = decision === 'presentar'
+    ? {
+        badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+        dot: 'bg-emerald-500',
+        title: 'Presentar a comité'
+      }
+    : decision === 'presentar_con_cautela'
+      ? {
+          badge: 'bg-amber-100 text-amber-700 border-amber-200',
+          dot: 'bg-amber-500',
+          title: 'Presentar con cautela'
+        }
+      : {
+          badge: 'bg-red-100 text-red-700 border-red-200',
+          dot: 'bg-red-500',
+          title: 'No presentar todavía'
+        };
+
+  const reasons = [
+    `Cierre total actual: ${closurePct.toFixed(1)}%.`,
+    blockerCount > 0
+      ? `${blockerCount} bloqueo${blockerCount === 1 ? '' : 's'} principal${blockerCount === 1 ? '' : 'es'} siguen abierto${blockerCount === 1 ? '' : 's'}.`
+      : 'No hay bloqueos críticos visibles.',
+    params.trendWarning
+      ? params.trendWarning.detail
+      : `${params.companyLabel} muestra una tendencia ${params.trend.tone.label.toLowerCase()} en la ventana reciente.`,
+    compareGap === null || !params.compareCompanyLabel
+      ? null
+      : Math.abs(compareGap) < 0.05
+        ? `Mantiene un cierre total equivalente frente a ${params.compareCompanyLabel}.`
+        : compareGap > 0
+          ? `Supera a ${params.compareCompanyLabel} por ${Math.abs(compareGap).toFixed(1)} puntos de cierre total.`
+          : `Queda por debajo de ${params.compareCompanyLabel} por ${Math.abs(compareGap).toFixed(1)} puntos de cierre total.`
+  ].filter(Boolean) as string[];
+
+  const summary = decision === 'presentar'
+    ? `${params.companyLabel} puede presentarse como lectura principal para comité.`
+    : decision === 'presentar_con_cautela'
+      ? `${params.companyLabel} puede presentarse, pero requiere contexto ejecutivo explícito antes de circularlo.`
+      : `${params.companyLabel} no debería circularse como lectura principal de comité hasta corregir los focos abiertos.`;
+
+  const nextStep = decision === 'presentar'
+    ? 'Usar esta temporada como base principal y acompañarla con el comparativo histórico entre empresas.'
+    : decision === 'presentar_con_cautela'
+      ? 'Presentar junto con bloqueos, tendencia y advertencias visibles para evitar sobreinterpretación.'
+      : 'Resolver bloqueos estructurales y revisar el cierre antes de reactivar la presentación a comité.';
+
+  return {
+    decision,
+    tone,
+    summary,
+    nextStep,
+    reasons
   };
 };
 
@@ -2439,32 +2554,73 @@ export const Reports: React.FC = () => {
     executiveCurrentCompanyTrend
   ]);
 
-  const executiveTrendWarning = useMemo(() => {
-    const isHighCurrentClosure = executiveTotalDataClosure.totalClosurePct >= 75;
-    const isNegativeTrend = executiveCurrentCompanyTrend.direction === 'deterioro';
-
-    if (!isHighCurrentClosure || !isNegativeTrend) return null;
-
-    const compareLine = executiveCompareCompanyTrend
-      ? executiveCompareCompanyTrend.direction === 'mejora'
-        ? `${executiveCompareCompanyName} mejora en la misma ventana, por lo que la brecha competitiva puede ampliarse.`
-        : executiveCompareCompanyTrend.direction === 'estable'
-          ? `${executiveCompareCompanyName} se mantiene estable en la misma ventana.`
-          : `${executiveCompareCompanyName} también deteriora su tendencia, aunque conviene revisar la velocidad relativa.`
-      : null;
-
-    return {
-      badge: 'bg-amber-100 text-amber-800 border-amber-300',
-      dot: 'bg-amber-500',
-      title: 'Alerta preventiva por tendencia',
-      shortLabel: 'Tendencia empeorando',
-      detail: `La temporada actual muestra ${executiveTotalDataClosure.totalClosurePct.toFixed(1)}% de cierre total, pero la ventana reciente cae ${Math.abs(executiveCurrentCompanyTrend.delta).toFixed(1)} puntos frente a la previa.`,
-      recommendation: 'Conviene presentar el dato con cautela, porque la foto puntual se ve alta pero la pendiente reciente pierde solidez.',
-      compareLine
-    };
-  }, [
+  const executiveTrendWarning = useMemo(() => (
+    buildHighClosureTrendWarning({
+      totalClosurePct: executiveTotalDataClosure.totalClosurePct,
+      trend: executiveCurrentCompanyTrend,
+      compareCompanyLabel: executiveCompareCompanyName,
+      compareTrend: executiveCompareCompanyTrend
+    })
+  ), [
     executiveCompareCompanyName,
     executiveCompareCompanyTrend,
+    executiveCurrentCompanyTrend,
+    executiveTotalDataClosure.totalClosurePct
+  ]);
+
+  const executiveCompareCompanyTrendWarning = useMemo(() => {
+    if (!executiveCompareCompanyTotalClosure || !executiveCompareCompanyTrend) return null;
+    return buildHighClosureTrendWarning({
+      totalClosurePct: executiveCompareCompanyTotalClosure.totalClosurePct,
+      trend: executiveCompareCompanyTrend,
+      compareCompanyLabel: companyName,
+      compareTrend: executiveCurrentCompanyTrend
+    });
+  }, [
+    companyName,
+    executiveCompareCompanyTotalClosure,
+    executiveCompareCompanyTrend,
+    executiveCurrentCompanyTrend
+  ]);
+
+  const executiveCurrentRecommendation = useMemo(() => (
+    buildExecutiveRecommendation({
+      companyLabel: companyName,
+      totalClosure: executiveTotalDataClosure,
+      trend: executiveCurrentCompanyTrend,
+      trendWarning: executiveTrendWarning,
+      compareCompanyLabel: executiveCompareCompanyName,
+      compareTotalClosurePct: executiveCompareCompanyTotalClosure?.totalClosurePct ?? null,
+      compareTrend: executiveCompareCompanyTrend
+    })
+  ), [
+    companyName,
+    executiveCompareCompanyName,
+    executiveCompareCompanyTotalClosure?.totalClosurePct,
+    executiveCompareCompanyTrend,
+    executiveCurrentCompanyTrend,
+    executiveTotalDataClosure,
+    executiveTrendWarning
+  ]);
+
+  const executiveCompareCompanyRecommendation = useMemo(() => {
+    if (!executiveCompareCompanyTotalClosure || !executiveCompareCompanyTrend) return null;
+
+    return buildExecutiveRecommendation({
+      companyLabel: executiveCompareCompanyName,
+      totalClosure: executiveCompareCompanyTotalClosure,
+      trend: executiveCompareCompanyTrend,
+      trendWarning: executiveCompareCompanyTrendWarning,
+      compareCompanyLabel: companyName,
+      compareTotalClosurePct: executiveTotalDataClosure.totalClosurePct,
+      compareTrend: executiveCurrentCompanyTrend
+    });
+  }, [
+    companyName,
+    executiveCompareCompanyName,
+    executiveCompareCompanyTotalClosure,
+    executiveCompareCompanyTrend,
+    executiveCompareCompanyTrendWarning,
     executiveCurrentCompanyTrend,
     executiveTotalDataClosure.totalClosurePct
   ]);
@@ -2641,11 +2797,14 @@ export const Reports: React.FC = () => {
         { Indicador: 'Cierre total dato %', Valor: Number(executiveTotalDataClosure.totalClosurePct.toFixed(2)) },
         { Indicador: 'Soporte oficial %', Valor: Number(executiveTotalDataClosure.officialSupportPct.toFixed(2)) },
         { Indicador: 'Estado comité', Valor: executiveTotalDataClosure.readiness.title },
+        { Indicador: 'Recomendación automática', Valor: executiveCurrentRecommendation.tone.title },
+        { Indicador: 'Resumen recomendación', Valor: executiveCurrentRecommendation.summary },
         { Indicador: 'Alerta tendencia', Valor: executiveTrendWarning?.shortLabel || 'Sin alerta' },
         { Indicador: 'Detalle alerta tendencia', Valor: executiveTrendWarning?.detail || 'Sin alerta preventiva visible' },
         { Indicador: 'Empresa comparada', Valor: executiveCompareCompanyName || 'Sin comparar' },
         { Indicador: 'Cierre total empresa comparada', Valor: executiveCompareCompanyTotalClosure ? Number(executiveCompareCompanyTotalClosure.totalClosurePct.toFixed(2)) : 'Sin datos' },
         { Indicador: 'Estado comité comparado', Valor: executiveCompareCompanyTotalClosure?.readiness.title || 'Sin datos' },
+        { Indicador: 'Recomendación comparada', Valor: executiveCompareCompanyRecommendation?.tone.title || 'Sin datos' },
         { Indicador: 'Mejor cierre histórico', Valor: bestClosureHistoryRow ? `${bestClosureHistoryRow.season} (${bestClosureHistoryRow.closurePct.toFixed(2)}%)` : 'Sin datos' },
         { Indicador: 'Conclusión ejecutiva', Valor: executiveInsights.conclusion }
       ];
@@ -2815,9 +2974,34 @@ export const Reports: React.FC = () => {
         { Indicador: 'Soporte oficial', Valor: `${executiveTotalDataClosure.officialSupportPct.toFixed(2)}%` },
         { Indicador: 'Limpieza revisión', Valor: `${executiveTotalDataClosure.reviewCleanPct.toFixed(2)}%` },
         { Indicador: 'Estado comité', Valor: executiveTotalDataClosure.readiness.title },
+        { Indicador: 'Recomendación automática', Valor: executiveCurrentRecommendation.tone.title },
+        { Indicador: 'Resumen recomendación', Valor: executiveCurrentRecommendation.summary },
+        { Indicador: 'Siguiente paso', Valor: executiveCurrentRecommendation.nextStep },
         { Indicador: 'Alerta tendencia', Valor: executiveTrendWarning?.shortLabel || 'Sin alerta' },
         { Indicador: 'Detalle alerta tendencia', Valor: executiveTrendWarning?.detail || 'Sin alerta preventiva visible' },
         { Indicador: 'Conclusión', Valor: executiveTotalDataClosure.conclusion }
+      ];
+      const recommendationRows = [
+        {
+          Empresa: companyName,
+          Decisión: executiveCurrentRecommendation.tone.title,
+          Resumen: executiveCurrentRecommendation.summary,
+          'Siguiente paso': executiveCurrentRecommendation.nextStep,
+          'Razón 1': executiveCurrentRecommendation.reasons[0] || '-',
+          'Razón 2': executiveCurrentRecommendation.reasons[1] || '-',
+          'Razón 3': executiveCurrentRecommendation.reasons[2] || '-',
+          'Razón 4': executiveCurrentRecommendation.reasons[3] || '-'
+        },
+        ...(executiveCompareCompanyRecommendation ? [{
+          Empresa: executiveCompareCompanyName,
+          Decisión: executiveCompareCompanyRecommendation.tone.title,
+          Resumen: executiveCompareCompanyRecommendation.summary,
+          'Siguiente paso': executiveCompareCompanyRecommendation.nextStep,
+          'Razón 1': executiveCompareCompanyRecommendation.reasons[0] || '-',
+          'Razón 2': executiveCompareCompanyRecommendation.reasons[1] || '-',
+          'Razón 3': executiveCompareCompanyRecommendation.reasons[2] || '-',
+          'Razón 4': executiveCompareCompanyRecommendation.reasons[3] || '-'
+        }] : [])
       ];
       const trendWarningRows = executiveTrendWarning ? [
         { Campo: 'Estado', Valor: executiveTrendWarning.shortLabel },
@@ -2931,6 +3115,7 @@ export const Reports: React.FC = () => {
           { name: 'Top Sectores', rows: topSectorsRows },
           { name: 'Alertas', rows: alertRows },
           { name: 'Cierre Total', rows: totalDataClosureRows },
+          ...(recommendationRows.length > 0 ? [{ name: 'Recomendacion Ejecutiva', rows: recommendationRows }] : []),
           ...(totalDataBlockerRows.length > 0 ? [{ name: 'Bloqueos Dato', rows: totalDataBlockerRows }] : []),
           ...(compareCompanyRows.length > 0 ? [{ name: 'Comparacion Empresas', rows: compareCompanyRows }] : []),
           ...(compareCompanyHistoryRows.length > 0 ? [{ name: 'Historial Empresas', rows: compareCompanyHistoryRows }] : []),
@@ -3739,6 +3924,7 @@ export const Reports: React.FC = () => {
             ['Pendientes ingreso', String(executiveEconomicClosureData.pendingIncomeRows.length)],
             ['Cierre total dato', `${executiveTotalDataClosure.totalClosurePct.toFixed(1)}%`],
             ['Estado comité', executiveTotalDataClosure.readiness.title],
+            ['Recomendación automática', executiveCurrentRecommendation.tone.title],
             ['Alerta tendencia', executiveTrendWarning?.shortLabel || 'Sin alerta'],
             ['Historial visible', `${executiveEconomicClosureHistoryRows.length} temporadas`],
             ['Hallazgo 1', executiveInsights.findings[0]?.description || '-'],
@@ -3771,6 +3957,7 @@ export const Reports: React.FC = () => {
             ['Cierre total dato %', `${executiveTotalDataClosure.totalClosurePct.toFixed(1)}%`],
             ['Soporte oficial %', `${executiveTotalDataClosure.officialSupportPct.toFixed(1)}%`],
             ['Estado comité', executiveTotalDataClosure.readiness.title],
+            ['Recomendación automática', executiveCurrentRecommendation.tone.title],
             ['Alerta tendencia', executiveTrendWarning?.shortLabel || 'Sin alerta'],
             ['Hectáreas reportadas', executiveViewData.kpis.totalHectares.toFixed(2)],
             ['Campo con mayor gasto', executiveViewData.kpis.topField ? `${executiveViewData.kpis.topField.fieldName} (${formatCLP(executiveViewData.kpis.topField.total)})` : '-'],
@@ -3799,6 +3986,25 @@ export const Reports: React.FC = () => {
 
           yPos = (doc as any).lastAutoTable.finalY + 8;
         }
+
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Recomendacion ejecutiva', 'Detalle']],
+          body: [
+            ['Decisión', executiveCurrentRecommendation.tone.title],
+            ['Resumen', executiveCurrentRecommendation.summary],
+            ['Siguiente paso', executiveCurrentRecommendation.nextStep],
+            ['Razón 1', executiveCurrentRecommendation.reasons[0] || '-'],
+            ['Razón 2', executiveCurrentRecommendation.reasons[1] || '-'],
+            ['Razón 3', executiveCurrentRecommendation.reasons[2] || '-'],
+            ['Razón 4', executiveCurrentRecommendation.reasons[3] || '-']
+          ],
+          theme: 'grid',
+          headStyles: { fillColor: [21, 128, 61] },
+          styles: { fontSize: 8 }
+        });
+
+        yPos = (doc as any).lastAutoTable.finalY + 8;
 
         autoTable(doc, {
           startY: yPos,
@@ -3989,6 +4195,23 @@ export const Reports: React.FC = () => {
           });
 
           yPos = (doc as any).lastAutoTable.finalY + 8;
+
+          if (executiveCompareCompanyRecommendation) {
+            autoTable(doc, {
+              startY: yPos,
+              head: [['Recomendacion entre empresas', 'Actual', 'Comparada']],
+              body: [
+                ['Decisión', executiveCurrentRecommendation.tone.title, executiveCompareCompanyRecommendation.tone.title],
+                ['Resumen', executiveCurrentRecommendation.summary, executiveCompareCompanyRecommendation.summary],
+                ['Siguiente paso', executiveCurrentRecommendation.nextStep, executiveCompareCompanyRecommendation.nextStep]
+              ],
+              theme: 'grid',
+              headStyles: { fillColor: [8, 145, 178] },
+              styles: { fontSize: 8 }
+            });
+
+            yPos = (doc as any).lastAutoTable.finalY + 8;
+          }
         }
 
         if (executiveCompareCompanyHistoryInsights && executiveCompareCompanyHistoryRows.length > 0) {
@@ -5555,6 +5778,27 @@ export const Reports: React.FC = () => {
                     </div>
                   )}
 
+                  <div className={`rounded-xl border px-5 py-4 ${executiveCurrentRecommendation.tone.badge}`}>
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <div className="text-xs uppercase tracking-wide">Recomendación automática</div>
+                        <div className="mt-2 text-lg font-semibold">{executiveCurrentRecommendation.tone.title}</div>
+                        <p className="mt-2 text-sm">{executiveCurrentRecommendation.summary}</p>
+                        <p className="mt-2 text-sm">{executiveCurrentRecommendation.nextStep}</p>
+                      </div>
+                      <div className="text-sm font-medium">
+                        Decisión para {companyName}
+                      </div>
+                    </div>
+                    <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-2 text-sm">
+                      {executiveCurrentRecommendation.reasons.map((reason) => (
+                        <div key={reason} className="rounded-lg bg-white/70 px-3 py-2">
+                          {reason}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 lg:grid-cols-[1.2fr,0.8fr] gap-4">
                     <div className="rounded-xl border border-slate-200 p-5">
                       <div className="flex items-center justify-between gap-4">
@@ -6430,6 +6674,26 @@ export const Reports: React.FC = () => {
                       </div>
                     </div>
                   </div>
+                  {executiveCompareCompanyRecommendation && (
+                    <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-4">
+                      <div className={`rounded-xl border p-4 ${executiveCurrentRecommendation.tone.badge}`}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-medium">{companyName}</div>
+                          <span className="text-sm font-semibold">{executiveCurrentRecommendation.tone.title}</span>
+                        </div>
+                        <p className="mt-3 text-sm">{executiveCurrentRecommendation.summary}</p>
+                        <p className="mt-2 text-sm">{executiveCurrentRecommendation.nextStep}</p>
+                      </div>
+                      <div className={`rounded-xl border p-4 ${executiveCompareCompanyRecommendation.tone.badge}`}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-medium">{executiveCompareCompanyName}</div>
+                          <span className="text-sm font-semibold">{executiveCompareCompanyRecommendation.tone.title}</span>
+                        </div>
+                        <p className="mt-3 text-sm">{executiveCompareCompanyRecommendation.summary}</p>
+                        <p className="mt-2 text-sm">{executiveCompareCompanyRecommendation.nextStep}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -9906,6 +10170,27 @@ export const Reports: React.FC = () => {
                               </div>
                             </div>
                           )}
+                          <div className={`rounded-2xl border p-6 ${executiveCurrentRecommendation.tone.badge}`}>
+                            <div className="flex items-start justify-between gap-6">
+                              <div>
+                                <div className="text-sm uppercase tracking-[0.25em]">Recomendación Automática</div>
+                                <div className="mt-3 text-2xl font-bold">{executiveCurrentRecommendation.tone.title}</div>
+                                <p className="mt-4 text-xl leading-9">{executiveCurrentRecommendation.summary}</p>
+                                <p className="mt-4 text-lg leading-8">{executiveCurrentRecommendation.nextStep}</p>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-sm uppercase tracking-[0.25em]">Empresa</div>
+                                <div className="mt-3 text-3xl font-bold">{companyName}</div>
+                              </div>
+                            </div>
+                            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3 text-base">
+                              {executiveCurrentRecommendation.reasons.map((reason) => (
+                                <div key={reason} className="rounded-2xl bg-white/60 px-4 py-3">
+                                  {reason}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                           <div className="grid grid-cols-1 xl:grid-cols-[0.9fr,1.1fr] gap-6">
                             <div className="rounded-2xl border border-slate-200 p-6">
                               <div className="text-2xl font-bold text-slate-800 mb-5">Lectura consolidada</div>
@@ -10105,6 +10390,20 @@ export const Reports: React.FC = () => {
                                   </div>
                                 </div>
                               </div>
+                              {executiveCompareCompanyRecommendation && (
+                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                                  <div className={`rounded-2xl border p-6 ${executiveCurrentRecommendation.tone.badge}`}>
+                                    <div className="text-sm uppercase tracking-[0.25em]">Recomendación Actual</div>
+                                    <div className="mt-3 text-2xl font-bold">{executiveCurrentRecommendation.tone.title}</div>
+                                    <p className="mt-4 text-lg leading-8">{executiveCurrentRecommendation.summary}</p>
+                                  </div>
+                                  <div className={`rounded-2xl border p-6 ${executiveCompareCompanyRecommendation.tone.badge}`}>
+                                    <div className="text-sm uppercase tracking-[0.25em]">Recomendación Comparada</div>
+                                    <div className="mt-3 text-2xl font-bold">{executiveCompareCompanyRecommendation.tone.title}</div>
+                                    <p className="mt-4 text-lg leading-8">{executiveCompareCompanyRecommendation.summary}</p>
+                                  </div>
+                                </div>
+                              )}
                             </>
                           ) : (
                             <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-12 text-center">
