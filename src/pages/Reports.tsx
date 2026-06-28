@@ -21,14 +21,17 @@ import {
 import {
   createExecutiveGlobalAlertEvent,
   createExecutiveGlobalAlertSlaEscalation,
+  createExecutiveGlobalAlertSlaResolution,
   createExecutiveGlobalAlertTransition,
   loadExecutiveGlobalAlertEvents,
   loadExecutiveGlobalAlertSlaEscalations,
+  loadExecutiveGlobalAlertSlaResolutions,
   loadExecutiveGlobalAlertTransitions,
   updateExecutiveGlobalAlertEvent,
   type ExecutiveGlobalAlertEventRow,
   type ExecutiveGlobalAlertManagementStatus,
   type ExecutiveGlobalAlertSlaEscalationRow,
+  type ExecutiveGlobalAlertSlaResolutionRow,
   type ExecutiveGlobalAlertTransitionRow,
   type ExecutiveGlobalAlertTransitionStatus
 } from '../services/executiveGlobalAlertEvents';
@@ -341,6 +344,17 @@ const formatExecutiveGlobalAlertSlaEscalationSeverity = (value: string | null | 
       return 'Alta';
     default:
       return 'Sin severidad';
+  }
+};
+
+const formatExecutiveGlobalAlertSlaResolutionKind = (value: string | null | undefined) => {
+  switch (value) {
+    case 'cerrada':
+      return 'Cerrada';
+    case 'normalizada':
+      return 'Normalizada';
+    default:
+      return 'Sin resolución';
   }
 };
 
@@ -1107,6 +1121,88 @@ const buildExecutiveGlobalAlertSlaEscalationAnalytics = (
   };
 };
 
+const buildExecutiveGlobalAlertSlaResolutionAnalytics = (
+  resolutions: ExecutiveGlobalAlertSlaResolutionRow[],
+  visibleEventIds: string[],
+  scopeLabel: string
+) => {
+  const visibleRows = visibleEventIds.length > 0
+    ? resolutions.filter((row) => visibleEventIds.includes(row.event_id))
+    : resolutions;
+  const latestResolution = visibleRows[0] || null;
+  const kindSummary = Array.from(
+    visibleRows.reduce((map, row) => {
+      map.set(row.resolution_kind, (map.get(row.resolution_kind) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  )
+    .map(([kind, count]) => ({ kind, count }))
+    .sort((a, b) => b.count - a.count);
+  const stageSummary = Array.from(
+    visibleRows.reduce((map, row) => {
+      map.set(row.stage_key, (map.get(row.stage_key) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  )
+    .map(([stageKey, count]) => ({ stageKey, count }))
+    .sort((a, b) => b.count - a.count);
+  const ownerSummary = Array.from(
+    visibleRows.reduce((map, row) => {
+      const owner = row.owner_label?.trim() || 'Sin responsable';
+      const current = map.get(owner) || {
+        owner,
+        count: 0,
+        latestCreatedAt: row.created_at,
+        stageSet: new Set<string>(),
+        kindSet: new Set<string>()
+      };
+      current.count += 1;
+      current.latestCreatedAt = current.latestCreatedAt > row.created_at ? current.latestCreatedAt : row.created_at;
+      current.stageSet.add(formatExecutiveGlobalAlertSlaStage(row.stage_key));
+      current.kindSet.add(formatExecutiveGlobalAlertSlaResolutionKind(row.resolution_kind));
+      map.set(owner, current);
+      return map;
+    }, new Map<string, {
+      owner: string;
+      count: number;
+      latestCreatedAt: string;
+      stageSet: Set<string>;
+      kindSet: Set<string>;
+    }>())
+  )
+    .map(([, value]) => ({
+      owner: value.owner,
+      count: value.count,
+      latestCreatedAt: value.latestCreatedAt,
+      stages: Array.from(value.stageSet).sort().join(', '),
+      kinds: Array.from(value.kindSet).sort().join(', ')
+    }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return b.latestCreatedAt.localeCompare(a.latestCreatedAt);
+    });
+  const topKind = kindSummary[0] || null;
+  const topStage = stageSummary[0] || null;
+  const topOwner = ownerSummary[0] || null;
+  const summaryLine = latestResolution
+    ? `Se registran ${visibleRows.length} cierres SLA para ${scopeLabel}. Predomina ${topKind ? formatExecutiveGlobalAlertSlaResolutionKind(topKind.kind).toLowerCase() : 'sin tipo dominante'} y la etapa más normalizada es ${topStage ? formatExecutiveGlobalAlertSlaStage(topStage.stageKey).toLowerCase() : 'sin etapa dominante'}.`
+    : `No hay cierres SLA persistidos para ${scopeLabel}.`;
+
+  return {
+    rows: visibleRows,
+    latestResolution,
+    recentRows: visibleRows.slice(0, 12),
+    kindSummary,
+    stageSummary,
+    ownerSummary,
+    topKind,
+    topStage,
+    topOwner,
+    totalResolutions: visibleRows.length,
+    summaryLine
+  };
+};
+
 const getExecutiveSortMetric = (row: any, sortBy: ExecutiveSortKey) => {
   switch (sortBy) {
     case 'variation':
@@ -1868,6 +1964,7 @@ export const Reports: React.FC = () => {
   const [executiveGlobalAlertEvents, setExecutiveGlobalAlertEvents] = useState<ExecutiveGlobalAlertEventRow[]>([]);
   const [executiveGlobalAlertTransitions, setExecutiveGlobalAlertTransitions] = useState<ExecutiveGlobalAlertTransitionRow[]>([]);
   const [executiveGlobalAlertEscalations, setExecutiveGlobalAlertEscalations] = useState<ExecutiveGlobalAlertSlaEscalationRow[]>([]);
+  const [executiveGlobalAlertResolutions, setExecutiveGlobalAlertResolutions] = useState<ExecutiveGlobalAlertSlaResolutionRow[]>([]);
   const [executiveGlobalAlertLoading, setExecutiveGlobalAlertLoading] = useState(false);
   const [costAuditLoading, setCostAuditLoading] = useState(false);
   const [showProductionModal, setShowProductionModal] = useState(false);
@@ -1937,6 +2034,7 @@ export const Reports: React.FC = () => {
   const executiveGlobalRankingLoadSeqRef = useRef(0);
   const executiveGlobalAlertLogRef = useRef<string>('');
   const executiveGlobalAlertEscalationLogRef = useRef<string>('');
+  const executiveGlobalAlertResolutionLogRef = useRef<string>('');
 
   // Update orientation when tab changes
   useEffect(() => {
@@ -2027,6 +2125,7 @@ export const Reports: React.FC = () => {
     setPresentationMode(false);
     executiveGlobalAlertLogRef.current = '';
     executiveGlobalAlertEscalationLogRef.current = '';
+    executiveGlobalAlertResolutionLogRef.current = '';
     setRawCostMovements([]);
     setRawMarginRows([]);
     setRawProductionRecords([]);
@@ -2037,6 +2136,7 @@ export const Reports: React.FC = () => {
     setExecutiveGlobalAlertEvents([]);
     setExecutiveGlobalAlertTransitions([]);
     setExecutiveGlobalAlertEscalations([]);
+    setExecutiveGlobalAlertResolutions([]);
     setReportData([]);
     setMonthlyExpenses([]);
     setCategoryExpenses([]);
@@ -2111,20 +2211,23 @@ export const Reports: React.FC = () => {
 
     void (async () => {
       try {
-        const [rows, transitions, escalations] = await Promise.all([
+        const [rows, transitions, escalations, resolutions] = await Promise.all([
           loadExecutiveGlobalAlertEvents({ companyId, limit: 100 }),
           loadExecutiveGlobalAlertTransitions({ companyId, limit: 300 }),
-          loadExecutiveGlobalAlertSlaEscalations({ companyId, limit: 300 })
+          loadExecutiveGlobalAlertSlaEscalations({ companyId, limit: 300 }),
+          loadExecutiveGlobalAlertSlaResolutions({ companyId, limit: 300 })
         ]);
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalAlertEvents(rows || []);
         setExecutiveGlobalAlertTransitions(transitions || []);
         setExecutiveGlobalAlertEscalations(escalations || []);
+        setExecutiveGlobalAlertResolutions(resolutions || []);
       } catch {
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalAlertEvents([]);
         setExecutiveGlobalAlertTransitions([]);
         setExecutiveGlobalAlertEscalations([]);
+        setExecutiveGlobalAlertResolutions([]);
       } finally {
         if (!cancelled && selectedCompany?.id === companyId) {
           setExecutiveGlobalAlertLoading(false);
@@ -4343,14 +4446,16 @@ export const Reports: React.FC = () => {
         }
       });
 
-      const [rows, transitions, escalations] = await Promise.all([
+      const [rows, transitions, escalations, resolutions] = await Promise.all([
         loadExecutiveGlobalAlertEvents({ companyId: selectedCompany.id, limit: 100 }),
         loadExecutiveGlobalAlertTransitions({ companyId: selectedCompany.id, limit: 300 }),
-        loadExecutiveGlobalAlertSlaEscalations({ companyId: selectedCompany.id, limit: 300 })
+        loadExecutiveGlobalAlertSlaEscalations({ companyId: selectedCompany.id, limit: 300 }),
+        loadExecutiveGlobalAlertSlaResolutions({ companyId: selectedCompany.id, limit: 300 })
       ]);
       setExecutiveGlobalAlertEvents(rows || []);
       setExecutiveGlobalAlertTransitions(transitions || []);
       setExecutiveGlobalAlertEscalations(escalations || []);
+      setExecutiveGlobalAlertResolutions(resolutions || []);
       toast.success('Se actualizó la gestión de la alerta global.');
       setEditingExecutiveGlobalAlertId(null);
     } catch (error) {
@@ -4464,6 +4569,46 @@ export const Reports: React.FC = () => {
       executiveGlobalAlertFilteredRows,
       executiveGlobalAlertFiltersActive,
       executiveGlobalAlertSlaEscalationCandidates
+    ]
+  );
+  const executiveGlobalAlertSlaResolutionCandidates = useMemo(() => {
+    const eventMap = new Map<string, ExecutiveGlobalAlertEventRow>(
+      executiveGlobalAlertFilteredRows.map((row) => [row.id, row] as const)
+    );
+    return executiveGlobalAlertSlaEscalationData.eventStageSummary
+      .filter((row) => row.activeCount === 0)
+      .map((row) => {
+        const event = eventMap.get(row.eventId) || null;
+        const resolutionKind = event?.management_status === 'cerrada' ? 'cerrada' : 'normalizada';
+        const stageLabel = formatExecutiveGlobalAlertSlaStage(row.stageKey);
+        const resolutionSignature = `${row.eventId}::${row.stageKey}::${row.latestCreatedAt}::${resolutionKind}`;
+        return {
+          resolutionSignature,
+          eventId: row.eventId,
+          stageKey: row.stageKey,
+          stageLabel,
+          ownerLabel: event?.management_owner_label?.trim() || row.owners.split(', ')[0] || 'Sin responsable',
+          resolutionKind,
+          season: event?.season || row.season,
+          detail: resolutionKind === 'cerrada'
+            ? `La etapa ${stageLabel.toLowerCase()} dejó de incumplir SLA porque la alerta global quedó cerrada en ${event?.season || row.season}.`
+            : `La etapa ${stageLabel.toLowerCase()} dejó de incumplir SLA y vuelve a control operativo en ${event?.season || row.season}.`,
+          recommendation: resolutionKind === 'cerrada'
+            ? 'Mantener trazabilidad del cierre y revisar si la última recomendación ejecutiva quedó completamente resuelta.'
+            : 'Monitorear la etapa normalizada para evitar recaídas y confirmar que no requiera una nueva escalación.'
+        };
+      });
+  }, [executiveGlobalAlertFilteredRows, executiveGlobalAlertSlaEscalationData.eventStageSummary]);
+  const executiveGlobalAlertSlaResolutionData = useMemo(
+    () => buildExecutiveGlobalAlertSlaResolutionAnalytics(
+      executiveGlobalAlertResolutions,
+      executiveGlobalAlertFilteredRows.map((row) => row.id),
+      executiveGlobalAlertFiltersActive ? 'los filtros activos' : 'la empresa activa'
+    ),
+    [
+      executiveGlobalAlertFiltersActive,
+      executiveGlobalAlertFilteredRows,
+      executiveGlobalAlertResolutions
     ]
   );
   const executiveExportWarningContext = useMemo(() => {
@@ -4639,6 +4784,64 @@ export const Reports: React.FC = () => {
     logExecutiveGlobalAlertSlaEscalations,
     selectedCompany?.id
   ]);
+  const logExecutiveGlobalAlertSlaResolutions = useCallback(async () => {
+    if (!selectedCompany?.id || executiveGlobalAlertSlaResolutionCandidates.length <= 0) return;
+
+    try {
+      for (const resolution of executiveGlobalAlertSlaResolutionCandidates) {
+        await createExecutiveGlobalAlertSlaResolution({
+          companyId: selectedCompany.id,
+          eventId: resolution.eventId,
+          stageKey: resolution.stageKey,
+          resolutionKind: resolution.resolutionKind,
+          ownerLabel: resolution.ownerLabel,
+          detail: resolution.detail,
+          recommendation: resolution.recommendation,
+          metadata: {
+            source: 'sla_resolution_global_alert',
+            resolution_signature: resolution.resolutionSignature,
+            season: resolution.season,
+            stage_label: resolution.stageLabel,
+            owner_label: resolution.ownerLabel,
+            company_name: companyName
+          }
+        });
+      }
+
+      const resolutions = await loadExecutiveGlobalAlertSlaResolutions({ companyId: selectedCompany.id, limit: 300 });
+      setExecutiveGlobalAlertResolutions(resolutions || []);
+    } catch (error) {
+      console.error('No se pudo registrar la bitácora de cierre SLA global.', error);
+    }
+  }, [companyName, executiveGlobalAlertSlaResolutionCandidates, selectedCompany?.id]);
+
+  useEffect(() => {
+    if (!selectedCompany?.id || executiveGlobalAlertLoading || executiveGlobalAlertSlaResolutionCandidates.length <= 0) return;
+
+    const existingSignatures = new Set(
+      executiveGlobalAlertResolutions
+        .map((row) => (
+          row.metadata && typeof row.metadata === 'object'
+            ? String((row.metadata as Record<string, unknown>).resolution_signature || '')
+            : ''
+        ))
+        .filter(Boolean)
+    );
+    const pendingResolutions = executiveGlobalAlertSlaResolutionCandidates.filter((row) => !existingSignatures.has(row.resolutionSignature));
+    const pendingResolutionBatch = pendingResolutions.map((row) => row.resolutionSignature).sort().join('|');
+
+    if (!pendingResolutionBatch) return;
+    if (executiveGlobalAlertResolutionLogRef.current === pendingResolutionBatch) return;
+
+    executiveGlobalAlertResolutionLogRef.current = pendingResolutionBatch;
+    void logExecutiveGlobalAlertSlaResolutions();
+  }, [
+    executiveGlobalAlertLoading,
+    executiveGlobalAlertResolutions,
+    executiveGlobalAlertSlaResolutionCandidates,
+    logExecutiveGlobalAlertSlaResolutions,
+    selectedCompany?.id
+  ]);
   const selectedExecutiveGlobalAlertTransitions = useMemo(
     () => executiveGlobalAlertTransitions.filter((row) => row.event_id === editingExecutiveGlobalAlertId),
     [editingExecutiveGlobalAlertId, executiveGlobalAlertTransitions]
@@ -4646,6 +4849,10 @@ export const Reports: React.FC = () => {
   const selectedExecutiveGlobalAlertEscalations = useMemo(
     () => executiveGlobalAlertEscalations.filter((row) => row.event_id === editingExecutiveGlobalAlertId),
     [editingExecutiveGlobalAlertId, executiveGlobalAlertEscalations]
+  );
+  const selectedExecutiveGlobalAlertResolutions = useMemo(
+    () => executiveGlobalAlertResolutions.filter((row) => row.event_id === editingExecutiveGlobalAlertId),
+    [editingExecutiveGlobalAlertId, executiveGlobalAlertResolutions]
   );
   const selectedExecutiveGlobalAlertSlaEvent = useMemo(
     () => executiveGlobalAlertSlaData.eventRows.find((row) => row.id === editingExecutiveGlobalAlertId) || null,
@@ -4974,6 +5181,11 @@ export const Reports: React.FC = () => {
         { Indicador: 'Escalaciones SLA activas', Valor: executiveGlobalAlertSlaEscalationData.activeCount },
         { Indicador: 'Reescalamientos SLA', Valor: executiveGlobalAlertSlaEscalationData.reescalatedCount },
         { Indicador: 'Reescalamientos con cambio de responsable', Valor: executiveGlobalAlertSlaEscalationData.ownerChangeCount },
+        { Indicador: 'Cierres SLA históricos', Valor: executiveGlobalAlertSlaResolutionData.totalResolutions },
+        { Indicador: 'Tipo de cierre SLA dominante', Valor: executiveGlobalAlertSlaResolutionData.topKind ? formatExecutiveGlobalAlertSlaResolutionKind(executiveGlobalAlertSlaResolutionData.topKind.kind) : 'Sin cierres' },
+        { Indicador: 'Etapa más normalizada', Valor: executiveGlobalAlertSlaResolutionData.topStage ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaResolutionData.topStage.stageKey) : 'Sin etapa' },
+        { Indicador: 'Responsable con más cierres SLA', Valor: executiveGlobalAlertSlaResolutionData.topOwner?.owner || 'Sin responsable' },
+        { Indicador: 'Resumen cierres SLA', Valor: executiveGlobalAlertSlaResolutionData.summaryLine },
         { Indicador: 'Severidad escalación dominante', Valor: executiveGlobalAlertSlaEscalationData.topSeverity ? formatExecutiveGlobalAlertSlaEscalationSeverity(executiveGlobalAlertSlaEscalationData.topSeverity.severity) : 'Sin escalaciones' },
         { Indicador: 'Etapa escalada dominante', Valor: executiveGlobalAlertSlaEscalationData.topStage ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaEscalationData.topStage.stageKey) : 'Sin etapa' },
         { Indicador: 'Responsable escalado dominante', Valor: executiveGlobalAlertSlaEscalationData.topOwner?.owner || 'Sin responsable' },
@@ -5374,6 +5586,29 @@ export const Reports: React.FC = () => {
         Reescalada: row.isReescalated ? 'Sí' : 'No',
         'Última vez': new Date(row.latestCreatedAt).toLocaleString('es-CL')
       }));
+      const globalAlertResolutionRows = executiveGlobalAlertSlaResolutionData.recentRows.map((row) => ({
+        Fecha: new Date(row.created_at).toLocaleString('es-CL'),
+        Etapa: formatExecutiveGlobalAlertSlaStage(row.stage_key),
+        Tipo: formatExecutiveGlobalAlertSlaResolutionKind(row.resolution_kind),
+        Responsable: row.owner_label || 'Sin responsable',
+        Detalle: row.detail,
+        Recomendación: row.recommendation
+      }));
+      const globalAlertResolutionKindRows = executiveGlobalAlertSlaResolutionData.kindSummary.map((row) => ({
+        Tipo: formatExecutiveGlobalAlertSlaResolutionKind(row.kind),
+        Cierres: row.count
+      }));
+      const globalAlertResolutionStageRows = executiveGlobalAlertSlaResolutionData.stageSummary.map((row) => ({
+        Etapa: formatExecutiveGlobalAlertSlaStage(row.stageKey),
+        Cierres: row.count
+      }));
+      const globalAlertResolutionOwnerRows = executiveGlobalAlertSlaResolutionData.ownerSummary.map((row) => ({
+        Responsable: row.owner,
+        Cierres: row.count,
+        Tipos: row.kinds,
+        Etapas: row.stages,
+        'Último cierre': new Date(row.latestCreatedAt).toLocaleString('es-CL')
+      }));
       const exportWarningHistoryRows = executiveExportWarningFilteredData.rows.map((row) => ({
         Fecha: new Date(row.created_at).toLocaleString('es-CL'),
         Temporada: row.season,
@@ -5536,6 +5771,10 @@ export const Reports: React.FC = () => {
           ...(globalAlertEscalationOwnerRows.length > 0 ? [{ name: 'Responsables Escalados', rows: globalAlertEscalationOwnerRows }] : []),
           ...(globalAlertReescalationRows.length > 0 ? [{ name: 'Reescalamientos SLA', rows: globalAlertReescalationRows }] : []),
           ...(globalAlertEscalationRows.length > 0 ? [{ name: 'Bitacora Escalaciones', rows: globalAlertEscalationRows }] : []),
+          ...(globalAlertResolutionKindRows.length > 0 ? [{ name: 'Cierres SLA', rows: globalAlertResolutionKindRows }] : []),
+          ...(globalAlertResolutionStageRows.length > 0 ? [{ name: 'Etapas Normalizadas', rows: globalAlertResolutionStageRows }] : []),
+          ...(globalAlertResolutionOwnerRows.length > 0 ? [{ name: 'Responsables Normalizados', rows: globalAlertResolutionOwnerRows }] : []),
+          ...(globalAlertResolutionRows.length > 0 ? [{ name: 'Bitacora Cierres SLA', rows: globalAlertResolutionRows }] : []),
           ...(totalDataBlockerRows.length > 0 ? [{ name: 'Bloqueos Dato', rows: totalDataBlockerRows }] : []),
           ...(compareCompanyRows.length > 0 ? [{ name: 'Comparacion Empresas', rows: compareCompanyRows }] : []),
           ...(compareCompanyHistoryRows.length > 0 ? [{ name: 'Historial Empresas', rows: compareCompanyHistoryRows }] : []),
@@ -6910,6 +7149,31 @@ export const Reports: React.FC = () => {
                 ]),
                 theme: 'grid',
                 headStyles: { fillColor: [153, 27, 27] },
+                styles: { fontSize: 8 }
+              });
+
+              yPos = (doc as any).lastAutoTable.finalY + 8;
+            }
+
+            if (executiveGlobalAlertSlaResolutionData.totalResolutions > 0) {
+              autoTable(doc, {
+                startY: yPos,
+                head: [['Cierres SLA', 'Detalle']],
+                body: [
+                  ['Resumen', executiveGlobalAlertSlaResolutionData.summaryLine],
+                  ['Cierres históricos', String(executiveGlobalAlertSlaResolutionData.totalResolutions)],
+                  ['Tipo dominante', executiveGlobalAlertSlaResolutionData.topKind
+                    ? `${formatExecutiveGlobalAlertSlaResolutionKind(executiveGlobalAlertSlaResolutionData.topKind.kind)} (${executiveGlobalAlertSlaResolutionData.topKind.count})`
+                    : 'Sin tipo dominante'],
+                  ['Etapa dominante', executiveGlobalAlertSlaResolutionData.topStage
+                    ? `${formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaResolutionData.topStage.stageKey)} (${executiveGlobalAlertSlaResolutionData.topStage.count})`
+                    : 'Sin etapa dominante'],
+                  ['Responsable dominante', executiveGlobalAlertSlaResolutionData.topOwner
+                    ? `${executiveGlobalAlertSlaResolutionData.topOwner.owner} · ${executiveGlobalAlertSlaResolutionData.topOwner.count} cierres`
+                    : 'Sin responsable dominante']
+                ],
+                theme: 'grid',
+                headStyles: { fillColor: [22, 101, 52] },
                 styles: { fontSize: 8 }
               });
 
@@ -10444,6 +10708,7 @@ export const Reports: React.FC = () => {
                     <p className="mt-2">{executiveGlobalAlertTransitionData.summaryLine}</p>
                     <p className="mt-2">{executiveGlobalAlertSlaData.summaryLine}</p>
                     <p className="mt-2">{executiveGlobalAlertSlaEscalationData.summaryLine}</p>
+                    <p className="mt-2">{executiveGlobalAlertSlaResolutionData.summaryLine}</p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -10534,6 +10799,36 @@ export const Reports: React.FC = () => {
                       <div className="mt-2 text-2xl font-semibold text-amber-800">{executiveGlobalAlertSlaEscalationData.ownerChangeCount}</div>
                       <div className="mt-1 text-sm text-amber-700">
                         Reescalamientos con más de un responsable visible
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-emerald-700">Cierres SLA</div>
+                      <div className="mt-2 text-2xl font-semibold text-emerald-800">{executiveGlobalAlertSlaResolutionData.totalResolutions}</div>
+                      <div className="mt-1 text-sm text-emerald-700">Normalizaciones y cierres persistidos</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Tipo dominante</div>
+                      <div className="mt-2 text-lg font-semibold text-slate-900">
+                        {executiveGlobalAlertSlaResolutionData.topKind
+                          ? formatExecutiveGlobalAlertSlaResolutionKind(executiveGlobalAlertSlaResolutionData.topKind.kind)
+                          : 'Sin cierres'}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Etapa normalizada</div>
+                      <div className="mt-2 text-lg font-semibold text-slate-900">
+                        {executiveGlobalAlertSlaResolutionData.topStage
+                          ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaResolutionData.topStage.stageKey)
+                          : 'Sin etapa'}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Responsable con más cierres</div>
+                      <div className="mt-2 text-lg font-semibold text-slate-900">
+                        {executiveGlobalAlertSlaResolutionData.topOwner?.owner || 'Sin responsable'}
                       </div>
                     </div>
                   </div>
@@ -10693,6 +10988,37 @@ export const Reports: React.FC = () => {
                               <tr>
                                 <td colSpan={5} className="px-4 py-4 text-center text-sm text-slate-500">
                                   La alerta todavía no registra escalaciones SLA visibles.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="mt-4 overflow-x-auto rounded-xl border border-purple-200 bg-white">
+                        <table className="min-w-full divide-y divide-slate-200 text-sm">
+                          <thead className="bg-purple-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Etapa</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Tipo cierre</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Responsable</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Detalle</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200 bg-white">
+                            {selectedExecutiveGlobalAlertResolutions.map((row) => (
+                              <tr key={row.id}>
+                                <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                                <td className="px-4 py-3 font-medium text-slate-900">{formatExecutiveGlobalAlertSlaStage(row.stage_key)}</td>
+                                <td className="px-4 py-3 text-slate-700">{formatExecutiveGlobalAlertSlaResolutionKind(row.resolution_kind)}</td>
+                                <td className="px-4 py-3 text-slate-700">{row.owner_label || 'Sin responsable'}</td>
+                                <td className="px-4 py-3 text-slate-700">{row.detail}</td>
+                              </tr>
+                            ))}
+                            {selectedExecutiveGlobalAlertResolutions.length === 0 && (
+                              <tr>
+                                <td colSpan={5} className="px-4 py-4 text-center text-sm text-slate-500">
+                                  La alerta todavía no registra cierres SLA visibles.
                                 </td>
                               </tr>
                             )}
@@ -11016,6 +11342,66 @@ export const Reports: React.FC = () => {
                     </div>
                   </div>
 
+                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Tipo cierre</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Veces</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {executiveGlobalAlertSlaResolutionData.kindSummary.map((row) => (
+                            <tr key={row.kind}>
+                              <td className="px-4 py-3 font-medium text-slate-900">{formatExecutiveGlobalAlertSlaResolutionKind(row.kind)}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Etapa cerrada</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Veces</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {executiveGlobalAlertSlaResolutionData.stageSummary.map((row) => (
+                            <tr key={row.stageKey}>
+                              <td className="px-4 py-3 font-medium text-slate-900">{formatExecutiveGlobalAlertSlaStage(row.stageKey)}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Responsable</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Cierres</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {executiveGlobalAlertSlaResolutionData.ownerSummary.slice(0, 6).map((row) => (
+                            <tr key={row.owner}>
+                              <td className="px-4 py-3 text-slate-900">
+                                <div className="font-medium">{row.owner}</div>
+                                <div className="text-xs text-slate-500">{row.kinds} · {row.stages}</div>
+                              </td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
                   <div className="overflow-x-auto rounded-xl border border-slate-200">
                     <table className="min-w-full divide-y divide-slate-200 text-sm">
                       <thead className="bg-slate-50">
@@ -11073,6 +11459,38 @@ export const Reports: React.FC = () => {
                           <tr>
                             <td colSpan={9} className="px-4 py-4 text-center text-sm text-slate-500">
                               Cargando bitácora histórica de alertas globales...
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Etapa</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Tipo cierre</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Responsable</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Detalle</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 bg-white">
+                        {executiveGlobalAlertSlaResolutionData.recentRows.map((row) => (
+                          <tr key={row.id}>
+                            <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                            <td className="px-4 py-3 font-medium text-slate-900">{formatExecutiveGlobalAlertSlaStage(row.stage_key)}</td>
+                            <td className="px-4 py-3 text-slate-700">{formatExecutiveGlobalAlertSlaResolutionKind(row.resolution_kind)}</td>
+                            <td className="px-4 py-3 text-slate-700">{row.owner_label || 'Sin responsable'}</td>
+                            <td className="px-4 py-3 text-slate-700">{row.detail}</td>
+                          </tr>
+                        ))}
+                        {!executiveGlobalAlertLoading && executiveGlobalAlertSlaResolutionData.recentRows.length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="px-4 py-4 text-center text-sm text-slate-500">
+                              No hay cierres SLA visibles para los filtros actuales.
                             </td>
                           </tr>
                         )}
@@ -15035,6 +15453,7 @@ export const Reports: React.FC = () => {
                               <p className="mt-5 text-lg text-slate-500">
                                 Reescalamientos visibles: {executiveGlobalAlertSlaEscalationData.reescalatedCount}. Con cambio de responsable: {executiveGlobalAlertSlaEscalationData.ownerChangeCount}.
                               </p>
+                              <p className="mt-5 text-lg text-slate-500">{executiveGlobalAlertSlaResolutionData.summaryLine}</p>
                               <p className="mt-5 text-lg text-slate-500">{executiveGlobalAlertExportLinkSummary}</p>
                             </div>
 
@@ -15110,6 +15529,30 @@ export const Reports: React.FC = () => {
                               <div className="text-sm uppercase tracking-wide text-amber-700">Cambios de responsable</div>
                               <div className="mt-3 text-3xl font-bold text-amber-800">{executiveGlobalAlertSlaEscalationData.ownerChangeCount}</div>
                               <div className="mt-2 text-sm text-amber-700">Reescalamientos con más de un dueño visible</div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-emerald-700">Cierres SLA</div>
+                              <div className="mt-3 text-3xl font-bold text-emerald-800">{executiveGlobalAlertSlaResolutionData.totalResolutions}</div>
+                              <div className="mt-2 text-sm text-emerald-700">Normalizaciones y cierres formalizados</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Tipo dominante</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">
+                                {executiveGlobalAlertSlaResolutionData.topKind
+                                  ? formatExecutiveGlobalAlertSlaResolutionKind(executiveGlobalAlertSlaResolutionData.topKind.kind)
+                                  : '-'}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Etapa más normalizada</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">
+                                {executiveGlobalAlertSlaResolutionData.topStage
+                                  ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaResolutionData.topStage.stageKey)
+                                  : '-'}
+                              </div>
                             </div>
                           </div>
                         </div>

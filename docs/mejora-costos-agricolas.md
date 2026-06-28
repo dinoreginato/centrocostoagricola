@@ -4,7 +4,7 @@
 Dejar la aplicacion mas confiable para gestion agricola real, con costos mas verdaderos, menos duplicidad y una mejor resolucion de datos para toma de decisiones.
 
 ## Estado General
-- Avance general estimado del roadmap activo: `85%`
+- Avance general estimado del roadmap activo: `90%`
 - Estado actual:
   - `[x]` base canonica de temporadas y costos
   - `[x]` conciliacion y auditoria ejecutiva
@@ -15,8 +15,9 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - `[x]` bitacora, ciclo de vida y transiciones de alertas globales
   - `[x]` SLA y escalamiento automatico de alertas globales
   - `[x]` reescalamiento por cambio de responsable o aumento de severidad
+  - `[x]` cierre asistido de incumplimientos SLA
   - `[ ]` persistencia historica materializada del ranking global
-  - `[ ]` cierre asistido o reescalamiento automatico con sugerencia de cierre
+  - `[ ]` recomendaciones automáticas de normalizacion preventiva
 
 ## Avance Del Plan
 ### Fase 1
@@ -65,8 +66,9 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
 - `[x]` SLA de gestion por etapa.
 - `[x]` Escalamiento automatico por vencimiento SLA.
 - `[x]` Reescalamiento por cambio de responsable o cambio de severidad.
+- `[x]` Cierre asistido cuando una etapa deja de incumplir SLA o la alerta queda cerrada.
 - `[ ]` Persistencia materializada del ranking global para reducir recalculo.
-- `[ ]` Cierre asistido y sugerencias automáticas de normalizacion.
+- `[ ]` Sugerencias automáticas de normalizacion antes de nueva escalación.
 
 ## Lo Que Ya Esta Bien
 - Modelo predial correcto: `empresa -> campo -> sector`.
@@ -761,6 +763,26 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - distinguir una alerta vencida aislada de una alerta que ya cambio de dueño o empeoro sin resolverse
   - dar una senal clara de reincidencia operativa para comite y seguimiento
 
+## Cierre Asistido De Incumplimientos SLA
+- Estado: `[x] Implementado`
+- Cuando una etapa escalada deja de incumplir SLA, `Reportes` ahora registra un cierre SLA persistido.
+- La nueva capa usa la migración `supabase/migrations/20260628134000_create_executive_global_alert_sla_resolutions.sql`.
+- El cierre asistido distingue:
+  - `normalizada`: la etapa volvió a control sin requerir que toda la alerta estuviera cerrada
+  - `cerrada`: la alerta quedó en estado `cerrada` y la etapa dejó de estar vencida
+- `Reportes` ahora expone:
+  - total histórico de cierres SLA
+  - tipo de cierre dominante
+  - etapa más normalizada
+  - responsable con más cierres visibles
+  - bitácora de cierres por alerta y bitácora general
+  - hojas Excel `Cierres SLA`, `Etapas Normalizadas`, `Responsables Normalizados` y `Bitacora Cierres SLA`
+  - resumen en PDF y lectura complementaria en fullscreen
+- Objetivo:
+  - distinguir el momento en que un incumplimiento deja de ser riesgo activo
+  - dejar trazabilidad del retorno a control, no solo del problema
+  - facilitar comités donde se revisa qué alertas fueron abiertas, reescaladas y finalmente normalizadas
+
 ## Siguiente Paso Recomendado
 - Evaluar persistencia historica del ranking global para medir cambios de liderazgo sin recalculo completo en tiempo real.
-- Considerar cierre asistido automatico cuando una alerta deje de incumplir SLA o cambie a `cerrada`.
+- Considerar recomendaciones automáticas de normalizacion preventiva antes de que una alerta vuelva a escalar.
