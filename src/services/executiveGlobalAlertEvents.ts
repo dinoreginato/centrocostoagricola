@@ -17,6 +17,7 @@ export type ExecutiveGlobalAlertEventCreate = {
 
 export type ExecutiveGlobalAlertManagementStatus = 'pendiente' | 'reconocida' | 'comunicada' | 'cerrada';
 export type ExecutiveGlobalAlertTransitionStatus = ExecutiveGlobalAlertManagementStatus | 'sin_estado';
+export type ExecutiveGlobalAlertSlaEscalationSeverity = 'alta' | 'critica';
 
 export type ExecutiveGlobalAlertEventRow = {
   id: string;
@@ -59,6 +60,35 @@ export type ExecutiveGlobalAlertTransitionRow = {
   to_status: ExecutiveGlobalAlertManagementStatus;
   owner_label: string | null;
   note: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export type ExecutiveGlobalAlertSlaEscalationCreate = {
+  companyId: string;
+  eventId: string;
+  stageKey: 'recognition' | 'communication' | 'closure';
+  escalationSeverity: ExecutiveGlobalAlertSlaEscalationSeverity;
+  ownerLabel?: string | null;
+  overdueHours: number;
+  targetHours: number;
+  detail: string;
+  recommendation: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type ExecutiveGlobalAlertSlaEscalationRow = {
+  id: string;
+  company_id: string;
+  event_id: string;
+  created_by: string;
+  stage_key: 'recognition' | 'communication' | 'closure';
+  escalation_severity: ExecutiveGlobalAlertSlaEscalationSeverity;
+  owner_label: string | null;
+  overdue_hours: number;
+  target_hours: number;
+  detail: string;
+  recommendation: string;
   metadata: Record<string, unknown> | null;
   created_at: string;
 };
@@ -125,6 +155,25 @@ export async function createExecutiveGlobalAlertTransition(params: ExecutiveGlob
   if (error) throw error;
 }
 
+export async function createExecutiveGlobalAlertSlaEscalation(params: ExecutiveGlobalAlertSlaEscalationCreate) {
+  const { error } = await supabase
+    .from('executive_global_alert_sla_escalations')
+    .insert({
+      company_id: params.companyId,
+      event_id: params.eventId,
+      stage_key: params.stageKey,
+      escalation_severity: params.escalationSeverity,
+      owner_label: params.ownerLabel?.trim() || null,
+      overdue_hours: params.overdueHours,
+      target_hours: params.targetHours,
+      detail: params.detail,
+      recommendation: params.recommendation,
+      metadata: params.metadata || {}
+    });
+
+  if (error) throw error;
+}
+
 export async function loadExecutiveGlobalAlertEvents(params: {
   companyId: string;
   season?: string;
@@ -171,4 +220,28 @@ export async function loadExecutiveGlobalAlertTransitions(params: {
   const { data, error } = await query;
   if (error) throw error;
   return (data || []) as ExecutiveGlobalAlertTransitionRow[];
+}
+
+export async function loadExecutiveGlobalAlertSlaEscalations(params: {
+  companyId: string;
+  eventIds?: string[];
+  limit?: number;
+}) {
+  let query = supabase
+    .from('executive_global_alert_sla_escalations')
+    .select('*')
+    .eq('company_id', params.companyId)
+    .order('created_at', { ascending: false });
+
+  if (params.eventIds && params.eventIds.length > 0) {
+    query = query.in('event_id', params.eventIds);
+  }
+
+  if (params.limit && params.limit > 0) {
+    query = query.limit(params.limit);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []) as ExecutiveGlobalAlertSlaEscalationRow[];
 }

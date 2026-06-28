@@ -687,6 +687,28 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - distinguir cuellos de botella entre reconocimiento, comunicación y cierre
   - dejar una lectura ejecutiva clara sobre responsables y atrasos abiertos
 
+## Escalamiento Automático Por SLA
+- Cuando una alerta global sigue abierta y supera el SLA de su etapa activa, `Reportes` crea una escalación persistida en una bitácora separada.
+- La nueva capa usa la migración `supabase/migrations/20260628130000_create_executive_global_alert_sla_escalations.sql`.
+- Cada escalación guarda:
+  - alerta global asociada
+  - etapa vencida: reconocimiento, comunicación o cierre
+  - severidad: alta o crítica
+  - responsable visible al momento del vencimiento
+  - horas de atraso y objetivo comprometido
+  - detalle y recomendación ejecutiva
+  - firma deduplicada por alerta y etapa vencida
+- La lectura se integra en:
+  - tablero ejecutivo con resumen histórico, activas, severidad dominante y responsable más expuesto
+  - modal de exportación para advertir cuando el reporte se circula con escalaciones SLA activas
+  - PDF ejecutivo con resumen y bitácora resumida
+  - Excel con hojas `Escalaciones SLA`, `Severidad Escalaciones`, `Responsables Escalados` y `Bitacora Escalaciones`
+  - slide fullscreen de gobernanza SLA
+- Objetivo:
+  - impedir que una alerta vencida quede invisible durante la circulación ejecutiva
+  - dejar trazabilidad formal de cada incumplimiento SLA
+  - distinguir entre atraso operativo y deterioro ya escalado
+
 ## Siguiente Paso Recomendado
 - Evaluar persistencia historica del ranking global para medir cambios de liderazgo sin recalculo completo en tiempo real.
-- Considerar escalamiento automatico de alertas globales vencidas con reglas por severidad y responsable.
+- Considerar cierre asistido o reescalamiento automatico cuando una alerta cambie de responsable y el atraso persista.

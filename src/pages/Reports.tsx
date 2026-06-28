@@ -20,12 +20,15 @@ import {
 } from '../services/executiveExportWarningEvents';
 import {
   createExecutiveGlobalAlertEvent,
+  createExecutiveGlobalAlertSlaEscalation,
   createExecutiveGlobalAlertTransition,
   loadExecutiveGlobalAlertEvents,
+  loadExecutiveGlobalAlertSlaEscalations,
   loadExecutiveGlobalAlertTransitions,
   updateExecutiveGlobalAlertEvent,
   type ExecutiveGlobalAlertEventRow,
   type ExecutiveGlobalAlertManagementStatus,
+  type ExecutiveGlobalAlertSlaEscalationRow,
   type ExecutiveGlobalAlertTransitionRow,
   type ExecutiveGlobalAlertTransitionStatus
 } from '../services/executiveGlobalAlertEvents';
@@ -260,7 +263,8 @@ const EXECUTIVE_AUDIT_LAYER_OPTIONS: Array<{ value: ExecutiveAuditLayerFilter; l
 
 const EXECUTIVE_EXPORT_WARNING_TYPE_LABELS: Record<string, string> = {
   committee_not_ready: 'Comité no listo',
-  trend_deterioration_high_closure: 'Deterioro con cierre alto'
+  trend_deterioration_high_closure: 'Deterioro con cierre alto',
+  global_sla_escalation: 'Escalación SLA global activa'
 };
 const EXECUTIVE_GLOBAL_ALERT_TYPE_LABELS: Record<string, string> = {
   global_position: 'Posición global fuera del tramo líder',
@@ -315,6 +319,30 @@ const formatExecutiveGlobalAlertStatus = (value: string | null | undefined) => (
 const formatExecutiveGlobalAlertTransitionStatus = (value: ExecutiveGlobalAlertTransitionStatus | string | null | undefined) => (
   value === 'sin_estado' ? 'Sin estado previo' : formatExecutiveGlobalAlertStatus(value)
 );
+
+const formatExecutiveGlobalAlertSlaStage = (value: string | null | undefined) => {
+  switch (value) {
+    case 'recognition':
+      return 'Reconocimiento';
+    case 'communication':
+      return 'Comunicación';
+    case 'closure':
+      return 'Cierre';
+    default:
+      return 'Sin etapa';
+  }
+};
+
+const formatExecutiveGlobalAlertSlaEscalationSeverity = (value: string | null | undefined) => {
+  switch (value) {
+    case 'critica':
+      return 'Crítica';
+    case 'alta':
+      return 'Alta';
+    default:
+      return 'Sin severidad';
+  }
+};
 
 const formatExecutiveGlobalAlertSlaHours = (value: number | null | undefined) => {
   const normalized = Number(value);
@@ -898,6 +926,107 @@ const buildExecutiveGlobalAlertSlaAnalytics = (
     criticalStage,
     openCount,
     breachedOpenCount,
+    summaryLine
+  };
+};
+
+const buildExecutiveGlobalAlertSlaEscalationAnalytics = (
+  escalations: ExecutiveGlobalAlertSlaEscalationRow[],
+  visibleEventIds: string[],
+  activeSignatures: string[],
+  scopeLabel: string
+) => {
+  const visibleRows = visibleEventIds.length > 0
+    ? escalations.filter((row) => visibleEventIds.includes(row.event_id))
+    : escalations;
+  const activeSignatureSet = new Set(activeSignatures);
+  const activeRows = visibleRows.filter((row) => {
+    const signature = row.metadata && typeof row.metadata === 'object'
+      ? String((row.metadata as Record<string, unknown>).sla_signature || '')
+      : '';
+    return signature && activeSignatureSet.has(signature);
+  });
+  const latestEscalation = visibleRows[0] || null;
+  const severitySummary = Array.from(
+    visibleRows.reduce((map, row) => {
+      map.set(row.escalation_severity, (map.get(row.escalation_severity) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  )
+    .map(([severity, count]) => ({ severity, count }))
+    .sort((a, b) => b.count - a.count);
+  const stageSummary = Array.from(
+    visibleRows.reduce((map, row) => {
+      map.set(row.stage_key, (map.get(row.stage_key) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  )
+    .map(([stageKey, count]) => ({ stageKey, count }))
+    .sort((a, b) => b.count - a.count);
+  const ownerSummary = Array.from(
+    visibleRows.reduce((map, row) => {
+      const owner = row.owner_label?.trim() || 'Sin responsable';
+      const current = map.get(owner) || {
+        owner,
+        count: 0,
+        activeCount: 0,
+        maxOverdueHours: 0,
+        latestCreatedAt: row.created_at,
+        stageSet: new Set<string>()
+      };
+      const signature = row.metadata && typeof row.metadata === 'object'
+        ? String((row.metadata as Record<string, unknown>).sla_signature || '')
+        : '';
+      current.count += 1;
+      current.activeCount += signature && activeSignatureSet.has(signature) ? 1 : 0;
+      current.maxOverdueHours = Math.max(current.maxOverdueHours, Number(row.overdue_hours || 0));
+      current.latestCreatedAt = current.latestCreatedAt > row.created_at ? current.latestCreatedAt : row.created_at;
+      current.stageSet.add(formatExecutiveGlobalAlertSlaStage(row.stage_key));
+      map.set(owner, current);
+      return map;
+    }, new Map<string, {
+      owner: string;
+      count: number;
+      activeCount: number;
+      maxOverdueHours: number;
+      latestCreatedAt: string;
+      stageSet: Set<string>;
+    }>())
+  )
+    .map(([, value]) => ({
+      owner: value.owner,
+      count: value.count,
+      activeCount: value.activeCount,
+      maxOverdueHours: value.maxOverdueHours,
+      latestCreatedAt: value.latestCreatedAt,
+      stages: Array.from(value.stageSet).sort().join(', ')
+    }))
+    .sort((a, b) => {
+      if (b.activeCount !== a.activeCount) return b.activeCount - a.activeCount;
+      if (Math.abs(b.maxOverdueHours - a.maxOverdueHours) > 0.001) return b.maxOverdueHours - a.maxOverdueHours;
+      if (b.count !== a.count) return b.count - a.count;
+      return b.latestCreatedAt.localeCompare(a.latestCreatedAt);
+    });
+  const topSeverity = severitySummary[0] || null;
+  const topStage = stageSummary[0] || null;
+  const topOwner = ownerSummary[0] || null;
+  const summaryLine = latestEscalation
+    ? `Se registran ${visibleRows.length} escalaciones SLA para ${scopeLabel}. Actualmente siguen activas ${activeRows.length} y la etapa más expuesta es ${topStage ? formatExecutiveGlobalAlertSlaStage(topStage.stageKey).toLowerCase() : 'sin etapa dominante'}.`
+    : `No hay escalaciones SLA persistidas para ${scopeLabel}.`;
+
+  return {
+    rows: visibleRows,
+    activeRows,
+    latestEscalation,
+    recentRows: visibleRows.slice(0, 12),
+    severitySummary,
+    stageSummary,
+    ownerSummary,
+    topSeverity,
+    topStage,
+    topOwner,
+    activeCount: activeRows.length,
+    totalEscalations: visibleRows.length,
     summaryLine
   };
 };
@@ -1662,6 +1791,7 @@ export const Reports: React.FC = () => {
   const [executiveExportWarningLoading, setExecutiveExportWarningLoading] = useState(false);
   const [executiveGlobalAlertEvents, setExecutiveGlobalAlertEvents] = useState<ExecutiveGlobalAlertEventRow[]>([]);
   const [executiveGlobalAlertTransitions, setExecutiveGlobalAlertTransitions] = useState<ExecutiveGlobalAlertTransitionRow[]>([]);
+  const [executiveGlobalAlertEscalations, setExecutiveGlobalAlertEscalations] = useState<ExecutiveGlobalAlertSlaEscalationRow[]>([]);
   const [executiveGlobalAlertLoading, setExecutiveGlobalAlertLoading] = useState(false);
   const [costAuditLoading, setCostAuditLoading] = useState(false);
   const [showProductionModal, setShowProductionModal] = useState(false);
@@ -1730,6 +1860,7 @@ export const Reports: React.FC = () => {
   const costAuditLoadSeqRef = useRef(0);
   const executiveGlobalRankingLoadSeqRef = useRef(0);
   const executiveGlobalAlertLogRef = useRef<string>('');
+  const executiveGlobalAlertEscalationLogRef = useRef<string>('');
 
   // Update orientation when tab changes
   useEffect(() => {
@@ -1818,6 +1949,8 @@ export const Reports: React.FC = () => {
     setPendingExecutiveExportAction(null);
     setCurrentSlide(0);
     setPresentationMode(false);
+    executiveGlobalAlertLogRef.current = '';
+    executiveGlobalAlertEscalationLogRef.current = '';
     setRawCostMovements([]);
     setRawMarginRows([]);
     setRawProductionRecords([]);
@@ -1827,6 +1960,7 @@ export const Reports: React.FC = () => {
     setExecutiveExportWarningEvents([]);
     setExecutiveGlobalAlertEvents([]);
     setExecutiveGlobalAlertTransitions([]);
+    setExecutiveGlobalAlertEscalations([]);
     setReportData([]);
     setMonthlyExpenses([]);
     setCategoryExpenses([]);
@@ -1901,17 +2035,20 @@ export const Reports: React.FC = () => {
 
     void (async () => {
       try {
-        const [rows, transitions] = await Promise.all([
+        const [rows, transitions, escalations] = await Promise.all([
           loadExecutiveGlobalAlertEvents({ companyId, limit: 100 }),
-          loadExecutiveGlobalAlertTransitions({ companyId, limit: 300 })
+          loadExecutiveGlobalAlertTransitions({ companyId, limit: 300 }),
+          loadExecutiveGlobalAlertSlaEscalations({ companyId, limit: 300 })
         ]);
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalAlertEvents(rows || []);
         setExecutiveGlobalAlertTransitions(transitions || []);
+        setExecutiveGlobalAlertEscalations(escalations || []);
       } catch {
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalAlertEvents([]);
         setExecutiveGlobalAlertTransitions([]);
+        setExecutiveGlobalAlertEscalations([]);
       } finally {
         if (!cancelled && selectedCompany?.id === companyId) {
           setExecutiveGlobalAlertLoading(false);
@@ -3993,101 +4130,6 @@ export const Reports: React.FC = () => {
     executiveTotalDataClosure.totalClosurePct
   ]);
 
-  const executiveExportWarningContext = useMemo(() => {
-    const warningTypes: string[] = [];
-
-    if (executiveTotalDataClosure.readiness.title === 'No listo para comité') {
-      warningTypes.push('committee_not_ready');
-    }
-
-    if (executiveTrendWarning) {
-      warningTypes.push('trend_deterioration_high_closure');
-    }
-
-    const hasWarning = warningTypes.length > 0;
-    const warningSummary = !hasWarning
-      ? 'Sin advertencias activas para exportación ejecutiva.'
-      : [
-          executiveTotalDataClosure.readiness.title === 'No listo para comité'
-            ? `La temporada sigue en ${executiveTotalDataClosure.readiness.title}.`
-            : null,
-          executiveTrendWarning?.detail || null
-        ].filter(Boolean).join(' ');
-
-    return {
-      hasWarning,
-      warningTypes,
-      warningSummary
-    };
-  }, [executiveTotalDataClosure.readiness.title, executiveTrendWarning]);
-
-  const logExecutiveExportWarningEvent = useCallback(async (
-    format: ExecutiveExportAction,
-    circulationContext?: {
-      recipient: string;
-      reason: ExecutiveExportCirculationReason;
-      notes?: string;
-    }
-  ) => {
-    if (!selectedCompany?.id || !executiveExportWarningContext.hasWarning) return;
-
-    try {
-      await createExecutiveExportWarningEvent({
-        companyId: selectedCompany.id,
-        season: selectedSeason,
-        exportFormat: format,
-        readinessTitle: executiveTotalDataClosure.readiness.title,
-        totalClosurePct: Number(executiveTotalDataClosure.totalClosurePct.toFixed(2)),
-        warningTypes: executiveExportWarningContext.warningTypes,
-        warningSummary: executiveExportWarningContext.warningSummary,
-        warningDetail: executiveTrendWarning?.recommendation || executiveTotalDataClosure.readiness.detail,
-        fieldFilter: executiveFieldFilter,
-        fieldLabel: executiveFieldLabel,
-        compareCompanyId: executiveCompareCompanyId !== 'none' ? executiveCompareCompanyId : null,
-        compareCompanyName: executiveCompareCompanyName || null,
-        circulationRecipient: circulationContext?.recipient || null,
-        circulationReason: circulationContext?.reason || null,
-        circulationNotes: circulationContext?.notes || null,
-        metadata: {
-          company_name: companyName,
-          economic_pct: Number(executiveTotalDataClosure.economicPct.toFixed(2)),
-          traceability_pct: Number(executiveTotalDataClosure.traceabilityPct.toFixed(2)),
-          official_support_pct: Number(executiveTotalDataClosure.officialSupportPct.toFixed(2)),
-          review_clean_pct: Number(executiveTotalDataClosure.reviewCleanPct.toFixed(2)),
-          blockers: executiveTotalDataClosure.blockers,
-          trend_direction: executiveCurrentCompanyTrend.direction,
-          trend_delta: Number(executiveCurrentCompanyTrend.delta.toFixed(2)),
-          trend_recent_window: executiveCurrentCompanyTrend.recentWindowLabel,
-          trend_previous_window: executiveCurrentCompanyTrend.previousWindowLabel,
-          compare_company_trend_direction: executiveCompareCompanyTrend?.direction || null,
-          compare_company_trend_delta: executiveCompareCompanyTrend ? Number(executiveCompareCompanyTrend.delta.toFixed(2)) : null,
-          compare_company_readiness: executiveCompareCompanyTotalClosure?.readiness.title || null,
-          trend_alert_detail: executiveTrendWarning?.detail || null,
-          trend_alert_compare_line: executiveTrendWarning?.compareLine || null,
-          circulation_recipient: circulationContext?.recipient || null,
-          circulation_reason: circulationContext?.reason || null,
-          circulation_notes: circulationContext?.notes || null
-        }
-      });
-    } catch (error) {
-      console.error('No se pudo registrar la bitácora de exportación bajo advertencia.', error);
-    }
-  }, [
-    companyName,
-    executiveCompareCompanyId,
-    executiveCompareCompanyName,
-    executiveCompareCompanyTotalClosure,
-    executiveCompareCompanyTrend,
-    executiveCurrentCompanyTrend,
-    executiveExportWarningContext,
-    executiveFieldFilter,
-    executiveFieldLabel,
-    executiveTotalDataClosure,
-    executiveTrendWarning,
-    selectedCompany?.id,
-    selectedSeason
-  ]);
-
   const logExecutiveGlobalAlertEvent = useCallback(async () => {
     if (!selectedCompany?.id || !executiveGlobalAlertContext.hasAlert || !executiveGlobalAlertContext.severity) return;
 
@@ -4225,12 +4267,14 @@ export const Reports: React.FC = () => {
         }
       });
 
-      const [rows, transitions] = await Promise.all([
+      const [rows, transitions, escalations] = await Promise.all([
         loadExecutiveGlobalAlertEvents({ companyId: selectedCompany.id, limit: 100 }),
-        loadExecutiveGlobalAlertTransitions({ companyId: selectedCompany.id, limit: 300 })
+        loadExecutiveGlobalAlertTransitions({ companyId: selectedCompany.id, limit: 300 }),
+        loadExecutiveGlobalAlertSlaEscalations({ companyId: selectedCompany.id, limit: 300 })
       ]);
       setExecutiveGlobalAlertEvents(rows || []);
       setExecutiveGlobalAlertTransitions(transitions || []);
+      setExecutiveGlobalAlertEscalations(escalations || []);
       toast.success('Se actualizó la gestión de la alerta global.');
       setEditingExecutiveGlobalAlertId(null);
     } catch (error) {
@@ -4305,6 +4349,217 @@ export const Reports: React.FC = () => {
     ),
     [executiveGlobalAlertFilteredRows, executiveGlobalAlertFiltersActive, executiveGlobalAlertTransitions]
   );
+  const executiveGlobalAlertSlaEscalationCandidates = useMemo(() => (
+    executiveGlobalAlertSlaData.eventRows
+      .filter((row) => row.isCurrentlyBreached && row.currentStageKey)
+      .map((row) => {
+        const signature = `${row.id}::${row.currentStageKey}`;
+        const escalationSeverity = row.currentStageOverdueHours >= 72 || row.severity === 'alta'
+          ? 'critica'
+          : 'alta';
+        const stageLabel = formatExecutiveGlobalAlertSlaStage(row.currentStageKey);
+        return {
+          signature,
+          eventId: row.id,
+          stageKey: row.currentStageKey,
+          stageLabel,
+          escalationSeverity,
+          ownerLabel: row.owner,
+          overdueHours: row.currentStageOverdueHours,
+          targetHours: row.currentStageTargetHours,
+          detail: `${stageLabel} supera su SLA por ${formatExecutiveGlobalAlertSlaHours(row.currentStageOverdueHours)} en la alerta global de ${row.season}.`,
+          recommendation: escalationSeverity === 'critica'
+            ? `Escalar de inmediato con ${row.owner || 'responsable no asignado'} y dejar compromiso formal para cerrar la etapa ${stageLabel.toLowerCase()}.`
+            : `Acelerar la etapa ${stageLabel.toLowerCase()} y formalizar responsable antes de la próxima circulación ejecutiva.`
+        };
+      })
+  ), [executiveGlobalAlertSlaData.eventRows]);
+  const executiveGlobalAlertSlaEscalationData = useMemo(
+    () => buildExecutiveGlobalAlertSlaEscalationAnalytics(
+      executiveGlobalAlertEscalations,
+      executiveGlobalAlertFilteredRows.map((row) => row.id),
+      executiveGlobalAlertSlaEscalationCandidates.map((row) => row.signature),
+      executiveGlobalAlertFiltersActive ? 'los filtros activos' : 'la empresa activa'
+    ),
+    [
+      executiveGlobalAlertEscalations,
+      executiveGlobalAlertFilteredRows,
+      executiveGlobalAlertFiltersActive,
+      executiveGlobalAlertSlaEscalationCandidates
+    ]
+  );
+  const executiveExportWarningContext = useMemo(() => {
+    const warningTypes: string[] = [];
+
+    if (executiveTotalDataClosure.readiness.title === 'No listo para comité') {
+      warningTypes.push('committee_not_ready');
+    }
+
+    if (executiveTrendWarning) {
+      warningTypes.push('trend_deterioration_high_closure');
+    }
+
+    if (executiveGlobalAlertSlaEscalationData.activeCount > 0) {
+      warningTypes.push('global_sla_escalation');
+    }
+
+    const hasWarning = warningTypes.length > 0;
+    const warningSummary = !hasWarning
+      ? 'Sin advertencias activas para exportación ejecutiva.'
+      : [
+          executiveTotalDataClosure.readiness.title === 'No listo para comité'
+            ? `La temporada sigue en ${executiveTotalDataClosure.readiness.title}.`
+            : null,
+          executiveTrendWarning?.detail || null,
+          executiveGlobalAlertSlaEscalationData.activeCount > 0
+            ? `Existen ${executiveGlobalAlertSlaEscalationData.activeCount} escalaciones SLA activas; la etapa más expuesta es ${executiveGlobalAlertSlaEscalationData.topStage ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaEscalationData.topStage.stageKey).toLowerCase() : 'sin etapa dominante'}.`
+            : null
+        ].filter(Boolean).join(' ');
+
+    return {
+      hasWarning,
+      warningTypes,
+      warningSummary
+    };
+  }, [
+    executiveGlobalAlertSlaEscalationData.activeCount,
+    executiveGlobalAlertSlaEscalationData.topStage,
+    executiveTotalDataClosure.readiness.title,
+    executiveTrendWarning
+  ]);
+  const logExecutiveExportWarningEvent = useCallback(async (
+    format: ExecutiveExportAction,
+    circulationContext?: {
+      recipient: string;
+      reason: ExecutiveExportCirculationReason;
+      notes?: string;
+    }
+  ) => {
+    if (!selectedCompany?.id || !executiveExportWarningContext.hasWarning) return;
+
+    try {
+      await createExecutiveExportWarningEvent({
+        companyId: selectedCompany.id,
+        season: selectedSeason,
+        exportFormat: format,
+        readinessTitle: executiveTotalDataClosure.readiness.title,
+        totalClosurePct: Number(executiveTotalDataClosure.totalClosurePct.toFixed(2)),
+        warningTypes: executiveExportWarningContext.warningTypes,
+        warningSummary: executiveExportWarningContext.warningSummary,
+        warningDetail: executiveTrendWarning?.recommendation || executiveTotalDataClosure.readiness.detail,
+        fieldFilter: executiveFieldFilter,
+        fieldLabel: executiveFieldLabel,
+        compareCompanyId: executiveCompareCompanyId !== 'none' ? executiveCompareCompanyId : null,
+        compareCompanyName: executiveCompareCompanyName || null,
+        circulationRecipient: circulationContext?.recipient || null,
+        circulationReason: circulationContext?.reason || null,
+        circulationNotes: circulationContext?.notes || null,
+        metadata: {
+          company_name: companyName,
+          economic_pct: Number(executiveTotalDataClosure.economicPct.toFixed(2)),
+          traceability_pct: Number(executiveTotalDataClosure.traceabilityPct.toFixed(2)),
+          official_support_pct: Number(executiveTotalDataClosure.officialSupportPct.toFixed(2)),
+          review_clean_pct: Number(executiveTotalDataClosure.reviewCleanPct.toFixed(2)),
+          blockers: executiveTotalDataClosure.blockers,
+          trend_direction: executiveCurrentCompanyTrend.direction,
+          trend_delta: Number(executiveCurrentCompanyTrend.delta.toFixed(2)),
+          trend_recent_window: executiveCurrentCompanyTrend.recentWindowLabel,
+          trend_previous_window: executiveCurrentCompanyTrend.previousWindowLabel,
+          compare_company_trend_direction: executiveCompareCompanyTrend?.direction || null,
+          compare_company_trend_delta: executiveCompareCompanyTrend ? Number(executiveCompareCompanyTrend.delta.toFixed(2)) : null,
+          compare_company_readiness: executiveCompareCompanyTotalClosure?.readiness.title || null,
+          trend_alert_detail: executiveTrendWarning?.detail || null,
+          trend_alert_compare_line: executiveTrendWarning?.compareLine || null,
+          active_sla_escalations: executiveGlobalAlertSlaEscalationData.activeCount,
+          active_sla_stage: executiveGlobalAlertSlaEscalationData.topStage?.stageKey || null,
+          active_sla_owner: executiveGlobalAlertSlaEscalationData.topOwner?.owner || null,
+          active_sla_summary: executiveGlobalAlertSlaEscalationData.summaryLine,
+          circulation_recipient: circulationContext?.recipient || null,
+          circulation_reason: circulationContext?.reason || null,
+          circulation_notes: circulationContext?.notes || null
+        }
+      });
+    } catch (error) {
+      console.error('No se pudo registrar la bitácora de exportación bajo advertencia.', error);
+    }
+  }, [
+    companyName,
+    executiveCompareCompanyId,
+    executiveCompareCompanyName,
+    executiveCompareCompanyTotalClosure,
+    executiveCompareCompanyTrend,
+    executiveCurrentCompanyTrend,
+    executiveExportWarningContext,
+    executiveFieldFilter,
+    executiveFieldLabel,
+    executiveGlobalAlertSlaEscalationData.activeCount,
+    executiveGlobalAlertSlaEscalationData.summaryLine,
+    executiveGlobalAlertSlaEscalationData.topOwner?.owner,
+    executiveGlobalAlertSlaEscalationData.topStage?.stageKey,
+    executiveTotalDataClosure,
+    executiveTrendWarning,
+    selectedCompany?.id,
+    selectedSeason
+  ]);
+  const logExecutiveGlobalAlertSlaEscalations = useCallback(async () => {
+    if (!selectedCompany?.id || executiveGlobalAlertSlaEscalationCandidates.length <= 0) return;
+
+    try {
+      for (const escalation of executiveGlobalAlertSlaEscalationCandidates) {
+        await createExecutiveGlobalAlertSlaEscalation({
+          companyId: selectedCompany.id,
+          eventId: escalation.eventId,
+          stageKey: escalation.stageKey,
+          escalationSeverity: escalation.escalationSeverity,
+          ownerLabel: escalation.ownerLabel,
+          overdueHours: Number(escalation.overdueHours.toFixed(2)),
+          targetHours: Number(escalation.targetHours.toFixed(2)),
+          detail: escalation.detail,
+          recommendation: escalation.recommendation,
+          metadata: {
+            source: 'sla_breach_global_alert',
+            sla_signature: escalation.signature,
+            stage_label: escalation.stageLabel,
+            owner_label: escalation.ownerLabel,
+            company_name: companyName
+          }
+        });
+      }
+
+      const escalations = await loadExecutiveGlobalAlertSlaEscalations({ companyId: selectedCompany.id, limit: 300 });
+      setExecutiveGlobalAlertEscalations(escalations || []);
+    } catch (error) {
+      console.error('No se pudo registrar la bitácora de escalaciones SLA globales.', error);
+    }
+  }, [companyName, executiveGlobalAlertSlaEscalationCandidates, selectedCompany?.id]);
+
+  useEffect(() => {
+    if (!selectedCompany?.id || executiveGlobalAlertLoading || executiveGlobalAlertSlaEscalationCandidates.length <= 0) return;
+
+    const existingSignatures = new Set(
+      executiveGlobalAlertEscalations
+        .map((row) => (
+          row.metadata && typeof row.metadata === 'object'
+            ? String((row.metadata as Record<string, unknown>).sla_signature || '')
+            : ''
+        ))
+        .filter(Boolean)
+    );
+    const pendingEscalations = executiveGlobalAlertSlaEscalationCandidates.filter((row) => !existingSignatures.has(row.signature));
+    const pendingSignatureBatch = pendingEscalations.map((row) => row.signature).sort().join('|');
+
+    if (!pendingSignatureBatch) return;
+    if (executiveGlobalAlertEscalationLogRef.current === pendingSignatureBatch) return;
+
+    executiveGlobalAlertEscalationLogRef.current = pendingSignatureBatch;
+    void logExecutiveGlobalAlertSlaEscalations();
+  }, [
+    executiveGlobalAlertEscalations,
+    executiveGlobalAlertLoading,
+    executiveGlobalAlertSlaEscalationCandidates,
+    logExecutiveGlobalAlertSlaEscalations,
+    selectedCompany?.id
+  ]);
   const selectedExecutiveGlobalAlertTransitions = useMemo(
     () => executiveGlobalAlertTransitions.filter((row) => row.event_id === editingExecutiveGlobalAlertId),
     [editingExecutiveGlobalAlertId, executiveGlobalAlertTransitions]
@@ -4632,6 +4887,12 @@ export const Reports: React.FC = () => {
         { Indicador: 'Cierre promedio SLA', Valor: formatExecutiveGlobalAlertSlaHours(executiveGlobalAlertSlaData.stageRows.find((row) => row.key === 'closure')?.avgHours ?? null) },
         { Indicador: 'Responsable más expuesto SLA', Valor: executiveGlobalAlertSlaData.topOwner ? `${executiveGlobalAlertSlaData.topOwner.owner} (${executiveGlobalAlertSlaData.topOwner.breachedCount} fuera SLA)` : 'Sin responsable crítico' },
         { Indicador: 'Resumen SLA global', Valor: executiveGlobalAlertSlaData.summaryLine },
+        { Indicador: 'Escalaciones SLA históricas', Valor: executiveGlobalAlertSlaEscalationData.totalEscalations },
+        { Indicador: 'Escalaciones SLA activas', Valor: executiveGlobalAlertSlaEscalationData.activeCount },
+        { Indicador: 'Severidad escalación dominante', Valor: executiveGlobalAlertSlaEscalationData.topSeverity ? formatExecutiveGlobalAlertSlaEscalationSeverity(executiveGlobalAlertSlaEscalationData.topSeverity.severity) : 'Sin escalaciones' },
+        { Indicador: 'Etapa escalada dominante', Valor: executiveGlobalAlertSlaEscalationData.topStage ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaEscalationData.topStage.stageKey) : 'Sin etapa' },
+        { Indicador: 'Responsable escalado dominante', Valor: executiveGlobalAlertSlaEscalationData.topOwner?.owner || 'Sin responsable' },
+        { Indicador: 'Resumen escalación SLA', Valor: executiveGlobalAlertSlaEscalationData.summaryLine },
         { Indicador: 'Cruce alerta/exportación', Valor: executiveGlobalAlertExportLinkSummary },
         { Indicador: 'Recomendación comparada', Valor: executiveCompareCompanyRecommendation?.tone.title || 'Sin datos' },
         { Indicador: 'Mejor cierre histórico', Valor: bestClosureHistoryRow ? `${bestClosureHistoryRow.season} (${bestClosureHistoryRow.closurePct.toFixed(2)}%)` : 'Sin datos' },
@@ -4988,6 +5249,32 @@ export const Reports: React.FC = () => {
         'Cierre total': formatExecutiveGlobalAlertSlaHours(row.totalClosureHours),
         'Posición empresa activa': row.selectedCompanyRank ? `${row.selectedCompanyRank}/${row.totalCompanies || '-'}` : 'Sin datos'
       }));
+      const globalAlertEscalationRows = executiveGlobalAlertSlaEscalationData.recentRows.map((row) => ({
+        Fecha: new Date(row.created_at).toLocaleString('es-CL'),
+        Etapa: formatExecutiveGlobalAlertSlaStage(row.stage_key),
+        Severidad: formatExecutiveGlobalAlertSlaEscalationSeverity(row.escalation_severity),
+        Responsable: row.owner_label || 'Sin responsable',
+        'Horas atraso': Number(Number(row.overdue_hours || 0).toFixed(2)),
+        'Objetivo horas': Number(Number(row.target_hours || 0).toFixed(2)),
+        Detalle: row.detail,
+        Recomendación: row.recommendation
+      }));
+      const globalAlertEscalationStageRows = executiveGlobalAlertSlaEscalationData.stageSummary.map((row) => ({
+        Etapa: formatExecutiveGlobalAlertSlaStage(row.stageKey),
+        Escalaciones: row.count
+      }));
+      const globalAlertEscalationSeverityRows = executiveGlobalAlertSlaEscalationData.severitySummary.map((row) => ({
+        Severidad: formatExecutiveGlobalAlertSlaEscalationSeverity(row.severity),
+        Escalaciones: row.count
+      }));
+      const globalAlertEscalationOwnerRows = executiveGlobalAlertSlaEscalationData.ownerSummary.map((row) => ({
+        Responsable: row.owner,
+        Escalaciones: row.count,
+        Activas: row.activeCount,
+        'Mayor atraso': formatExecutiveGlobalAlertSlaHours(row.maxOverdueHours),
+        Etapas: row.stages || 'Sin etapa',
+        'Última escalación': new Date(row.latestCreatedAt).toLocaleString('es-CL')
+      }));
       const exportWarningHistoryRows = executiveExportWarningFilteredData.rows.map((row) => ({
         Fecha: new Date(row.created_at).toLocaleString('es-CL'),
         Temporada: row.season,
@@ -5145,6 +5432,10 @@ export const Reports: React.FC = () => {
           ...(globalAlertSlaRows.length > 0 ? [{ name: 'SLA Alertas Globales', rows: globalAlertSlaRows }] : []),
           ...(globalAlertSlaOwnerRows.length > 0 ? [{ name: 'SLA Responsables', rows: globalAlertSlaOwnerRows }] : []),
           ...(globalAlertSlaEventRows.length > 0 ? [{ name: 'SLA Eventos Globales', rows: globalAlertSlaEventRows }] : []),
+          ...(globalAlertEscalationStageRows.length > 0 ? [{ name: 'Escalaciones SLA', rows: globalAlertEscalationStageRows }] : []),
+          ...(globalAlertEscalationSeverityRows.length > 0 ? [{ name: 'Severidad Escalaciones', rows: globalAlertEscalationSeverityRows }] : []),
+          ...(globalAlertEscalationOwnerRows.length > 0 ? [{ name: 'Responsables Escalados', rows: globalAlertEscalationOwnerRows }] : []),
+          ...(globalAlertEscalationRows.length > 0 ? [{ name: 'Bitacora Escalaciones', rows: globalAlertEscalationRows }] : []),
           ...(totalDataBlockerRows.length > 0 ? [{ name: 'Bloqueos Dato', rows: totalDataBlockerRows }] : []),
           ...(compareCompanyRows.length > 0 ? [{ name: 'Comparacion Empresas', rows: compareCompanyRows }] : []),
           ...(compareCompanyHistoryRows.length > 0 ? [{ name: 'Historial Empresas', rows: compareCompanyHistoryRows }] : []),
@@ -6479,6 +6770,49 @@ export const Reports: React.FC = () => {
 
               yPos = (doc as any).lastAutoTable.finalY + 8;
             }
+
+            if (executiveGlobalAlertSlaEscalationData.totalEscalations > 0) {
+              autoTable(doc, {
+                startY: yPos,
+                head: [['Escalaciones SLA', 'Detalle']],
+                body: [
+                  ['Resumen', executiveGlobalAlertSlaEscalationData.summaryLine],
+                  ['Escalaciones históricas', String(executiveGlobalAlertSlaEscalationData.totalEscalations)],
+                  ['Escalaciones activas', String(executiveGlobalAlertSlaEscalationData.activeCount)],
+                  ['Severidad dominante', executiveGlobalAlertSlaEscalationData.topSeverity
+                    ? `${formatExecutiveGlobalAlertSlaEscalationSeverity(executiveGlobalAlertSlaEscalationData.topSeverity.severity)} (${executiveGlobalAlertSlaEscalationData.topSeverity.count})`
+                    : 'Sin severidad dominante'],
+                  ['Etapa dominante', executiveGlobalAlertSlaEscalationData.topStage
+                    ? `${formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaEscalationData.topStage.stageKey)} (${executiveGlobalAlertSlaEscalationData.topStage.count})`
+                    : 'Sin etapa dominante'],
+                  ['Responsable dominante', executiveGlobalAlertSlaEscalationData.topOwner
+                    ? `${executiveGlobalAlertSlaEscalationData.topOwner.owner} · ${executiveGlobalAlertSlaEscalationData.topOwner.activeCount} activas`
+                    : 'Sin responsable dominante']
+                ],
+                theme: 'grid',
+                headStyles: { fillColor: [127, 29, 29] },
+                styles: { fontSize: 8 }
+              });
+
+              yPos = (doc as any).lastAutoTable.finalY + 8;
+
+              autoTable(doc, {
+                startY: yPos,
+                head: [['Fecha', 'Etapa', 'Severidad', 'Responsable', 'Atraso']],
+                body: executiveGlobalAlertSlaEscalationData.recentRows.slice(0, 6).map((row) => [
+                  new Date(row.created_at).toLocaleString('es-CL'),
+                  formatExecutiveGlobalAlertSlaStage(row.stage_key),
+                  formatExecutiveGlobalAlertSlaEscalationSeverity(row.escalation_severity),
+                  row.owner_label || 'Sin responsable',
+                  formatExecutiveGlobalAlertSlaHours(Number(row.overdue_hours || 0))
+                ]),
+                theme: 'grid',
+                headStyles: { fillColor: [153, 27, 27] },
+                styles: { fontSize: 8 }
+              });
+
+              yPos = (doc as any).lastAutoTable.finalY + 8;
+            }
           }
 
           if (executiveGlobalRankingHistory.length > 0) {
@@ -7654,7 +7988,35 @@ export const Reports: React.FC = () => {
                 <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
                   <div className="font-medium text-slate-900">Conclusión ejecutiva</div>
                   <p className="mt-2">{executiveTotalDataClosure.conclusion}</p>
+                  {executiveGlobalAlertSlaEscalationData.activeCount > 0 && (
+                    <p className="mt-2 text-red-700">{executiveGlobalAlertSlaEscalationData.summaryLine}</p>
+                  )}
                 </div>
+
+                {executiveGlobalAlertSlaEscalationData.activeCount > 0 && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <div className="text-xs uppercase tracking-wide text-red-700">Escalaciones SLA activas</div>
+                        <div className="mt-2 text-xl font-semibold text-red-800">{executiveGlobalAlertSlaEscalationData.activeCount}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xs uppercase tracking-wide text-red-700">Etapa dominante</div>
+                        <div className="mt-2 text-lg font-semibold text-red-800">
+                          {executiveGlobalAlertSlaEscalationData.topStage
+                            ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaEscalationData.topStage.stageKey)
+                            : 'Sin etapa'}
+                        </div>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-sm text-red-700">{executiveGlobalAlertSlaEscalationData.summaryLine}</p>
+                    <p className="mt-2 text-sm text-red-700">
+                      Responsable más expuesto: {executiveGlobalAlertSlaEscalationData.topOwner
+                        ? `${executiveGlobalAlertSlaEscalationData.topOwner.owner} · ${executiveGlobalAlertSlaEscalationData.topOwner.activeCount} activas`
+                        : 'sin responsable dominante'}.
+                    </p>
+                  </div>
+                )}
 
                 <div className="rounded-xl border border-slate-200 p-4">
                   <div className="text-sm font-medium text-slate-900">Trazabilidad de circulación</div>
@@ -9979,6 +10341,7 @@ export const Reports: React.FC = () => {
                     <p className="mt-2">{executiveGlobalAlertExportLinkSummary}</p>
                     <p className="mt-2">{executiveGlobalAlertTransitionData.summaryLine}</p>
                     <p className="mt-2">{executiveGlobalAlertSlaData.summaryLine}</p>
+                    <p className="mt-2">{executiveGlobalAlertSlaEscalationData.summaryLine}</p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -10005,6 +10368,56 @@ export const Reports: React.FC = () => {
                         {executiveGlobalAlertSlaData.topOwner
                           ? `${executiveGlobalAlertSlaData.topOwner.breachedCount} fuera SLA · atraso máximo ${formatExecutiveGlobalAlertSlaHours(executiveGlobalAlertSlaData.topOwner.maxOverdueHours)}`
                           : 'No hay atrasos abiertos visibles'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Escalaciones históricas</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveGlobalAlertSlaEscalationData.totalEscalations}</div>
+                      <div className="mt-1 text-sm text-slate-500">Bitácora persistida de vencimientos SLA</div>
+                    </div>
+                    <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-red-700">Escalaciones activas</div>
+                      <div className="mt-2 text-2xl font-semibold text-red-800">{executiveGlobalAlertSlaEscalationData.activeCount}</div>
+                      <div className="mt-1 text-sm text-red-700">Siguen abiertas y vencidas para los filtros activos</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Severidad dominante</div>
+                      <div className="mt-2 text-lg font-semibold text-slate-900">
+                        {executiveGlobalAlertSlaEscalationData.topSeverity
+                          ? formatExecutiveGlobalAlertSlaEscalationSeverity(executiveGlobalAlertSlaEscalationData.topSeverity.severity)
+                          : 'Sin escalaciones'}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {executiveGlobalAlertSlaEscalationData.topSeverity
+                          ? `${executiveGlobalAlertSlaEscalationData.topSeverity.count} eventos`
+                          : 'Sin recurrencia visible'}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Etapa escalada dominante</div>
+                      <div className="mt-2 text-lg font-semibold text-slate-900">
+                        {executiveGlobalAlertSlaEscalationData.topStage
+                          ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaEscalationData.topStage.stageKey)
+                          : 'Sin etapa'}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {executiveGlobalAlertSlaEscalationData.topStage
+                          ? `${executiveGlobalAlertSlaEscalationData.topStage.count} escalaciones`
+                          : 'Sin patrón dominante'}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Responsable escalado</div>
+                      <div className="mt-2 text-lg font-semibold text-slate-900">
+                        {executiveGlobalAlertSlaEscalationData.topOwner?.owner || 'Sin responsable'}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {executiveGlobalAlertSlaEscalationData.topOwner
+                          ? `${executiveGlobalAlertSlaEscalationData.topOwner.activeCount} activas · atraso máximo ${formatExecutiveGlobalAlertSlaHours(executiveGlobalAlertSlaEscalationData.topOwner.maxOverdueHours)}`
+                          : 'Sin foco activo visible'}
                       </div>
                     </div>
                   </div>
@@ -10347,6 +10760,89 @@ export const Reports: React.FC = () => {
                     </div>
                   </div>
 
+                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Etapa escalada</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Veces</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {executiveGlobalAlertSlaEscalationData.stageSummary.slice(0, 6).map((row) => (
+                            <tr key={row.stageKey}>
+                              <td className="px-4 py-3 font-medium text-slate-900">{formatExecutiveGlobalAlertSlaStage(row.stageKey)}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                            </tr>
+                          ))}
+                          {!executiveGlobalAlertLoading && executiveGlobalAlertSlaEscalationData.stageSummary.length === 0 && (
+                            <tr>
+                              <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
+                                No hay etapas escaladas visibles.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Severidad</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Veces</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {executiveGlobalAlertSlaEscalationData.severitySummary.slice(0, 6).map((row) => (
+                            <tr key={row.severity}>
+                              <td className="px-4 py-3 font-medium text-slate-900">{formatExecutiveGlobalAlertSlaEscalationSeverity(row.severity)}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                            </tr>
+                          ))}
+                          {!executiveGlobalAlertLoading && executiveGlobalAlertSlaEscalationData.severitySummary.length === 0 && (
+                            <tr>
+                              <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
+                                No hay severidades de escalación visibles.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Responsable escalado</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Activas</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {executiveGlobalAlertSlaEscalationData.ownerSummary.slice(0, 6).map((row) => (
+                            <tr key={row.owner}>
+                              <td className="px-4 py-3 text-slate-900">
+                                <div className="font-medium">{row.owner}</div>
+                                <div className="text-xs text-slate-500">{row.stages || 'Sin etapa'} · atraso máximo {formatExecutiveGlobalAlertSlaHours(row.maxOverdueHours)}</div>
+                              </td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.activeCount}</td>
+                            </tr>
+                          ))}
+                          {!executiveGlobalAlertLoading && executiveGlobalAlertSlaEscalationData.ownerSummary.length === 0 && (
+                            <tr>
+                              <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
+                                No hay responsables escalados visibles.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
                   <div className="overflow-x-auto rounded-xl border border-slate-200">
                     <table className="min-w-full divide-y divide-slate-200 text-sm">
                       <thead className="bg-slate-50">
@@ -10404,6 +10900,40 @@ export const Reports: React.FC = () => {
                           <tr>
                             <td colSpan={9} className="px-4 py-4 text-center text-sm text-slate-500">
                               Cargando bitácora histórica de alertas globales...
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Etapa</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Severidad</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Responsable</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Atraso</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Detalle</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 bg-white">
+                        {executiveGlobalAlertSlaEscalationData.recentRows.map((row) => (
+                          <tr key={row.id}>
+                            <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                            <td className="px-4 py-3 font-medium text-slate-900">{formatExecutiveGlobalAlertSlaStage(row.stage_key)}</td>
+                            <td className="px-4 py-3 text-slate-700">{formatExecutiveGlobalAlertSlaEscalationSeverity(row.escalation_severity)}</td>
+                            <td className="px-4 py-3 text-slate-700">{row.owner_label || 'Sin responsable'}</td>
+                            <td className="px-4 py-3 text-slate-700">{formatExecutiveGlobalAlertSlaHours(Number(row.overdue_hours || 0))}</td>
+                            <td className="px-4 py-3 text-slate-700">{row.detail}</td>
+                          </tr>
+                        ))}
+                        {!executiveGlobalAlertLoading && executiveGlobalAlertSlaEscalationData.recentRows.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="px-4 py-4 text-center text-sm text-slate-500">
+                              No hay escalaciones SLA visibles para los filtros actuales.
                             </td>
                           </tr>
                         )}
@@ -14328,6 +14858,7 @@ export const Reports: React.FC = () => {
                                   ? `${executiveGlobalAlertSlaData.topOwner.owner} con ${executiveGlobalAlertSlaData.topOwner.breachedCount} alertas fuera SLA y atraso máximo de ${formatExecutiveGlobalAlertSlaHours(executiveGlobalAlertSlaData.topOwner.maxOverdueHours)}`
                                   : 'sin responsable crítico visible'}.
                               </p>
+                              <p className="mt-5 text-lg text-slate-500">{executiveGlobalAlertSlaEscalationData.summaryLine}</p>
                               <p className="mt-5 text-lg text-slate-500">{executiveGlobalAlertExportLinkSummary}</p>
                             </div>
 
@@ -14360,6 +14891,36 @@ export const Reports: React.FC = () => {
                                   )}
                                 </tbody>
                               </table>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                            <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-red-700">Escalaciones activas</div>
+                              <div className="mt-3 text-3xl font-bold text-red-800">{executiveGlobalAlertSlaEscalationData.activeCount}</div>
+                              <div className="mt-2 text-sm text-red-700">Persisten abiertas y vencidas</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Severidad dominante</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">
+                                {executiveGlobalAlertSlaEscalationData.topSeverity
+                                  ? formatExecutiveGlobalAlertSlaEscalationSeverity(executiveGlobalAlertSlaEscalationData.topSeverity.severity)
+                                  : '-'}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Etapa dominante</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">
+                                {executiveGlobalAlertSlaEscalationData.topStage
+                                  ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaEscalationData.topStage.stageKey)
+                                  : '-'}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Responsable escalado</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">
+                                {executiveGlobalAlertSlaEscalationData.topOwner?.owner || '-'}
+                              </div>
                             </div>
                           </div>
                         </div>
