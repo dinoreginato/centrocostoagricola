@@ -199,6 +199,7 @@ type ExecutiveSortKey = 'total' | 'variation' | 'budget' | 'cost_ha' | 'cost_kg'
 type ExecutiveAuditPriorityFilter = 'all' | 'alta' | 'media' | 'baja';
 type ExecutiveAuditLayerFilter = 'all' | AgriculturalCostAuditRow['source_layer'];
 type ExecutiveExportAction = 'pdf' | 'excel';
+type ClosureTrendDirection = 'mejora' | 'estable' | 'deterioro' | 'sin_base';
 
 const EXECUTIVE_SORT_OPTIONS: Array<{ value: ExecutiveSortKey; label: string }> = [
   { value: 'total', label: 'Mayor gasto' },
@@ -245,6 +246,99 @@ const formatExecutiveCompareMetric = (value: number, format: 'percent' | 'number
     ? `${Number(value || 0).toFixed(1)}%`
     : Number(value || 0).toLocaleString('es-CL')
 );
+
+const buildClosureTrendSummary = (
+  rows: Array<{ season: string; totalClosurePct: number }>,
+  companyLabel: string,
+  windowSize = 3
+) => {
+  const normalizedRows = rows
+    .filter((row) => Number.isFinite(Number(row.totalClosurePct)))
+    .slice()
+    .sort((a, b) => b.season.localeCompare(a.season));
+  const recentRows = normalizedRows.slice(0, windowSize);
+  const previousRows = normalizedRows.slice(windowSize, windowSize * 2);
+  const recentAvg = recentRows.length > 0
+    ? recentRows.reduce((sum, row) => sum + Number(row.totalClosurePct || 0), 0) / recentRows.length
+    : 0;
+  const previousAvg = previousRows.length > 0
+    ? previousRows.reduce((sum, row) => sum + Number(row.totalClosurePct || 0), 0) / previousRows.length
+    : 0;
+  const latest = recentRows[0] || null;
+  const baseline = previousRows[0] || normalizedRows[recentRows.length] || null;
+  const delta = previousRows.length > 0
+    ? recentAvg - previousAvg
+    : latest && baseline && latest.season !== baseline.season
+      ? Number(latest.totalClosurePct || 0) - Number(baseline.totalClosurePct || 0)
+      : 0;
+
+  const direction: ClosureTrendDirection = normalizedRows.length < 2
+    ? 'sin_base'
+    : delta >= 5
+      ? 'mejora'
+      : delta <= -5
+        ? 'deterioro'
+        : 'estable';
+
+  const tone = direction === 'mejora'
+    ? {
+        badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+        text: 'text-emerald-600',
+        dot: 'bg-emerald-500',
+        label: 'Mejora'
+      }
+    : direction === 'deterioro'
+      ? {
+          badge: 'bg-red-100 text-red-700 border-red-200',
+          text: 'text-red-600',
+          dot: 'bg-red-500',
+          label: 'Deterioro'
+        }
+      : direction === 'estable'
+        ? {
+            badge: 'bg-amber-100 text-amber-700 border-amber-200',
+            text: 'text-amber-600',
+            dot: 'bg-amber-500',
+            label: 'Estable'
+          }
+        : {
+            badge: 'bg-slate-100 text-slate-700 border-slate-200',
+            text: 'text-slate-600',
+            dot: 'bg-slate-500',
+            label: 'Sin base'
+          };
+
+  const recentWindowLabel = recentRows.length > 0
+    ? `${recentRows[recentRows.length - 1].season} a ${recentRows[0].season}`
+    : 'Sin ventana';
+  const previousWindowLabel = previousRows.length > 0
+    ? `${previousRows[previousRows.length - 1].season} a ${previousRows[0].season}`
+    : 'Sin ventana previa';
+
+  const narrative = direction === 'sin_base'
+    ? `${companyLabel} todavía no tiene temporadas suficientes para medir tendencia histórica con ventana móvil.`
+    : direction === 'mejora'
+      ? `${companyLabel} mejora su cierre total reciente en ${Math.abs(delta).toFixed(1)} puntos frente a la ventana previa.`
+      : direction === 'deterioro'
+        ? `${companyLabel} deteriora su cierre total reciente en ${Math.abs(delta).toFixed(1)} puntos frente a la ventana previa.`
+        : `${companyLabel} se mantiene estable, con una variación reciente de ${Math.abs(delta).toFixed(1)} puntos.`;
+
+  return {
+    companyLabel,
+    windowSize,
+    direction,
+    tone,
+    recentAvg,
+    previousAvg,
+    delta,
+    recentWindowLabel,
+    previousWindowLabel,
+    recentRows,
+    previousRows,
+    latest,
+    narrative
+  };
+};
 
 const sortExecutiveRows = <T extends Record<string, any>>(rows: T[], sortBy: ExecutiveSortKey) => {
   return rows.slice().sort((a, b) => {
@@ -2309,6 +2403,41 @@ export const Reports: React.FC = () => {
     executiveTotalClosureHistoryRows
   ]);
 
+  const executiveCurrentCompanyTrend = useMemo(() => (
+    buildClosureTrendSummary(executiveTotalClosureHistoryRows, companyName, 3)
+  ), [companyName, executiveTotalClosureHistoryRows]);
+
+  const executiveCompareCompanyTrend = useMemo(() => {
+    if (!executiveCompareCompanyRaw) return null;
+    return buildClosureTrendSummary(executiveCompareCompanyTotalClosureHistoryRows, executiveCompareCompanyName, 3);
+  }, [
+    executiveCompareCompanyName,
+    executiveCompareCompanyRaw,
+    executiveCompareCompanyTotalClosureHistoryRows
+  ]);
+
+  const executiveTrendComparisonInsights = useMemo(() => {
+    if (!executiveCompareCompanyTrend) return null;
+
+    const deltaGap = executiveCurrentCompanyTrend.delta - executiveCompareCompanyTrend.delta;
+    const leader = Math.abs(deltaGap) < 0.05
+      ? 'Ambas empresas sostienen una pendiente similar.'
+      : deltaGap > 0
+        ? `${companyName} acelera más rápido su cierre total reciente.`
+        : `${executiveCompareCompanyName} acelera más rápido su cierre total reciente.`;
+
+    return {
+      deltaGap,
+      leader,
+      narrative: `${executiveCurrentCompanyTrend.narrative} ${executiveCompareCompanyTrend.narrative}`
+    };
+  }, [
+    companyName,
+    executiveCompareCompanyName,
+    executiveCompareCompanyTrend,
+    executiveCurrentCompanyTrend
+  ]);
+
   const executiveHistoricalSeasonRows = useMemo(() => {
     return availablePreviousExecutiveSeasons.map((season) => {
       const base = aggregateExecutiveCosts({
@@ -2628,6 +2757,44 @@ export const Reports: React.FC = () => {
         'Bloqueos comparada': row.compare?.blockersCount ?? 'Sin datos',
         Lider: row.leader
       }));
+      const trendCompanyRows = [
+        {
+          Empresa: companyName,
+          Tendencia: executiveCurrentCompanyTrend.tone.label,
+          'Ventana reciente': executiveCurrentCompanyTrend.recentWindowLabel,
+          'Promedio reciente': Number(executiveCurrentCompanyTrend.recentAvg.toFixed(2)),
+          'Ventana previa': executiveCurrentCompanyTrend.previousWindowLabel,
+          'Promedio previo': Number(executiveCurrentCompanyTrend.previousAvg.toFixed(2)),
+          'Delta ventana': Number(executiveCurrentCompanyTrend.delta.toFixed(2)),
+          'Última temporada': executiveCurrentCompanyTrend.latest?.season || 'Sin datos',
+          'Último cierre': executiveCurrentCompanyTrend.latest ? Number(executiveCurrentCompanyTrend.latest.totalClosurePct.toFixed(2)) : 'Sin datos',
+          Lectura: executiveCurrentCompanyTrend.narrative
+        },
+        ...(executiveCompareCompanyTrend ? [{
+          Empresa: executiveCompareCompanyName,
+          Tendencia: executiveCompareCompanyTrend.tone.label,
+          'Ventana reciente': executiveCompareCompanyTrend.recentWindowLabel,
+          'Promedio reciente': Number(executiveCompareCompanyTrend.recentAvg.toFixed(2)),
+          'Ventana previa': executiveCompareCompanyTrend.previousWindowLabel,
+          'Promedio previo': Number(executiveCompareCompanyTrend.previousAvg.toFixed(2)),
+          'Delta ventana': Number(executiveCompareCompanyTrend.delta.toFixed(2)),
+          'Última temporada': executiveCompareCompanyTrend.latest?.season || 'Sin datos',
+          'Último cierre': executiveCompareCompanyTrend.latest ? Number(executiveCompareCompanyTrend.latest.totalClosurePct.toFixed(2)) : 'Sin datos',
+          Lectura: executiveCompareCompanyTrend.narrative
+        }] : []),
+        ...(executiveTrendComparisonInsights ? [{
+          Empresa: 'Comparación',
+          Tendencia: executiveTrendComparisonInsights.leader,
+          'Ventana reciente': executiveCurrentCompanyTrend.recentWindowLabel,
+          'Promedio reciente': Number(executiveCurrentCompanyTrend.recentAvg.toFixed(2)),
+          'Ventana previa': executiveCompareCompanyTrend?.recentWindowLabel || 'Sin base',
+          'Promedio previo': executiveCompareCompanyTrend ? Number(executiveCompareCompanyTrend.recentAvg.toFixed(2)) : 'Sin datos',
+          'Delta ventana': Number(executiveTrendComparisonInsights.deltaGap.toFixed(2)),
+          'Última temporada': selectedSeason,
+          'Último cierre': '-',
+          Lectura: executiveTrendComparisonInsights.narrative
+        }] : [])
+      ];
 
       await exportWorkbookToXlsx({
         filename: `Reporte_Ejecutivo_${companySlug}_${selectedSeason}${executiveFieldFilter !== 'all' ? `_campo_${executiveFieldFilter}` : ''}.xlsx`,
@@ -2644,6 +2811,7 @@ export const Reports: React.FC = () => {
           ...(totalDataBlockerRows.length > 0 ? [{ name: 'Bloqueos Dato', rows: totalDataBlockerRows }] : []),
           ...(compareCompanyRows.length > 0 ? [{ name: 'Comparacion Empresas', rows: compareCompanyRows }] : []),
           ...(compareCompanyHistoryRows.length > 0 ? [{ name: 'Historial Empresas', rows: compareCompanyHistoryRows }] : []),
+          ...(trendCompanyRows.length > 0 ? [{ name: 'Tendencia Empresas', rows: trendCompanyRows }] : []),
           ...(historicalClosureRows.length > 0 ? [{ name: 'Historial Cierre', rows: historicalClosureRows }] : []),
           ...(economicClosureRows.length > 0 ? [{ name: 'Cierre Economico', rows: economicClosureRows }] : []),
           ...(economicFocusRows.length > 0 ? [{ name: 'Focos Economicos', rows: economicFocusRows }] : []),
@@ -3703,6 +3871,44 @@ export const Reports: React.FC = () => {
 
           yPos = (doc as any).lastAutoTable.finalY + 8;
         }
+
+        if (yPos > 150) {
+          doc.addPage();
+          yPos = 20;
+        }
+
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Tendencia historica', 'Estado', 'Ventana reciente', 'Ventana previa', 'Delta']],
+          body: [
+            [
+              companyName,
+              executiveCurrentCompanyTrend.tone.label,
+              `${executiveCurrentCompanyTrend.recentWindowLabel} · ${executiveCurrentCompanyTrend.recentAvg.toFixed(1)}%`,
+              `${executiveCurrentCompanyTrend.previousWindowLabel} · ${executiveCurrentCompanyTrend.previousAvg.toFixed(1)}%`,
+              `${executiveCurrentCompanyTrend.delta.toFixed(1)} pp`
+            ],
+            ...(executiveCompareCompanyTrend ? [[
+              executiveCompareCompanyName,
+              executiveCompareCompanyTrend.tone.label,
+              `${executiveCompareCompanyTrend.recentWindowLabel} · ${executiveCompareCompanyTrend.recentAvg.toFixed(1)}%`,
+              `${executiveCompareCompanyTrend.previousWindowLabel} · ${executiveCompareCompanyTrend.previousAvg.toFixed(1)}%`,
+              `${executiveCompareCompanyTrend.delta.toFixed(1)} pp`
+            ]] : []),
+            ...(executiveTrendComparisonInsights ? [[
+              'Comparación',
+              executiveTrendComparisonInsights.leader,
+              executiveCurrentCompanyTrend.recentWindowLabel,
+              executiveCompareCompanyTrend?.recentWindowLabel || 'Sin base',
+              `${executiveTrendComparisonInsights.deltaGap.toFixed(1)} pp`
+            ]] : [])
+          ],
+          theme: 'grid',
+          headStyles: { fillColor: [22, 163, 74] },
+          styles: { fontSize: 8 }
+        });
+
+        yPos = (doc as any).lastAutoTable.finalY + 8;
 
         if (yPos > 160) {
           doc.addPage();
@@ -6129,6 +6335,64 @@ export const Reports: React.FC = () => {
                           : 'sin brecha comparable visible'}.
                       </p>
                     </div>
+
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                      <div className="rounded-xl border border-slate-200 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-sm font-medium text-slate-900">Tendencia móvil · {companyName}</div>
+                          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${executiveCurrentCompanyTrend.tone.badge}`}>
+                            <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveCurrentCompanyTrend.tone.dot}`} />
+                            {executiveCurrentCompanyTrend.tone.label}
+                          </span>
+                        </div>
+                        <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                          <div className="rounded-xl bg-slate-50 p-3">
+                            <div className="text-xs uppercase tracking-wide text-slate-500">Ventana reciente</div>
+                            <div className="mt-2 font-semibold text-slate-900">{executiveCurrentCompanyTrend.recentAvg.toFixed(1)}%</div>
+                            <div className="text-xs text-slate-500">{executiveCurrentCompanyTrend.recentWindowLabel}</div>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 p-3">
+                            <div className="text-xs uppercase tracking-wide text-slate-500">Ventana previa</div>
+                            <div className="mt-2 font-semibold text-slate-900">{executiveCurrentCompanyTrend.previousAvg.toFixed(1)}%</div>
+                            <div className="text-xs text-slate-500">{executiveCurrentCompanyTrend.previousWindowLabel}</div>
+                          </div>
+                        </div>
+                        <p className={`mt-4 text-sm ${executiveCurrentCompanyTrend.tone.text}`}>{executiveCurrentCompanyTrend.narrative}</p>
+                      </div>
+
+                      {executiveCompareCompanyTrend && (
+                        <div className="rounded-xl border border-slate-200 p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-sm font-medium text-slate-900">Tendencia móvil · {executiveCompareCompanyName}</div>
+                            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${executiveCompareCompanyTrend.tone.badge}`}>
+                              <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveCompareCompanyTrend.tone.dot}`} />
+                              {executiveCompareCompanyTrend.tone.label}
+                            </span>
+                          </div>
+                          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                            <div className="rounded-xl bg-slate-50 p-3">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Ventana reciente</div>
+                              <div className="mt-2 font-semibold text-slate-900">{executiveCompareCompanyTrend.recentAvg.toFixed(1)}%</div>
+                              <div className="text-xs text-slate-500">{executiveCompareCompanyTrend.recentWindowLabel}</div>
+                            </div>
+                            <div className="rounded-xl bg-slate-50 p-3">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Ventana previa</div>
+                              <div className="mt-2 font-semibold text-slate-900">{executiveCompareCompanyTrend.previousAvg.toFixed(1)}%</div>
+                              <div className="text-xs text-slate-500">{executiveCompareCompanyTrend.previousWindowLabel}</div>
+                            </div>
+                          </div>
+                          <p className={`mt-4 text-sm ${executiveCompareCompanyTrend.tone.text}`}>{executiveCompareCompanyTrend.narrative}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {executiveTrendComparisonInsights && (
+                      <div className="rounded-xl border border-dashed border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-800">
+                        <div className="font-medium text-emerald-900">Comparación de pendiente</div>
+                        <p className="mt-2">{executiveTrendComparisonInsights.leader}</p>
+                        <p className="mt-2">{executiveTrendComparisonInsights.narrative}</p>
+                      </div>
+                    )}
 
                     <div className="overflow-x-auto rounded-xl border border-slate-200">
                       <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -9557,6 +9821,56 @@ export const Reports: React.FC = () => {
                                 </div>
                               </div>
 
+                              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                                <div className="rounded-2xl border border-slate-200 p-6">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="text-2xl font-bold text-slate-800">Tendencia móvil · {companyName}</div>
+                                    <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${executiveCurrentCompanyTrend.tone.badge}`}>
+                                      <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveCurrentCompanyTrend.tone.dot}`} />
+                                      {executiveCurrentCompanyTrend.tone.label}
+                                    </span>
+                                  </div>
+                                  <div className="mt-5 grid grid-cols-2 gap-4">
+                                    <div className="rounded-2xl bg-slate-50 p-5">
+                                      <div className="text-sm uppercase tracking-wide text-slate-500">Ventana reciente</div>
+                                      <div className="mt-3 text-3xl font-bold text-slate-900">{executiveCurrentCompanyTrend.recentAvg.toFixed(1)}%</div>
+                                      <div className="text-sm text-slate-500">{executiveCurrentCompanyTrend.recentWindowLabel}</div>
+                                    </div>
+                                    <div className="rounded-2xl bg-slate-50 p-5">
+                                      <div className="text-sm uppercase tracking-wide text-slate-500">Ventana previa</div>
+                                      <div className="mt-3 text-3xl font-bold text-slate-900">{executiveCurrentCompanyTrend.previousAvg.toFixed(1)}%</div>
+                                      <div className="text-sm text-slate-500">{executiveCurrentCompanyTrend.previousWindowLabel}</div>
+                                    </div>
+                                  </div>
+                                  <p className={`mt-5 text-lg leading-8 ${executiveCurrentCompanyTrend.tone.text}`}>{executiveCurrentCompanyTrend.narrative}</p>
+                                </div>
+
+                                {executiveCompareCompanyTrend && (
+                                  <div className="rounded-2xl border border-slate-200 p-6">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div className="text-2xl font-bold text-slate-800">Tendencia móvil · {executiveCompareCompanyName}</div>
+                                      <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${executiveCompareCompanyTrend.tone.badge}`}>
+                                        <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveCompareCompanyTrend.tone.dot}`} />
+                                        {executiveCompareCompanyTrend.tone.label}
+                                      </span>
+                                    </div>
+                                    <div className="mt-5 grid grid-cols-2 gap-4">
+                                      <div className="rounded-2xl bg-slate-50 p-5">
+                                        <div className="text-sm uppercase tracking-wide text-slate-500">Ventana reciente</div>
+                                        <div className="mt-3 text-3xl font-bold text-slate-900">{executiveCompareCompanyTrend.recentAvg.toFixed(1)}%</div>
+                                        <div className="text-sm text-slate-500">{executiveCompareCompanyTrend.recentWindowLabel}</div>
+                                      </div>
+                                      <div className="rounded-2xl bg-slate-50 p-5">
+                                        <div className="text-sm uppercase tracking-wide text-slate-500">Ventana previa</div>
+                                        <div className="mt-3 text-3xl font-bold text-slate-900">{executiveCompareCompanyTrend.previousAvg.toFixed(1)}%</div>
+                                        <div className="text-sm text-slate-500">{executiveCompareCompanyTrend.previousWindowLabel}</div>
+                                      </div>
+                                    </div>
+                                    <p className={`mt-5 text-lg leading-8 ${executiveCompareCompanyTrend.tone.text}`}>{executiveCompareCompanyTrend.narrative}</p>
+                                  </div>
+                                )}
+                              </div>
+
                               <div className="grid grid-cols-1 xl:grid-cols-[1.2fr,0.8fr] gap-6">
                                 <div className="rounded-2xl border border-slate-200 p-6">
                                   <div className="text-2xl font-bold text-slate-800 mb-5">Cierre total por temporada</div>
@@ -9591,6 +9905,9 @@ export const Reports: React.FC = () => {
                                     <p className="mt-5 text-lg text-slate-500">
                                       Empates técnicos: {executiveCompareCompanyHistoryInsights.tiedCount}. Liderazgo actual: {companyName} {executiveCompareCompanyHistoryInsights.currentLeadCount} vs {executiveCompareCompanyName} {executiveCompareCompanyHistoryInsights.compareLeadCount}.
                                     </p>
+                                    {executiveTrendComparisonInsights && (
+                                      <p className="mt-5 text-lg text-emerald-700">{executiveTrendComparisonInsights.leader}</p>
+                                    )}
                                   </div>
                                   <div className="rounded-2xl bg-slate-950 text-white p-6">
                                     <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Conclusión Entre Empresas</div>
@@ -9599,6 +9916,9 @@ export const Reports: React.FC = () => {
                                         ? `La mayor apertura histórica se observa en ${executiveCompareCompanyHistoryInsights.strongestHistoricalGap.season}, con una brecha de ${Math.abs(executiveCompareCompanyHistoryInsights.strongestHistoricalGap.gap || 0).toFixed(1)} puntos de cierre total.`
                                         : 'Todavía no hay temporadas comparables suficientes para emitir una lectura histórica robusta entre empresas.'}
                                     </p>
+                                    {executiveTrendComparisonInsights && (
+                                      <p className="mt-4 text-lg leading-8 text-slate-300">{executiveTrendComparisonInsights.narrative}</p>
+                                    )}
                                   </div>
                                 </div>
                               </div>

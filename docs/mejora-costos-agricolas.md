@@ -377,7 +377,23 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
 - Objetivo:
   - cerrar la narrativa ejecutiva no solo con la calidad interna del dato, sino tambien con la posicion relativa de cada empresa en el tiempo
 
+## Tendencia Movil Entre Empresas
+- `Reportes` ahora calcula una tendencia de mejora o deterioro usando ventana movil de temporadas para cada empresa.
+- La tendencia contrasta:
+  - promedio reciente de cierre total
+  - promedio de la ventana previa
+  - delta entre ventanas
+  - clasificacion de mejora, estabilidad o deterioro
+- Esta lectura ya aparece en:
+  - vista ejecutiva
+  - exportacion Excel
+  - exportacion PDF
+  - presentacion fullscreen
+- Objetivo:
+  - evitar leer el historial solo como una foto estatica
+  - mostrar si una empresa realmente esta acelerando, frenando o deteriorando su calidad de dato en el tiempo
+
 ## Siguiente Paso Recomendado
-- Agregar una tendencia de mejora o deterioro por empresa usando ventana movil de temporadas.
 - Considerar registrar un evento o bitacora cada vez que se exporte bajo advertencia.
 - Evaluar una portada o slide final de decision ejecutiva con recomendacion automatica por empresa.
+- Considerar una alerta preventiva cuando la tendencia movil empeora aunque el cierre puntual de la temporada se vea alto.
