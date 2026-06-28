@@ -504,6 +504,20 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - distinguir una exportacion tecnica de una circulacion real del reporte
   - dejar evidencia de a quien se compartio el dato y bajo que justificacion
 
+## Filtros De Circulacion En Bitacora
+- La bitacora historica ahora puede filtrarse tambien por:
+  - destinatario
+  - motivo de circulacion
+- Estos filtros se suman a los ya existentes de formato, advertencia y emisor.
+- La lectura visible se propaga a:
+  - KPI de la bitacora
+  - resumen de auditoria interna
+  - exportacion Excel
+  - exportacion PDF
+- Objetivo:
+  - acotar rapidamente la auditoria a circulaciones especificas
+  - revisar que reportes fueron compartidos con un actor o fin determinado
+
 ## Siguiente Paso Recomendado
 - Evaluar un ranking multiempresa global cuando existan mas de dos empresas comparables en la misma temporada.
-- Considerar filtros especificos por destinatario o motivo dentro de la bitacora historica.
+- Considerar una agrupacion historica por destinatario para medir frecuencia de circulacion por actor.

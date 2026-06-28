@@ -860,6 +860,8 @@ export const Reports: React.FC = () => {
   const [executiveExportWarningFormatFilter, setExecutiveExportWarningFormatFilter] = useState<'all' | 'pdf' | 'excel'>('all');
   const [executiveExportWarningTypeFilter, setExecutiveExportWarningTypeFilter] = useState<string>('all');
   const [executiveExportWarningActorFilter, setExecutiveExportWarningActorFilter] = useState<string>('all');
+  const [executiveExportWarningRecipientFilter, setExecutiveExportWarningRecipientFilter] = useState<string>('all');
+  const [executiveExportWarningReasonFilter, setExecutiveExportWarningReasonFilter] = useState<string>('all');
 
   // Preview Modal State
   const [showPreview, setShowPreview] = useState(false);
@@ -945,6 +947,8 @@ export const Reports: React.FC = () => {
     setExecutiveExportWarningFormatFilter('all');
     setExecutiveExportWarningTypeFilter('all');
     setExecutiveExportWarningActorFilter('all');
+    setExecutiveExportWarningRecipientFilter('all');
+    setExecutiveExportWarningReasonFilter('all');
     setExecutiveExportRecipient('');
     setExecutiveExportCirculationReason('comite');
     setExecutiveExportCirculationNotes('');
@@ -2997,13 +3001,27 @@ export const Reports: React.FC = () => {
       executiveExportWarningEvents.map((row) => row.created_by).filter(Boolean)
     )).sort((a, b) => String(a).localeCompare(String(b)))]
   ), [executiveExportWarningEvents]);
+  const executiveExportWarningRecipientOptions = useMemo(() => (
+    ['all', ...Array.from(new Set(
+      executiveExportWarningEvents.map((row) => row.circulation_recipient?.trim()).filter(Boolean)
+    )).sort((a, b) => String(a).localeCompare(String(b)))]
+  ), [executiveExportWarningEvents]);
+  const executiveExportWarningReasonOptions = useMemo(() => (
+    ['all', ...Array.from(new Set(
+      executiveExportWarningEvents.map((row) => row.circulation_reason).filter(Boolean)
+    )).sort((a, b) => formatExecutiveExportCirculationReason(String(a)).localeCompare(formatExecutiveExportCirculationReason(String(b))))]
+  ), [executiveExportWarningEvents]);
   const executiveExportWarningFiltersActive = useMemo(() => (
     executiveExportWarningFormatFilter !== 'all'
     || executiveExportWarningTypeFilter !== 'all'
     || executiveExportWarningActorFilter !== 'all'
+    || executiveExportWarningRecipientFilter !== 'all'
+    || executiveExportWarningReasonFilter !== 'all'
   ), [
     executiveExportWarningActorFilter,
     executiveExportWarningFormatFilter,
+    executiveExportWarningRecipientFilter,
+    executiveExportWarningReasonFilter,
     executiveExportWarningTypeFilter
   ]);
   const executiveExportWarningFilteredRows = useMemo(() => (
@@ -3017,12 +3035,20 @@ export const Reports: React.FC = () => {
       if (executiveExportWarningActorFilter !== 'all' && row.created_by !== executiveExportWarningActorFilter) {
         return false;
       }
+      if (executiveExportWarningRecipientFilter !== 'all' && (row.circulation_recipient?.trim() || '') !== executiveExportWarningRecipientFilter) {
+        return false;
+      }
+      if (executiveExportWarningReasonFilter !== 'all' && (row.circulation_reason || '') !== executiveExportWarningReasonFilter) {
+        return false;
+      }
       return true;
     })
   ), [
     executiveExportWarningActorFilter,
     executiveExportWarningEvents,
     executiveExportWarningFormatFilter,
+    executiveExportWarningRecipientFilter,
+    executiveExportWarningReasonFilter,
     executiveExportWarningTypeFilter
   ]);
   const executiveExportWarningFilteredData = useMemo(
@@ -3044,10 +3070,18 @@ export const Reports: React.FC = () => {
     if (executiveExportWarningActorFilter !== 'all') {
       parts.push(`Emisor: ${formatExecutiveExportActor(executiveExportWarningActorFilter)}`);
     }
+    if (executiveExportWarningRecipientFilter !== 'all') {
+      parts.push(`Destinatario: ${executiveExportWarningRecipientFilter}`);
+    }
+    if (executiveExportWarningReasonFilter !== 'all') {
+      parts.push(`Motivo: ${formatExecutiveExportCirculationReason(executiveExportWarningReasonFilter)}`);
+    }
     return parts.length > 0 ? parts.join(' · ') : 'Todos los eventos';
   }, [
     executiveExportWarningActorFilter,
     executiveExportWarningFormatFilter,
+    executiveExportWarningRecipientFilter,
+    executiveExportWarningReasonFilter,
     executiveExportWarningTypeFilter
   ]);
   const executiveCommitteeSlideSummary = useMemo(() => {
@@ -7543,7 +7577,7 @@ export const Reports: React.FC = () => {
                 </div>
                 <div className="p-6 space-y-6">
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
                       <label className="text-sm text-slate-600">
                         <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">Formato</span>
                         <select
@@ -7568,6 +7602,34 @@ export const Reports: React.FC = () => {
                           {executiveExportWarningTypeOptions.map((option) => (
                             <option key={option} value={option}>
                               {option === 'all' ? 'Todas las advertencias' : formatExecutiveExportWarningType(option)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-sm text-slate-600">
+                        <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">Destinatario</span>
+                        <select
+                          value={executiveExportWarningRecipientFilter}
+                          onChange={(e) => setExecutiveExportWarningRecipientFilter(e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                        >
+                          {executiveExportWarningRecipientOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option === 'all' ? 'Todos los destinatarios' : option}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-sm text-slate-600">
+                        <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">Motivo</span>
+                        <select
+                          value={executiveExportWarningReasonFilter}
+                          onChange={(e) => setExecutiveExportWarningReasonFilter(e.target.value)}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                        >
+                          {executiveExportWarningReasonOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option === 'all' ? 'Todos los motivos' : formatExecutiveExportCirculationReason(option)}
                             </option>
                           ))}
                         </select>
@@ -7619,6 +7681,19 @@ export const Reports: React.FC = () => {
                         {executiveExportWarningFilteredData.latestEvent
                           ? `${executiveExportWarningFilteredData.latestEvent.readiness_title} · ${formatExecutiveExportActor(executiveExportWarningFilteredData.latestEvent.created_by)} · ${executiveExportWarningFilteredData.latestEvent.circulation_recipient || 'Sin destinatario'}`
                           : 'Aún sin exportaciones advertidas visibles'}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Motivo dominante</div>
+                      <div className="mt-2 text-lg font-semibold text-slate-900">
+                        {executiveExportWarningFilteredData.topCirculationReason
+                          ? formatExecutiveExportCirculationReason(executiveExportWarningFilteredData.topCirculationReason.reason)
+                          : 'Sin motivo'}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {executiveExportWarningFilteredData.topCirculationReason
+                          ? `${executiveExportWarningFilteredData.topCirculationReason.count} eventos`
+                          : 'Sin circulación visible'}
                       </div>
                     </div>
                   </div>
