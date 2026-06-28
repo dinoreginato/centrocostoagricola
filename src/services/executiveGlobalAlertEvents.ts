@@ -15,6 +15,8 @@ export type ExecutiveGlobalAlertEventCreate = {
   metadata?: Record<string, unknown>;
 };
 
+export type ExecutiveGlobalAlertManagementStatus = 'pendiente' | 'reconocida' | 'comunicada' | 'cerrada';
+
 export type ExecutiveGlobalAlertEventRow = {
   id: string;
   company_id: string;
@@ -29,6 +31,10 @@ export type ExecutiveGlobalAlertEventRow = {
   leader_company_name: string | null;
   detail: string;
   recommendation: string;
+  management_status: ExecutiveGlobalAlertManagementStatus;
+  management_owner_label: string | null;
+  management_note: string | null;
+  management_updated_at: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
 };
@@ -48,8 +54,30 @@ export async function createExecutiveGlobalAlertEvent(params: ExecutiveGlobalAle
       leader_company_name: params.leaderCompanyName ?? null,
       detail: params.detail,
       recommendation: params.recommendation,
+      management_status: 'pendiente',
       metadata: params.metadata || {}
     });
+
+  if (error) throw error;
+}
+
+export async function updateExecutiveGlobalAlertEvent(params: {
+  companyId: string;
+  eventId: string;
+  managementStatus: ExecutiveGlobalAlertManagementStatus;
+  managementOwnerLabel?: string | null;
+  managementNote?: string | null;
+}) {
+  const { error } = await supabase
+    .from('executive_global_alert_events')
+    .update({
+      management_status: params.managementStatus,
+      management_owner_label: params.managementOwnerLabel?.trim() || null,
+      management_note: params.managementNote?.trim() || null,
+      management_updated_at: new Date().toISOString()
+    })
+    .eq('company_id', params.companyId)
+    .eq('id', params.eventId);
 
   if (error) throw error;
 }

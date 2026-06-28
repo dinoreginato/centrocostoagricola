@@ -21,7 +21,9 @@ import {
 import {
   createExecutiveGlobalAlertEvent,
   loadExecutiveGlobalAlertEvents,
-  type ExecutiveGlobalAlertEventRow
+  updateExecutiveGlobalAlertEvent,
+  type ExecutiveGlobalAlertEventRow,
+  type ExecutiveGlobalAlertManagementStatus
 } from '../services/executiveGlobalAlertEvents';
 import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
@@ -260,6 +262,12 @@ const EXECUTIVE_GLOBAL_ALERT_TYPE_LABELS: Record<string, string> = {
   global_position: 'Posición global fuera del tramo líder',
   global_consecutive: 'Racha consecutiva de rezago global'
 };
+const EXECUTIVE_GLOBAL_ALERT_STATUS_OPTIONS: Array<{ value: ExecutiveGlobalAlertManagementStatus; label: string }> = [
+  { value: 'pendiente', label: 'Pendiente' },
+  { value: 'reconocida', label: 'Reconocida' },
+  { value: 'comunicada', label: 'Comunicada' },
+  { value: 'cerrada', label: 'Cerrada' }
+];
 
 const EXECUTIVE_EXPORT_CIRCULATION_REASON_OPTIONS: Array<{ value: ExecutiveExportCirculationReason; label: string }> = [
   { value: 'comite', label: 'Comité' },
@@ -290,6 +298,24 @@ const formatExecutiveGlobalAlertType = (value: string) => (
     .map((item) => item.charAt(0).toUpperCase() + item.slice(1))
     .join(' ')
 );
+
+const formatExecutiveGlobalAlertStatus = (value: string | null | undefined) => (
+  EXECUTIVE_GLOBAL_ALERT_STATUS_OPTIONS.find((option) => option.value === value)?.label || 'Pendiente'
+);
+
+const getExecutiveGlobalAlertStatusTone = (value: string | null | undefined) => {
+  switch (value) {
+    case 'cerrada':
+      return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+    case 'comunicada':
+      return 'bg-blue-100 text-blue-700 border-blue-200';
+    case 'reconocida':
+      return 'bg-amber-100 text-amber-700 border-amber-200';
+    case 'pendiente':
+    default:
+      return 'bg-slate-100 text-slate-700 border-slate-200';
+  }
+};
 
 const formatExecutiveExportCirculationReason = (value: string | null | undefined) => {
   if (!value) return 'Sin motivo';
@@ -452,6 +478,41 @@ const buildExecutiveGlobalAlertAnalytics = (
   )
     .map(([type, count]) => ({ type, count }))
     .sort((a, b) => b.count - a.count);
+  const statusSummary = Array.from(
+    rows.reduce((map, row) => {
+      const status = row.management_status || 'pendiente';
+      map.set(status, (map.get(status) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  )
+    .map(([status, count]) => ({ status, count }))
+    .sort((a, b) => b.count - a.count);
+  const ownerSummary = Array.from(
+    rows.reduce((map, row) => {
+      const owner = row.management_owner_label?.trim() || 'Sin responsable';
+      const current = map.get(owner) || {
+        owner,
+        count: 0,
+        latestCreatedAt: row.created_at,
+        statusSet: new Set<string>()
+      };
+      current.count += 1;
+      current.latestCreatedAt = current.latestCreatedAt > row.created_at ? current.latestCreatedAt : row.created_at;
+      current.statusSet.add(formatExecutiveGlobalAlertStatus(row.management_status));
+      map.set(owner, current);
+      return map;
+    }, new Map<string, { owner: string; count: number; latestCreatedAt: string; statusSet: Set<string> }>())
+  )
+    .map(([, value]) => ({
+      owner: value.owner,
+      count: value.count,
+      latestCreatedAt: value.latestCreatedAt,
+      statuses: Array.from(value.statusSet).sort().join(', ')
+    }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return b.latestCreatedAt.localeCompare(a.latestCreatedAt);
+    });
   const seasonSummary = Array.from(
     rows.reduce((map, row) => {
       const current = map.get(row.season) || { season: row.season, count: 0 };
@@ -463,12 +524,15 @@ const buildExecutiveGlobalAlertAnalytics = (
     .map(([, value]) => value)
     .sort((a, b) => b.season.localeCompare(a.season));
   const topAlertType = alertTypeSummary[0] || null;
+  const topStatus = statusSummary[0] || null;
+  const topOwner = ownerSummary[0] || null;
   const topSeason = seasonSummary[0] || null;
   const dominantSeverity = bySeverity.alta >= bySeverity.media
     ? bySeverity.alta > 0 ? 'Alta' : bySeverity.media > 0 ? 'Media' : 'Sin alertas'
     : 'Media';
+  const pendingCount = rows.filter((row) => row.management_status === 'pendiente').length;
   const summaryLine = latestEvent
-    ? `Se registran ${rows.length} alertas globales persistidas para ${scopeLabel}. La última ocurrió en ${latestEvent.season} con severidad ${latestEvent.severity} y líder ${latestEvent.leader_company_name || 'sin líder visible'}.`
+    ? `Se registran ${rows.length} alertas globales persistidas para ${scopeLabel}. La última ocurrió en ${latestEvent.season} con severidad ${latestEvent.severity}, estado ${formatExecutiveGlobalAlertStatus(latestEvent.management_status)} y líder ${latestEvent.leader_company_name || 'sin líder visible'}.`
     : `No hay alertas globales persistidas para ${scopeLabel}.`;
 
   return {
@@ -482,6 +546,11 @@ const buildExecutiveGlobalAlertAnalytics = (
     topSeason,
     alertTypeSummary,
     topAlertType,
+    statusSummary,
+    topStatus,
+    ownerSummary,
+    topOwner,
+    pendingCount,
     totalEvents: rows.length,
     summaryLine
   };
@@ -1294,6 +1363,13 @@ export const Reports: React.FC = () => {
   const [executiveExportWarningActorFilter, setExecutiveExportWarningActorFilter] = useState<string>('all');
   const [executiveExportWarningRecipientFilter, setExecutiveExportWarningRecipientFilter] = useState<string>('all');
   const [executiveExportWarningReasonFilter, setExecutiveExportWarningReasonFilter] = useState<string>('all');
+  const [executiveGlobalAlertStatusFilter, setExecutiveGlobalAlertStatusFilter] = useState<string>('all');
+  const [executiveGlobalAlertOwnerFilter, setExecutiveGlobalAlertOwnerFilter] = useState<string>('all');
+  const [editingExecutiveGlobalAlertId, setEditingExecutiveGlobalAlertId] = useState<string | null>(null);
+  const [editingExecutiveGlobalAlertStatus, setEditingExecutiveGlobalAlertStatus] = useState<ExecutiveGlobalAlertManagementStatus>('pendiente');
+  const [editingExecutiveGlobalAlertOwner, setEditingExecutiveGlobalAlertOwner] = useState('');
+  const [editingExecutiveGlobalAlertNote, setEditingExecutiveGlobalAlertNote] = useState('');
+  const [savingExecutiveGlobalAlert, setSavingExecutiveGlobalAlert] = useState(false);
 
   // Preview Modal State
   const [showPreview, setShowPreview] = useState(false);
@@ -1383,6 +1459,12 @@ export const Reports: React.FC = () => {
     setExecutiveExportWarningActorFilter('all');
     setExecutiveExportWarningRecipientFilter('all');
     setExecutiveExportWarningReasonFilter('all');
+    setExecutiveGlobalAlertStatusFilter('all');
+    setExecutiveGlobalAlertOwnerFilter('all');
+    setEditingExecutiveGlobalAlertId(null);
+    setEditingExecutiveGlobalAlertStatus('pendiente');
+    setEditingExecutiveGlobalAlertOwner('');
+    setEditingExecutiveGlobalAlertNote('');
     setExecutiveExportRecipient('');
     setExecutiveExportCirculationReason('comite');
     setExecutiveExportCirculationNotes('');
@@ -3734,6 +3816,49 @@ export const Reports: React.FC = () => {
     selectedSeason
   ]);
 
+  const selectedExecutiveGlobalAlertEvent = useMemo(
+    () => executiveGlobalAlertEvents.find((row) => row.id === editingExecutiveGlobalAlertId) || null,
+    [editingExecutiveGlobalAlertId, executiveGlobalAlertEvents]
+  );
+
+  const startEditingExecutiveGlobalAlert = useCallback((row: ExecutiveGlobalAlertEventRow) => {
+    setEditingExecutiveGlobalAlertId(row.id);
+    setEditingExecutiveGlobalAlertStatus(row.management_status || 'pendiente');
+    setEditingExecutiveGlobalAlertOwner(row.management_owner_label || '');
+    setEditingExecutiveGlobalAlertNote(row.management_note || '');
+  }, []);
+
+  const saveExecutiveGlobalAlertLifecycle = useCallback(async () => {
+    if (!selectedCompany?.id || !editingExecutiveGlobalAlertId) return;
+
+    try {
+      setSavingExecutiveGlobalAlert(true);
+      await updateExecutiveGlobalAlertEvent({
+        companyId: selectedCompany.id,
+        eventId: editingExecutiveGlobalAlertId,
+        managementStatus: editingExecutiveGlobalAlertStatus,
+        managementOwnerLabel: editingExecutiveGlobalAlertOwner,
+        managementNote: editingExecutiveGlobalAlertNote
+      });
+
+      const rows = await loadExecutiveGlobalAlertEvents({ companyId: selectedCompany.id, limit: 100 });
+      setExecutiveGlobalAlertEvents(rows || []);
+      toast.success('Se actualizó la gestión de la alerta global.');
+      setEditingExecutiveGlobalAlertId(null);
+    } catch (error) {
+      console.error('No se pudo actualizar la gestión de la alerta global.', error);
+      toast.error('No fue posible guardar la gestión de la alerta global.');
+    } finally {
+      setSavingExecutiveGlobalAlert(false);
+    }
+  }, [
+    editingExecutiveGlobalAlertId,
+    editingExecutiveGlobalAlertNote,
+    editingExecutiveGlobalAlertOwner,
+    editingExecutiveGlobalAlertStatus,
+    selectedCompany?.id
+  ]);
+
   const executiveExportWarningHistoryData = useMemo(
     () => buildExecutiveExportWarningAnalytics(executiveExportWarningEvents, selectedSeason, 'la empresa activa'),
     [executiveExportWarningEvents, selectedSeason]
@@ -3742,8 +3867,50 @@ export const Reports: React.FC = () => {
     () => buildExecutiveGlobalAlertAnalytics(executiveGlobalAlertEvents, selectedSeason, 'la empresa activa'),
     [executiveGlobalAlertEvents, selectedSeason]
   );
+  const executiveGlobalAlertStatusOptions = useMemo(() => (
+    ['all', ...Array.from(new Set<string>(
+      executiveGlobalAlertEvents.map((row) => row.management_status || 'pendiente')
+    )).sort((a, b) => formatExecutiveGlobalAlertStatus(a).localeCompare(formatExecutiveGlobalAlertStatus(b)))]
+  ), [executiveGlobalAlertEvents]);
+  const executiveGlobalAlertOwnerOptions = useMemo(() => (
+    ['all', ...Array.from(new Set(
+      executiveGlobalAlertEvents.map((row) => row.management_owner_label?.trim()).filter(Boolean)
+    )).sort((a, b) => String(a).localeCompare(String(b)))]
+  ), [executiveGlobalAlertEvents]);
+  const executiveGlobalAlertFiltersActive = useMemo(() => (
+    executiveGlobalAlertStatusFilter !== 'all' || executiveGlobalAlertOwnerFilter !== 'all'
+  ), [executiveGlobalAlertOwnerFilter, executiveGlobalAlertStatusFilter]);
+  const executiveGlobalAlertFilteredRows = useMemo(() => (
+    executiveGlobalAlertEvents.filter((row) => {
+      if (executiveGlobalAlertStatusFilter !== 'all' && (row.management_status || 'pendiente') !== executiveGlobalAlertStatusFilter) {
+        return false;
+      }
+      if (executiveGlobalAlertOwnerFilter !== 'all' && (row.management_owner_label?.trim() || '') !== executiveGlobalAlertOwnerFilter) {
+        return false;
+      }
+      return true;
+    })
+  ), [executiveGlobalAlertEvents, executiveGlobalAlertOwnerFilter, executiveGlobalAlertStatusFilter]);
+  const executiveGlobalAlertFilteredData = useMemo(
+    () => buildExecutiveGlobalAlertAnalytics(
+      executiveGlobalAlertFilteredRows,
+      selectedSeason,
+      executiveGlobalAlertFiltersActive ? 'los filtros activos' : 'la empresa activa'
+    ),
+    [executiveGlobalAlertFilteredRows, executiveGlobalAlertFiltersActive, selectedSeason]
+  );
+  const executiveGlobalAlertFiltersLabel = useMemo(() => {
+    const parts: string[] = [];
+    if (executiveGlobalAlertStatusFilter !== 'all') {
+      parts.push(`Estado: ${formatExecutiveGlobalAlertStatus(executiveGlobalAlertStatusFilter)}`);
+    }
+    if (executiveGlobalAlertOwnerFilter !== 'all') {
+      parts.push(`Responsable: ${executiveGlobalAlertOwnerFilter}`);
+    }
+    return parts.length > 0 ? parts.join(' · ') : 'Todas las alertas';
+  }, [executiveGlobalAlertOwnerFilter, executiveGlobalAlertStatusFilter]);
   const executiveGlobalAlertExportLinkSummary = useMemo(() => {
-    const latestAlert = executiveGlobalAlertHistoryData.latestEvent;
+    const latestAlert = executiveGlobalAlertFilteredData.latestEvent;
     const latestExport = executiveExportWarningHistoryData.latestEvent;
     if (!latestAlert && !latestExport) {
       return 'No hay alertas globales ni exportaciones advertidas persistidas.';
@@ -3766,7 +3933,7 @@ export const Reports: React.FC = () => {
     }
 
     return `La última alerta global persistida es posterior a la última exportación advertida visible, lo que sugiere un deterioro ocurrido después de esa circulación.`;
-  }, [executiveExportWarningHistoryData.latestEvent, executiveGlobalAlertHistoryData.latestEvent]);
+  }, [executiveExportWarningHistoryData.latestEvent, executiveGlobalAlertFilteredData.latestEvent]);
   const executiveExportWarningFormatOptions = useMemo(() => (
     ['all', ...Array.from(new Set(executiveExportWarningEvents.map((row) => row.export_format)))]
   ), [executiveExportWarningEvents]);
@@ -4035,8 +4202,12 @@ export const Reports: React.FC = () => {
         { Indicador: 'Historial liderazgo global', Valor: executiveGlobalHistoricalInsights.summaryLine },
         { Indicador: 'Alerta consecutiva global', Valor: executiveGlobalConsecutiveAlert?.tone.title || 'Sin alerta' },
         { Indicador: 'Racha consecutiva global', Valor: executiveGlobalConsecutiveAlert ? `${executiveGlobalConsecutiveAlert.streak} temporadas` : 'Sin racha crítica' },
-        { Indicador: 'Bitácora alertas globales', Valor: executiveGlobalAlertHistoryData.totalEvents },
-        { Indicador: 'Última alerta global persistida', Valor: executiveGlobalAlertHistoryData.latestEvent ? `${executiveGlobalAlertHistoryData.latestEvent.season} · ${executiveGlobalAlertHistoryData.latestEvent.severity}` : 'Sin eventos' },
+        { Indicador: 'Bitácora alertas globales', Valor: executiveGlobalAlertFilteredData.totalEvents },
+        { Indicador: 'Filtros alertas globales', Valor: executiveGlobalAlertFiltersLabel },
+        { Indicador: 'Última alerta global persistida', Valor: executiveGlobalAlertFilteredData.latestEvent ? `${executiveGlobalAlertFilteredData.latestEvent.season} · ${executiveGlobalAlertFilteredData.latestEvent.severity}` : 'Sin eventos' },
+        { Indicador: 'Estado gestión dominante', Valor: executiveGlobalAlertFilteredData.topStatus ? formatExecutiveGlobalAlertStatus(executiveGlobalAlertFilteredData.topStatus.status) : 'Sin estado' },
+        { Indicador: 'Responsable dominante', Valor: executiveGlobalAlertFilteredData.topOwner?.owner || 'Sin responsable' },
+        { Indicador: 'Alertas pendientes', Valor: executiveGlobalAlertFilteredData.pendingCount },
         { Indicador: 'Cruce alerta/exportación', Valor: executiveGlobalAlertExportLinkSummary },
         { Indicador: 'Recomendación comparada', Valor: executiveCompareCompanyRecommendation?.tone.title || 'Sin datos' },
         { Indicador: 'Mejor cierre histórico', Valor: bestClosureHistoryRow ? `${bestClosureHistoryRow.season} (${bestClosureHistoryRow.closurePct.toFixed(2)}%)` : 'Sin datos' },
@@ -4316,14 +4487,27 @@ export const Reports: React.FC = () => {
         'Última temporada líder': executiveGlobalHistoricalInsights.lastLeaderSeason || 'Sin liderazgo visible',
         'Última temporada top cuartil': executiveGlobalHistoricalInsights.lastTopQuartileSeason || 'Sin top cuartil visible'
       }] : [];
-      const globalAlertHistoryRows = executiveGlobalAlertHistoryData.seasonSummary.map((row) => ({
+      const globalAlertHistoryRows = executiveGlobalAlertFilteredData.seasonSummary.map((row) => ({
         Temporada: row.season,
         Eventos: row.count
       }));
-      const globalAlertRecentRows = executiveGlobalAlertHistoryData.recentRows.map((row) => ({
+      const globalAlertStatusRows = executiveGlobalAlertFilteredData.statusSummary.map((row) => ({
+        Estado: formatExecutiveGlobalAlertStatus(row.status),
+        Eventos: row.count
+      }));
+      const globalAlertOwnerRows = executiveGlobalAlertFilteredData.ownerSummary.map((row) => ({
+        Responsable: row.owner,
+        Eventos: row.count,
+        'Estados visibles': row.statuses,
+        'Último evento': new Date(row.latestCreatedAt).toLocaleDateString('es-CL')
+      }));
+      const globalAlertRecentRows = executiveGlobalAlertFilteredData.recentRows.map((row) => ({
         Fecha: new Date(row.created_at).toLocaleString('es-CL'),
         Temporada: row.season,
         Severidad: row.severity,
+        'Estado gestión': formatExecutiveGlobalAlertStatus(row.management_status),
+        Responsable: row.management_owner_label || 'Sin responsable',
+        'Nota gestión': row.management_note || 'Sin nota',
         Alertas: (row.alert_titles || []).join(', ') || 'Sin título',
         Líder: row.leader_company_name || 'Sin líder',
         'Posición empresa activa': row.selected_company_rank || 'Sin datos',
@@ -4481,6 +4665,8 @@ export const Reports: React.FC = () => {
           ...(globalAlertRows.length > 0 ? [{ name: 'Alerta Ranking Global', rows: globalAlertRows }] : []),
           ...(globalConsecutiveAlertRows.length > 0 ? [{ name: 'Alerta Consecutiva Global', rows: globalConsecutiveAlertRows }] : []),
           ...(globalAlertHistoryRows.length > 0 ? [{ name: 'Historial Alertas Globales', rows: globalAlertHistoryRows }] : []),
+          ...(globalAlertStatusRows.length > 0 ? [{ name: 'Estados Alertas Globales', rows: globalAlertStatusRows }] : []),
+          ...(globalAlertOwnerRows.length > 0 ? [{ name: 'Responsables Alertas', rows: globalAlertOwnerRows }] : []),
           ...(globalAlertRecentRows.length > 0 ? [{ name: 'Bitacora Alertas Globales', rows: globalAlertRecentRows }] : []),
           ...(totalDataBlockerRows.length > 0 ? [{ name: 'Bloqueos Dato', rows: totalDataBlockerRows }] : []),
           ...(compareCompanyRows.length > 0 ? [{ name: 'Comparacion Empresas', rows: compareCompanyRows }] : []),
@@ -5703,22 +5889,29 @@ export const Reports: React.FC = () => {
             yPos = (doc as any).lastAutoTable.finalY + 8;
           }
 
-          if (executiveGlobalAlertHistoryData.totalEvents > 0) {
+          if (executiveGlobalAlertFilteredData.totalEvents > 0) {
             autoTable(doc, {
               startY: yPos,
               head: [['Bitácora alertas globales', 'Detalle']],
               body: [
-                ['Eventos históricos', String(executiveGlobalAlertHistoryData.totalEvents)],
-                ['Eventos temporada actual', String(executiveGlobalAlertHistoryData.currentSeasonRows.length)],
-                ['Severidad dominante', executiveGlobalAlertHistoryData.dominantSeverity],
-                ['Alerta dominante', executiveGlobalAlertHistoryData.topAlertType
-                  ? `${formatExecutiveGlobalAlertType(executiveGlobalAlertHistoryData.topAlertType.type)} (${executiveGlobalAlertHistoryData.topAlertType.count})`
+                ['Eventos históricos', String(executiveGlobalAlertFilteredData.totalEvents)],
+                ['Eventos temporada actual', String(executiveGlobalAlertFilteredData.currentSeasonRows.length)],
+                ['Severidad dominante', executiveGlobalAlertFilteredData.dominantSeverity],
+                ['Estado dominante', executiveGlobalAlertFilteredData.topStatus
+                  ? `${formatExecutiveGlobalAlertStatus(executiveGlobalAlertFilteredData.topStatus.status)} (${executiveGlobalAlertFilteredData.topStatus.count})`
+                  : 'Sin estado dominante'],
+                ['Responsable dominante', executiveGlobalAlertFilteredData.topOwner
+                  ? `${executiveGlobalAlertFilteredData.topOwner.owner} (${executiveGlobalAlertFilteredData.topOwner.count})`
+                  : 'Sin responsable dominante'],
+                ['Alerta dominante', executiveGlobalAlertFilteredData.topAlertType
+                  ? `${formatExecutiveGlobalAlertType(executiveGlobalAlertFilteredData.topAlertType.type)} (${executiveGlobalAlertFilteredData.topAlertType.count})`
                   : 'Sin alerta dominante'],
-                ['Última alerta', executiveGlobalAlertHistoryData.latestEvent
-                  ? `${executiveGlobalAlertHistoryData.latestEvent.season} · ${executiveGlobalAlertHistoryData.latestEvent.severity} · ${executiveGlobalAlertHistoryData.latestEvent.leader_company_name || 'Sin líder'}`
+                ['Última alerta', executiveGlobalAlertFilteredData.latestEvent
+                  ? `${executiveGlobalAlertFilteredData.latestEvent.season} · ${executiveGlobalAlertFilteredData.latestEvent.severity} · ${formatExecutiveGlobalAlertStatus(executiveGlobalAlertFilteredData.latestEvent.management_status)}`
                   : 'Sin eventos'],
+                ['Filtros activos', executiveGlobalAlertFiltersLabel],
                 ['Cruce con exportación', executiveGlobalAlertExportLinkSummary],
-                ['Lectura', executiveGlobalAlertHistoryData.summaryLine]
+                ['Lectura', executiveGlobalAlertFilteredData.summaryLine]
               ],
               theme: 'grid',
               headStyles: { fillColor: [91, 33, 182] },
@@ -5727,17 +5920,17 @@ export const Reports: React.FC = () => {
 
             yPos = (doc as any).lastAutoTable.finalY + 8;
 
-            if (executiveGlobalAlertHistoryData.recentRows.length > 0) {
+            if (executiveGlobalAlertFilteredData.recentRows.length > 0) {
               autoTable(doc, {
                 startY: yPos,
-                head: [['Fecha', 'Temporada', 'Severidad', 'Alertas', 'Posición', 'Líder']],
-                body: executiveGlobalAlertHistoryData.recentRows.slice(0, 6).map((row) => [
+                head: [['Fecha', 'Temporada', 'Gestión', 'Responsable', 'Alertas', 'Posición']],
+                body: executiveGlobalAlertFilteredData.recentRows.slice(0, 6).map((row) => [
                   new Date(row.created_at).toLocaleString('es-CL'),
                   row.season,
-                  row.severity,
+                  `${row.severity} · ${formatExecutiveGlobalAlertStatus(row.management_status)}`,
+                  row.management_owner_label || 'Sin responsable',
                   (row.alert_titles || []).join(', ') || 'Sin título',
-                  row.selected_company_rank ? `${row.selected_company_rank}/${row.total_companies || '-'}` : 'Sin datos',
-                  row.leader_company_name || 'Sin líder'
+                  row.selected_company_rank ? `${row.selected_company_rank}/${row.total_companies || '-'}` : 'Sin datos'
                 ]),
                 theme: 'grid',
                 headStyles: { fillColor: [76, 29, 149] },
@@ -9156,50 +9349,85 @@ export const Reports: React.FC = () => {
                     <span className="text-sm text-slate-500">
                       {executiveGlobalAlertLoading
                         ? 'Cargando bitácora...'
-                        : `${executiveGlobalAlertHistoryData.totalEvents} eventos históricos`}
+                        : `${executiveGlobalAlertFilteredData.totalEvents} eventos visibles`}
                     </span>
                   </div>
                 </div>
                 <div className="p-6 space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                    <label className="text-sm text-slate-600">
+                      <span className="mb-2 block font-medium text-slate-700">Estado de gestión</span>
+                      <select
+                        value={executiveGlobalAlertStatusFilter}
+                        onChange={(event) => setExecutiveGlobalAlertStatusFilter(event.target.value)}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                      >
+                        {executiveGlobalAlertStatusOptions.map((value) => (
+                          <option key={value} value={value}>
+                            {value === 'all' ? 'Todos los estados' : formatExecutiveGlobalAlertStatus(value)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-sm text-slate-600">
+                      <span className="mb-2 block font-medium text-slate-700">Responsable</span>
+                      <select
+                        value={executiveGlobalAlertOwnerFilter}
+                        onChange={(event) => setExecutiveGlobalAlertOwnerFilter(event.target.value)}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                      >
+                        {executiveGlobalAlertOwnerOptions.map((value) => (
+                          <option key={value} value={value}>
+                            {value === 'all' ? 'Todos los responsables' : value}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 xl:col-span-2">
+                      <div className="font-medium text-slate-900">Filtro activo</div>
+                      <p className="mt-2">{executiveGlobalAlertFiltersLabel}</p>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <div className="text-xs uppercase tracking-wide text-slate-500">Eventos históricos</div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveGlobalAlertHistoryData.totalEvents}</div>
-                      <div className="mt-1 text-sm text-slate-500">Alertas globales persistidas para la empresa activa</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveGlobalAlertFilteredData.totalEvents}</div>
+                      <div className="mt-1 text-sm text-slate-500">Alertas visibles para los filtros activos</div>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <div className="text-xs uppercase tracking-wide text-slate-500">Temporada visible</div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveGlobalAlertHistoryData.currentSeasonRows.length}</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveGlobalAlertFilteredData.currentSeasonRows.length}</div>
                       <div className="mt-1 text-sm text-slate-500">{selectedSeason} con alertas persistidas visibles</div>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Severidad dominante</div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveGlobalAlertHistoryData.dominantSeverity}</div>
-                      <div className="mt-1 text-sm text-slate-500">Alta: {executiveGlobalAlertHistoryData.bySeverity.alta} · Media: {executiveGlobalAlertHistoryData.bySeverity.media}</div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Estado dominante</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">
+                        {executiveGlobalAlertFilteredData.topStatus ? formatExecutiveGlobalAlertStatus(executiveGlobalAlertFilteredData.topStatus.status) : 'Sin estado'}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">Pendientes: {executiveGlobalAlertFilteredData.pendingCount}</div>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Alerta dominante</div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Responsable dominante</div>
                       <div className="mt-2 text-lg font-semibold text-slate-900">
-                        {executiveGlobalAlertHistoryData.topAlertType
-                          ? formatExecutiveGlobalAlertType(executiveGlobalAlertHistoryData.topAlertType.type)
-                          : 'Sin alerta'}
+                        {executiveGlobalAlertFilteredData.topOwner?.owner || 'Sin responsable'}
                       </div>
                       <div className="mt-1 text-sm text-slate-500">
-                        {executiveGlobalAlertHistoryData.topAlertType
-                          ? `${executiveGlobalAlertHistoryData.topAlertType.count} eventos`
+                        {executiveGlobalAlertFilteredData.topOwner
+                          ? `${executiveGlobalAlertFilteredData.topOwner.count} eventos · ${executiveGlobalAlertFilteredData.topOwner.statuses || 'Sin estados'}`
                           : 'Sin recurrencia visible'}
                       </div>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <div className="text-xs uppercase tracking-wide text-slate-500">Última alerta persistida</div>
                       <div className="mt-2 text-lg font-semibold text-slate-900">
-                        {executiveGlobalAlertHistoryData.latestEvent
-                          ? `${executiveGlobalAlertHistoryData.latestEvent.season} · ${executiveGlobalAlertHistoryData.latestEvent.severity}`
+                        {executiveGlobalAlertFilteredData.latestEvent
+                          ? `${executiveGlobalAlertFilteredData.latestEvent.season} · ${formatExecutiveGlobalAlertStatus(executiveGlobalAlertFilteredData.latestEvent.management_status)}`
                           : 'Sin eventos'}
                       </div>
                       <div className="mt-1 text-sm text-slate-500">
-                        {executiveGlobalAlertHistoryData.latestEvent
-                          ? `${executiveGlobalAlertHistoryData.latestEvent.leader_company_name || 'Sin líder'} · ${new Date(executiveGlobalAlertHistoryData.latestEvent.created_at).toLocaleString('es-CL')}`
+                        {executiveGlobalAlertFilteredData.latestEvent
+                          ? `${executiveGlobalAlertFilteredData.latestEvent.leader_company_name || 'Sin líder'} · ${new Date(executiveGlobalAlertFilteredData.latestEvent.created_at).toLocaleString('es-CL')}`
                           : 'Aún sin bitácora persistida'}
                       </div>
                     </div>
@@ -9207,11 +9435,74 @@ export const Reports: React.FC = () => {
 
                   <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
                     <div className="font-medium text-slate-900">Lectura de auditoría global</div>
-                    <p className="mt-2">{executiveGlobalAlertHistoryData.summaryLine}</p>
+                    <p className="mt-2">{executiveGlobalAlertFilteredData.summaryLine}</p>
                     <p className="mt-2">{executiveGlobalAlertExportLinkSummary}</p>
                   </div>
 
-                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                  {selectedExecutiveGlobalAlertEvent && (
+                    <div className="rounded-xl border border-purple-200 bg-purple-50 p-5">
+                      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                        <div>
+                          <div className="text-sm font-semibold uppercase tracking-wide text-purple-700">Gestión de alerta</div>
+                          <p className="mt-2 text-sm text-slate-700">
+                            {selectedExecutiveGlobalAlertEvent.season} · {(selectedExecutiveGlobalAlertEvent.alert_titles || []).join(', ') || 'Sin título'} · {selectedExecutiveGlobalAlertEvent.leader_company_name || 'Sin líder'}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setEditingExecutiveGlobalAlertId(null)}
+                          className="rounded-lg border border-purple-200 bg-white px-3 py-2 text-sm font-medium text-purple-700"
+                        >
+                          Cerrar edición
+                        </button>
+                      </div>
+                      <div className="mt-4 grid grid-cols-1 xl:grid-cols-3 gap-4">
+                        <label className="text-sm text-slate-600">
+                          <span className="mb-2 block font-medium text-slate-700">Estado</span>
+                          <select
+                            value={editingExecutiveGlobalAlertStatus}
+                            onChange={(event) => setEditingExecutiveGlobalAlertStatus(event.target.value as ExecutiveGlobalAlertManagementStatus)}
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                          >
+                            {EXECUTIVE_GLOBAL_ALERT_STATUS_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="text-sm text-slate-600">
+                          <span className="mb-2 block font-medium text-slate-700">Responsable</span>
+                          <input
+                            value={editingExecutiveGlobalAlertOwner}
+                            onChange={(event) => setEditingExecutiveGlobalAlertOwner(event.target.value)}
+                            placeholder="Ej. Gerencia agrícola"
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                          />
+                        </label>
+                        <label className="text-sm text-slate-600 xl:col-span-1">
+                          <span className="mb-2 block font-medium text-slate-700">Nota de gestión</span>
+                          <textarea
+                            value={editingExecutiveGlobalAlertNote}
+                            onChange={(event) => setEditingExecutiveGlobalAlertNote(event.target.value)}
+                            placeholder="Qué se comunicó o por qué se cierra"
+                            rows={3}
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700"
+                          />
+                        </label>
+                      </div>
+                      <div className="mt-4 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => void saveExecutiveGlobalAlertLifecycle()}
+                          disabled={savingExecutiveGlobalAlert}
+                          className="inline-flex items-center rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {savingExecutiveGlobalAlert ? 'Guardando...' : 'Guardar gestión'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
                     <div className="overflow-x-auto rounded-xl border border-slate-200">
                       <table className="min-w-full divide-y divide-slate-200 text-sm">
                         <thead className="bg-slate-50">
@@ -9221,16 +9512,73 @@ export const Reports: React.FC = () => {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 bg-white">
-                          {executiveGlobalAlertHistoryData.seasonSummary.slice(0, 6).map((row) => (
+                          {executiveGlobalAlertFilteredData.seasonSummary.slice(0, 6).map((row) => (
                             <tr key={row.season} className={row.season === selectedSeason ? 'bg-purple-50/50' : ''}>
                               <td className="px-4 py-3 font-medium text-slate-900">{row.season}</td>
                               <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
                             </tr>
                           ))}
-                          {!executiveGlobalAlertLoading && executiveGlobalAlertHistoryData.seasonSummary.length === 0 && (
+                          {!executiveGlobalAlertLoading && executiveGlobalAlertFilteredData.seasonSummary.length === 0 && (
                             <tr>
                               <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
                                 No hay alertas globales persistidas para esta empresa.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Estado frecuente</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Veces</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {executiveGlobalAlertFilteredData.statusSummary.slice(0, 6).map((row) => (
+                            <tr key={row.status}>
+                              <td className="px-4 py-3 text-slate-900">
+                                <div className="font-medium">{formatExecutiveGlobalAlertStatus(row.status)}</div>
+                              </td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                            </tr>
+                          ))}
+                          {!executiveGlobalAlertLoading && executiveGlobalAlertFilteredData.statusSummary.length === 0 && (
+                            <tr>
+                              <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
+                                No hay estados visibles en la bitácora.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Responsable</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Eventos</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {executiveGlobalAlertFilteredData.ownerSummary.slice(0, 6).map((row) => (
+                            <tr key={row.owner}>
+                              <td className="px-4 py-3 text-slate-900">
+                                <div className="font-medium">{row.owner}</div>
+                                <div className="text-xs text-slate-500">{row.statuses || 'Sin estados'} · {new Date(row.latestCreatedAt).toLocaleDateString('es-CL')}</div>
+                              </td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                            </tr>
+                          ))}
+                          {!executiveGlobalAlertLoading && executiveGlobalAlertFilteredData.ownerSummary.length === 0 && (
+                            <tr>
+                              <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
+                                No hay responsables visibles en la bitácora.
                               </td>
                             </tr>
                           )}
@@ -9247,7 +9595,7 @@ export const Reports: React.FC = () => {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 bg-white">
-                          {executiveGlobalAlertHistoryData.alertTypeSummary.slice(0, 6).map((row) => (
+                          {executiveGlobalAlertFilteredData.alertTypeSummary.slice(0, 6).map((row) => (
                             <tr key={row.type}>
                               <td className="px-4 py-3 text-slate-900">
                                 <div className="font-medium">{formatExecutiveGlobalAlertType(row.type)}</div>
@@ -9255,35 +9603,13 @@ export const Reports: React.FC = () => {
                               <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
                             </tr>
                           ))}
-                          {!executiveGlobalAlertLoading && executiveGlobalAlertHistoryData.alertTypeSummary.length === 0 && (
+                          {!executiveGlobalAlertLoading && executiveGlobalAlertFilteredData.alertTypeSummary.length === 0 && (
                             <tr>
                               <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
                                 No hay tipos de alerta visibles en la bitácora.
                               </td>
                             </tr>
                           )}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <div className="overflow-x-auto rounded-xl border border-slate-200">
-                      <table className="min-w-full divide-y divide-slate-200 text-sm">
-                        <thead className="bg-slate-50">
-                          <tr>
-                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Severidad</th>
-                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Eventos</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200 bg-white">
-                          {[
-                            { label: 'Alta', count: executiveGlobalAlertHistoryData.bySeverity.alta },
-                            { label: 'Media', count: executiveGlobalAlertHistoryData.bySeverity.media }
-                          ].map((row) => (
-                            <tr key={row.label}>
-                              <td className="px-4 py-3 font-medium text-slate-900">{row.label}</td>
-                              <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
-                            </tr>
-                          ))}
                         </tbody>
                       </table>
                     </div>
@@ -9296,34 +9622,55 @@ export const Reports: React.FC = () => {
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Temporada</th>
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Severidad</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Gestión</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Responsable</th>
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Alertas</th>
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Posición</th>
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Líder</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Acción</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-200 bg-white">
-                        {executiveGlobalAlertHistoryData.recentRows.map((row) => (
+                        {executiveGlobalAlertFilteredData.recentRows.map((row) => (
                           <tr key={row.id}>
                             <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
                             <td className="px-4 py-3 font-medium text-slate-900">{row.season}</td>
                             <td className="px-4 py-3 text-slate-700">{row.severity}</td>
+                            <td className="px-4 py-3">
+                              <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getExecutiveGlobalAlertStatusTone(row.management_status)}`}>
+                                {formatExecutiveGlobalAlertStatus(row.management_status)}
+                              </span>
+                              {row.management_note && (
+                                <div className="mt-1 text-xs text-slate-500">{row.management_note}</div>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700">{row.management_owner_label || 'Sin responsable'}</td>
                             <td className="px-4 py-3 text-slate-700">{(row.alert_titles || []).join(', ') || 'Sin título'}</td>
                             <td className="px-4 py-3 text-slate-700">
                               {row.selected_company_rank ? `${row.selected_company_rank}/${row.total_companies || '-'}` : 'Sin datos'}
                             </td>
                             <td className="px-4 py-3 text-slate-700">{row.leader_company_name || 'Sin líder'}</td>
+                            <td className="px-4 py-3">
+                              <button
+                                type="button"
+                                onClick={() => startEditingExecutiveGlobalAlert(row)}
+                                className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                              >
+                                Gestionar
+                              </button>
+                            </td>
                           </tr>
                         ))}
-                        {!executiveGlobalAlertLoading && executiveGlobalAlertHistoryData.recentRows.length === 0 && (
+                        {!executiveGlobalAlertLoading && executiveGlobalAlertFilteredData.recentRows.length === 0 && (
                           <tr>
-                            <td colSpan={6} className="px-4 py-4 text-center text-sm text-slate-500">
-                              No hay alertas globales persistidas para la empresa activa.
+                            <td colSpan={9} className="px-4 py-4 text-center text-sm text-slate-500">
+                              No hay alertas globales persistidas para los filtros seleccionados.
                             </td>
                           </tr>
                         )}
                         {executiveGlobalAlertLoading && (
                           <tr>
-                            <td colSpan={6} className="px-4 py-4 text-center text-sm text-slate-500">
+                            <td colSpan={9} className="px-4 py-4 text-center text-sm text-slate-500">
                               Cargando bitácora histórica de alertas globales...
                             </td>
                           </tr>
@@ -13161,6 +13508,11 @@ export const Reports: React.FC = () => {
                                 </p>
                                 <p className="mt-5 text-lg text-slate-500">
                                   Racha fuera del top cuartil: {executiveGlobalHistoricalInsights.currentOutsideTopQuartileStreak}. Racha sin liderazgo: {executiveGlobalHistoricalInsights.currentWithoutLeadershipStreak}.
+                                </p>
+                                <p className="mt-5 text-lg text-slate-500">
+                                  {executiveGlobalAlertFilteredData.latestEvent
+                                    ? `Última gestión visible: ${formatExecutiveGlobalAlertStatus(executiveGlobalAlertFilteredData.latestEvent.management_status)} por ${executiveGlobalAlertFilteredData.latestEvent.management_owner_label || 'sin responsable'}`
+                                    : 'No hay alertas globales visibles para los filtros actuales.'}
                                 </p>
                                 <p className="mt-5 text-lg text-slate-500">{executiveGlobalAlertExportLinkSummary}</p>
                               </div>

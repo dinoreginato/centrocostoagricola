@@ -623,6 +623,27 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - dejar evidencia de si el riesgo ya existia antes de exportar o circular el reporte
   - sostener trazabilidad formal del deterioro competitivo entre temporadas
 
+## Ciclo De Vida De Alertas Globales
+- La bitacora de alertas globales ahora incorpora gestion manual por evento.
+- Cada alerta puede quedar en estado:
+  - `Pendiente`
+  - `Reconocida`
+  - `Comunicada`
+  - `Cerrada`
+- Tambien se registra:
+  - responsable visible
+  - nota de gestion
+  - fecha de actualizacion de la gestion
+- `Reportes` ahora permite:
+  - filtrar por estado y responsable
+  - resumir estados dominantes y responsables frecuentes
+  - editar la gestion directamente desde la bitacora
+  - exportar hojas separadas por estados y responsables
+- Objetivo:
+  - distinguir alertas solo detectadas de alertas realmente gestionadas
+  - dejar trazabilidad operativa del seguimiento ejecutivo
+  - permitir auditoria de quien esta tomando cada alerta y en que estado queda
+
 ## Siguiente Paso Recomendado
 - Evaluar persistencia historica del ranking global para medir cambios de liderazgo sin recalculo completo en tiempo real.
-- Considerar extender la bitacora para marcar si una alerta global fue reconocida, comunicada o cerrada por el equipo ejecutivo.
+- Considerar historial formal de transiciones por alerta para saber no solo el estado final, sino todo el recorrido de gestion.
