@@ -367,7 +367,17 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - evitar circular un reporte como si fuera lectura definitiva cuando la calidad del dato aun no alcanza nivel de comite
   - dejar una trazabilidad explicita de que la exportacion se hizo bajo advertencia
 
+## Presentacion Fullscreen Del Historial Entre Empresas
+- La presentacion ejecutiva fullscreen ahora incorpora una capa final para comparar historicamente el cierre total entre empresas.
+- El slide muestra:
+  - liderazgo historico
+  - mejor temporada de cada empresa
+  - mayor brecha historica
+  - tabla temporada a temporada con brecha y lider
+- Objetivo:
+  - cerrar la narrativa ejecutiva no solo con la calidad interna del dato, sino tambien con la posicion relativa de cada empresa en el tiempo
+
 ## Siguiente Paso Recomendado
-- Llevar esta comparacion historica a la presentacion fullscreen ejecutiva y a una alerta preventiva antes de exportar.
 - Agregar una tendencia de mejora o deterioro por empresa usando ventana movil de temporadas.
 - Considerar registrar un evento o bitacora cada vez que se exporte bajo advertencia.
+- Evaluar una portada o slide final de decision ejecutiva con recomendacion automatica por empresa.

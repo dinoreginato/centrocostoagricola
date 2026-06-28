@@ -642,7 +642,7 @@ export const Reports: React.FC = () => {
     };
   }, [executiveCompareCompanyId, selectedSeason]);
 
-  const presentationMaxSlide = activeTab === 'executive' ? 9 : activeTab === 'general' ? 3 : 1;
+  const presentationMaxSlide = activeTab === 'executive' ? 10 : activeTab === 'general' ? 3 : 1;
 
   // Update presentation logic to support executive slides and legacy tabs
   useEffect(() => {
@@ -8909,7 +8909,7 @@ export const Reports: React.FC = () => {
                   </div>
                 )}
 
-                {currentSlide >= 1 && currentSlide <= 9 && (
+                {currentSlide >= 1 && currentSlide <= 10 && (
                   <div className="w-full h-full flex flex-col animate-fade-in-up pt-4">
                     <h2 className="text-3xl lg:text-4xl font-bold text-slate-800 mb-6 text-center">Resumen Ejecutivo</h2>
                     <div className="flex-1 bg-white rounded-3xl shadow-xl p-6 overflow-y-auto pb-24" style={{ maxHeight: 'calc(100vh - 120px)' }}>
@@ -9492,6 +9492,126 @@ export const Reports: React.FC = () => {
                             <div className="text-sm uppercase tracking-[0.25em]">Decisión De Presentación</div>
                             <p className="mt-4 text-2xl leading-10">{executiveTotalDataClosure.conclusion}</p>
                           </div>
+                        </div>
+                      )}
+
+                      {currentSlide === 10 && (
+                        <div className="space-y-6">
+                          <div className="flex items-start justify-between gap-6">
+                            <div>
+                              <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Historial Comparado Entre Empresas</div>
+                              <div className="mt-2 text-3xl font-bold text-slate-900">¿Quién llega mejor preparado al comité en el tiempo?</div>
+                              <div className="mt-2 text-lg text-slate-500">
+                                {executiveCompareCompanyName
+                                  ? `${companyName} vs ${executiveCompareCompanyName}`
+                                  : `${companyName} · Falta seleccionar empresa comparada`}
+                              </div>
+                            </div>
+                            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${executiveTotalDataClosure.readiness.badge}`}>
+                              <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveTotalDataClosure.readiness.dot}`} />
+                              {executiveCompareCompanyHistoryInsights
+                                ? `${executiveCompareCompanyHistoryInsights.comparableRows.length} temporadas comparables`
+                                : 'Sin comparativo activo'}
+                            </span>
+                          </div>
+
+                          {executiveCompareCompanyHistoryInsights && executiveCompareCompanyHistoryRows.length > 0 ? (
+                            <>
+                              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                  <div className="text-sm uppercase tracking-wide text-slate-500">Liderazgo histórico</div>
+                                  <div className="mt-3 text-3xl font-bold text-slate-900">
+                                    {executiveCompareCompanyHistoryInsights.currentLeadCount === executiveCompareCompanyHistoryInsights.compareLeadCount
+                                      ? 'Parejo'
+                                      : executiveCompareCompanyHistoryInsights.currentLeadCount > executiveCompareCompanyHistoryInsights.compareLeadCount
+                                        ? companyName
+                                        : executiveCompareCompanyName}
+                                  </div>
+                                </div>
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                  <div className="text-sm uppercase tracking-wide text-slate-500">Mejor temporada actual</div>
+                                  <div className="mt-3 text-3xl font-bold text-slate-900">
+                                    {executiveCompareCompanyHistoryInsights.currentBest
+                                      ? `${executiveCompareCompanyHistoryInsights.currentBest.totalClosurePct.toFixed(1)}%`
+                                      : '-'}
+                                  </div>
+                                  <div className="text-sm text-slate-500">{executiveCompareCompanyHistoryInsights.currentBest?.season || 'Sin datos'}</div>
+                                </div>
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                  <div className="text-sm uppercase tracking-wide text-slate-500">Mejor temporada comparada</div>
+                                  <div className="mt-3 text-3xl font-bold text-slate-900">
+                                    {executiveCompareCompanyHistoryInsights.compareBest
+                                      ? `${executiveCompareCompanyHistoryInsights.compareBest.totalClosurePct.toFixed(1)}%`
+                                      : '-'}
+                                  </div>
+                                  <div className="text-sm text-slate-500">{executiveCompareCompanyHistoryInsights.compareBest?.season || 'Sin datos'}</div>
+                                </div>
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                  <div className="text-sm uppercase tracking-wide text-slate-500">Mayor brecha histórica</div>
+                                  <div className="mt-3 text-3xl font-bold text-slate-900">
+                                    {executiveCompareCompanyHistoryInsights.strongestHistoricalGap
+                                      ? `${Math.abs(executiveCompareCompanyHistoryInsights.strongestHistoricalGap.gap || 0).toFixed(1)} pp`
+                                      : '-'}
+                                  </div>
+                                  <div className="text-sm text-slate-500">{executiveCompareCompanyHistoryInsights.strongestHistoricalGap?.season || 'Sin datos'}</div>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 xl:grid-cols-[1.2fr,0.8fr] gap-6">
+                                <div className="rounded-2xl border border-slate-200 p-6">
+                                  <div className="text-2xl font-bold text-slate-800 mb-5">Cierre total por temporada</div>
+                                  <table className="w-full text-left text-sm">
+                                    <thead className="text-base text-slate-500 bg-slate-50 sticky top-0">
+                                      <tr>
+                                        <th className="p-3">Temporada</th>
+                                        <th className="p-3 text-right">{companyName}</th>
+                                        <th className="p-3 text-right">{executiveCompareCompanyName}</th>
+                                        <th className="p-3 text-right">Brecha</th>
+                                        <th className="p-3">Lider</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {executiveCompareCompanyHistoryRows.map((row) => (
+                                        <tr key={row.season} className={`border-b border-slate-100 ${row.season === selectedSeason ? 'bg-purple-50' : ''}`}>
+                                          <td className="p-3 font-semibold text-slate-900">{row.season}</td>
+                                          <td className="p-3 text-right text-slate-700">{row.current ? `${row.current.totalClosurePct.toFixed(1)}%` : 'Sin datos'}</td>
+                                          <td className="p-3 text-right text-slate-700">{row.compare ? `${row.compare.totalClosurePct.toFixed(1)}%` : 'Sin datos'}</td>
+                                          <td className="p-3 text-right font-semibold text-slate-900">{row.gap === null ? '-' : `${row.gap.toFixed(1)} pp`}</td>
+                                          <td className="p-3 text-slate-700">{row.leader}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+
+                                <div className="space-y-6">
+                                  <div className="rounded-2xl border border-slate-200 p-6">
+                                    <div className="text-2xl font-bold text-slate-800 mb-5">Lectura histórica</div>
+                                    <p className="text-xl leading-9 text-slate-600">{executiveCompareCompanyHistoryInsights.summaryLine}</p>
+                                    <p className="mt-5 text-lg text-slate-500">
+                                      Empates técnicos: {executiveCompareCompanyHistoryInsights.tiedCount}. Liderazgo actual: {companyName} {executiveCompareCompanyHistoryInsights.currentLeadCount} vs {executiveCompareCompanyName} {executiveCompareCompanyHistoryInsights.compareLeadCount}.
+                                    </p>
+                                  </div>
+                                  <div className="rounded-2xl bg-slate-950 text-white p-6">
+                                    <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Conclusión Entre Empresas</div>
+                                    <p className="mt-4 text-2xl leading-10">
+                                      {executiveCompareCompanyHistoryInsights.strongestHistoricalGap
+                                        ? `La mayor apertura histórica se observa en ${executiveCompareCompanyHistoryInsights.strongestHistoricalGap.season}, con una brecha de ${Math.abs(executiveCompareCompanyHistoryInsights.strongestHistoricalGap.gap || 0).toFixed(1)} puntos de cierre total.`
+                                        : 'Todavía no hay temporadas comparables suficientes para emitir una lectura histórica robusta entre empresas.'}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-12 text-center">
+                              <AlertCircle className="mx-auto h-16 w-16 text-slate-300" />
+                              <div className="mt-6 text-3xl font-bold text-slate-800">Sin comparativo histórico activo</div>
+                              <p className="mt-4 text-xl text-slate-500">
+                                Selecciona una empresa comparada en la vista ejecutiva para mostrar el historial de cierre total entre ambas empresas dentro de la presentación.
+                              </p>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
