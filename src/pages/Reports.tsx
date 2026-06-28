@@ -18,6 +18,11 @@ import {
   loadExecutiveExportWarningEvents,
   type ExecutiveExportWarningEventRow
 } from '../services/executiveExportWarningEvents';
+import {
+  createExecutiveGlobalAlertEvent,
+  loadExecutiveGlobalAlertEvents,
+  type ExecutiveGlobalAlertEventRow
+} from '../services/executiveGlobalAlertEvents';
 import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
 interface ReportData {
@@ -251,6 +256,10 @@ const EXECUTIVE_EXPORT_WARNING_TYPE_LABELS: Record<string, string> = {
   committee_not_ready: 'Comité no listo',
   trend_deterioration_high_closure: 'Deterioro con cierre alto'
 };
+const EXECUTIVE_GLOBAL_ALERT_TYPE_LABELS: Record<string, string> = {
+  global_position: 'Posición global fuera del tramo líder',
+  global_consecutive: 'Racha consecutiva de rezago global'
+};
 
 const EXECUTIVE_EXPORT_CIRCULATION_REASON_OPTIONS: Array<{ value: ExecutiveExportCirculationReason; label: string }> = [
   { value: 'comite', label: 'Comité' },
@@ -271,6 +280,15 @@ const formatExecutiveExportWarningType = (value: string) => (
 
 const formatExecutiveExportActor = (value: string | null | undefined) => (
   value ? `Usuario ${value.slice(0, 8)}` : 'Sin usuario'
+);
+
+const formatExecutiveGlobalAlertType = (value: string) => (
+  EXECUTIVE_GLOBAL_ALERT_TYPE_LABELS[value]
+  || value
+    .split('_')
+    .filter(Boolean)
+    .map((item) => item.charAt(0).toUpperCase() + item.slice(1))
+    .join(' ')
 );
 
 const formatExecutiveExportCirculationReason = (value: string | null | undefined) => {
@@ -408,6 +426,62 @@ const buildExecutiveExportWarningAnalytics = (
     topCirculationReason,
     recipientSummary,
     topRecipient,
+    totalEvents: rows.length,
+    summaryLine
+  };
+};
+
+const buildExecutiveGlobalAlertAnalytics = (
+  rows: ExecutiveGlobalAlertEventRow[],
+  selectedSeason: string,
+  scopeLabel: string
+) => {
+  const currentSeasonRows = rows.filter((row) => row.season === selectedSeason);
+  const latestEvent = rows[0] || null;
+  const bySeverity = {
+    alta: rows.filter((row) => row.severity === 'alta').length,
+    media: rows.filter((row) => row.severity === 'media').length
+  };
+  const alertTypeSummary = Array.from(
+    rows.reduce((map, row) => {
+      (row.alert_types || []).forEach((alertType) => {
+        map.set(alertType, (map.get(alertType) || 0) + 1);
+      });
+      return map;
+    }, new Map<string, number>())
+  )
+    .map(([type, count]) => ({ type, count }))
+    .sort((a, b) => b.count - a.count);
+  const seasonSummary = Array.from(
+    rows.reduce((map, row) => {
+      const current = map.get(row.season) || { season: row.season, count: 0 };
+      current.count += 1;
+      map.set(row.season, current);
+      return map;
+    }, new Map<string, { season: string; count: number }>())
+  )
+    .map(([, value]) => value)
+    .sort((a, b) => b.season.localeCompare(a.season));
+  const topAlertType = alertTypeSummary[0] || null;
+  const topSeason = seasonSummary[0] || null;
+  const dominantSeverity = bySeverity.alta >= bySeverity.media
+    ? bySeverity.alta > 0 ? 'Alta' : bySeverity.media > 0 ? 'Media' : 'Sin alertas'
+    : 'Media';
+  const summaryLine = latestEvent
+    ? `Se registran ${rows.length} alertas globales persistidas para ${scopeLabel}. La última ocurrió en ${latestEvent.season} con severidad ${latestEvent.severity} y líder ${latestEvent.leader_company_name || 'sin líder visible'}.`
+    : `No hay alertas globales persistidas para ${scopeLabel}.`;
+
+  return {
+    rows,
+    currentSeasonRows,
+    latestEvent,
+    recentRows: rows.slice(0, 12),
+    bySeverity,
+    dominantSeverity,
+    seasonSummary,
+    topSeason,
+    alertTypeSummary,
+    topAlertType,
     totalEvents: rows.length,
     summaryLine
   };
@@ -1171,6 +1245,8 @@ export const Reports: React.FC = () => {
   const [costAuditHistorySummary, setCostAuditHistorySummary] = useState<AgriculturalCostAuditSummaryRow[]>([]);
   const [executiveExportWarningEvents, setExecutiveExportWarningEvents] = useState<ExecutiveExportWarningEventRow[]>([]);
   const [executiveExportWarningLoading, setExecutiveExportWarningLoading] = useState(false);
+  const [executiveGlobalAlertEvents, setExecutiveGlobalAlertEvents] = useState<ExecutiveGlobalAlertEventRow[]>([]);
+  const [executiveGlobalAlertLoading, setExecutiveGlobalAlertLoading] = useState(false);
   const [costAuditLoading, setCostAuditLoading] = useState(false);
   const [showProductionModal, setShowProductionModal] = useState(false);
   const [savingProductionRecord, setSavingProductionRecord] = useState(false);
@@ -1230,6 +1306,7 @@ export const Reports: React.FC = () => {
   const reportLoadSeqRef = useRef(0);
   const costAuditLoadSeqRef = useRef(0);
   const executiveGlobalRankingLoadSeqRef = useRef(0);
+  const executiveGlobalAlertLogRef = useRef<string>('');
 
   // Update orientation when tab changes
   useEffect(() => {
@@ -1319,6 +1396,7 @@ export const Reports: React.FC = () => {
     setCostAuditSummary([]);
     setCostAuditHistorySummary([]);
     setExecutiveExportWarningEvents([]);
+    setExecutiveGlobalAlertEvents([]);
     setReportData([]);
     setMonthlyExpenses([]);
     setCategoryExpenses([]);
@@ -1376,6 +1454,32 @@ export const Reports: React.FC = () => {
       } finally {
         if (!cancelled && selectedCompany?.id === companyId) {
           setExecutiveExportWarningLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCompany?.id]);
+
+  useEffect(() => {
+    if (!selectedCompany?.id) return;
+    const companyId = selectedCompany.id;
+    let cancelled = false;
+    setExecutiveGlobalAlertLoading(true);
+
+    void (async () => {
+      try {
+        const rows = await loadExecutiveGlobalAlertEvents({ companyId, limit: 100 });
+        if (cancelled || selectedCompany?.id !== companyId) return;
+        setExecutiveGlobalAlertEvents(rows || []);
+      } catch {
+        if (cancelled || selectedCompany?.id !== companyId) return;
+        setExecutiveGlobalAlertEvents([]);
+      } finally {
+        if (!cancelled && selectedCompany?.id === companyId) {
+          setExecutiveGlobalAlertLoading(false);
         }
       }
     })();
@@ -3251,6 +3355,82 @@ export const Reports: React.FC = () => {
     };
   }, [companyName, executiveGlobalRankingHistory, selectedSeason]);
 
+  const executiveGlobalAlertContext = useMemo(() => {
+    const alerts = [
+      executiveGlobalRankingAlert ? {
+        type: 'global_position',
+        title: executiveGlobalRankingAlert.tone.title,
+        severity: executiveGlobalRankingAlert.severity,
+        detail: executiveGlobalRankingAlert.detail,
+        recommendation: executiveGlobalRankingAlert.recommendation,
+        rank: executiveGlobalRankingAlert.selectedCompanyRank,
+        topQuartileCutoff: executiveGlobalRankingAlert.topQuartileCutoff,
+        totalCompanies: executiveGlobalRankingAlert.totalCompanies,
+        leader: executiveGlobalRankingAlert.leader
+      } : null,
+      executiveGlobalConsecutiveAlert ? {
+        type: 'global_consecutive',
+        title: executiveGlobalConsecutiveAlert.tone.title,
+        severity: executiveGlobalConsecutiveAlert.severity,
+        detail: executiveGlobalConsecutiveAlert.detail,
+        recommendation: executiveGlobalConsecutiveAlert.recommendation,
+        rank: executiveGlobalRankingAlert?.selectedCompanyRank || null,
+        topQuartileCutoff: executiveGlobalRankingAlert?.topQuartileCutoff || null,
+        totalCompanies: executiveGlobalRankingAlert?.totalCompanies || executiveGlobalCompanyRanking.rows.length,
+        leader: executiveGlobalCompanyRanking.leader?.companyLabel || null,
+        streak: executiveGlobalConsecutiveAlert.streak
+      } : null
+    ].filter(Boolean) as Array<{
+      type: string;
+      title: string;
+      severity: 'media' | 'alta';
+      detail: string;
+      recommendation: string;
+      rank?: number | null;
+      topQuartileCutoff?: number | null;
+      totalCompanies?: number | null;
+      leader?: string | null;
+      streak?: number;
+    }>;
+    const hasAlert = alerts.length > 0;
+    const severity: 'media' | 'alta' | null = alerts.some((item) => item.severity === 'alta')
+      ? 'alta'
+      : alerts.some((item) => item.severity === 'media')
+        ? 'media'
+        : null;
+    const detail = alerts.map((item) => `${item.title}: ${item.detail}`).join(' ');
+    const recommendation = alerts.map((item) => item.recommendation).join(' ');
+    const signaturePayload = {
+      season: selectedSeason,
+      types: alerts.map((item) => item.type),
+      titles: alerts.map((item) => item.title),
+      severity,
+      rank: executiveGlobalRankingAlert?.selectedCompanyRank || null,
+      topQuartileCutoff: executiveGlobalRankingAlert?.topQuartileCutoff || null,
+      totalCompanies: executiveGlobalRankingAlert?.totalCompanies || executiveGlobalCompanyRanking.rows.length,
+      leader: executiveGlobalCompanyRanking.leader?.companyLabel || null,
+      outsideTopStreak: executiveGlobalHistoricalInsights.currentOutsideTopQuartileStreak,
+      withoutLeadershipStreak: executiveGlobalHistoricalInsights.currentWithoutLeadershipStreak
+    };
+
+    return {
+      hasAlert,
+      severity,
+      alerts,
+      detail,
+      recommendation,
+      signature: JSON.stringify(signaturePayload)
+    };
+  }, [
+    executiveGlobalCompanyRanking.leader?.companyLabel,
+    executiveGlobalCompanyRanking.rows.length,
+    executiveGlobalConsecutiveAlert,
+    executiveGlobalHistoricalInsights.currentOutsideTopQuartileStreak,
+    executiveGlobalHistoricalInsights.currentWithoutLeadershipStreak,
+    executiveGlobalRankingAlert,
+    selectedSeason
+  ]);
+
   const executiveCompareCompanyRanking = useMemo(() => {
     if (!executiveCompareCompanyTotalClosure || !executiveCompareCompanyTrend) return null;
     return buildExecutiveCompanyRanking({
@@ -3473,10 +3653,120 @@ export const Reports: React.FC = () => {
     selectedSeason
   ]);
 
+  const logExecutiveGlobalAlertEvent = useCallback(async () => {
+    if (!selectedCompany?.id || !executiveGlobalAlertContext.hasAlert || !executiveGlobalAlertContext.severity) return;
+
+    try {
+      await createExecutiveGlobalAlertEvent({
+        companyId: selectedCompany.id,
+        season: selectedSeason,
+        severity: executiveGlobalAlertContext.severity,
+        alertTypes: executiveGlobalAlertContext.alerts.map((item) => item.type),
+        alertTitles: executiveGlobalAlertContext.alerts.map((item) => item.title),
+        selectedCompanyRank: executiveGlobalRankingAlert?.selectedCompanyRank || null,
+        topQuartileCutoff: executiveGlobalRankingAlert?.topQuartileCutoff || null,
+        totalCompanies: executiveGlobalRankingAlert?.totalCompanies || executiveGlobalCompanyRanking.rows.length,
+        leaderCompanyName: executiveGlobalRankingAlert?.leader || executiveGlobalCompanyRanking.leader?.companyLabel || null,
+        detail: executiveGlobalAlertContext.detail,
+        recommendation: executiveGlobalAlertContext.recommendation,
+        metadata: {
+          company_name: companyName,
+          event_signature: executiveGlobalAlertContext.signature,
+          selected_company_rank: executiveGlobalRankingAlert?.selectedCompanyRank || null,
+          top_quartile_cutoff: executiveGlobalRankingAlert?.topQuartileCutoff || null,
+          total_companies: executiveGlobalRankingAlert?.totalCompanies || executiveGlobalCompanyRanking.rows.length,
+          dominant_leader: executiveGlobalHistoricalInsights.dominantLeader?.companyLabel || null,
+          selected_leader_count: executiveGlobalHistoricalInsights.selectedLeaderCount,
+          selected_top_quartile_count: executiveGlobalHistoricalInsights.selectedTopQuartileCount,
+          selected_outside_top_quartile_count: executiveGlobalHistoricalInsights.selectedOutsideQuartileCount,
+          outside_top_quartile_streak: executiveGlobalHistoricalInsights.currentOutsideTopQuartileStreak,
+          without_leadership_streak: executiveGlobalHistoricalInsights.currentWithoutLeadershipStreak,
+          last_leader_season: executiveGlobalHistoricalInsights.lastLeaderSeason,
+          last_top_quartile_season: executiveGlobalHistoricalInsights.lastTopQuartileSeason
+        }
+      });
+
+      const rows = await loadExecutiveGlobalAlertEvents({ companyId: selectedCompany.id, limit: 100 });
+      setExecutiveGlobalAlertEvents(rows || []);
+    } catch (error) {
+      console.error('No se pudo registrar la bitácora de alertas globales ejecutivas.', error);
+    }
+  }, [
+    companyName,
+    executiveGlobalAlertContext,
+    executiveGlobalCompanyRanking.leader?.companyLabel,
+    executiveGlobalCompanyRanking.rows.length,
+    executiveGlobalHistoricalInsights.currentOutsideTopQuartileStreak,
+    executiveGlobalHistoricalInsights.currentWithoutLeadershipStreak,
+    executiveGlobalHistoricalInsights.dominantLeader?.companyLabel,
+    executiveGlobalHistoricalInsights.lastLeaderSeason,
+    executiveGlobalHistoricalInsights.lastTopQuartileSeason,
+    executiveGlobalHistoricalInsights.selectedLeaderCount,
+    executiveGlobalHistoricalInsights.selectedOutsideQuartileCount,
+    executiveGlobalHistoricalInsights.selectedTopQuartileCount,
+    executiveGlobalRankingAlert,
+    selectedCompany?.id,
+    selectedSeason
+  ]);
+
+  useEffect(() => {
+    if (!selectedCompany?.id || executiveGlobalCompanyRankingLoading || !executiveGlobalAlertContext.hasAlert) return;
+
+    const latestEvent = executiveGlobalAlertEvents[0] || null;
+    const latestSignature = latestEvent?.metadata && typeof latestEvent.metadata === 'object'
+      ? String((latestEvent.metadata as Record<string, unknown>).event_signature || '')
+      : '';
+
+    if (latestEvent && latestEvent.season === selectedSeason && latestSignature === executiveGlobalAlertContext.signature) {
+      executiveGlobalAlertLogRef.current = executiveGlobalAlertContext.signature;
+      return;
+    }
+
+    if (executiveGlobalAlertLogRef.current === executiveGlobalAlertContext.signature) return;
+    executiveGlobalAlertLogRef.current = executiveGlobalAlertContext.signature;
+    void logExecutiveGlobalAlertEvent();
+  }, [
+    executiveGlobalAlertContext,
+    executiveGlobalAlertEvents,
+    executiveGlobalCompanyRankingLoading,
+    logExecutiveGlobalAlertEvent,
+    selectedCompany?.id,
+    selectedSeason
+  ]);
+
   const executiveExportWarningHistoryData = useMemo(
     () => buildExecutiveExportWarningAnalytics(executiveExportWarningEvents, selectedSeason, 'la empresa activa'),
     [executiveExportWarningEvents, selectedSeason]
   );
+  const executiveGlobalAlertHistoryData = useMemo(
+    () => buildExecutiveGlobalAlertAnalytics(executiveGlobalAlertEvents, selectedSeason, 'la empresa activa'),
+    [executiveGlobalAlertEvents, selectedSeason]
+  );
+  const executiveGlobalAlertExportLinkSummary = useMemo(() => {
+    const latestAlert = executiveGlobalAlertHistoryData.latestEvent;
+    const latestExport = executiveExportWarningHistoryData.latestEvent;
+    if (!latestAlert && !latestExport) {
+      return 'No hay alertas globales ni exportaciones advertidas persistidas.';
+    }
+    if (latestAlert && !latestExport) {
+      return `La última alerta global persistida ocurrió el ${new Date(latestAlert.created_at).toLocaleString('es-CL')} y aún no se observa una exportación advertida posterior en la bitácora visible.`;
+    }
+    if (!latestAlert && latestExport) {
+      return `La bitácora visible registra exportaciones advertidas, pero todavía no hay alertas globales persistidas en histórico.`;
+    }
+
+    const latestAlertTime = new Date(String(latestAlert?.created_at || '')).getTime();
+    const latestExportTime = new Date(String(latestExport?.created_at || '')).getTime();
+    if (Number.isNaN(latestAlertTime) || Number.isNaN(latestExportTime)) {
+      return 'No fue posible relacionar cronológicamente la última alerta global con la bitácora de exportaciones.';
+    }
+
+    if (latestAlertTime <= latestExportTime) {
+      return `La última exportación advertida visible ocurrió después de la alerta global más reciente, dejando trazabilidad previa al momento de circular el reporte.`;
+    }
+
+    return `La última alerta global persistida es posterior a la última exportación advertida visible, lo que sugiere un deterioro ocurrido después de esa circulación.`;
+  }, [executiveExportWarningHistoryData.latestEvent, executiveGlobalAlertHistoryData.latestEvent]);
   const executiveExportWarningFormatOptions = useMemo(() => (
     ['all', ...Array.from(new Set(executiveExportWarningEvents.map((row) => row.export_format)))]
   ), [executiveExportWarningEvents]);
@@ -3745,6 +4035,9 @@ export const Reports: React.FC = () => {
         { Indicador: 'Historial liderazgo global', Valor: executiveGlobalHistoricalInsights.summaryLine },
         { Indicador: 'Alerta consecutiva global', Valor: executiveGlobalConsecutiveAlert?.tone.title || 'Sin alerta' },
         { Indicador: 'Racha consecutiva global', Valor: executiveGlobalConsecutiveAlert ? `${executiveGlobalConsecutiveAlert.streak} temporadas` : 'Sin racha crítica' },
+        { Indicador: 'Bitácora alertas globales', Valor: executiveGlobalAlertHistoryData.totalEvents },
+        { Indicador: 'Última alerta global persistida', Valor: executiveGlobalAlertHistoryData.latestEvent ? `${executiveGlobalAlertHistoryData.latestEvent.season} · ${executiveGlobalAlertHistoryData.latestEvent.severity}` : 'Sin eventos' },
+        { Indicador: 'Cruce alerta/exportación', Valor: executiveGlobalAlertExportLinkSummary },
         { Indicador: 'Recomendación comparada', Valor: executiveCompareCompanyRecommendation?.tone.title || 'Sin datos' },
         { Indicador: 'Mejor cierre histórico', Valor: bestClosureHistoryRow ? `${bestClosureHistoryRow.season} (${bestClosureHistoryRow.closurePct.toFixed(2)}%)` : 'Sin datos' },
         { Indicador: 'Conclusión ejecutiva', Valor: executiveInsights.conclusion }
@@ -4023,6 +4316,22 @@ export const Reports: React.FC = () => {
         'Última temporada líder': executiveGlobalHistoricalInsights.lastLeaderSeason || 'Sin liderazgo visible',
         'Última temporada top cuartil': executiveGlobalHistoricalInsights.lastTopQuartileSeason || 'Sin top cuartil visible'
       }] : [];
+      const globalAlertHistoryRows = executiveGlobalAlertHistoryData.seasonSummary.map((row) => ({
+        Temporada: row.season,
+        Eventos: row.count
+      }));
+      const globalAlertRecentRows = executiveGlobalAlertHistoryData.recentRows.map((row) => ({
+        Fecha: new Date(row.created_at).toLocaleString('es-CL'),
+        Temporada: row.season,
+        Severidad: row.severity,
+        Alertas: (row.alert_titles || []).join(', ') || 'Sin título',
+        Líder: row.leader_company_name || 'Sin líder',
+        'Posición empresa activa': row.selected_company_rank || 'Sin datos',
+        'Top cuartil': row.top_quartile_cutoff || 'Sin datos',
+        'Empresas visibles': row.total_companies || 'Sin datos',
+        Detalle: row.detail,
+        Recomendación: row.recommendation
+      }));
       const exportWarningHistoryRows = executiveExportWarningFilteredData.rows.map((row) => ({
         Fecha: new Date(row.created_at).toLocaleString('es-CL'),
         Temporada: row.season,
@@ -4171,6 +4480,8 @@ export const Reports: React.FC = () => {
           ...(globalRankingHistoryRows.length > 0 ? [{ name: 'Historial Ranking Global', rows: globalRankingHistoryRows }] : []),
           ...(globalAlertRows.length > 0 ? [{ name: 'Alerta Ranking Global', rows: globalAlertRows }] : []),
           ...(globalConsecutiveAlertRows.length > 0 ? [{ name: 'Alerta Consecutiva Global', rows: globalConsecutiveAlertRows }] : []),
+          ...(globalAlertHistoryRows.length > 0 ? [{ name: 'Historial Alertas Globales', rows: globalAlertHistoryRows }] : []),
+          ...(globalAlertRecentRows.length > 0 ? [{ name: 'Bitacora Alertas Globales', rows: globalAlertRecentRows }] : []),
           ...(totalDataBlockerRows.length > 0 ? [{ name: 'Bloqueos Dato', rows: totalDataBlockerRows }] : []),
           ...(compareCompanyRows.length > 0 ? [{ name: 'Comparacion Empresas', rows: compareCompanyRows }] : []),
           ...(compareCompanyHistoryRows.length > 0 ? [{ name: 'Historial Empresas', rows: compareCompanyHistoryRows }] : []),
@@ -5390,6 +5701,51 @@ export const Reports: React.FC = () => {
             });
 
             yPos = (doc as any).lastAutoTable.finalY + 8;
+          }
+
+          if (executiveGlobalAlertHistoryData.totalEvents > 0) {
+            autoTable(doc, {
+              startY: yPos,
+              head: [['Bitácora alertas globales', 'Detalle']],
+              body: [
+                ['Eventos históricos', String(executiveGlobalAlertHistoryData.totalEvents)],
+                ['Eventos temporada actual', String(executiveGlobalAlertHistoryData.currentSeasonRows.length)],
+                ['Severidad dominante', executiveGlobalAlertHistoryData.dominantSeverity],
+                ['Alerta dominante', executiveGlobalAlertHistoryData.topAlertType
+                  ? `${formatExecutiveGlobalAlertType(executiveGlobalAlertHistoryData.topAlertType.type)} (${executiveGlobalAlertHistoryData.topAlertType.count})`
+                  : 'Sin alerta dominante'],
+                ['Última alerta', executiveGlobalAlertHistoryData.latestEvent
+                  ? `${executiveGlobalAlertHistoryData.latestEvent.season} · ${executiveGlobalAlertHistoryData.latestEvent.severity} · ${executiveGlobalAlertHistoryData.latestEvent.leader_company_name || 'Sin líder'}`
+                  : 'Sin eventos'],
+                ['Cruce con exportación', executiveGlobalAlertExportLinkSummary],
+                ['Lectura', executiveGlobalAlertHistoryData.summaryLine]
+              ],
+              theme: 'grid',
+              headStyles: { fillColor: [91, 33, 182] },
+              styles: { fontSize: 8 }
+            });
+
+            yPos = (doc as any).lastAutoTable.finalY + 8;
+
+            if (executiveGlobalAlertHistoryData.recentRows.length > 0) {
+              autoTable(doc, {
+                startY: yPos,
+                head: [['Fecha', 'Temporada', 'Severidad', 'Alertas', 'Posición', 'Líder']],
+                body: executiveGlobalAlertHistoryData.recentRows.slice(0, 6).map((row) => [
+                  new Date(row.created_at).toLocaleString('es-CL'),
+                  row.season,
+                  row.severity,
+                  (row.alert_titles || []).join(', ') || 'Sin título',
+                  row.selected_company_rank ? `${row.selected_company_rank}/${row.total_companies || '-'}` : 'Sin datos',
+                  row.leader_company_name || 'Sin líder'
+                ]),
+                theme: 'grid',
+                headStyles: { fillColor: [76, 29, 149] },
+                styles: { fontSize: 8 }
+              });
+
+              yPos = (doc as any).lastAutoTable.finalY + 8;
+            }
           }
 
           if (executiveGlobalRankingHistory.length > 0) {
@@ -8781,6 +9137,194 @@ export const Reports: React.FC = () => {
                           <tr>
                             <td colSpan={9} className="px-4 py-4 text-center text-sm text-slate-500">
                               Cargando bitácora histórica de exportaciones...
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900">Bitácora de alertas globales persistidas</h3>
+                      <p className="text-sm text-gray-500">Permite auditar cuándo aparecieron alertas globales del ranking multiempresa y si existían antes de exportar o circular el reporte.</p>
+                    </div>
+                    <span className="text-sm text-slate-500">
+                      {executiveGlobalAlertLoading
+                        ? 'Cargando bitácora...'
+                        : `${executiveGlobalAlertHistoryData.totalEvents} eventos históricos`}
+                    </span>
+                  </div>
+                </div>
+                <div className="p-6 space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Eventos históricos</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveGlobalAlertHistoryData.totalEvents}</div>
+                      <div className="mt-1 text-sm text-slate-500">Alertas globales persistidas para la empresa activa</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Temporada visible</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveGlobalAlertHistoryData.currentSeasonRows.length}</div>
+                      <div className="mt-1 text-sm text-slate-500">{selectedSeason} con alertas persistidas visibles</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Severidad dominante</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveGlobalAlertHistoryData.dominantSeverity}</div>
+                      <div className="mt-1 text-sm text-slate-500">Alta: {executiveGlobalAlertHistoryData.bySeverity.alta} · Media: {executiveGlobalAlertHistoryData.bySeverity.media}</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Alerta dominante</div>
+                      <div className="mt-2 text-lg font-semibold text-slate-900">
+                        {executiveGlobalAlertHistoryData.topAlertType
+                          ? formatExecutiveGlobalAlertType(executiveGlobalAlertHistoryData.topAlertType.type)
+                          : 'Sin alerta'}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {executiveGlobalAlertHistoryData.topAlertType
+                          ? `${executiveGlobalAlertHistoryData.topAlertType.count} eventos`
+                          : 'Sin recurrencia visible'}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Última alerta persistida</div>
+                      <div className="mt-2 text-lg font-semibold text-slate-900">
+                        {executiveGlobalAlertHistoryData.latestEvent
+                          ? `${executiveGlobalAlertHistoryData.latestEvent.season} · ${executiveGlobalAlertHistoryData.latestEvent.severity}`
+                          : 'Sin eventos'}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {executiveGlobalAlertHistoryData.latestEvent
+                          ? `${executiveGlobalAlertHistoryData.latestEvent.leader_company_name || 'Sin líder'} · ${new Date(executiveGlobalAlertHistoryData.latestEvent.created_at).toLocaleString('es-CL')}`
+                          : 'Aún sin bitácora persistida'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+                    <div className="font-medium text-slate-900">Lectura de auditoría global</div>
+                    <p className="mt-2">{executiveGlobalAlertHistoryData.summaryLine}</p>
+                    <p className="mt-2">{executiveGlobalAlertExportLinkSummary}</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Temporada</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Eventos</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {executiveGlobalAlertHistoryData.seasonSummary.slice(0, 6).map((row) => (
+                            <tr key={row.season} className={row.season === selectedSeason ? 'bg-purple-50/50' : ''}>
+                              <td className="px-4 py-3 font-medium text-slate-900">{row.season}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                            </tr>
+                          ))}
+                          {!executiveGlobalAlertLoading && executiveGlobalAlertHistoryData.seasonSummary.length === 0 && (
+                            <tr>
+                              <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
+                                No hay alertas globales persistidas para esta empresa.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Alerta frecuente</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Veces</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {executiveGlobalAlertHistoryData.alertTypeSummary.slice(0, 6).map((row) => (
+                            <tr key={row.type}>
+                              <td className="px-4 py-3 text-slate-900">
+                                <div className="font-medium">{formatExecutiveGlobalAlertType(row.type)}</div>
+                              </td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                            </tr>
+                          ))}
+                          {!executiveGlobalAlertLoading && executiveGlobalAlertHistoryData.alertTypeSummary.length === 0 && (
+                            <tr>
+                              <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
+                                No hay tipos de alerta visibles en la bitácora.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Severidad</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Eventos</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {[
+                            { label: 'Alta', count: executiveGlobalAlertHistoryData.bySeverity.alta },
+                            { label: 'Media', count: executiveGlobalAlertHistoryData.bySeverity.media }
+                          ].map((row) => (
+                            <tr key={row.label}>
+                              <td className="px-4 py-3 font-medium text-slate-900">{row.label}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Temporada</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Severidad</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Alertas</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Posición</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Líder</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 bg-white">
+                        {executiveGlobalAlertHistoryData.recentRows.map((row) => (
+                          <tr key={row.id}>
+                            <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                            <td className="px-4 py-3 font-medium text-slate-900">{row.season}</td>
+                            <td className="px-4 py-3 text-slate-700">{row.severity}</td>
+                            <td className="px-4 py-3 text-slate-700">{(row.alert_titles || []).join(', ') || 'Sin título'}</td>
+                            <td className="px-4 py-3 text-slate-700">
+                              {row.selected_company_rank ? `${row.selected_company_rank}/${row.total_companies || '-'}` : 'Sin datos'}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700">{row.leader_company_name || 'Sin líder'}</td>
+                          </tr>
+                        ))}
+                        {!executiveGlobalAlertLoading && executiveGlobalAlertHistoryData.recentRows.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="px-4 py-4 text-center text-sm text-slate-500">
+                              No hay alertas globales persistidas para la empresa activa.
+                            </td>
+                          </tr>
+                        )}
+                        {executiveGlobalAlertLoading && (
+                          <tr>
+                            <td colSpan={6} className="px-4 py-4 text-center text-sm text-slate-500">
+                              Cargando bitácora histórica de alertas globales...
                             </td>
                           </tr>
                         )}
@@ -12618,6 +13162,7 @@ export const Reports: React.FC = () => {
                                 <p className="mt-5 text-lg text-slate-500">
                                   Racha fuera del top cuartil: {executiveGlobalHistoricalInsights.currentOutsideTopQuartileStreak}. Racha sin liderazgo: {executiveGlobalHistoricalInsights.currentWithoutLeadershipStreak}.
                                 </p>
+                                <p className="mt-5 text-lg text-slate-500">{executiveGlobalAlertExportLinkSummary}</p>
                               </div>
                             </div>
                           </div>

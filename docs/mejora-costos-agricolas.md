@@ -596,6 +596,33 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - mostrar si el liderazgo es estable o va rotando entre temporadas
   - reforzar la narrativa de comite con contexto global y no solo bilateral
 
+## Bitacora Persistida De Alertas Globales
+- Las alertas globales del ranking multiempresa ahora se persisten en `executive_global_alert_events`.
+- La bitacora registra:
+  - temporada
+  - severidad
+  - tipos de alerta activos
+  - posicion de la empresa activa
+  - corte del top cuartil
+  - universo visible de empresas
+  - lider de referencia
+  - detalle y recomendacion
+- `Reportes` ahora expone:
+  - total historico de alertas globales persistidas
+  - temporada visible con alertas registradas
+  - severidad y alerta dominante
+  - tabla de eventos recientes
+  - cruce temporal entre alerta persistida y exportacion advertida
+- La lectura se integra en:
+  - vista ejecutiva normal
+  - fullscreen historico global
+  - Excel con hojas `Historial Alertas Globales` y `Bitacora Alertas Globales`
+  - PDF ejecutivo con resumen y ultimos eventos
+- Objetivo:
+  - auditar cuando aparecieron alertas globales relevantes
+  - dejar evidencia de si el riesgo ya existia antes de exportar o circular el reporte
+  - sostener trazabilidad formal del deterioro competitivo entre temporadas
+
 ## Siguiente Paso Recomendado
 - Evaluar persistencia historica del ranking global para medir cambios de liderazgo sin recalculo completo en tiempo real.
-- Considerar persistencia formal de alertas globales para auditar cuando se notificaron y a quien se comunicaron.
+- Considerar extender la bitacora para marcar si una alerta global fue reconocida, comunicada o cerrada por el equipo ejecutivo.
