@@ -206,6 +206,7 @@ type ExecutiveAuditLayerFilter = 'all' | AgriculturalCostAuditRow['source_layer'
 type ExecutiveExportAction = 'pdf' | 'excel';
 type ClosureTrendDirection = 'mejora' | 'estable' | 'deterioro' | 'sin_base';
 type ExecutiveRecommendationDecision = 'presentar' | 'presentar_con_cautela' | 'no_presentar';
+type ExecutiveRankingTier = 'fuerte' | 'intermedio' | 'fragil';
 
 const EXECUTIVE_SORT_OPTIONS: Array<{ value: ExecutiveSortKey; label: string }> = [
   { value: 'total', label: 'Mayor gasto' },
@@ -535,6 +536,65 @@ const buildExecutiveRecommendation = (params: {
     summary,
     nextStep,
     reasons
+  };
+};
+
+const buildExecutiveCompanyRanking = (params: {
+  companyLabel: string;
+  totalClosurePct: number;
+  blockerCount: number;
+  trend: ReturnType<typeof buildClosureTrendSummary>;
+}) => {
+  const closureWeight = 0.6;
+  const trendWeight = 0.25;
+  const blockersWeight = 0.15;
+  const normalizedClosure = Math.max(0, Math.min(100, Number(params.totalClosurePct || 0)));
+  const normalizedTrend = Math.max(0, Math.min(100, ((Math.max(-15, Math.min(15, Number(params.trend.delta || 0))) + 15) / 30) * 100));
+  const normalizedBlockers = Math.max(0, 100 - (Math.max(0, Number(params.blockerCount || 0)) * 20));
+  const score = Number((
+    (normalizedClosure * closureWeight)
+    + (normalizedTrend * trendWeight)
+    + (normalizedBlockers * blockersWeight)
+  ).toFixed(2));
+  const tier: ExecutiveRankingTier = score >= 75
+    ? 'fuerte'
+    : score >= 55
+      ? 'intermedio'
+      : 'fragil';
+  const tone = tier === 'fuerte'
+    ? {
+        badge: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+        dot: 'bg-emerald-500',
+        label: 'Base fuerte'
+      }
+    : tier === 'intermedio'
+      ? {
+          badge: 'bg-amber-100 text-amber-700 border-amber-200',
+          dot: 'bg-amber-500',
+          label: 'Base intermedia'
+        }
+      : {
+          badge: 'bg-red-100 text-red-700 border-red-200',
+          dot: 'bg-red-500',
+          label: 'Base frágil'
+        };
+
+  return {
+    companyLabel: params.companyLabel,
+    score,
+    tier,
+    tone,
+    components: {
+      closure: Number(normalizedClosure.toFixed(2)),
+      trend: Number(normalizedTrend.toFixed(2)),
+      blockers: Number(normalizedBlockers.toFixed(2))
+    },
+    weights: {
+      closure: closureWeight,
+      trend: trendWeight,
+      blockers: blockersWeight
+    },
+    narrative: `${params.companyLabel} obtiene ${score.toFixed(1)} puntos: cierre ${normalizedClosure.toFixed(1)}, tendencia ${normalizedTrend.toFixed(1)} y disciplina de bloqueos ${normalizedBlockers.toFixed(1)}.`
   };
 };
 
@@ -2649,6 +2709,49 @@ export const Reports: React.FC = () => {
     executiveCompareCompanyTotalClosureHistoryRows
   ]);
 
+  const executiveCurrentCompanyRanking = useMemo(() => (
+    buildExecutiveCompanyRanking({
+      companyLabel: companyName,
+      totalClosurePct: executiveTotalDataClosure.totalClosurePct,
+      blockerCount: executiveTotalDataClosure.blockers.length,
+      trend: executiveCurrentCompanyTrend
+    })
+  ), [companyName, executiveCurrentCompanyTrend, executiveTotalDataClosure.blockers.length, executiveTotalDataClosure.totalClosurePct]);
+
+  const executiveCompareCompanyRanking = useMemo(() => {
+    if (!executiveCompareCompanyTotalClosure || !executiveCompareCompanyTrend) return null;
+    return buildExecutiveCompanyRanking({
+      companyLabel: executiveCompareCompanyName,
+      totalClosurePct: executiveCompareCompanyTotalClosure.totalClosurePct,
+      blockerCount: executiveCompareCompanyTotalClosure.blockers.length,
+      trend: executiveCompareCompanyTrend
+    });
+  }, [executiveCompareCompanyName, executiveCompareCompanyTotalClosure, executiveCompareCompanyTrend]);
+
+  const executiveCompanyRankingComparison = useMemo(() => {
+    if (!executiveCompareCompanyRanking) return null;
+    const rows = [
+      executiveCurrentCompanyRanking,
+      executiveCompareCompanyRanking
+    ].sort((a, b) => b.score - a.score);
+    const gap = executiveCurrentCompanyRanking.score - executiveCompareCompanyRanking.score;
+    const leader = Math.abs(gap) < 0.05
+      ? 'Empate técnico'
+      : gap > 0
+        ? companyName
+        : executiveCompareCompanyName;
+    const summaryLine = Math.abs(gap) < 0.05
+      ? 'Ambas empresas muestran una base ejecutiva equivalente en el ranking ponderado.'
+      : `${leader} lidera el ranking ejecutivo por ${Math.abs(gap).toFixed(1)} puntos ponderados.`;
+
+    return {
+      rows,
+      gap,
+      leader,
+      summaryLine
+    };
+  }, [companyName, executiveCompareCompanyName, executiveCompareCompanyRanking, executiveCurrentCompanyRanking]);
+
   const executiveTrendComparisonInsights = useMemo(() => {
     if (!executiveCompareCompanyTrend) return null;
 
@@ -2908,6 +3011,9 @@ export const Reports: React.FC = () => {
     const compareSummary = executiveCompareCompanyRecommendation
       ? `${companyName}: ${executiveCurrentRecommendation.tone.title}. ${executiveCompareCompanyName}: ${executiveCompareCompanyRecommendation.tone.title}.`
       : 'No hay una empresa comparada activa para este cierre.';
+    const rankingSummary = executiveCompanyRankingComparison
+      ? executiveCompanyRankingComparison.summaryLine
+      : 'No hay ranking comparado activo para este cierre.';
     const finalMessage = `${decisionLabel}. ${executiveCurrentRecommendation.summary} ${executiveCurrentRecommendation.nextStep}`;
 
     return {
@@ -2916,12 +3022,14 @@ export const Reports: React.FC = () => {
       trendSummary,
       exportControlSummary,
       compareSummary,
+      rankingSummary,
       finalMessage
     };
   }, [
     companyName,
     executiveCompareCompanyName,
     executiveCompareCompanyRecommendation,
+    executiveCompanyRankingComparison,
     executiveCurrentCompanyTrend.narrative,
     executiveCurrentRecommendation.nextStep,
     executiveCurrentRecommendation.summary,
@@ -3032,6 +3140,9 @@ export const Reports: React.FC = () => {
         { Indicador: 'Empresa comparada', Valor: executiveCompareCompanyName || 'Sin comparar' },
         { Indicador: 'Cierre total empresa comparada', Valor: executiveCompareCompanyTotalClosure ? Number(executiveCompareCompanyTotalClosure.totalClosurePct.toFixed(2)) : 'Sin datos' },
         { Indicador: 'Estado comité comparado', Valor: executiveCompareCompanyTotalClosure?.readiness.title || 'Sin datos' },
+        { Indicador: 'Ranking actual', Valor: Number(executiveCurrentCompanyRanking.score.toFixed(2)) },
+        { Indicador: 'Ranking comparado', Valor: executiveCompareCompanyRanking ? Number(executiveCompareCompanyRanking.score.toFixed(2)) : 'Sin datos' },
+        { Indicador: 'Líder ranking', Valor: executiveCompanyRankingComparison?.leader || 'Sin comparar' },
         { Indicador: 'Recomendación comparada', Valor: executiveCompareCompanyRecommendation?.tone.title || 'Sin datos' },
         { Indicador: 'Mejor cierre histórico', Valor: bestClosureHistoryRow ? `${bestClosureHistoryRow.season} (${bestClosureHistoryRow.closurePct.toFixed(2)}%)` : 'Sin datos' },
         { Indicador: 'Conclusión ejecutiva', Valor: executiveInsights.conclusion }
@@ -3231,6 +3342,35 @@ export const Reports: React.FC = () => {
           'Razón 4': executiveCompareCompanyRecommendation.reasons[3] || '-'
         }] : [])
       ];
+      const rankingRows = [
+        {
+          Empresa: executiveCurrentCompanyRanking.companyLabel,
+          Puntaje: Number(executiveCurrentCompanyRanking.score.toFixed(2)),
+          Nivel: executiveCurrentCompanyRanking.tone.label,
+          'Cierre ponderado': Number(executiveCurrentCompanyRanking.components.closure.toFixed(2)),
+          'Tendencia ponderada': Number(executiveCurrentCompanyRanking.components.trend.toFixed(2)),
+          'Disciplina bloqueos': Number(executiveCurrentCompanyRanking.components.blockers.toFixed(2)),
+          Lectura: executiveCurrentCompanyRanking.narrative
+        },
+        ...(executiveCompareCompanyRanking ? [{
+          Empresa: executiveCompareCompanyRanking.companyLabel,
+          Puntaje: Number(executiveCompareCompanyRanking.score.toFixed(2)),
+          Nivel: executiveCompareCompanyRanking.tone.label,
+          'Cierre ponderado': Number(executiveCompareCompanyRanking.components.closure.toFixed(2)),
+          'Tendencia ponderada': Number(executiveCompareCompanyRanking.components.trend.toFixed(2)),
+          'Disciplina bloqueos': Number(executiveCompareCompanyRanking.components.blockers.toFixed(2)),
+          Lectura: executiveCompareCompanyRanking.narrative
+        }] : []),
+        ...(executiveCompanyRankingComparison ? [{
+          Empresa: 'Resultado',
+          Puntaje: Number(Math.abs(executiveCompanyRankingComparison.gap).toFixed(2)),
+          Nivel: executiveCompanyRankingComparison.leader,
+          'Cierre ponderado': Number(executiveCurrentCompanyRanking.weights.closure.toFixed(2)),
+          'Tendencia ponderada': Number(executiveCurrentCompanyRanking.weights.trend.toFixed(2)),
+          'Disciplina bloqueos': Number(executiveCurrentCompanyRanking.weights.blockers.toFixed(2)),
+          Lectura: executiveCompanyRankingComparison.summaryLine
+        }] : [])
+      ];
       const exportWarningHistoryRows = executiveExportWarningFilteredData.rows.map((row) => ({
         Fecha: new Date(row.created_at).toLocaleString('es-CL'),
         Temporada: row.season,
@@ -3357,6 +3497,7 @@ export const Reports: React.FC = () => {
           { name: 'Alertas', rows: alertRows },
           { name: 'Cierre Total', rows: totalDataClosureRows },
           ...(recommendationRows.length > 0 ? [{ name: 'Recomendacion Ejecutiva', rows: recommendationRows }] : []),
+          ...(rankingRows.length > 0 ? [{ name: 'Ranking Empresas', rows: rankingRows }] : []),
           ...(totalDataBlockerRows.length > 0 ? [{ name: 'Bloqueos Dato', rows: totalDataBlockerRows }] : []),
           ...(compareCompanyRows.length > 0 ? [{ name: 'Comparacion Empresas', rows: compareCompanyRows }] : []),
           ...(compareCompanyHistoryRows.length > 0 ? [{ name: 'Historial Empresas', rows: compareCompanyHistoryRows }] : []),
@@ -4449,6 +4590,42 @@ export const Reports: React.FC = () => {
               ],
               theme: 'grid',
               headStyles: { fillColor: [8, 145, 178] },
+              styles: { fontSize: 8 }
+            });
+
+            yPos = (doc as any).lastAutoTable.finalY + 8;
+          }
+
+          if (executiveCompanyRankingComparison) {
+            autoTable(doc, {
+              startY: yPos,
+              head: [['Ranking empresas', 'Puntaje', 'Cierre', 'Tendencia', 'Bloqueos', 'Nivel']],
+              body: executiveCompanyRankingComparison.rows.map((row) => [
+                row.companyLabel,
+                row.score.toFixed(1),
+                row.components.closure.toFixed(1),
+                row.components.trend.toFixed(1),
+                row.components.blockers.toFixed(1),
+                row.tone.label
+              ]),
+              theme: 'grid',
+              headStyles: { fillColor: [71, 85, 105] },
+              styles: { fontSize: 8 }
+            });
+
+            yPos = (doc as any).lastAutoTable.finalY + 8;
+
+            autoTable(doc, {
+              startY: yPos,
+              head: [['Lectura ranking', 'Detalle']],
+              body: [
+                ['Líder', executiveCompanyRankingComparison.leader],
+                ['Brecha', `${Math.abs(executiveCompanyRankingComparison.gap).toFixed(1)} puntos`],
+                ['Ponderación', 'Cierre total 60% · Tendencia 25% · Bloqueos 15%'],
+                ['Conclusión', executiveCompanyRankingComparison.summaryLine]
+              ],
+              theme: 'grid',
+              headStyles: { fillColor: [100, 116, 139] },
               styles: { fontSize: 8 }
             });
 
@@ -6986,6 +7163,66 @@ export const Reports: React.FC = () => {
                         </div>
                         <p className="mt-3 text-sm">{executiveCompareCompanyRecommendation.summary}</p>
                         <p className="mt-2 text-sm">{executiveCompareCompanyRecommendation.nextStep}</p>
+                      </div>
+                    </div>
+                  )}
+                  {executiveCompanyRankingComparison && (
+                    <div className="mt-6 rounded-xl border border-slate-200 overflow-hidden">
+                      <div className="px-4 py-4 border-b border-slate-200 bg-slate-50">
+                        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                          <div>
+                            <div className="text-sm font-medium text-slate-900">Ranking automático entre empresas</div>
+                            <p className="text-sm text-slate-500">Pondera cierre total, tendencia y disciplina de bloqueos para ordenar la solidez ejecutiva de cada empresa.</p>
+                          </div>
+                          <div className="text-sm font-semibold text-slate-700">{executiveCompanyRankingComparison.summaryLine}</div>
+                        </div>
+                      </div>
+                      <div className="p-4 grid grid-cols-1 xl:grid-cols-[1fr,0.9fr] gap-4">
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead className="bg-white">
+                              <tr>
+                                <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Empresa</th>
+                                <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Puntaje</th>
+                                <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Cierre</th>
+                                <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Tendencia</th>
+                                <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Bloqueos</th>
+                                <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Nivel</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 bg-white">
+                              {executiveCompanyRankingComparison.rows.map((row, index) => (
+                                <tr key={row.companyLabel}>
+                                  <td className="px-4 py-3 font-medium text-slate-900">{index + 1}. {row.companyLabel}</td>
+                                  <td className="px-4 py-3 text-right font-semibold text-slate-900">{row.score.toFixed(1)}</td>
+                                  <td className="px-4 py-3 text-right text-slate-700">{row.components.closure.toFixed(1)}</td>
+                                  <td className="px-4 py-3 text-right text-slate-700">{row.components.trend.toFixed(1)}</td>
+                                  <td className="px-4 py-3 text-right text-slate-700">{row.components.blockers.toFixed(1)}</td>
+                                  <td className="px-4 py-3">
+                                    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${row.tone.badge}`}>
+                                      <span className={`mr-2 inline-block h-2 w-2 rounded-full ${row.tone.dot}`} />
+                                      {row.tone.label}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="space-y-3">
+                          <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                            <div className="font-medium text-slate-900">Regla de ponderación</div>
+                            <p className="mt-2">Cierre total 60%, tendencia 25% y disciplina de bloqueos 15%.</p>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                            <div className="font-medium text-slate-900">Lectura del líder</div>
+                            <p className="mt-2">{executiveCompanyRankingComparison.rows[0]?.narrative}</p>
+                          </div>
+                          <div className="rounded-xl bg-slate-950 p-4 text-sm text-slate-200">
+                            <div className="font-medium text-white">Resultado ejecutivo</div>
+                            <p className="mt-2">{executiveCompanyRankingComparison.summaryLine}</p>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -10892,6 +11129,59 @@ export const Reports: React.FC = () => {
                                   </div>
                                 </div>
                               </div>
+                              {executiveCompanyRankingComparison && (
+                                <div className="grid grid-cols-1 xl:grid-cols-[1.1fr,0.9fr] gap-6">
+                                  <div className="rounded-2xl border border-slate-200 p-6">
+                                    <div className="text-2xl font-bold text-slate-800 mb-5">Ranking automático</div>
+                                    <div className="space-y-4">
+                                      {executiveCompanyRankingComparison.rows.map((row, index) => (
+                                        <div key={row.companyLabel} className="rounded-2xl bg-slate-50 p-5">
+                                          <div className="flex items-start justify-between gap-4">
+                                            <div>
+                                              <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Posición {index + 1}</div>
+                                              <div className="mt-2 text-2xl font-bold text-slate-900">{row.companyLabel}</div>
+                                            </div>
+                                            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${row.tone.badge}`}>
+                                              <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${row.tone.dot}`} />
+                                              {row.tone.label}
+                                            </span>
+                                          </div>
+                                          <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                                            <div className="rounded-xl bg-white p-3">
+                                              <div className="text-xs uppercase tracking-wide text-slate-500">Puntaje</div>
+                                              <div className="mt-2 text-2xl font-semibold text-slate-900">{row.score.toFixed(1)}</div>
+                                            </div>
+                                            <div className="rounded-xl bg-white p-3">
+                                              <div className="text-xs uppercase tracking-wide text-slate-500">Cierre</div>
+                                              <div className="mt-2 text-2xl font-semibold text-slate-900">{row.components.closure.toFixed(1)}</div>
+                                            </div>
+                                            <div className="rounded-xl bg-white p-3">
+                                              <div className="text-xs uppercase tracking-wide text-slate-500">Tendencia</div>
+                                              <div className="mt-2 text-2xl font-semibold text-slate-900">{row.components.trend.toFixed(1)}</div>
+                                            </div>
+                                            <div className="rounded-xl bg-white p-3">
+                                              <div className="text-xs uppercase tracking-wide text-slate-500">Bloqueos</div>
+                                              <div className="mt-2 text-2xl font-semibold text-slate-900">{row.components.blockers.toFixed(1)}</div>
+                                            </div>
+                                          </div>
+                                          <p className="mt-4 text-lg leading-8 text-slate-600">{row.narrative}</p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <div className="space-y-6">
+                                    <div className="rounded-2xl border border-slate-200 p-6">
+                                      <div className="text-2xl font-bold text-slate-800 mb-5">Regla de ranking</div>
+                                      <p className="text-lg leading-8 text-slate-600">Cierre total 60%, tendencia 25% y disciplina de bloqueos 15%.</p>
+                                      <p className="mt-4 text-lg leading-8 text-slate-600">{executiveCompanyRankingComparison.summaryLine}</p>
+                                    </div>
+                                    <div className="rounded-2xl bg-slate-950 text-white p-6">
+                                      <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Resultado Del Ranking</div>
+                                      <p className="mt-4 text-2xl leading-10">{executiveCompanyRankingComparison.summaryLine}</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
                               {executiveCompareCompanyRecommendation && (
                                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                                   <div className={`rounded-2xl border p-6 ${executiveCurrentRecommendation.tone.badge}`}>
@@ -10969,6 +11259,22 @@ export const Reports: React.FC = () => {
                                 <div className="mt-3 text-3xl font-bold text-slate-900">{executiveExportWarningFilteredData.totalEvents}</div>
                                 <div className="mt-2 text-base text-slate-500">Eventos visibles</div>
                               </div>
+                              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5 md:col-span-2">
+                                <div className="text-sm uppercase tracking-wide text-slate-500">Ranking ejecutivo</div>
+                                <div className="mt-3 flex items-center justify-between gap-4">
+                                  <div>
+                                    <div className="text-3xl font-bold text-slate-900">{executiveCurrentCompanyRanking.score.toFixed(1)}</div>
+                                    <div className="mt-2 text-base text-slate-500">{executiveCurrentCompanyRanking.tone.label}</div>
+                                  </div>
+                                  {executiveCompanyRankingComparison && (
+                                    <div className="text-right">
+                                      <div className="text-sm text-slate-500">Líder comparado</div>
+                                      <div className="mt-2 text-xl font-semibold text-slate-900">{executiveCompanyRankingComparison.leader}</div>
+                                      <div className="mt-1 text-sm text-slate-500">{Math.abs(executiveCompanyRankingComparison.gap).toFixed(1)} puntos</div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           </div>
 
@@ -11012,6 +11318,7 @@ export const Reports: React.FC = () => {
                               <div className="rounded-2xl border border-slate-200 p-6">
                                 <div className="text-2xl font-bold text-slate-800 mb-5">Contexto comparado</div>
                                 <p className="text-lg leading-8 text-slate-600">{executiveCommitteeSlideSummary.compareSummary}</p>
+                                <p className="mt-4 text-lg leading-8 text-slate-600">{executiveCommitteeSlideSummary.rankingSummary}</p>
                                 {executiveCompareCompanyInsights && (
                                   <p className="mt-4 text-base leading-8 text-slate-500">{executiveCompareCompanyInsights.summaryLine}</p>
                                 )}

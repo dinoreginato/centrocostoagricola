@@ -475,6 +475,21 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - contexto comparado cuando existe otra empresa activa
 - La salida busca que la presentacion no termine solo en tablas o metricas, sino en una postura clara de presentacion frente a comite.
 
+## Ranking Automatico Entre Empresas
+- `Reportes` ahora calcula un ranking automatico comparado entre empresas.
+- El ranking pondera:
+  - cierre total del dato 60%
+  - tendencia movil 25%
+  - disciplina de bloqueos 15%
+- La lectura se integra en:
+  - vista ejecutiva comparada
+  - fullscreen historico entre empresas
+  - Excel con hoja `Ranking Empresas`
+  - PDF con tabla y conclusion de lider
+- Objetivo:
+  - dejar una lectura sintetica y defendible de cual empresa llega mejor preparada al comite
+  - evitar que la comparacion dependa solo de una lectura manual de tablas separadas
+
 ## Siguiente Paso Recomendado
-- Considerar un ranking automatico entre empresas usando cierre total, tendencia y bloqueos ponderados.
 - Considerar trazabilidad ampliada por destinatario o motivo de circulacion del reporte exportado.
+- Evaluar un ranking multiempresa global cuando existan mas de dos empresas comparables en la misma temporada.
