@@ -68,6 +68,13 @@ import {
   type ExecutiveBudgetPlanApprovalStatus,
   type ExecutiveBudgetPlanApprovalStepRow
 } from '../services/executiveBudgetPlanApprovalSteps';
+import {
+  createExecutiveBudgetPlanPublicationEvent,
+  loadExecutiveBudgetPlanPublicationEvents,
+  type ExecutiveBudgetPlanPublicationAction,
+  type ExecutiveBudgetPlanPublicationChannel,
+  type ExecutiveBudgetPlanPublicationEventRow
+} from '../services/executiveBudgetPlanPublications';
 import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
 interface ReportData {
@@ -255,6 +262,7 @@ type ExecutiveAuditPriorityFilter = 'all' | 'alta' | 'media' | 'baja';
 type ExecutiveAuditLayerFilter = 'all' | AgriculturalCostAuditRow['source_layer'];
 type ExecutiveExportAction = 'pdf' | 'excel';
 type ExecutiveExportCirculationReason = 'comite' | 'directorio' | 'revision_interna' | 'banco_inversionista' | 'otro';
+type ExecutiveBudgetPublicationChannelOption = ExecutiveBudgetPlanPublicationChannel;
 type ClosureTrendDirection = 'mejora' | 'estable' | 'deterioro' | 'sin_base';
 type ExecutiveRecommendationDecision = 'presentar' | 'presentar_con_cautela' | 'no_presentar';
 type ExecutiveRankingTier = 'fuerte' | 'intermedio' | 'fragil';
@@ -331,6 +339,13 @@ const EXECUTIVE_BUDGET_WORKFLOW_ROLE_OPTIONS: Array<{ value: ExecutiveBudgetPlan
   { value: 'control_gestion', label: 'Control de gestión' },
   { value: 'gerencia_general', label: 'Gerencia general' },
   { value: 'comite', label: 'Comité' }
+];
+const EXECUTIVE_BUDGET_PUBLICATION_CHANNEL_OPTIONS: Array<{ value: ExecutiveBudgetPublicationChannelOption; label: string }> = [
+  { value: 'comite', label: 'Comité' },
+  { value: 'directorio', label: 'Directorio' },
+  { value: 'banco_inversionista', label: 'Banco / inversionista' },
+  { value: 'auditoria_externa', label: 'Auditoría externa' },
+  { value: 'otro', label: 'Otro' }
 ];
 
 const formatExecutiveExportWarningType = (value: string) => (
@@ -1571,6 +1586,34 @@ const getExecutiveBudgetWorkflowRole = (row: Pick<ExecutiveBudgetPlanWorkflowEve
   return rawValue || null;
 };
 
+const formatExecutiveBudgetPublicationAction = (value: string | null | undefined) => {
+  switch (value) {
+    case 'firmada':
+      return 'Firmada';
+    case 'publicada_externa':
+      return 'Publicada externamente';
+    default:
+      return 'Sin acción';
+  }
+};
+
+const formatExecutiveBudgetPublicationChannel = (value: string | null | undefined) => {
+  switch (value) {
+    case 'comite':
+      return 'Comité';
+    case 'directorio':
+      return 'Directorio';
+    case 'banco_inversionista':
+      return 'Banco / inversionista';
+    case 'auditoria_externa':
+      return 'Auditoría externa';
+    case 'otro':
+      return 'Otro';
+    default:
+      return 'Sin canal';
+  }
+};
+
 const formatExecutiveBudgetApprovalStatus = (value: string | null | undefined) => {
   switch (value) {
     case 'aprobada':
@@ -1872,6 +1915,99 @@ const buildExecutiveBudgetPlanApprovalAnalytics = (params: {
     readyRolesBeforeCommittee,
     allResolved,
     tone,
+    summaryLine
+  };
+};
+
+const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
+  rows: ExecutiveBudgetPlanPublicationEventRow[];
+  currentVersion: ExecutiveBudgetPlanVersionRow | null;
+  scopeLabel: string;
+  approvalReady: boolean;
+}) => {
+  const currentVersionRows = params.currentVersion
+    ? params.rows.filter((row) => row.version_id === params.currentVersion?.id)
+    : [];
+  const actionSummary = Array.from(
+    params.rows.reduce((map, row) => {
+      map.set(row.action_type, (map.get(row.action_type) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([actionType, count]) => ({ actionType, count })).sort((a, b) => b.count - a.count);
+  const channelSummary = Array.from(
+    params.rows.reduce((map, row) => {
+      const channel = row.publication_channel || 'sin_canal';
+      map.set(channel, (map.get(channel) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([channel, count]) => ({ channel, count })).sort((a, b) => b.count - a.count);
+  const recipientSummary = Array.from(
+    params.rows.reduce((map, row) => {
+      const recipient = row.recipient_label?.trim() || 'Sin destinatario';
+      const current = map.get(recipient) || {
+        recipient,
+        count: 0,
+        latestCreatedAt: row.created_at,
+        channelSet: new Set<string>()
+      };
+      current.count += 1;
+      current.latestCreatedAt = current.latestCreatedAt > row.created_at ? current.latestCreatedAt : row.created_at;
+      if (row.publication_channel) current.channelSet.add(formatExecutiveBudgetPublicationChannel(row.publication_channel));
+      map.set(recipient, current);
+      return map;
+    }, new Map<string, { recipient: string; count: number; latestCreatedAt: string; channelSet: Set<string> }>())
+  ).map(([, value]) => ({
+    recipient: value.recipient,
+    count: value.count,
+    latestCreatedAt: value.latestCreatedAt,
+    channels: Array.from(value.channelSet).sort().join(', ')
+  })).sort((a, b) => {
+    if (b.count !== a.count) return b.count - a.count;
+    return b.latestCreatedAt.localeCompare(a.latestCreatedAt);
+  });
+  const latestEvent = params.rows[0] || null;
+  const latestCurrentVersionEvent = currentVersionRows[0] || null;
+  const latestSignoff = params.rows.find((row) => row.action_type === 'firmada') || null;
+  const latestExternalPublication = params.rows.find((row) => row.action_type === 'publicada_externa') || null;
+  const currentVersionSignoff = currentVersionRows.find((row) => row.action_type === 'firmada') || null;
+  const currentVersionExternalPublication = currentVersionRows.find((row) => row.action_type === 'publicada_externa') || null;
+  const summaryLine = !params.currentVersion
+    ? `No hay versión vigente para firmar o publicar externamente en ${params.scopeLabel}.`
+    : currentVersionExternalPublication
+      ? `La versión vigente de ${params.scopeLabel} ya tiene firma ejecutiva y trazabilidad de publicación externa hacia ${currentVersionExternalPublication.recipient_label || 'destinatario no informado'}.`
+      : currentVersionSignoff
+        ? `La versión vigente de ${params.scopeLabel} ya quedó firmada y está lista para registrar su circulación externa formal.`
+        : params.approvalReady
+          ? `La versión vigente de ${params.scopeLabel} ya cumple condiciones para firma ejecutiva.`
+          : `La versión vigente de ${params.scopeLabel} todavía no completa las condiciones para firma o publicación externa.`;
+  const tone = currentVersionExternalPublication
+    ? { badge: 'bg-blue-100 text-blue-700 border-blue-200', label: 'Publicado externamente' }
+    : currentVersionSignoff
+      ? { badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', label: 'Firmado' }
+      : params.approvalReady
+        ? { badge: 'bg-amber-100 text-amber-700 border-amber-200', label: 'Listo para firma' }
+        : { badge: 'bg-slate-100 text-slate-700 border-slate-200', label: 'Pendiente' };
+
+  return {
+    rows: params.rows,
+    currentVersionRows,
+    latestEvent,
+    latestCurrentVersionEvent,
+    latestSignoff,
+    latestExternalPublication,
+    currentVersionSignoff,
+    currentVersionExternalPublication,
+    recentRows: params.rows.slice(0, 12),
+    actionSummary,
+    channelSummary,
+    recipientSummary,
+    topAction: actionSummary[0] || null,
+    topChannel: channelSummary[0] || null,
+    topRecipient: recipientSummary[0] || null,
+    totalEvents: params.rows.length,
+    tone,
+    canSign: params.approvalReady && !currentVersionSignoff,
+    canPublishExternally: Boolean(params.approvalReady && currentVersionSignoff),
     summaryLine
   };
 };
@@ -2644,6 +2780,7 @@ export const Reports: React.FC = () => {
   const [executiveBudgetPlanVersions, setExecutiveBudgetPlanVersions] = useState<ExecutiveBudgetPlanVersionRow[]>([]);
   const [executiveBudgetPlanWorkflowEvents, setExecutiveBudgetPlanWorkflowEvents] = useState<ExecutiveBudgetPlanWorkflowEventRow[]>([]);
   const [executiveBudgetPlanApprovalSteps, setExecutiveBudgetPlanApprovalSteps] = useState<ExecutiveBudgetPlanApprovalStepRow[]>([]);
+  const [executiveBudgetPlanPublicationEvents, setExecutiveBudgetPlanPublicationEvents] = useState<ExecutiveBudgetPlanPublicationEventRow[]>([]);
   const [executiveGlobalAlertLoading, setExecutiveGlobalAlertLoading] = useState(false);
   const [costAuditLoading, setCostAuditLoading] = useState(false);
   const [showProductionModal, setShowProductionModal] = useState(false);
@@ -2653,6 +2790,13 @@ export const Reports: React.FC = () => {
   const [executiveBudgetWorkflowRole, setExecutiveBudgetWorkflowRole] = useState<ExecutiveBudgetPlanApprovalRole>('gerencia_agricola');
   const [executiveBudgetWorkflowReason, setExecutiveBudgetWorkflowReason] = useState('');
   const [submittingExecutiveBudgetWorkflow, setSubmittingExecutiveBudgetWorkflow] = useState(false);
+  const [executiveBudgetPublicationResponsible, setExecutiveBudgetPublicationResponsible] = useState('');
+  const [executiveBudgetPublicationRole, setExecutiveBudgetPublicationRole] = useState<ExecutiveBudgetPlanApprovalRole>('gerencia_general');
+  const [executiveBudgetPublicationRecipient, setExecutiveBudgetPublicationRecipient] = useState('');
+  const [executiveBudgetPublicationChannel, setExecutiveBudgetPublicationChannel] = useState<ExecutiveBudgetPublicationChannelOption>('directorio');
+  const [executiveBudgetPublicationReason, setExecutiveBudgetPublicationReason] = useState('');
+  const [executiveBudgetPublicationNotes, setExecutiveBudgetPublicationNotes] = useState('');
+  const [submittingExecutiveBudgetPublication, setSubmittingExecutiveBudgetPublication] = useState(false);
 
   // Comparative State
   const [comparativeData, setComparativeData] = useState<any[]>([]);
@@ -2836,9 +2980,16 @@ export const Reports: React.FC = () => {
     setExecutiveBudgetPlanVersions([]);
     setExecutiveBudgetPlanWorkflowEvents([]);
     setExecutiveBudgetPlanApprovalSteps([]);
+    setExecutiveBudgetPlanPublicationEvents([]);
     setExecutiveBudgetWorkflowResponsible('');
     setExecutiveBudgetWorkflowRole('gerencia_agricola');
     setExecutiveBudgetWorkflowReason('');
+    setExecutiveBudgetPublicationResponsible('');
+    setExecutiveBudgetPublicationRole('gerencia_general');
+    setExecutiveBudgetPublicationRecipient('');
+    setExecutiveBudgetPublicationChannel('directorio');
+    setExecutiveBudgetPublicationReason('');
+    setExecutiveBudgetPublicationNotes('');
     setReportData([]);
     setMonthlyExpenses([]);
     setCategoryExpenses([]);
@@ -2912,13 +3063,14 @@ export const Reports: React.FC = () => {
 
     void (async () => {
       try {
-        const [rankingRows, preventiveRows, budgetClosureRows, budgetVersionRows, budgetWorkflowRows, budgetApprovalRows] = await Promise.all([
+        const [rankingRows, preventiveRows, budgetClosureRows, budgetVersionRows, budgetWorkflowRows, budgetApprovalRows, budgetPublicationRows] = await Promise.all([
           loadExecutiveGlobalRankingSnapshots({ companyId, limit: 200 }),
           loadExecutiveGlobalPreventiveSnapshots({ companyId, limit: 200 }),
           loadExecutiveBudgetClosureSnapshots({ companyId, limit: 200 }),
           loadExecutiveBudgetPlanVersions({ companyId, limit: 200 }),
           loadExecutiveBudgetPlanWorkflowEvents({ companyId, limit: 200 }),
-          loadExecutiveBudgetPlanApprovalSteps({ companyId, limit: 400 })
+          loadExecutiveBudgetPlanApprovalSteps({ companyId, limit: 400 }),
+          loadExecutiveBudgetPlanPublicationEvents({ companyId, limit: 300 })
         ]);
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalRankingSnapshots(rankingRows || []);
@@ -2927,6 +3079,7 @@ export const Reports: React.FC = () => {
         setExecutiveBudgetPlanVersions(budgetVersionRows || []);
         setExecutiveBudgetPlanWorkflowEvents(budgetWorkflowRows || []);
         setExecutiveBudgetPlanApprovalSteps(budgetApprovalRows || []);
+        setExecutiveBudgetPlanPublicationEvents(budgetPublicationRows || []);
       } catch {
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalRankingSnapshots([]);
@@ -2935,6 +3088,7 @@ export const Reports: React.FC = () => {
         setExecutiveBudgetPlanVersions([]);
         setExecutiveBudgetPlanWorkflowEvents([]);
         setExecutiveBudgetPlanApprovalSteps([]);
+        setExecutiveBudgetPlanPublicationEvents([]);
       }
     })();
 
@@ -3105,7 +3259,7 @@ export const Reports: React.FC = () => {
     };
   }, [executiveCompareCompanyId, selectedSeason]);
 
-  const presentationMaxSlide = activeTab === 'executive' ? 15 : activeTab === 'general' ? 3 : 1;
+  const presentationMaxSlide = activeTab === 'executive' ? 16 : activeTab === 'general' ? 3 : 1;
 
   // Update presentation logic to support executive slides and legacy tabs
   useEffect(() => {
@@ -5557,6 +5711,22 @@ export const Reports: React.FC = () => {
     }),
     [executiveBudgetPlanApprovalSteps, executiveCurrentBudgetPlanVersion, selectedSeason]
   );
+  const executiveBudgetPublicationApprovalReady = useMemo(
+    () => (
+      executiveBudgetPlanApprovalData.allResolved
+      || executiveBudgetPlanApprovalData.committeeStep?.approval_status === 'congelada'
+    ),
+    [executiveBudgetPlanApprovalData.allResolved, executiveBudgetPlanApprovalData.committeeStep?.approval_status]
+  );
+  const executiveBudgetPlanPublicationData = useMemo(
+    () => buildExecutiveBudgetPlanPublicationAnalytics({
+      rows: executiveBudgetPlanPublicationEvents,
+      currentVersion: executiveCurrentBudgetPlanVersion,
+      scopeLabel: 'la empresa activa',
+      approvalReady: executiveBudgetPublicationApprovalReady
+    }),
+    [executiveBudgetPlanPublicationEvents, executiveCurrentBudgetPlanVersion, executiveBudgetPublicationApprovalReady]
+  );
   const executiveExportWarningContext = useMemo(() => {
     const warningTypes: string[] = [];
 
@@ -6222,6 +6392,116 @@ export const Reports: React.FC = () => {
     selectedCompany?.id,
     selectedSeason
   ]);
+  const handleExecutiveBudgetPublicationAction = useCallback(async (actionType: ExecutiveBudgetPlanPublicationAction) => {
+    if (!selectedCompany?.id) {
+      toast.error('No hay empresa activa para registrar la firma o publicación presupuestaria.');
+      return;
+    }
+
+    if (!executiveCurrentBudgetPlanVersion) {
+      toast.error('Aún no existe una versión presupuestaria vigente para esta temporada.');
+      return;
+    }
+
+    const responsibleLabel = executiveBudgetPublicationResponsible.trim();
+    const responsibleRole = executiveBudgetPublicationRole;
+    const recipientLabel = executiveBudgetPublicationRecipient.trim();
+    const reason = executiveBudgetPublicationReason.trim();
+    const notes = executiveBudgetPublicationNotes.trim();
+
+    if (!responsibleLabel) {
+      toast.error('Debes indicar quién firma o publica externamente el presupuesto.');
+      return;
+    }
+
+    if (!reason) {
+      toast.error('Debes indicar el motivo o contexto de la firma/publicación.');
+      return;
+    }
+
+    if (actionType === 'firmada') {
+      if (!executiveBudgetPublicationApprovalReady) {
+        toast.error('La versión vigente aún no completa la aprobación multinivel necesaria para firma ejecutiva.');
+        return;
+      }
+      if (executiveBudgetPlanPublicationData.currentVersionSignoff) {
+        toast.error('La versión vigente ya tiene una firma ejecutiva visible.');
+        return;
+      }
+    }
+
+    if (actionType === 'publicada_externa') {
+      if (!executiveBudgetPlanPublicationData.currentVersionSignoff) {
+        toast.error('Debes registrar una firma ejecutiva antes de publicar externamente la versión.');
+        return;
+      }
+      if (!recipientLabel) {
+        toast.error('Debes indicar el destinatario de la publicación externa.');
+        return;
+      }
+    }
+
+    setSubmittingExecutiveBudgetPublication(true);
+    try {
+      await createExecutiveBudgetPlanPublicationEvent({
+        companyId: selectedCompany.id,
+        versionId: executiveCurrentBudgetPlanVersion.id,
+        season: selectedSeason,
+        versionKind: executiveCurrentBudgetPlanVersion.version_kind,
+        actionType,
+        responsibleLabel,
+        responsibleRole,
+        recipientLabel: actionType === 'publicada_externa' ? recipientLabel : null,
+        publicationChannel: actionType === 'publicada_externa' ? executiveBudgetPublicationChannel : null,
+        reason,
+        notes: notes || null,
+        metadata: {
+          company_name: companyName,
+          readiness_title: executiveTotalDataClosure.readiness.title,
+          budget_status: executiveCompanyBudgetGovernanceData.budgetStatus,
+          approval_ready: executiveBudgetPublicationApprovalReady,
+          approval_summary: executiveBudgetPlanApprovalData.summaryLine,
+          signed_current_version: Boolean(executiveBudgetPlanPublicationData.currentVersionSignoff),
+          publication_channel: actionType === 'publicada_externa' ? executiveBudgetPublicationChannel : null,
+          recipient_label: actionType === 'publicada_externa' ? recipientLabel : null
+        }
+      });
+
+      const rows = await loadExecutiveBudgetPlanPublicationEvents({ companyId: selectedCompany.id, limit: 300 });
+      setExecutiveBudgetPlanPublicationEvents(rows || []);
+      setExecutiveBudgetPublicationReason('');
+      setExecutiveBudgetPublicationNotes('');
+      if (actionType === 'publicada_externa') {
+        setExecutiveBudgetPublicationRecipient('');
+      }
+
+      toast.success(
+        actionType === 'firmada'
+          ? 'Se registró la firma ejecutiva de la versión presupuestaria.'
+          : 'Se registró la publicación externa del presupuesto.'
+      );
+    } catch (error: any) {
+      toast.error(`No se pudo registrar la firma/publicación presupuestaria: ${error?.message || 'intenta nuevamente.'}`);
+    } finally {
+      setSubmittingExecutiveBudgetPublication(false);
+    }
+  }, [
+    companyName,
+    executiveBudgetPlanApprovalData.summaryLine,
+    executiveBudgetPlanPublicationData.currentVersionSignoff,
+    executiveBudgetPublicationApprovalReady,
+    executiveBudgetPublicationChannel,
+    executiveBudgetPublicationNotes,
+    executiveBudgetPublicationReason,
+    executiveBudgetPublicationRecipient,
+    executiveBudgetPublicationResponsible,
+    executiveBudgetPublicationRole,
+    executiveCompanyBudgetGovernanceData.budgetStatus,
+    executiveCurrentBudgetPlanVersion,
+    executiveTotalDataClosure.readiness.title,
+    selectedCompany?.id,
+    selectedSeason
+  ]);
   const selectedExecutiveGlobalAlertTransitions = useMemo(
     () => executiveGlobalAlertTransitions.filter((row) => row.event_id === editingExecutiveGlobalAlertId),
     [editingExecutiveGlobalAlertId, executiveGlobalAlertTransitions]
@@ -6523,6 +6803,12 @@ export const Reports: React.FC = () => {
         { Indicador: 'Roles pendientes', Valor: executiveBudgetPlanApprovalData.pendingCount },
         { Indicador: 'Freeze multinivel', Valor: executiveBudgetPlanApprovalData.frozenCount },
         { Indicador: 'Resumen aprobación multinivel', Valor: executiveBudgetPlanApprovalData.summaryLine },
+        { Indicador: 'Firma / publicación externa', Valor: executiveBudgetPlanPublicationData.totalEvents },
+        { Indicador: 'Última acción firma', Valor: executiveBudgetPlanPublicationData.latestEvent ? formatExecutiveBudgetPublicationAction(executiveBudgetPlanPublicationData.latestEvent.action_type) : 'Sin acción' },
+        { Indicador: 'Última firma', Valor: executiveBudgetPlanPublicationData.latestSignoff ? executiveBudgetPlanPublicationData.latestSignoff.responsible_label : 'Sin firma' },
+        { Indicador: 'Última publicación externa', Valor: executiveBudgetPlanPublicationData.latestExternalPublication ? executiveBudgetPlanPublicationData.latestExternalPublication.recipient_label || 'Sin destinatario' : 'Sin publicación' },
+        { Indicador: 'Canal dominante publicación', Valor: executiveBudgetPlanPublicationData.topChannel ? formatExecutiveBudgetPublicationChannel(executiveBudgetPlanPublicationData.topChannel.channel) : 'Sin canal' },
+        { Indicador: 'Resumen firma/publicación', Valor: executiveBudgetPlanPublicationData.summaryLine },
         { Indicador: 'Costo por ha', Valor: Number((executiveViewData.kpis.averageCostPerHa || 0).toFixed(2)) },
         { Indicador: 'Costo por kg', Valor: Number((executiveViewData.kpis.averageCostPerKg || 0).toFixed(2)) },
         { Indicador: 'Temporada anterior', Valor: Number(executiveViewData.kpis.previousSeasonCost.toFixed(0)) },
@@ -8244,6 +8530,27 @@ export const Reports: React.FC = () => {
           ],
           theme: 'grid',
           headStyles: { fillColor: [22, 163, 74] },
+          styles: { fontSize: 8 }
+        });
+
+        yPos = (doc as any).lastAutoTable.finalY + 8;
+
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Firma y publicación externa', 'Detalle']],
+          body: [
+            ['Resumen', executiveBudgetPlanPublicationData.summaryLine],
+            ['Eventos históricos', String(executiveBudgetPlanPublicationData.totalEvents)],
+            ['Última acción', executiveBudgetPlanPublicationData.latestEvent ? formatExecutiveBudgetPublicationAction(executiveBudgetPlanPublicationData.latestEvent.action_type) : 'Sin acción'],
+            ['Última firma', executiveBudgetPlanPublicationData.latestSignoff ? `${executiveBudgetPlanPublicationData.latestSignoff.responsible_label} · ${formatExecutiveBudgetWorkflowRole(executiveBudgetPlanPublicationData.latestSignoff.responsible_role)}` : 'Sin firma'],
+            ['Última publicación externa', executiveBudgetPlanPublicationData.latestExternalPublication ? `${executiveBudgetPlanPublicationData.latestExternalPublication.recipient_label || 'Sin destinatario'} · ${formatExecutiveBudgetPublicationChannel(executiveBudgetPlanPublicationData.latestExternalPublication.publication_channel)}` : 'Sin publicación'],
+            ['Canal dominante', executiveBudgetPlanPublicationData.topChannel ? formatExecutiveBudgetPublicationChannel(executiveBudgetPlanPublicationData.topChannel.channel) : 'Sin canal'],
+            ['Destinatario dominante', executiveBudgetPlanPublicationData.topRecipient?.recipient || 'Sin destinatario'],
+            ['Versión firmada actual', executiveBudgetPlanPublicationData.currentVersionSignoff ? 'Sí' : 'No'],
+            ['Versión publicada externamente', executiveBudgetPlanPublicationData.currentVersionExternalPublication ? 'Sí' : 'No']
+          ],
+          theme: 'grid',
+          headStyles: { fillColor: [37, 99, 235] },
           styles: { fontSize: 8 }
         });
 
@@ -11752,6 +12059,212 @@ export const Reports: React.FC = () => {
                             )}
                           </tbody>
                         </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {(executiveBudgetPlanPublicationData.totalEvents > 0 || executiveCurrentBudgetPlanVersion) && (
+                <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">Firma ejecutiva y publicación externa</h3>
+                        <p className="text-sm text-gray-500">Formaliza la firma del presupuesto aprobado y deja trazabilidad de su circulación externa por destinatario y canal.</p>
+                      </div>
+                      <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${executiveBudgetPlanPublicationData.tone.badge}`}>
+                        {executiveBudgetPlanPublicationData.tone.label}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Eventos</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanPublicationData.totalEvents}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Última acción</div>
+                        <div className="mt-2 text-xl font-semibold text-slate-900">{executiveBudgetPlanPublicationData.latestEvent ? formatExecutiveBudgetPublicationAction(executiveBudgetPlanPublicationData.latestEvent.action_type) : '-'}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Última firma</div>
+                        <div className="mt-2 text-lg font-semibold text-slate-900">{executiveBudgetPlanPublicationData.latestSignoff?.responsible_label || 'Sin firma'}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Último destinatario</div>
+                        <div className="mt-2 text-lg font-semibold text-slate-900">{executiveBudgetPlanPublicationData.latestExternalPublication?.recipient_label || 'Sin publicación'}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Canal dominante</div>
+                        <div className="mt-2 text-lg font-semibold text-slate-900">{executiveBudgetPlanPublicationData.topChannel ? formatExecutiveBudgetPublicationChannel(executiveBudgetPlanPublicationData.topChannel.channel) : 'Sin canal'}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Versión vigente</div>
+                        <div className="mt-2 text-xl font-semibold text-slate-900">{executiveCurrentBudgetPlanVersion ? formatExecutiveBudgetPlanVersionKind(executiveCurrentBudgetPlanVersion.version_kind) : '-'}</div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 xl:grid-cols-[0.95fr,1.05fr] gap-4">
+                      <div className="rounded-xl border border-slate-200 p-4 space-y-4">
+                        <div>
+                          <div className="text-sm font-medium text-slate-900">Registrar firma o circulación</div>
+                          <p className="mt-1 text-sm text-slate-500">La publicación externa exige firma visible previa sobre la misma versión vigente.</p>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <label className="block text-sm">
+                            <span className="mb-1 block font-medium text-slate-700">Responsable</span>
+                            <input
+                              type="text"
+                              value={executiveBudgetPublicationResponsible}
+                              onChange={(e) => setExecutiveBudgetPublicationResponsible(e.target.value)}
+                              placeholder="Ej: Gerencia general"
+                              className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                            />
+                          </label>
+                          <label className="block text-sm">
+                            <span className="mb-1 block font-medium text-slate-700">Rol firmante</span>
+                            <select
+                              value={executiveBudgetPublicationRole}
+                              onChange={(e) => setExecutiveBudgetPublicationRole(e.target.value as ExecutiveBudgetPlanApprovalRole)}
+                              className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                            >
+                              {EXECUTIVE_BUDGET_WORKFLOW_ROLE_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
+                            <div className="font-medium text-slate-900">Estado versión</div>
+                            <div className="mt-1">
+                              {executiveCurrentBudgetPlanVersion
+                                ? `${formatExecutiveBudgetPlanVersionKind(executiveCurrentBudgetPlanVersion.version_kind)} · ${executiveCurrentBudgetPlanVersion.season}`
+                                : 'Sin versión vigente'}
+                            </div>
+                            <div className="mt-2 text-xs text-slate-500">Aprobación resuelta: {executiveBudgetPublicationApprovalReady ? 'Sí' : 'No'}</div>
+                            <div className="mt-2 text-xs text-slate-500">Firma visible: {executiveBudgetPlanPublicationData.currentVersionSignoff ? 'Sí' : 'No'}</div>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <label className="block text-sm">
+                            <span className="mb-1 block font-medium text-slate-700">Destinatario externo</span>
+                            <input
+                              type="text"
+                              value={executiveBudgetPublicationRecipient}
+                              onChange={(e) => setExecutiveBudgetPublicationRecipient(e.target.value)}
+                              placeholder="Ej: Directorio agrícola"
+                              className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                            />
+                          </label>
+                          <label className="block text-sm">
+                            <span className="mb-1 block font-medium text-slate-700">Canal</span>
+                            <select
+                              value={executiveBudgetPublicationChannel}
+                              onChange={(e) => setExecutiveBudgetPublicationChannel(e.target.value as ExecutiveBudgetPublicationChannelOption)}
+                              className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                            >
+                              {EXECUTIVE_BUDGET_PUBLICATION_CHANNEL_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                        <label className="block text-sm">
+                          <span className="mb-1 block font-medium text-slate-700">Motivo o contexto</span>
+                          <textarea
+                            value={executiveBudgetPublicationReason}
+                            onChange={(e) => setExecutiveBudgetPublicationReason(e.target.value)}
+                            placeholder="Ej: Presupuesto aprobado para directorio trimestral y seguimiento bancario."
+                            rows={3}
+                            className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                          />
+                        </label>
+                        <label className="block text-sm">
+                          <span className="mb-1 block font-medium text-slate-700">Notas de trazabilidad</span>
+                          <textarea
+                            value={executiveBudgetPublicationNotes}
+                            onChange={(e) => setExecutiveBudgetPublicationNotes(e.target.value)}
+                            placeholder="Ej: Circular con anexo de cierre total y firma digital interna."
+                            rows={2}
+                            className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                          />
+                        </label>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <button
+                            type="button"
+                            disabled={submittingExecutiveBudgetPublication || !executiveCurrentBudgetPlanVersion || !executiveBudgetPlanPublicationData.canSign}
+                            onClick={() => void handleExecutiveBudgetPublicationAction('firmada')}
+                            className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Firmar versión aprobada
+                          </button>
+                          <button
+                            type="button"
+                            disabled={submittingExecutiveBudgetPublication || !executiveCurrentBudgetPlanVersion || !executiveBudgetPlanPublicationData.canPublishExternally}
+                            onClick={() => void handleExecutiveBudgetPublicationAction('publicada_externa')}
+                            className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Registrar publicación externa
+                          </button>
+                        </div>
+                        <div className={`rounded-lg border px-3 py-2 text-sm ${
+                          executiveBudgetPlanPublicationData.canSign
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                            : executiveBudgetPlanPublicationData.currentVersionSignoff
+                              ? 'border-blue-200 bg-blue-50 text-blue-700'
+                              : 'border-amber-200 bg-amber-50 text-amber-700'
+                        }`}>
+                          {executiveBudgetPlanPublicationData.summaryLine}
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+                          <div className="font-medium text-slate-900">Lectura de firma y publicación</div>
+                          <p className="mt-2">{executiveBudgetPlanPublicationData.summaryLine}</p>
+                          <p className="mt-2">
+                            Última firma: {executiveBudgetPlanPublicationData.latestSignoff
+                              ? `${executiveBudgetPlanPublicationData.latestSignoff.responsible_label} · ${formatExecutiveBudgetWorkflowRole(executiveBudgetPlanPublicationData.latestSignoff.responsible_role)}`
+                              : 'sin firma ejecutiva visible'}.
+                          </p>
+                          <p className="mt-2">
+                            Última publicación externa: {executiveBudgetPlanPublicationData.latestExternalPublication
+                              ? `${executiveBudgetPlanPublicationData.latestExternalPublication.recipient_label || 'Sin destinatario'} · ${formatExecutiveBudgetPublicationChannel(executiveBudgetPlanPublicationData.latestExternalPublication.publication_channel)}`
+                              : 'sin circulación externa visible'}.
+                          </p>
+                        </div>
+                        <div className="overflow-x-auto rounded-xl border border-slate-200">
+                          <table className="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead className="bg-slate-50">
+                              <tr>
+                                <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
+                                <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Acción</th>
+                                <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Rol</th>
+                                <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Destinatario</th>
+                                <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Canal</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 bg-white">
+                              {executiveBudgetPlanPublicationData.recentRows.slice(0, 8).map((row) => (
+                                <tr key={row.id} className={row.season === selectedSeason ? 'bg-blue-50/40' : ''}>
+                                  <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                                  <td className="px-4 py-3 text-slate-700">{formatExecutiveBudgetPublicationAction(row.action_type)}</td>
+                                  <td className="px-4 py-3 text-slate-700">{formatExecutiveBudgetWorkflowRole(row.responsible_role)}</td>
+                                  <td className="px-4 py-3 text-slate-700">{row.recipient_label || 'Sin destinatario'}</td>
+                                  <td className="px-4 py-3 text-slate-700">{formatExecutiveBudgetPublicationChannel(row.publication_channel)}</td>
+                                </tr>
+                              ))}
+                              {executiveBudgetPlanPublicationData.recentRows.length === 0 && (
+                                <tr>
+                                  <td colSpan={5} className="px-4 py-4 text-center text-sm text-slate-500">
+                                    Aún no hay firma ni circulación externa registrada para el presupuesto.
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -18527,6 +19040,151 @@ export const Reports: React.FC = () => {
                       )}
 
                       {currentSlide === 15 && (
+                        <div className="space-y-6">
+                          <div className="flex items-start justify-between gap-6">
+                            <div>
+                              <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Firma Y Publicación</div>
+                              <div className="mt-2 text-3xl font-bold text-slate-900">¿Quién firma y cómo circula externamente el presupuesto aprobado?</div>
+                              <div className="mt-2 text-lg text-slate-500">{companyName} · {selectedSeason} · {executiveFieldLabel}</div>
+                            </div>
+                            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${executiveBudgetPlanPublicationData.tone.badge}`}>
+                              {executiveBudgetPlanPublicationData.tone.label}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Eventos</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{executiveBudgetPlanPublicationData.totalEvents}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Última acción</div>
+                              <div className="mt-3 text-2xl font-bold text-slate-900">
+                                {executiveBudgetPlanPublicationData.latestEvent ? formatExecutiveBudgetPublicationAction(executiveBudgetPlanPublicationData.latestEvent.action_type) : '-'}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Última firma</div>
+                              <div className="mt-3 text-2xl font-bold text-slate-900">{executiveBudgetPlanPublicationData.latestSignoff?.responsible_label || 'Sin firma'}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Rol firmante</div>
+                              <div className="mt-3 text-2xl font-bold text-slate-900">
+                                {executiveBudgetPlanPublicationData.latestSignoff ? formatExecutiveBudgetWorkflowRole(executiveBudgetPlanPublicationData.latestSignoff.responsible_role) : 'Sin rol'}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Destinatario externo</div>
+                              <div className="mt-3 text-2xl font-bold text-slate-900">{executiveBudgetPlanPublicationData.latestExternalPublication?.recipient_label || 'Sin publicación'}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Canal dominante</div>
+                              <div className="mt-3 text-2xl font-bold text-slate-900">{executiveBudgetPlanPublicationData.topChannel ? formatExecutiveBudgetPublicationChannel(executiveBudgetPlanPublicationData.topChannel.channel) : 'Sin canal'}</div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 xl:grid-cols-[0.95fr,1.05fr] gap-6">
+                            <div className="space-y-6">
+                              <div className="rounded-2xl border border-slate-200 p-6">
+                                <div className="text-2xl font-bold text-slate-800 mb-5">Lectura de firma y circulación</div>
+                                <p className="text-xl leading-9 text-slate-600">{executiveBudgetPlanPublicationData.summaryLine}</p>
+                                <p className="mt-5 text-lg text-slate-500">
+                                  Última firma: {executiveBudgetPlanPublicationData.latestSignoff
+                                    ? `${executiveBudgetPlanPublicationData.latestSignoff.responsible_label} · ${formatExecutiveBudgetWorkflowRole(executiveBudgetPlanPublicationData.latestSignoff.responsible_role)}`
+                                    : 'sin firma ejecutiva visible'}.
+                                </p>
+                                <p className="mt-5 text-lg text-slate-500">
+                                  Última publicación externa: {executiveBudgetPlanPublicationData.latestExternalPublication
+                                    ? `${executiveBudgetPlanPublicationData.latestExternalPublication.recipient_label || 'Sin destinatario'} · ${formatExecutiveBudgetPublicationChannel(executiveBudgetPlanPublicationData.latestExternalPublication.publication_channel)}`
+                                    : 'sin circulación externa visible'}.
+                                </p>
+                                <p className="mt-5 text-lg text-slate-500">
+                                  Destinatario dominante: {executiveBudgetPlanPublicationData.topRecipient?.recipient || 'sin destinatario dominante'}.
+                                </p>
+                              </div>
+
+                              <div className={`rounded-2xl border p-6 ${
+                                executiveBudgetPlanPublicationData.currentVersionExternalPublication
+                                  ? 'border-blue-200 bg-blue-50 text-blue-800'
+                                  : executiveBudgetPlanPublicationData.currentVersionSignoff
+                                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                                    : 'border-amber-200 bg-amber-50 text-amber-800'
+                              }`}>
+                                <div className="text-sm uppercase tracking-[0.25em]">Estado de circulación</div>
+                                <p className="mt-4 text-2xl leading-10">
+                                  {executiveBudgetPlanPublicationData.currentVersionExternalPublication
+                                    ? 'La versión vigente ya tiene trazabilidad externa visible.'
+                                    : executiveBudgetPlanPublicationData.currentVersionSignoff
+                                      ? 'La versión vigente ya quedó firmada y está lista para circularse externamente.'
+                                      : 'La versión vigente aún no tiene firma ejecutiva visible.'}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="space-y-6">
+                              <div className="rounded-2xl border border-slate-200 p-6">
+                                <div className="text-2xl font-bold text-slate-800 mb-5">Bitácora reciente</div>
+                                <table className="w-full text-left text-sm">
+                                  <thead className="text-base text-slate-500 bg-slate-50 sticky top-0">
+                                    <tr>
+                                      <th className="p-3">Fecha</th>
+                                      <th className="p-3">Acción</th>
+                                      <th className="p-3">Responsable</th>
+                                      <th className="p-3">Destinatario</th>
+                                      <th className="p-3">Canal</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {executiveBudgetPlanPublicationData.recentRows.slice(0, 6).map((row) => (
+                                      <tr key={row.id} className={`border-b border-slate-100 ${row.season === selectedSeason ? 'bg-blue-50/40' : ''}`}>
+                                        <td className="p-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                                        <td className="p-3 text-slate-700">{formatExecutiveBudgetPublicationAction(row.action_type)}</td>
+                                        <td className="p-3 text-slate-700">{row.responsible_label}</td>
+                                        <td className="p-3 text-slate-700">{row.recipient_label || 'Sin destinatario'}</td>
+                                        <td className="p-3 text-slate-700">{formatExecutiveBudgetPublicationChannel(row.publication_channel)}</td>
+                                      </tr>
+                                    ))}
+                                    {executiveBudgetPlanPublicationData.recentRows.length === 0 && (
+                                      <tr>
+                                        <td colSpan={5} className="p-6 text-center text-slate-500">
+                                          Aún no hay firma ni circulación externa registrada para el presupuesto.
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              <div className="rounded-2xl border border-slate-200 p-6">
+                                <div className="text-2xl font-bold text-slate-800 mb-5">Motivos recientes</div>
+                                <div className="space-y-3">
+                                  {executiveBudgetPlanPublicationData.recentRows.slice(0, 4).map((row) => (
+                                    <div key={`${row.id}-publication`} className="rounded-2xl bg-slate-50 p-4">
+                                      <div className="flex items-center justify-between gap-4">
+                                        <div className="font-semibold text-slate-900">
+                                          {formatExecutiveBudgetPublicationAction(row.action_type)} · {row.responsible_label}
+                                        </div>
+                                        <div className="text-sm text-slate-500">{row.season}</div>
+                                      </div>
+                                      <div className="mt-2 text-sm font-medium text-slate-500">
+                                        {formatExecutiveBudgetWorkflowRole(row.responsible_role)} · {formatExecutiveBudgetPublicationChannel(row.publication_channel)}
+                                      </div>
+                                      <p className="mt-2 text-base leading-7 text-slate-600">{row.reason}</p>
+                                    </div>
+                                  ))}
+                                  {executiveBudgetPlanPublicationData.recentRows.length === 0 && (
+                                    <div className="rounded-2xl bg-slate-50 p-8 text-center text-slate-400">
+                                      Sin trazabilidad externa visible para esta temporada.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {currentSlide === 16 && (
                         <div className="space-y-6">
                           <div className="flex items-start justify-between gap-6">
                             <div>
