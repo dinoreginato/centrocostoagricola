@@ -267,7 +267,8 @@ const EXECUTIVE_AUDIT_LAYER_OPTIONS: Array<{ value: ExecutiveAuditLayerFilter; l
 const EXECUTIVE_EXPORT_WARNING_TYPE_LABELS: Record<string, string> = {
   committee_not_ready: 'Comité no listo',
   trend_deterioration_high_closure: 'Deterioro con cierre alto',
-  global_sla_escalation: 'Escalación SLA global activa'
+  global_sla_escalation: 'Escalación SLA global activa',
+  global_sla_preventive: 'Normalización preventiva recomendada'
 };
 const EXECUTIVE_GLOBAL_ALERT_TYPE_LABELS: Record<string, string> = {
   global_position: 'Posición global fuera del tramo líder',
@@ -1199,6 +1200,187 @@ const buildExecutiveGlobalAlertSlaResolutionAnalytics = (
     topStage,
     topOwner,
     totalResolutions: visibleRows.length,
+    summaryLine
+  };
+};
+
+const buildExecutiveGlobalAlertPreventiveAnalytics = (params: {
+  slaRows: Array<{
+    id: string;
+    season: string;
+    owner: string;
+    managementStatus: string;
+    currentStageKey: 'recognition' | 'communication' | 'closure' | null;
+    currentStageLabel: string;
+    currentStageAgeHours: number;
+    currentStageTargetHours: number;
+    isCurrentlyBreached: boolean;
+  }>;
+  escalationSummaryRows: Array<{
+    eventId: string;
+    stageKey: string;
+    count: number;
+    ownerCount: number;
+    latestCreatedAt: string;
+    isReescalated: boolean;
+  }>;
+  resolutionRows: ExecutiveGlobalAlertSlaResolutionRow[];
+  scopeLabel: string;
+}) => {
+  const escalationMap = params.escalationSummaryRows.reduce((map, row) => {
+    map.set(`${row.eventId}::${row.stageKey}`, row);
+    return map;
+  }, new Map<string, {
+    eventId: string;
+    stageKey: string;
+    count: number;
+    ownerCount: number;
+    latestCreatedAt: string;
+    isReescalated: boolean;
+  }>());
+  const resolutionMap = params.resolutionRows.reduce((map, row) => {
+    const key = `${row.event_id}::${row.stage_key}`;
+    const current = map.get(key) || [];
+    current.push(row);
+    map.set(key, current);
+    return map;
+  }, new Map<string, ExecutiveGlobalAlertSlaResolutionRow[]>());
+
+  const rows = params.slaRows
+    .filter((row) => row.currentStageKey && !row.isCurrentlyBreached)
+    .map((row) => {
+      const key = `${row.id}::${row.currentStageKey}`;
+      const escalationHistory = escalationMap.get(key) || null;
+      const resolutionHistory = resolutionMap.get(key) || [];
+      const consumptionRatio = row.currentStageTargetHours > 0
+        ? row.currentStageAgeHours / row.currentStageTargetHours
+        : 0;
+      const hasHistory = Boolean(escalationHistory) || resolutionHistory.length > 0;
+      const ownerChangedBefore = (escalationHistory?.ownerCount || 0) > 1;
+      const reescalatedBefore = Boolean(escalationHistory?.isReescalated);
+
+      let severity: 'media' | 'alta' | null = null;
+      let reason = '';
+
+      if (hasHistory && consumptionRatio >= 0.7) {
+        severity = reescalatedBefore || ownerChangedBefore || consumptionRatio >= 0.85 ? 'alta' : 'media';
+        reason = reescalatedBefore
+          ? 'Recaída con historial de reescalamiento'
+          : ownerChangedBefore
+            ? 'Etapa ya cambió de responsable'
+            : 'Etapa normalizada pero cerca del límite';
+      } else if (consumptionRatio >= 0.85) {
+        severity = 'media';
+        reason = 'Etapa muy cerca del vencimiento SLA';
+      }
+
+      if (!severity) return null;
+
+      const remainingHours = Math.max(0, row.currentStageTargetHours - row.currentStageAgeHours);
+      const recommendation = severity === 'alta'
+        ? `Priorizar seguimiento preventivo con ${row.owner || 'responsable no definido'} para evitar una nueva escalación en ${row.currentStageLabel.toLowerCase()}.`
+        : `Asegurar avance de ${row.currentStageLabel.toLowerCase()} antes de ${formatExecutiveGlobalAlertSlaHours(remainingHours)} para no caer fuera de SLA.`;
+
+      return {
+        eventId: row.id,
+        season: row.season,
+        owner: row.owner,
+        stageKey: row.currentStageKey,
+        stageLabel: row.currentStageLabel,
+        severity,
+        reason,
+        consumptionRatio,
+        currentStageAgeHours: row.currentStageAgeHours,
+        currentStageTargetHours: row.currentStageTargetHours,
+        remainingHours,
+        historicalEscalations: escalationHistory?.count || 0,
+        historicalResolutions: resolutionHistory.length,
+        hadOwnerChange: ownerChangedBefore,
+        recommendation
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      const severityScore = { alta: 2, media: 1 } as const;
+      if (severityScore[(b as any).severity] !== severityScore[(a as any).severity]) {
+        return severityScore[(b as any).severity] - severityScore[(a as any).severity];
+      }
+      if (Math.abs((b as any).consumptionRatio - (a as any).consumptionRatio) > 0.001) {
+        return (b as any).consumptionRatio - (a as any).consumptionRatio;
+      }
+      return String((b as any).season).localeCompare(String((a as any).season));
+    }) as Array<{
+      eventId: string;
+      season: string;
+      owner: string;
+      stageKey: 'recognition' | 'communication' | 'closure';
+      stageLabel: string;
+      severity: 'media' | 'alta';
+      reason: string;
+      consumptionRatio: number;
+      currentStageAgeHours: number;
+      currentStageTargetHours: number;
+      remainingHours: number;
+      historicalEscalations: number;
+      historicalResolutions: number;
+      hadOwnerChange: boolean;
+      recommendation: string;
+    }>;
+
+  const severitySummary = Array.from(
+    rows.reduce((map, row) => {
+      map.set(row.severity, (map.get(row.severity) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([severity, count]) => ({ severity, count })).sort((a, b) => b.count - a.count);
+  const stageSummary = Array.from(
+    rows.reduce((map, row) => {
+      map.set(row.stageKey, (map.get(row.stageKey) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([stageKey, count]) => ({ stageKey, count })).sort((a, b) => b.count - a.count);
+  const ownerSummary = Array.from(
+    rows.reduce((map, row) => {
+      const current = map.get(row.owner) || {
+        owner: row.owner,
+        count: 0,
+        maxConsumptionRatio: 0,
+        stageSet: new Set<string>()
+      };
+      current.count += 1;
+      current.maxConsumptionRatio = Math.max(current.maxConsumptionRatio, row.consumptionRatio);
+      current.stageSet.add(row.stageLabel);
+      map.set(row.owner, current);
+      return map;
+    }, new Map<string, { owner: string; count: number; maxConsumptionRatio: number; stageSet: Set<string> }>())
+  )
+    .map(([, value]) => ({
+      owner: value.owner,
+      count: value.count,
+      maxConsumptionRatio: value.maxConsumptionRatio,
+      stages: Array.from(value.stageSet).sort().join(', ')
+    }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return b.maxConsumptionRatio - a.maxConsumptionRatio;
+    });
+  const topSeverity = severitySummary[0] || null;
+  const topStage = stageSummary[0] || null;
+  const topOwner = ownerSummary[0] || null;
+  const summaryLine = rows.length > 0
+    ? `La normalización preventiva de ${params.scopeLabel} detecta ${rows.length} riesgos antes del vencimiento, con foco principal en ${topStage ? formatExecutiveGlobalAlertSlaStage(topStage.stageKey).toLowerCase() : 'sin etapa dominante'} y severidad ${topSeverity?.severity || 'sin prioridad'}.`
+    : `No hay riesgos preventivos SLA visibles para ${params.scopeLabel}.`;
+
+  return {
+    rows,
+    recentRows: rows.slice(0, 12),
+    severitySummary,
+    stageSummary,
+    ownerSummary,
+    topSeverity,
+    topStage,
+    topOwner,
+    totalRecommendations: rows.length,
     summaryLine
   };
 };
@@ -4611,6 +4793,20 @@ export const Reports: React.FC = () => {
       executiveGlobalAlertResolutions
     ]
   );
+  const executiveGlobalAlertPreventiveData = useMemo(
+    () => buildExecutiveGlobalAlertPreventiveAnalytics({
+      slaRows: executiveGlobalAlertSlaData.eventRows,
+      escalationSummaryRows: executiveGlobalAlertSlaEscalationData.eventStageSummary,
+      resolutionRows: executiveGlobalAlertResolutions,
+      scopeLabel: executiveGlobalAlertFiltersActive ? 'los filtros activos' : 'la empresa activa'
+    }),
+    [
+      executiveGlobalAlertFiltersActive,
+      executiveGlobalAlertResolutions,
+      executiveGlobalAlertSlaData.eventRows,
+      executiveGlobalAlertSlaEscalationData.eventStageSummary
+    ]
+  );
   const executiveExportWarningContext = useMemo(() => {
     const warningTypes: string[] = [];
 
@@ -4626,6 +4822,10 @@ export const Reports: React.FC = () => {
       warningTypes.push('global_sla_escalation');
     }
 
+    if (executiveGlobalAlertPreventiveData.totalRecommendations > 0 && executiveGlobalAlertPreventiveData.topSeverity?.severity === 'alta') {
+      warningTypes.push('global_sla_preventive');
+    }
+
     const hasWarning = warningTypes.length > 0;
     const warningSummary = !hasWarning
       ? 'Sin advertencias activas para exportación ejecutiva.'
@@ -4636,6 +4836,9 @@ export const Reports: React.FC = () => {
           executiveTrendWarning?.detail || null,
           executiveGlobalAlertSlaEscalationData.activeCount > 0
             ? `Existen ${executiveGlobalAlertSlaEscalationData.activeCount} escalaciones SLA activas; la etapa más expuesta es ${executiveGlobalAlertSlaEscalationData.topStage ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaEscalationData.topStage.stageKey).toLowerCase() : 'sin etapa dominante'}.`
+            : null,
+          executiveGlobalAlertPreventiveData.totalRecommendations > 0
+            ? `Se detectan ${executiveGlobalAlertPreventiveData.totalRecommendations} recomendaciones preventivas SLA; la etapa con mayor riesgo previo a escalar es ${executiveGlobalAlertPreventiveData.topStage ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertPreventiveData.topStage.stageKey).toLowerCase() : 'sin etapa dominante'}.`
             : null
         ].filter(Boolean).join(' ');
 
@@ -4645,6 +4848,9 @@ export const Reports: React.FC = () => {
       warningSummary
     };
   }, [
+    executiveGlobalAlertPreventiveData.topSeverity?.severity,
+    executiveGlobalAlertPreventiveData.topStage,
+    executiveGlobalAlertPreventiveData.totalRecommendations,
     executiveGlobalAlertSlaEscalationData.activeCount,
     executiveGlobalAlertSlaEscalationData.topStage,
     executiveTotalDataClosure.readiness.title,
@@ -4697,6 +4903,10 @@ export const Reports: React.FC = () => {
           active_sla_stage: executiveGlobalAlertSlaEscalationData.topStage?.stageKey || null,
           active_sla_owner: executiveGlobalAlertSlaEscalationData.topOwner?.owner || null,
           active_sla_summary: executiveGlobalAlertSlaEscalationData.summaryLine,
+          preventive_sla_recommendations: executiveGlobalAlertPreventiveData.totalRecommendations,
+          preventive_sla_stage: executiveGlobalAlertPreventiveData.topStage?.stageKey || null,
+          preventive_sla_owner: executiveGlobalAlertPreventiveData.topOwner?.owner || null,
+          preventive_sla_summary: executiveGlobalAlertPreventiveData.summaryLine,
           circulation_recipient: circulationContext?.recipient || null,
           circulation_reason: circulationContext?.reason || null,
           circulation_notes: circulationContext?.notes || null
@@ -4715,6 +4925,10 @@ export const Reports: React.FC = () => {
     executiveExportWarningContext,
     executiveFieldFilter,
     executiveFieldLabel,
+    executiveGlobalAlertPreventiveData.summaryLine,
+    executiveGlobalAlertPreventiveData.topOwner?.owner,
+    executiveGlobalAlertPreventiveData.topStage?.stageKey,
+    executiveGlobalAlertPreventiveData.totalRecommendations,
     executiveGlobalAlertSlaEscalationData.activeCount,
     executiveGlobalAlertSlaEscalationData.summaryLine,
     executiveGlobalAlertSlaEscalationData.topOwner?.owner,
@@ -5186,6 +5400,11 @@ export const Reports: React.FC = () => {
         { Indicador: 'Etapa más normalizada', Valor: executiveGlobalAlertSlaResolutionData.topStage ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaResolutionData.topStage.stageKey) : 'Sin etapa' },
         { Indicador: 'Responsable con más cierres SLA', Valor: executiveGlobalAlertSlaResolutionData.topOwner?.owner || 'Sin responsable' },
         { Indicador: 'Resumen cierres SLA', Valor: executiveGlobalAlertSlaResolutionData.summaryLine },
+        { Indicador: 'Recomendaciones preventivas SLA', Valor: executiveGlobalAlertPreventiveData.totalRecommendations },
+        { Indicador: 'Severidad preventiva dominante', Valor: executiveGlobalAlertPreventiveData.topSeverity?.severity || 'Sin riesgo' },
+        { Indicador: 'Etapa preventiva dominante', Valor: executiveGlobalAlertPreventiveData.topStage ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertPreventiveData.topStage.stageKey) : 'Sin etapa' },
+        { Indicador: 'Responsable preventivo dominante', Valor: executiveGlobalAlertPreventiveData.topOwner?.owner || 'Sin responsable' },
+        { Indicador: 'Resumen preventivo SLA', Valor: executiveGlobalAlertPreventiveData.summaryLine },
         { Indicador: 'Severidad escalación dominante', Valor: executiveGlobalAlertSlaEscalationData.topSeverity ? formatExecutiveGlobalAlertSlaEscalationSeverity(executiveGlobalAlertSlaEscalationData.topSeverity.severity) : 'Sin escalaciones' },
         { Indicador: 'Etapa escalada dominante', Valor: executiveGlobalAlertSlaEscalationData.topStage ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaEscalationData.topStage.stageKey) : 'Sin etapa' },
         { Indicador: 'Responsable escalado dominante', Valor: executiveGlobalAlertSlaEscalationData.topOwner?.owner || 'Sin responsable' },
@@ -5609,6 +5828,29 @@ export const Reports: React.FC = () => {
         Etapas: row.stages,
         'Último cierre': new Date(row.latestCreatedAt).toLocaleString('es-CL')
       }));
+      const globalAlertPreventiveRows = executiveGlobalAlertPreventiveData.recentRows.map((row) => ({
+        Temporada: row.season,
+        Etapa: row.stageLabel,
+        Severidad: row.severity,
+        Responsable: row.owner,
+        'Uso SLA %': Number((row.consumptionRatio * 100).toFixed(1)),
+        'Horas usadas': formatExecutiveGlobalAlertSlaHours(row.currentStageAgeHours),
+        'Horas restantes': formatExecutiveGlobalAlertSlaHours(row.remainingHours),
+        'Escalaciones previas': row.historicalEscalations,
+        'Cierres previos': row.historicalResolutions,
+        Motivo: row.reason,
+        Recomendación: row.recommendation
+      }));
+      const globalAlertPreventiveStageRows = executiveGlobalAlertPreventiveData.stageSummary.map((row) => ({
+        Etapa: formatExecutiveGlobalAlertSlaStage(row.stageKey),
+        Riesgos: row.count
+      }));
+      const globalAlertPreventiveOwnerRows = executiveGlobalAlertPreventiveData.ownerSummary.map((row) => ({
+        Responsable: row.owner,
+        Riesgos: row.count,
+        'Uso SLA máximo %': Number((row.maxConsumptionRatio * 100).toFixed(1)),
+        Etapas: row.stages
+      }));
       const exportWarningHistoryRows = executiveExportWarningFilteredData.rows.map((row) => ({
         Fecha: new Date(row.created_at).toLocaleString('es-CL'),
         Temporada: row.season,
@@ -5775,6 +6017,9 @@ export const Reports: React.FC = () => {
           ...(globalAlertResolutionStageRows.length > 0 ? [{ name: 'Etapas Normalizadas', rows: globalAlertResolutionStageRows }] : []),
           ...(globalAlertResolutionOwnerRows.length > 0 ? [{ name: 'Responsables Normalizados', rows: globalAlertResolutionOwnerRows }] : []),
           ...(globalAlertResolutionRows.length > 0 ? [{ name: 'Bitacora Cierres SLA', rows: globalAlertResolutionRows }] : []),
+          ...(globalAlertPreventiveStageRows.length > 0 ? [{ name: 'Prevención SLA', rows: globalAlertPreventiveStageRows }] : []),
+          ...(globalAlertPreventiveOwnerRows.length > 0 ? [{ name: 'Responsables Preventivos', rows: globalAlertPreventiveOwnerRows }] : []),
+          ...(globalAlertPreventiveRows.length > 0 ? [{ name: 'Recomendaciones Preventivas', rows: globalAlertPreventiveRows }] : []),
           ...(totalDataBlockerRows.length > 0 ? [{ name: 'Bloqueos Dato', rows: totalDataBlockerRows }] : []),
           ...(compareCompanyRows.length > 0 ? [{ name: 'Comparacion Empresas', rows: compareCompanyRows }] : []),
           ...(compareCompanyHistoryRows.length > 0 ? [{ name: 'Historial Empresas', rows: compareCompanyHistoryRows }] : []),
@@ -7174,6 +7419,29 @@ export const Reports: React.FC = () => {
                 ],
                 theme: 'grid',
                 headStyles: { fillColor: [22, 101, 52] },
+                styles: { fontSize: 8 }
+              });
+
+              yPos = (doc as any).lastAutoTable.finalY + 8;
+            }
+
+            if (executiveGlobalAlertPreventiveData.totalRecommendations > 0) {
+              autoTable(doc, {
+                startY: yPos,
+                head: [['Prevención SLA', 'Detalle']],
+                body: [
+                  ['Resumen', executiveGlobalAlertPreventiveData.summaryLine],
+                  ['Recomendaciones activas', String(executiveGlobalAlertPreventiveData.totalRecommendations)],
+                  ['Severidad dominante', executiveGlobalAlertPreventiveData.topSeverity?.severity || 'Sin severidad'],
+                  ['Etapa dominante', executiveGlobalAlertPreventiveData.topStage
+                    ? `${formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertPreventiveData.topStage.stageKey)} (${executiveGlobalAlertPreventiveData.topStage.count})`
+                    : 'Sin etapa dominante'],
+                  ['Responsable dominante', executiveGlobalAlertPreventiveData.topOwner
+                    ? `${executiveGlobalAlertPreventiveData.topOwner.owner} · ${executiveGlobalAlertPreventiveData.topOwner.count} riesgos`
+                    : 'Sin responsable dominante']
+                ],
+                theme: 'grid',
+                headStyles: { fillColor: [161, 98, 7] },
                 styles: { fontSize: 8 }
               });
 
@@ -10709,6 +10977,7 @@ export const Reports: React.FC = () => {
                     <p className="mt-2">{executiveGlobalAlertSlaData.summaryLine}</p>
                     <p className="mt-2">{executiveGlobalAlertSlaEscalationData.summaryLine}</p>
                     <p className="mt-2">{executiveGlobalAlertSlaResolutionData.summaryLine}</p>
+                    <p className="mt-2">{executiveGlobalAlertPreventiveData.summaryLine}</p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -10736,6 +11005,30 @@ export const Reports: React.FC = () => {
                           ? `${executiveGlobalAlertSlaData.topOwner.breachedCount} fuera SLA · atraso máximo ${formatExecutiveGlobalAlertSlaHours(executiveGlobalAlertSlaData.topOwner.maxOverdueHours)}`
                           : 'No hay atrasos abiertos visibles'}
                       </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-amber-700">Prevención SLA</div>
+                      <div className="mt-2 text-2xl font-semibold text-amber-800">{executiveGlobalAlertPreventiveData.totalRecommendations}</div>
+                      <div className="mt-1 text-sm text-amber-700">Riesgos antes del próximo vencimiento</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Severidad dominante</div>
+                      <div className="mt-2 text-lg font-semibold text-slate-900">{executiveGlobalAlertPreventiveData.topSeverity?.severity || 'Sin riesgo'}</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Etapa prioritaria</div>
+                      <div className="mt-2 text-lg font-semibold text-slate-900">
+                        {executiveGlobalAlertPreventiveData.topStage
+                          ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertPreventiveData.topStage.stageKey)
+                          : 'Sin etapa'}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Responsable prioritario</div>
+                      <div className="mt-2 text-lg font-semibold text-slate-900">{executiveGlobalAlertPreventiveData.topOwner?.owner || 'Sin responsable'}</div>
                     </div>
                   </div>
 
@@ -11340,6 +11633,84 @@ export const Reports: React.FC = () => {
                         </tbody>
                       </table>
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Etapa preventiva</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Riesgos</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {executiveGlobalAlertPreventiveData.stageSummary.map((row) => (
+                            <tr key={row.stageKey}>
+                              <td className="px-4 py-3 font-medium text-slate-900">{formatExecutiveGlobalAlertSlaStage(row.stageKey)}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Responsable</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Riesgos</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Uso máximo</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {executiveGlobalAlertPreventiveData.ownerSummary.slice(0, 8).map((row) => (
+                            <tr key={row.owner}>
+                              <td className="px-4 py-3 text-slate-900">
+                                <div className="font-medium">{row.owner}</div>
+                                <div className="text-xs text-slate-500">{row.stages}</div>
+                              </td>
+                              <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{(row.maxConsumptionRatio * 100).toFixed(0)}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="min-w-full divide-y divide-slate-200 text-sm">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Temporada</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Etapa</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Severidad</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Responsable</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Motivo</th>
+                          <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Recomendación</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 bg-white">
+                        {executiveGlobalAlertPreventiveData.recentRows.map((row) => (
+                          <tr key={`${row.eventId}-${row.stageKey}`}>
+                            <td className="px-4 py-3 text-slate-700">{row.season}</td>
+                            <td className="px-4 py-3 font-medium text-slate-900">{row.stageLabel}</td>
+                            <td className="px-4 py-3 text-slate-700">{row.severity}</td>
+                            <td className="px-4 py-3 text-slate-700">{row.owner}</td>
+                            <td className="px-4 py-3 text-slate-700">{row.reason}</td>
+                            <td className="px-4 py-3 text-slate-700">{row.recommendation}</td>
+                          </tr>
+                        ))}
+                        {!executiveGlobalAlertLoading && executiveGlobalAlertPreventiveData.recentRows.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="px-4 py-4 text-center text-sm text-slate-500">
+                              No hay recomendaciones preventivas visibles para los filtros actuales.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
 
                   <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
@@ -15454,6 +15825,7 @@ export const Reports: React.FC = () => {
                                 Reescalamientos visibles: {executiveGlobalAlertSlaEscalationData.reescalatedCount}. Con cambio de responsable: {executiveGlobalAlertSlaEscalationData.ownerChangeCount}.
                               </p>
                               <p className="mt-5 text-lg text-slate-500">{executiveGlobalAlertSlaResolutionData.summaryLine}</p>
+                              <p className="mt-5 text-lg text-slate-500">{executiveGlobalAlertPreventiveData.summaryLine}</p>
                               <p className="mt-5 text-lg text-slate-500">{executiveGlobalAlertExportLinkSummary}</p>
                             </div>
 
@@ -15552,6 +15924,28 @@ export const Reports: React.FC = () => {
                                 {executiveGlobalAlertSlaResolutionData.topStage
                                   ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaResolutionData.topStage.stageKey)
                                   : '-'}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-amber-700">Prevención SLA</div>
+                              <div className="mt-3 text-3xl font-bold text-amber-800">{executiveGlobalAlertPreventiveData.totalRecommendations}</div>
+                              <div className="mt-2 text-sm text-amber-700">Riesgos antes del próximo vencimiento</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Etapa prioritaria</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">
+                                {executiveGlobalAlertPreventiveData.topStage
+                                  ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertPreventiveData.topStage.stageKey)
+                                  : '-'}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Responsable prioritario</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">
+                                {executiveGlobalAlertPreventiveData.topOwner?.owner || '-'}
                               </div>
                             </div>
                           </div>

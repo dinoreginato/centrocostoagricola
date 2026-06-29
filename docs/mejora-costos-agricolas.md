@@ -4,7 +4,7 @@
 Dejar la aplicacion mas confiable para gestion agricola real, con costos mas verdaderos, menos duplicidad y una mejor resolucion de datos para toma de decisiones.
 
 ## Estado General
-- Avance general estimado del roadmap activo: `90%`
+- Avance general estimado del roadmap activo: `94%`
 - Estado actual:
   - `[x]` base canonica de temporadas y costos
   - `[x]` conciliacion y auditoria ejecutiva
@@ -16,8 +16,9 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - `[x]` SLA y escalamiento automatico de alertas globales
   - `[x]` reescalamiento por cambio de responsable o aumento de severidad
   - `[x]` cierre asistido de incumplimientos SLA
+  - `[x]` recomendaciones automáticas de normalizacion preventiva
   - `[ ]` persistencia historica materializada del ranking global
-  - `[ ]` recomendaciones automáticas de normalizacion preventiva
+  - `[ ]` persistencia preventiva materializada y alertas anticipadas más livianas
 
 ## Avance Del Plan
 ### Fase 1
@@ -67,8 +68,9 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
 - `[x]` Escalamiento automatico por vencimiento SLA.
 - `[x]` Reescalamiento por cambio de responsable o cambio de severidad.
 - `[x]` Cierre asistido cuando una etapa deja de incumplir SLA o la alerta queda cerrada.
+- `[x]` Recomendaciones automáticas de normalización preventiva antes de nueva escalación.
 - `[ ]` Persistencia materializada del ranking global para reducir recalculo.
-- `[ ]` Sugerencias automáticas de normalizacion antes de nueva escalación.
+- `[ ]` Persistencia preventiva materializada y reglas anticipadas más livianas.
 
 ## Lo Que Ya Esta Bien
 - Modelo predial correcto: `empresa -> campo -> sector`.
@@ -783,6 +785,27 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - dejar trazabilidad del retorno a control, no solo del problema
   - facilitar comités donde se revisa qué alertas fueron abiertas, reescaladas y finalmente normalizadas
 
+## Normalización Preventiva Automática
+- Estado: `[x] Implementado`
+- `Reportes` ahora detecta riesgos preventivos antes del próximo vencimiento SLA combinando:
+  - cercanía al objetivo horario de la etapa actual
+  - historial previo de escalaciones para la misma alerta y etapa
+  - historial previo de cierres o normalizaciones
+  - cambios de responsable y reincidencia anterior
+- La lectura preventiva ahora expone:
+  - total de recomendaciones preventivas visibles
+  - severidad preventiva dominante
+  - etapa prioritaria antes de escalar
+  - responsable prioritario para seguimiento
+  - tabla detallada con motivo y recomendación
+  - hojas Excel `Prevención SLA`, `Responsables Preventivos` y `Recomendaciones Preventivas`
+  - resumen adicional en PDF y fullscreen
+- La exportación advertida ahora también considera advertencia preventiva cuando el riesgo dominante es alto.
+- Objetivo:
+  - anticipar recaídas antes de que vuelvan a convertirse en escalaciones formales
+  - ayudar a comités y responsables a actuar mientras la alerta todavía está dentro de SLA
+  - distinguir entre control estable y control frágil con riesgo de recaída
+
 ## Siguiente Paso Recomendado
 - Evaluar persistencia historica del ranking global para medir cambios de liderazgo sin recalculo completo en tiempo real.
-- Considerar recomendaciones automáticas de normalizacion preventiva antes de que una alerta vuelva a escalar.
+- Considerar persistencia materializada del riesgo preventivo para reducir cálculo en tiempo real y sostener semáforos históricos.
