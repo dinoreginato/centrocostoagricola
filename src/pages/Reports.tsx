@@ -93,6 +93,13 @@ import {
   type ExecutiveBudgetPlanVerificationFolioStatus,
   type ExecutiveBudgetPlanVerificationValidationStatus
 } from '../services/executiveBudgetPlanVerificationFolios';
+import {
+  createExecutiveBudgetPlanPublicationReceiptIntegration,
+  loadExecutiveBudgetPlanPublicationReceiptIntegrations,
+  updateExecutiveBudgetPlanPublicationReceiptIntegrationSync,
+  type ExecutiveBudgetPlanPublicationIntegrationMode,
+  type ExecutiveBudgetPlanPublicationReceiptIntegrationRow
+} from '../services/executiveBudgetPlanPublicationReceiptIntegrations';
 import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
 interface ReportData {
@@ -282,6 +289,7 @@ type ExecutiveExportAction = 'pdf' | 'excel';
 type ExecutiveExportCirculationReason = 'comite' | 'directorio' | 'revision_interna' | 'banco_inversionista' | 'otro';
 type ExecutiveBudgetPublicationChannelOption = ExecutiveBudgetPlanPublicationChannel;
 type ExecutiveBudgetPublicationReceiptSourceOption = ExecutiveBudgetPlanPublicationReceiptSource;
+type ExecutiveBudgetPublicationIntegrationModeOption = ExecutiveBudgetPlanPublicationIntegrationMode;
 type ClosureTrendDirection = 'mejora' | 'estable' | 'deterioro' | 'sin_base';
 type ExecutiveRecommendationDecision = 'presentar' | 'presentar_con_cautela' | 'no_presentar';
 type ExecutiveRankingTier = 'fuerte' | 'intermedio' | 'fragil';
@@ -372,6 +380,11 @@ const EXECUTIVE_BUDGET_PUBLICATION_RECEIPT_SOURCE_OPTIONS: Array<{ value: Execut
   { value: 'whatsapp', label: 'WhatsApp' },
   { value: 'drive', label: 'Drive' },
   { value: 'portal', label: 'Portal' }
+];
+const EXECUTIVE_BUDGET_PUBLICATION_INTEGRATION_MODE_OPTIONS: Array<{ value: ExecutiveBudgetPublicationIntegrationModeOption; label: string }> = [
+  { value: 'webhook', label: 'Webhook' },
+  { value: 'polling', label: 'Polling' },
+  { value: 'importador', label: 'Importador' }
 ];
 
 const formatExecutiveExportWarningType = (value: string) => (
@@ -1740,6 +1753,43 @@ const formatExecutiveBudgetPublicationReceiptSource = (value: string | null | un
   }
 };
 
+const formatExecutiveBudgetPublicationIntegrationMode = (value: string | null | undefined) => {
+  switch (value) {
+    case 'webhook':
+      return 'Webhook';
+    case 'polling':
+      return 'Polling';
+    case 'importador':
+      return 'Importador';
+    default:
+      return 'Sin modo';
+  }
+};
+
+const formatExecutiveBudgetPublicationIntegrationSyncStatus = (value: string | null | undefined) => {
+  switch (value) {
+    case 'procesada':
+      return 'Procesada';
+    case 'error':
+      return 'Con error';
+    case 'pendiente':
+    default:
+      return 'Pendiente';
+  }
+};
+
+const getExecutiveBudgetPublicationIntegrationSyncTone = (value: string | null | undefined) => {
+  switch (value) {
+    case 'procesada':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    case 'error':
+      return 'border-red-200 bg-red-50 text-red-700';
+    case 'pendiente':
+    default:
+      return 'border-amber-200 bg-amber-50 text-amber-700';
+  }
+};
+
 const formatExecutiveBudgetApprovalStatus = (value: string | null | undefined) => {
   switch (value) {
     case 'aprobada':
@@ -2048,6 +2098,7 @@ const buildExecutiveBudgetPlanApprovalAnalytics = (params: {
 const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
   rows: ExecutiveBudgetPlanPublicationEventRow[];
   receipts: ExecutiveBudgetPlanPublicationReceiptRow[];
+  receiptIntegrations: ExecutiveBudgetPlanPublicationReceiptIntegrationRow[];
   divergences: ExecutiveBudgetPlanPublicationDivergenceRow[];
   folios: ExecutiveBudgetPlanVerificationFolioRow[];
   currentVersion: ExecutiveBudgetPlanVersionRow | null;
@@ -2059,6 +2110,9 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
     : [];
   const currentVersionReceiptRows = params.currentVersion
     ? params.receipts.filter((row) => row.version_id === params.currentVersion?.id)
+    : [];
+  const currentVersionReceiptIntegrationRows = params.currentVersion
+    ? params.receiptIntegrations.filter((row) => row.version_id === params.currentVersion?.id)
     : [];
   const currentVersionDivergenceRows = params.currentVersion
     ? params.divergences.filter((row) => row.version_id === params.currentVersion?.id)
@@ -2115,6 +2169,9 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
   const latestRead = params.receipts.find((row) => row.receipt_type === 'lectura') || null;
   const latestIntegratedReceipt = params.receipts.find((row) => row.auto_confirmed) || null;
   const currentVersionIntegratedReceipt = currentVersionReceiptRows.find((row) => row.auto_confirmed) || null;
+  const latestIntegrationEvent = params.receiptIntegrations[0] || null;
+  const latestProcessedIntegrationEvent = params.receiptIntegrations.find((row) => row.sync_status === 'procesada') || null;
+  const currentVersionPendingIntegration = currentVersionReceiptIntegrationRows.find((row) => row.sync_status === 'pendiente') || null;
   const latestDivergence = params.divergences[0] || null;
   const currentVersionDivergence = currentVersionDivergenceRows[0] || null;
   const latestFolio = params.folios[0] || null;
@@ -2141,6 +2198,21 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
     }, new Map<string, number>())
   ).map(([source, count]) => ({ source, count })).sort((a, b) => b.count - a.count);
   const automatedReceiptCount = params.receipts.filter((row) => row.auto_confirmed).length;
+  const integrationSourceSummary = Array.from(
+    params.receiptIntegrations.reduce((map, row) => {
+      map.set(row.confirmation_source, (map.get(row.confirmation_source) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([source, count]) => ({ source, count })).sort((a, b) => b.count - a.count);
+  const integrationModeSummary = Array.from(
+    params.receiptIntegrations.reduce((map, row) => {
+      map.set(row.integration_mode, (map.get(row.integration_mode) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([mode, count]) => ({ mode, count })).sort((a, b) => b.count - a.count);
+  const pendingIntegrationCount = params.receiptIntegrations.filter((row) => row.sync_status === 'pendiente').length;
+  const processedIntegrationCount = params.receiptIntegrations.filter((row) => row.sync_status === 'procesada').length;
+  const errorIntegrationCount = params.receiptIntegrations.filter((row) => row.sync_status === 'error').length;
   const divergenceSummary = Array.from(
     params.divergences.reduce((map, row) => {
       map.set(row.divergence_status, (map.get(row.divergence_status) || 0) + 1);
@@ -2208,6 +2280,13 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
         : automatedReceiptCount > 0
           ? `Existen confirmaciones integradas históricas, pero la versión vigente de ${params.scopeLabel} aún no registra una evidencia automatizada.`
           : `Las confirmaciones de ${params.scopeLabel} todavía se capturan de forma manual y aún no muestran una integración visible.`;
+  const integrationConnectorSummaryLine = params.receiptIntegrations.length === 0
+    ? `El conector de integraciones de ${params.scopeLabel} aún no recibe eventos externos persistidos.`
+    : currentVersionPendingIntegration
+      ? `La versión vigente de ${params.scopeLabel} mantiene eventos externos pendientes de sincronización automática.`
+      : errorIntegrationCount > 0
+        ? `El conector de ${params.scopeLabel} registra eventos externos con error y requiere revisión.`
+        : `El conector de ${params.scopeLabel} ya procesa eventos externos mediante ${formatExecutiveBudgetPublicationIntegrationMode(integrationModeSummary[0]?.mode).toLowerCase()}.`;
   const folioValidationSummaryLine = !params.currentVersion
     ? `No hay versión vigente para preparar la validación externa del folio en ${params.scopeLabel}.`
     : !currentVersionFolio
@@ -2221,6 +2300,7 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
   return {
     rows: params.rows,
     receipts: params.receipts,
+    receiptIntegrations: params.receiptIntegrations,
     divergences: params.divergences,
     folios: params.folios,
     currentVersionRows,
@@ -2234,6 +2314,8 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
     latestAcuse,
     latestRead,
     latestIntegratedReceipt,
+    latestIntegrationEvent,
+    latestProcessedIntegrationEvent,
     latestDivergence,
     latestFolio,
     latestExternallyReadyFolio,
@@ -2242,10 +2324,12 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
     currentVersionAcuse,
     currentVersionRead,
     currentVersionIntegratedReceipt,
+    currentVersionPendingIntegration,
     currentVersionDivergence,
     currentVersionFolio,
     recentRows: params.rows.slice(0, 12),
     recentReceiptRows: params.receipts.slice(0, 12),
+    recentIntegrationRows: params.receiptIntegrations.slice(0, 12),
     recentDivergenceRows: params.divergences.slice(0, 12),
     recentFolioRows: params.folios.slice(0, 12),
     actionSummary,
@@ -2254,6 +2338,8 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
     receiptSummary,
     recipientReceiptSummary,
     receiptSourceSummary,
+    integrationSourceSummary,
+    integrationModeSummary,
     divergenceSummary,
     folioStatusSummary,
     folioValidationSummary,
@@ -2263,12 +2349,18 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
     topReceipt: receiptSummary[0] || null,
     topReceiptRecipient: recipientReceiptSummary[0] || null,
     topReceiptSource: receiptSourceSummary[0] || null,
+    topIntegrationSource: integrationSourceSummary[0] || null,
+    topIntegrationMode: integrationModeSummary[0] || null,
     topDivergence: divergenceSummary[0] || null,
     topFolioStatus: folioStatusSummary[0] || null,
     topFolioValidationStatus: folioValidationSummary[0] || null,
     totalEvents: params.rows.length,
     totalReceipts: params.receipts.length,
     automatedReceiptCount,
+    totalIntegrationEvents: params.receiptIntegrations.length,
+    pendingIntegrationCount,
+    processedIntegrationCount,
+    errorIntegrationCount,
     totalDivergences: params.divergences.length,
     totalFolios: params.folios.length,
     externallyReadyFolioCount,
@@ -2280,6 +2372,7 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
     divergenceSummaryLine,
     folioSummaryLine,
     receiptIntegrationSummaryLine,
+    integrationConnectorSummaryLine,
     folioValidationSummaryLine
   };
 };
@@ -3054,6 +3147,7 @@ export const Reports: React.FC = () => {
   const [executiveBudgetPlanApprovalSteps, setExecutiveBudgetPlanApprovalSteps] = useState<ExecutiveBudgetPlanApprovalStepRow[]>([]);
   const [executiveBudgetPlanPublicationEvents, setExecutiveBudgetPlanPublicationEvents] = useState<ExecutiveBudgetPlanPublicationEventRow[]>([]);
   const [executiveBudgetPlanPublicationReceipts, setExecutiveBudgetPlanPublicationReceipts] = useState<ExecutiveBudgetPlanPublicationReceiptRow[]>([]);
+  const [executiveBudgetPlanPublicationReceiptIntegrations, setExecutiveBudgetPlanPublicationReceiptIntegrations] = useState<ExecutiveBudgetPlanPublicationReceiptIntegrationRow[]>([]);
   const [executiveBudgetPlanPublicationDivergences, setExecutiveBudgetPlanPublicationDivergences] = useState<ExecutiveBudgetPlanPublicationDivergenceRow[]>([]);
   const [executiveBudgetPlanVerificationFolios, setExecutiveBudgetPlanVerificationFolios] = useState<ExecutiveBudgetPlanVerificationFolioRow[]>([]);
   const [executiveGlobalAlertLoading, setExecutiveGlobalAlertLoading] = useState(false);
@@ -3084,6 +3178,15 @@ export const Reports: React.FC = () => {
   const [executiveBudgetPublicationReceiptEvidenceUrl, setExecutiveBudgetPublicationReceiptEvidenceUrl] = useState('');
   const [executiveBudgetPublicationReceiptNotes, setExecutiveBudgetPublicationReceiptNotes] = useState('');
   const [submittingExecutiveBudgetPublicationReceipt, setSubmittingExecutiveBudgetPublicationReceipt] = useState(false);
+  const [executiveBudgetIntegrationReceiptType, setExecutiveBudgetIntegrationReceiptType] = useState<ExecutiveBudgetPlanPublicationReceiptType>('acuse');
+  const [executiveBudgetIntegrationSource, setExecutiveBudgetIntegrationSource] = useState<Exclude<ExecutiveBudgetPublicationReceiptSourceOption, 'manual'>>('correo');
+  const [executiveBudgetIntegrationMode, setExecutiveBudgetIntegrationMode] = useState<ExecutiveBudgetPublicationIntegrationModeOption>('webhook');
+  const [executiveBudgetIntegrationProvider, setExecutiveBudgetIntegrationProvider] = useState('');
+  const [executiveBudgetIntegrationRecipient, setExecutiveBudgetIntegrationRecipient] = useState('');
+  const [executiveBudgetIntegrationExternalReference, setExecutiveBudgetIntegrationExternalReference] = useState('');
+  const [executiveBudgetIntegrationEvidenceUrl, setExecutiveBudgetIntegrationEvidenceUrl] = useState('');
+  const [executiveBudgetIntegrationPayloadNotes, setExecutiveBudgetIntegrationPayloadNotes] = useState('');
+  const [submittingExecutiveBudgetIntegration, setSubmittingExecutiveBudgetIntegration] = useState(false);
 
   // Comparative State
   const [comparativeData, setComparativeData] = useState<any[]>([]);
@@ -3156,6 +3259,7 @@ export const Reports: React.FC = () => {
   const executiveBudgetPlanApprovalSyncRef = useRef<string>('');
   const executiveBudgetPlanPublicationDivergenceLogRef = useRef<string>('');
   const executiveBudgetPlanVerificationFolioLogRef = useRef<string>('');
+  const executiveBudgetPlanIntegrationSyncLogRef = useRef<Record<string, boolean>>({});
 
   // Update orientation when tab changes
   useEffect(() => {
@@ -3254,6 +3358,7 @@ export const Reports: React.FC = () => {
     executiveBudgetPlanApprovalSyncRef.current = '';
     executiveBudgetPlanPublicationDivergenceLogRef.current = '';
     executiveBudgetPlanVerificationFolioLogRef.current = '';
+    executiveBudgetPlanIntegrationSyncLogRef.current = {};
     setRawCostMovements([]);
     setRawMarginRows([]);
     setRawProductionRecords([]);
@@ -3273,6 +3378,7 @@ export const Reports: React.FC = () => {
     setExecutiveBudgetPlanApprovalSteps([]);
     setExecutiveBudgetPlanPublicationEvents([]);
     setExecutiveBudgetPlanPublicationReceipts([]);
+    setExecutiveBudgetPlanPublicationReceiptIntegrations([]);
     setExecutiveBudgetPlanPublicationDivergences([]);
     setExecutiveBudgetPlanVerificationFolios([]);
     setExecutiveBudgetWorkflowResponsible('');
@@ -3295,6 +3401,14 @@ export const Reports: React.FC = () => {
     setExecutiveBudgetPublicationReceiptExternalReference('');
     setExecutiveBudgetPublicationReceiptEvidenceUrl('');
     setExecutiveBudgetPublicationReceiptNotes('');
+    setExecutiveBudgetIntegrationReceiptType('acuse');
+    setExecutiveBudgetIntegrationSource('correo');
+    setExecutiveBudgetIntegrationMode('webhook');
+    setExecutiveBudgetIntegrationProvider('');
+    setExecutiveBudgetIntegrationRecipient('');
+    setExecutiveBudgetIntegrationExternalReference('');
+    setExecutiveBudgetIntegrationEvidenceUrl('');
+    setExecutiveBudgetIntegrationPayloadNotes('');
     setReportData([]);
     setMonthlyExpenses([]);
     setCategoryExpenses([]);
@@ -3368,7 +3482,7 @@ export const Reports: React.FC = () => {
 
     void (async () => {
       try {
-        const [rankingRows, preventiveRows, budgetClosureRows, budgetVersionRows, budgetWorkflowRows, budgetApprovalRows, budgetPublicationRows, budgetPublicationReceiptRows, budgetPublicationDivergenceRows, budgetVerificationFolioRows] = await Promise.all([
+        const [rankingRows, preventiveRows, budgetClosureRows, budgetVersionRows, budgetWorkflowRows, budgetApprovalRows, budgetPublicationRows, budgetPublicationReceiptRows, budgetPublicationReceiptIntegrationRows, budgetPublicationDivergenceRows, budgetVerificationFolioRows] = await Promise.all([
           loadExecutiveGlobalRankingSnapshots({ companyId, limit: 200 }),
           loadExecutiveGlobalPreventiveSnapshots({ companyId, limit: 200 }),
           loadExecutiveBudgetClosureSnapshots({ companyId, limit: 200 }),
@@ -3377,6 +3491,7 @@ export const Reports: React.FC = () => {
           loadExecutiveBudgetPlanApprovalSteps({ companyId, limit: 400 }),
           loadExecutiveBudgetPlanPublicationEvents({ companyId, limit: 300 }),
           loadExecutiveBudgetPlanPublicationReceipts({ companyId, limit: 400 }),
+          loadExecutiveBudgetPlanPublicationReceiptIntegrations({ companyId, limit: 400 }),
           loadExecutiveBudgetPlanPublicationDivergences({ companyId, limit: 300 }),
           loadExecutiveBudgetPlanVerificationFolios({ companyId, limit: 300 })
         ]);
@@ -3389,6 +3504,7 @@ export const Reports: React.FC = () => {
         setExecutiveBudgetPlanApprovalSteps(budgetApprovalRows || []);
         setExecutiveBudgetPlanPublicationEvents(budgetPublicationRows || []);
         setExecutiveBudgetPlanPublicationReceipts(budgetPublicationReceiptRows || []);
+        setExecutiveBudgetPlanPublicationReceiptIntegrations(budgetPublicationReceiptIntegrationRows || []);
         setExecutiveBudgetPlanPublicationDivergences(budgetPublicationDivergenceRows || []);
         setExecutiveBudgetPlanVerificationFolios(budgetVerificationFolioRows || []);
       } catch {
@@ -3401,6 +3517,7 @@ export const Reports: React.FC = () => {
         setExecutiveBudgetPlanApprovalSteps([]);
         setExecutiveBudgetPlanPublicationEvents([]);
         setExecutiveBudgetPlanPublicationReceipts([]);
+        setExecutiveBudgetPlanPublicationReceiptIntegrations([]);
         setExecutiveBudgetPlanPublicationDivergences([]);
         setExecutiveBudgetPlanVerificationFolios([]);
       }
@@ -6036,13 +6153,14 @@ export const Reports: React.FC = () => {
     () => buildExecutiveBudgetPlanPublicationAnalytics({
       rows: executiveBudgetPlanPublicationEvents,
       receipts: executiveBudgetPlanPublicationReceipts,
+      receiptIntegrations: executiveBudgetPlanPublicationReceiptIntegrations,
       divergences: executiveBudgetPlanPublicationDivergences,
       folios: executiveBudgetPlanVerificationFolios,
       currentVersion: executiveCurrentBudgetPlanVersion,
       scopeLabel: 'la empresa activa',
       approvalReady: executiveBudgetPublicationApprovalReady
     }),
-    [executiveBudgetPlanPublicationEvents, executiveBudgetPlanPublicationReceipts, executiveBudgetPlanPublicationDivergences, executiveBudgetPlanVerificationFolios, executiveCurrentBudgetPlanVersion, executiveBudgetPublicationApprovalReady]
+    [executiveBudgetPlanPublicationEvents, executiveBudgetPlanPublicationReceipts, executiveBudgetPlanPublicationReceiptIntegrations, executiveBudgetPlanPublicationDivergences, executiveBudgetPlanVerificationFolios, executiveCurrentBudgetPlanVersion, executiveBudgetPublicationApprovalReady]
   );
   const executiveBudgetPublicationDivergenceDraft = useMemo(() => {
     const signoff = executiveBudgetPlanPublicationData.currentVersionSignoff;
@@ -6817,6 +6935,119 @@ export const Reports: React.FC = () => {
     executiveCurrentBudgetPlanVersion,
     selectedCompany?.id
   ]);
+  useEffect(() => {
+    if (!selectedCompany?.id) return;
+
+    const pendingRows = executiveBudgetPlanPublicationReceiptIntegrations.filter((row) => row.sync_status === 'pendiente');
+    if (pendingRows.length === 0) return;
+
+    const syncableRows = pendingRows.filter((row) => !executiveBudgetPlanIntegrationSyncLogRef.current[row.id]);
+    if (syncableRows.length === 0) return;
+
+    syncableRows.forEach((row) => {
+      executiveBudgetPlanIntegrationSyncLogRef.current[row.id] = true;
+    });
+
+    void (async () => {
+      let changed = false;
+
+      for (const row of syncableRows) {
+        try {
+          const existingReceipt = executiveBudgetPlanPublicationReceipts.find((receipt) =>
+            receipt.publication_event_id === row.publication_event_id
+            && receipt.confirmation_source === row.confirmation_source
+            && receipt.external_reference === row.external_reference
+            && receipt.recipient_label === row.recipient_label
+          );
+
+          if (existingReceipt) {
+            await updateExecutiveBudgetPlanPublicationReceiptIntegrationSync({
+              integrationId: row.id,
+              syncStatus: 'procesada',
+              processedReceiptId: existingReceipt.id
+            });
+            changed = true;
+            continue;
+          }
+
+          await createExecutiveBudgetPlanPublicationReceipt({
+            companyId: row.company_id,
+            publicationEventId: row.publication_event_id,
+            versionId: row.version_id,
+            season: row.season,
+            receiptType: row.receipt_type,
+            recipientLabel: row.recipient_label,
+            responsibleLabel: 'Integración automática',
+            responsibleRole: 'control_gestion',
+            confirmationSource: row.confirmation_source,
+            integrationProvider: row.provider_label || null,
+            externalReference: row.external_reference || null,
+            evidenceUrl: row.evidence_url || null,
+            autoConfirmed: true,
+            confirmationOriginLabel: `${formatExecutiveBudgetPublicationReceiptSource(row.confirmation_source)} · ${formatExecutiveBudgetPublicationIntegrationMode(row.integration_mode)}`,
+            notes: row.integration_mode === 'importador'
+              ? 'Acuse materializado automáticamente desde importador.'
+              : `Acuse materializado automáticamente desde ${formatExecutiveBudgetPublicationIntegrationMode(row.integration_mode).toLowerCase()}.`,
+            metadata: {
+              company_name: companyName,
+              integration_event_id: row.id,
+              integration_mode: row.integration_mode,
+              integration_signature: row.integration_signature,
+              provider_label: row.provider_label,
+              external_reference: row.external_reference,
+              evidence_url: row.evidence_url
+            }
+          });
+
+          const refreshedReceipts = await loadExecutiveBudgetPlanPublicationReceipts({ companyId: row.company_id, limit: 400 });
+          const createdReceipt = (refreshedReceipts || []).find((receipt) =>
+            receipt.publication_event_id === row.publication_event_id
+            && receipt.confirmation_source === row.confirmation_source
+            && receipt.external_reference === row.external_reference
+            && receipt.recipient_label === row.recipient_label
+          );
+
+          await updateExecutiveBudgetPlanPublicationReceiptIntegrationSync({
+            integrationId: row.id,
+            syncStatus: 'procesada',
+            processedReceiptId: createdReceipt?.id || null
+          });
+
+          changed = true;
+        } catch (error: any) {
+          try {
+            await updateExecutiveBudgetPlanPublicationReceiptIntegrationSync({
+              integrationId: row.id,
+              syncStatus: 'error',
+              lastError: error?.message || 'Error de sincronización'
+            });
+          } catch {
+            // noop: preserve original sync error in console
+          }
+          console.error('No se pudo sincronizar un evento externo de acuse/lectura.', error);
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        try {
+          const [receiptRows, integrationRows] = await Promise.all([
+            loadExecutiveBudgetPlanPublicationReceipts({ companyId: selectedCompany.id, limit: 400 }),
+            loadExecutiveBudgetPlanPublicationReceiptIntegrations({ companyId: selectedCompany.id, limit: 400 })
+          ]);
+          setExecutiveBudgetPlanPublicationReceipts(receiptRows || []);
+          setExecutiveBudgetPlanPublicationReceiptIntegrations(integrationRows || []);
+        } catch (error) {
+          console.error('No se pudo refrescar la sincronización de integraciones del presupuesto.', error);
+        }
+      }
+    })();
+  }, [
+    companyName,
+    executiveBudgetPlanPublicationReceiptIntegrations,
+    executiveBudgetPlanPublicationReceipts,
+    selectedCompany?.id
+  ]);
   const handleExecutiveBudgetWorkflowAction = useCallback(async (actionType: ExecutiveBudgetPlanWorkflowAction) => {
     if (!selectedCompany?.id) {
       toast.error('No hay empresa activa para registrar el workflow presupuestario.');
@@ -7179,6 +7410,110 @@ export const Reports: React.FC = () => {
     selectedCompany?.id,
     selectedSeason
   ]);
+  const handleExecutiveBudgetPublicationIntegration = useCallback(async () => {
+    if (!selectedCompany?.id) {
+      toast.error('No hay empresa activa para registrar una señal externa.');
+      return;
+    }
+
+    if (!executiveCurrentBudgetPlanVersion) {
+      toast.error('Aún no existe una versión presupuestaria vigente para esta temporada.');
+      return;
+    }
+
+    if (!executiveBudgetPlanPublicationData.currentVersionExternalPublication) {
+      toast.error('Debes registrar una publicación externa antes de cargar eventos de integración.');
+      return;
+    }
+
+    const recipientLabel = executiveBudgetIntegrationRecipient.trim();
+    const providerLabel = executiveBudgetIntegrationProvider.trim();
+    const externalReference = executiveBudgetIntegrationExternalReference.trim();
+    const evidenceUrl = executiveBudgetIntegrationEvidenceUrl.trim();
+    const payloadNotes = executiveBudgetIntegrationPayloadNotes.trim();
+
+    if (!recipientLabel) {
+      toast.error('Debes indicar el destinatario del evento externo.');
+      return;
+    }
+
+    if (!providerLabel && !externalReference && !evidenceUrl) {
+      toast.error('Debes dejar proveedor, referencia o evidencia para el evento externo.');
+      return;
+    }
+
+    const integrationSignature = JSON.stringify({
+      publicationEventId: executiveBudgetPlanPublicationData.currentVersionExternalPublication.id,
+      versionId: executiveCurrentBudgetPlanVersion.id,
+      receiptType: executiveBudgetIntegrationReceiptType,
+      confirmationSource: executiveBudgetIntegrationSource,
+      integrationMode: executiveBudgetIntegrationMode,
+      recipientLabel,
+      providerLabel,
+      externalReference,
+      evidenceUrl
+    });
+
+    setSubmittingExecutiveBudgetIntegration(true);
+    try {
+      await createExecutiveBudgetPlanPublicationReceiptIntegration({
+        companyId: selectedCompany.id,
+        publicationEventId: executiveBudgetPlanPublicationData.currentVersionExternalPublication.id,
+        versionId: executiveCurrentBudgetPlanVersion.id,
+        season: selectedSeason,
+        receiptType: executiveBudgetIntegrationReceiptType,
+        confirmationSource: executiveBudgetIntegrationSource,
+        integrationMode: executiveBudgetIntegrationMode,
+        recipientLabel,
+        providerLabel: providerLabel || null,
+        externalReference: externalReference || null,
+        evidenceUrl: evidenceUrl || null,
+        integrationSignature,
+        eventPayload: {
+          company_name: companyName,
+          payload_notes: payloadNotes || null,
+          publication_channel: executiveBudgetPlanPublicationData.currentVersionExternalPublication.publication_channel,
+          publication_recipient: executiveBudgetPlanPublicationData.currentVersionExternalPublication.recipient_label,
+          document_ref: executiveBudgetPlanPublicationData.currentVersionExternalPublication.document_ref,
+          document_hash: executiveBudgetPlanPublicationData.currentVersionExternalPublication.document_hash
+        }
+      });
+
+      const rows = await loadExecutiveBudgetPlanPublicationReceiptIntegrations({ companyId: selectedCompany.id, limit: 400 });
+      setExecutiveBudgetPlanPublicationReceiptIntegrations(rows || []);
+      setExecutiveBudgetIntegrationReceiptType('acuse');
+      setExecutiveBudgetIntegrationSource('correo');
+      setExecutiveBudgetIntegrationMode('webhook');
+      setExecutiveBudgetIntegrationProvider('');
+      setExecutiveBudgetIntegrationRecipient('');
+      setExecutiveBudgetIntegrationExternalReference('');
+      setExecutiveBudgetIntegrationEvidenceUrl('');
+      setExecutiveBudgetIntegrationPayloadNotes('');
+      toast.success('Se registró la señal externa y quedó pendiente de sincronización automática.');
+    } catch (error: any) {
+      toast.error(`No se pudo registrar la señal externa: ${error?.message || 'intenta nuevamente.'}`);
+    } finally {
+      setSubmittingExecutiveBudgetIntegration(false);
+    }
+  }, [
+    companyName,
+    executiveBudgetIntegrationEvidenceUrl,
+    executiveBudgetIntegrationExternalReference,
+    executiveBudgetIntegrationMode,
+    executiveBudgetIntegrationPayloadNotes,
+    executiveBudgetIntegrationProvider,
+    executiveBudgetIntegrationReceiptType,
+    executiveBudgetIntegrationRecipient,
+    executiveBudgetIntegrationSource,
+    executiveBudgetPlanPublicationData.currentVersionExternalPublication,
+    executiveBudgetPlanPublicationData.currentVersionExternalPublication?.document_hash,
+    executiveBudgetPlanPublicationData.currentVersionExternalPublication?.document_ref,
+    executiveBudgetPlanPublicationData.currentVersionExternalPublication?.publication_channel,
+    executiveBudgetPlanPublicationData.currentVersionExternalPublication?.recipient_label,
+    executiveCurrentBudgetPlanVersion,
+    selectedCompany?.id,
+    selectedSeason
+  ]);
   const selectedExecutiveGlobalAlertTransitions = useMemo(
     () => executiveGlobalAlertTransitions.filter((row) => row.event_id === editingExecutiveGlobalAlertId),
     [editingExecutiveGlobalAlertId, executiveGlobalAlertTransitions]
@@ -7495,6 +7830,11 @@ export const Reports: React.FC = () => {
         { Indicador: 'Fuente dominante confirmación', Valor: executiveBudgetPlanPublicationData.topReceiptSource ? formatExecutiveBudgetPublicationReceiptSource(executiveBudgetPlanPublicationData.topReceiptSource.source) : 'Sin fuente' },
         { Indicador: 'Última confirmación integrada', Valor: executiveBudgetPlanPublicationData.latestIntegratedReceipt ? `${executiveBudgetPlanPublicationData.latestIntegratedReceipt.recipient_label} · ${formatExecutiveBudgetPublicationReceiptSource(executiveBudgetPlanPublicationData.latestIntegratedReceipt.confirmation_source)}` : 'Sin confirmación' },
         { Indicador: 'Resumen integración acuses', Valor: executiveBudgetPlanPublicationData.receiptIntegrationSummaryLine },
+        { Indicador: 'Eventos externos bandeja', Valor: executiveBudgetPlanPublicationData.totalIntegrationEvents },
+        { Indicador: 'Pendientes sincronización', Valor: executiveBudgetPlanPublicationData.pendingIntegrationCount },
+        { Indicador: 'Errores sincronización', Valor: executiveBudgetPlanPublicationData.errorIntegrationCount },
+        { Indicador: 'Modo dominante integración', Valor: executiveBudgetPlanPublicationData.topIntegrationMode ? formatExecutiveBudgetPublicationIntegrationMode(executiveBudgetPlanPublicationData.topIntegrationMode.mode) : 'Sin modo' },
+        { Indicador: 'Resumen conector externo', Valor: executiveBudgetPlanPublicationData.integrationConnectorSummaryLine },
         { Indicador: 'Divergencias documentales', Valor: executiveBudgetPlanPublicationData.totalDivergences },
         { Indicador: 'Última divergencia', Valor: executiveBudgetPlanPublicationData.latestDivergence ? formatExecutiveBudgetPublicationDivergenceStatus(executiveBudgetPlanPublicationData.latestDivergence.divergence_status) : 'Sin auditoría' },
         { Indicador: 'Divergencia actual', Valor: executiveBudgetPlanPublicationData.currentVersionDivergence ? formatExecutiveBudgetPublicationDivergenceStatus(executiveBudgetPlanPublicationData.currentVersionDivergence.divergence_status) : 'Sin auditoría' },
@@ -9257,6 +9597,11 @@ export const Reports: React.FC = () => {
             ['Fuente dominante confirmación', executiveBudgetPlanPublicationData.topReceiptSource ? formatExecutiveBudgetPublicationReceiptSource(executiveBudgetPlanPublicationData.topReceiptSource.source) : 'Sin fuente'],
             ['Última confirmación integrada', executiveBudgetPlanPublicationData.latestIntegratedReceipt ? `${executiveBudgetPlanPublicationData.latestIntegratedReceipt.recipient_label} · ${formatExecutiveBudgetPublicationReceiptSource(executiveBudgetPlanPublicationData.latestIntegratedReceipt.confirmation_source)}` : 'Sin confirmación'],
             ['Resumen integración acuses', executiveBudgetPlanPublicationData.receiptIntegrationSummaryLine],
+            ['Eventos externos bandeja', String(executiveBudgetPlanPublicationData.totalIntegrationEvents)],
+            ['Pendientes sincronización', String(executiveBudgetPlanPublicationData.pendingIntegrationCount)],
+            ['Errores sincronización', String(executiveBudgetPlanPublicationData.errorIntegrationCount)],
+            ['Modo dominante integración', executiveBudgetPlanPublicationData.topIntegrationMode ? formatExecutiveBudgetPublicationIntegrationMode(executiveBudgetPlanPublicationData.topIntegrationMode.mode) : 'Sin modo'],
+            ['Resumen conector externo', executiveBudgetPlanPublicationData.integrationConnectorSummaryLine],
             ['Divergencias documentales', String(executiveBudgetPlanPublicationData.totalDivergences)],
             ['Divergencia actual', executiveBudgetPlanPublicationData.currentVersionDivergence ? formatExecutiveBudgetPublicationDivergenceStatus(executiveBudgetPlanPublicationData.currentVersionDivergence.divergence_status) : 'Sin auditoría'],
             ['Resumen divergencia', executiveBudgetPlanPublicationData.divergenceSummaryLine],
@@ -13030,6 +13375,12 @@ export const Reports: React.FC = () => {
                           </p>
                           <p className="mt-2">{executiveBudgetPlanPublicationData.receiptIntegrationSummaryLine}</p>
                           <p className="mt-2">
+                            Conector externo: {executiveBudgetPlanPublicationData.latestIntegrationEvent
+                              ? `${formatExecutiveBudgetPublicationReceiptSource(executiveBudgetPlanPublicationData.latestIntegrationEvent.confirmation_source)} · ${formatExecutiveBudgetPublicationIntegrationMode(executiveBudgetPlanPublicationData.latestIntegrationEvent.integration_mode)} · ${formatExecutiveBudgetPublicationIntegrationSyncStatus(executiveBudgetPlanPublicationData.latestIntegrationEvent.sync_status)}`
+                              : 'sin eventos externos visibles'}.
+                          </p>
+                          <p className="mt-2">{executiveBudgetPlanPublicationData.integrationConnectorSummaryLine}</p>
+                          <p className="mt-2">
                             Divergencia documental: {executiveBudgetPlanPublicationData.currentVersionDivergence
                               ? formatExecutiveBudgetPublicationDivergenceStatus(executiveBudgetPlanPublicationData.currentVersionDivergence.divergence_status)
                               : 'sin auditoría visible'}.
@@ -13322,6 +13673,172 @@ export const Reports: React.FC = () => {
                                   <tr>
                                     <td colSpan={5} className="px-4 py-4 text-center text-sm text-slate-500">
                                       Sin acuses ni lecturas visibles todavía.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 p-4 space-y-4">
+                          <div>
+                            <div className="text-sm font-medium text-slate-900">Bandeja de integración automática</div>
+                            <p className="mt-1 text-sm text-slate-500">Recibe señales externas por webhook, polling o importador y las materializa automáticamente como acuses o lecturas.</p>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                            <div className="rounded-lg bg-slate-50 p-4">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Eventos externos</div>
+                              <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanPublicationData.totalIntegrationEvents}</div>
+                            </div>
+                            <div className="rounded-lg bg-slate-50 p-4">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Pendientes</div>
+                              <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanPublicationData.pendingIntegrationCount}</div>
+                            </div>
+                            <div className="rounded-lg bg-slate-50 p-4">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Procesadas</div>
+                              <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanPublicationData.processedIntegrationCount}</div>
+                            </div>
+                            <div className="rounded-lg bg-slate-50 p-4">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Errores</div>
+                              <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanPublicationData.errorIntegrationCount}</div>
+                            </div>
+                          </div>
+                          <div className={`rounded-lg border px-3 py-2 text-sm ${getExecutiveBudgetPublicationIntegrationSyncTone(executiveBudgetPlanPublicationData.currentVersionPendingIntegration?.sync_status || (executiveBudgetPlanPublicationData.errorIntegrationCount > 0 ? 'error' : 'procesada'))}`}>
+                            {executiveBudgetPlanPublicationData.integrationConnectorSummaryLine}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <label className="block text-sm">
+                              <span className="mb-1 block font-medium text-slate-700">Tipo</span>
+                              <select
+                                value={executiveBudgetIntegrationReceiptType}
+                                onChange={(e) => setExecutiveBudgetIntegrationReceiptType(e.target.value as ExecutiveBudgetPlanPublicationReceiptType)}
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                              >
+                                <option value="acuse">Acuse</option>
+                                <option value="lectura">Lectura</option>
+                              </select>
+                            </label>
+                            <label className="block text-sm">
+                              <span className="mb-1 block font-medium text-slate-700">Fuente</span>
+                              <select
+                                value={executiveBudgetIntegrationSource}
+                                onChange={(e) => setExecutiveBudgetIntegrationSource(e.target.value as Exclude<ExecutiveBudgetPublicationReceiptSourceOption, 'manual'>)}
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                              >
+                                {EXECUTIVE_BUDGET_PUBLICATION_RECEIPT_SOURCE_OPTIONS.filter((option) => option.value !== 'manual').map((option) => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="block text-sm">
+                              <span className="mb-1 block font-medium text-slate-700">Modo</span>
+                              <select
+                                value={executiveBudgetIntegrationMode}
+                                onChange={(e) => setExecutiveBudgetIntegrationMode(e.target.value as ExecutiveBudgetPublicationIntegrationModeOption)}
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                              >
+                                {EXECUTIVE_BUDGET_PUBLICATION_INTEGRATION_MODE_OPTIONS.map((option) => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <label className="block text-sm">
+                              <span className="mb-1 block font-medium text-slate-700">Proveedor</span>
+                              <input
+                                type="text"
+                                value={executiveBudgetIntegrationProvider}
+                                onChange={(e) => setExecutiveBudgetIntegrationProvider(e.target.value)}
+                                placeholder="Ej: Gmail API, WhatsApp Business, Drive poller"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                              />
+                            </label>
+                            <label className="block text-sm">
+                              <span className="mb-1 block font-medium text-slate-700">Destinatario</span>
+                              <input
+                                type="text"
+                                value={executiveBudgetIntegrationRecipient}
+                                onChange={(e) => setExecutiveBudgetIntegrationRecipient(e.target.value)}
+                                placeholder="Ej: Directorio agrícola"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                              />
+                            </label>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <label className="block text-sm">
+                              <span className="mb-1 block font-medium text-slate-700">Referencia externa</span>
+                              <input
+                                type="text"
+                                value={executiveBudgetIntegrationExternalReference}
+                                onChange={(e) => setExecutiveBudgetIntegrationExternalReference(e.target.value)}
+                                placeholder="Ej: webhook-ack-2026-001"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                              />
+                            </label>
+                            <label className="block text-sm">
+                              <span className="mb-1 block font-medium text-slate-700">URL evidencia</span>
+                              <input
+                                type="text"
+                                value={executiveBudgetIntegrationEvidenceUrl}
+                                onChange={(e) => setExecutiveBudgetIntegrationEvidenceUrl(e.target.value)}
+                                placeholder="Ej: https://.../evento"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                              />
+                            </label>
+                          </div>
+                          <label className="block text-sm">
+                            <span className="mb-1 block font-medium text-slate-700">Payload / notas</span>
+                            <textarea
+                              value={executiveBudgetIntegrationPayloadNotes}
+                              onChange={(e) => setExecutiveBudgetIntegrationPayloadNotes(e.target.value)}
+                              placeholder="Ej: señal detectada por webhook con asunto y remitente."
+                              rows={2}
+                              className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-200"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            disabled={submittingExecutiveBudgetIntegration || !executiveBudgetPlanPublicationData.canRegisterReceipt}
+                            onClick={() => void handleExecutiveBudgetPublicationIntegration()}
+                            className="rounded-lg border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm font-medium text-cyan-700 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Ingresar evento externo
+                          </button>
+                          <div className="overflow-x-auto rounded-xl border border-slate-200">
+                            <table className="min-w-full divide-y divide-slate-200 text-sm">
+                              <thead className="bg-slate-50">
+                                <tr>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Tipo</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fuente / modo</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Estado</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Destinatario</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200 bg-white">
+                                {executiveBudgetPlanPublicationData.recentIntegrationRows.slice(0, 6).map((row) => (
+                                  <tr key={row.id} className={row.season === selectedSeason ? 'bg-cyan-50/40' : ''}>
+                                    <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                                    <td className="px-4 py-3 text-slate-700">{row.receipt_type === 'acuse' ? 'Acuse' : 'Lectura'}</td>
+                                    <td className="px-4 py-3 text-slate-700">
+                                      {formatExecutiveBudgetPublicationReceiptSource(row.confirmation_source)} · {formatExecutiveBudgetPublicationIntegrationMode(row.integration_mode)}
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getExecutiveBudgetPublicationIntegrationSyncTone(row.sync_status)}`}>
+                                        {formatExecutiveBudgetPublicationIntegrationSyncStatus(row.sync_status)}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-3 text-slate-700">
+                                      <div>{row.recipient_label}</div>
+                                      <div className="text-xs text-slate-500">{row.external_reference || row.provider_label || 'Sin referencia'}</div>
+                                    </td>
+                                  </tr>
+                                ))}
+                                {executiveBudgetPlanPublicationData.recentIntegrationRows.length === 0 && (
+                                  <tr>
+                                    <td colSpan={5} className="px-4 py-4 text-center text-sm text-slate-500">
+                                      Sin eventos externos visibles todavía.
                                     </td>
                                   </tr>
                                 )}
@@ -20272,6 +20789,12 @@ export const Reports: React.FC = () => {
                                 </p>
                                 <p className="mt-5 text-lg text-slate-500">{executiveBudgetPlanPublicationData.receiptIntegrationSummaryLine}</p>
                                 <p className="mt-5 text-lg text-slate-500">
+                                  Conector externo: {executiveBudgetPlanPublicationData.latestIntegrationEvent
+                                    ? `${formatExecutiveBudgetPublicationReceiptSource(executiveBudgetPlanPublicationData.latestIntegrationEvent.confirmation_source)} · ${formatExecutiveBudgetPublicationIntegrationMode(executiveBudgetPlanPublicationData.latestIntegrationEvent.integration_mode)} · ${formatExecutiveBudgetPublicationIntegrationSyncStatus(executiveBudgetPlanPublicationData.latestIntegrationEvent.sync_status)}`
+                                    : 'sin eventos externos visibles'}.
+                                </p>
+                                <p className="mt-5 text-lg text-slate-500">{executiveBudgetPlanPublicationData.integrationConnectorSummaryLine}</p>
+                                <p className="mt-5 text-lg text-slate-500">
                                   Divergencia documental: {executiveBudgetPlanPublicationData.currentVersionDivergence
                                     ? formatExecutiveBudgetPublicationDivergenceStatus(executiveBudgetPlanPublicationData.currentVersionDivergence.divergence_status)
                                     : 'sin auditoría visible'}.
@@ -20394,6 +20917,62 @@ export const Reports: React.FC = () => {
                                   </div>
                                 </div>
                                 <p className="mt-5 text-lg text-slate-500">{executiveBudgetPlanPublicationData.receiptIntegrationSummaryLine}</p>
+                              </div>
+
+                              <div className="rounded-2xl border border-slate-200 p-6">
+                                <div className="text-2xl font-bold text-slate-800 mb-5">Conector externo</div>
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                  <div className="rounded-2xl bg-slate-50 p-5">
+                                    <div className="text-sm uppercase tracking-wide text-slate-500">Eventos externos</div>
+                                    <div className="mt-3 text-3xl font-bold text-slate-900">{executiveBudgetPlanPublicationData.totalIntegrationEvents}</div>
+                                  </div>
+                                  <div className="rounded-2xl bg-slate-50 p-5">
+                                    <div className="text-sm uppercase tracking-wide text-slate-500">Pendientes</div>
+                                    <div className="mt-3 text-3xl font-bold text-slate-900">{executiveBudgetPlanPublicationData.pendingIntegrationCount}</div>
+                                  </div>
+                                  <div className="rounded-2xl bg-slate-50 p-5">
+                                    <div className="text-sm uppercase tracking-wide text-slate-500">Procesadas</div>
+                                    <div className="mt-3 text-3xl font-bold text-slate-900">{executiveBudgetPlanPublicationData.processedIntegrationCount}</div>
+                                  </div>
+                                  <div className="rounded-2xl bg-slate-50 p-5">
+                                    <div className="text-sm uppercase tracking-wide text-slate-500">Errores</div>
+                                    <div className="mt-3 text-3xl font-bold text-slate-900">{executiveBudgetPlanPublicationData.errorIntegrationCount}</div>
+                                  </div>
+                                </div>
+                                <p className="mt-5 text-lg text-slate-500">{executiveBudgetPlanPublicationData.integrationConnectorSummaryLine}</p>
+                                <table className="mt-5 w-full text-left text-sm">
+                                  <thead className="text-base text-slate-500 bg-slate-50 sticky top-0">
+                                    <tr>
+                                      <th className="p-3">Fecha</th>
+                                      <th className="p-3">Tipo</th>
+                                      <th className="p-3">Fuente / modo</th>
+                                      <th className="p-3">Estado</th>
+                                      <th className="p-3">Destinatario</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {executiveBudgetPlanPublicationData.recentIntegrationRows.slice(0, 4).map((row) => (
+                                      <tr key={row.id} className={`border-b border-slate-100 ${row.season === selectedSeason ? 'bg-cyan-50/40' : ''}`}>
+                                        <td className="p-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                                        <td className="p-3 text-slate-700">{row.receipt_type === 'acuse' ? 'Acuse' : 'Lectura'}</td>
+                                        <td className="p-3 text-slate-700">{formatExecutiveBudgetPublicationReceiptSource(row.confirmation_source)} · {formatExecutiveBudgetPublicationIntegrationMode(row.integration_mode)}</td>
+                                        <td className="p-3">
+                                          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getExecutiveBudgetPublicationIntegrationSyncTone(row.sync_status)}`}>
+                                            {formatExecutiveBudgetPublicationIntegrationSyncStatus(row.sync_status)}
+                                          </span>
+                                        </td>
+                                        <td className="p-3 text-slate-700">{row.recipient_label}</td>
+                                      </tr>
+                                    ))}
+                                    {executiveBudgetPlanPublicationData.recentIntegrationRows.length === 0 && (
+                                      <tr>
+                                        <td colSpan={5} className="p-6 text-center text-slate-500">
+                                          Aún no hay eventos externos visibles para esta temporada.
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </tbody>
+                                </table>
                               </div>
 
                               <div className="rounded-2xl border border-slate-200 p-6">
