@@ -735,103 +735,109 @@ export const Fields: React.FC = () => {
                       
                       <ul className="space-y-3 mb-4">
                         {field.sectors?.map((sector) => (
-                          <li key={sector.id} className="flex items-center justify-between text-sm text-gray-600 group">
+                          <li key={sector.id} className="text-sm text-gray-600 group">
                             {editingSectorId === sector.id ? (
-                              <form onSubmit={(e) => handleUpdateSector(e, sector.id, field.id)} className="flex items-center space-x-3 w-full">
-                                <input
-                                  type="text"
-                                  value={editSectorName}
-                                  onChange={(e) => setEditSectorName(e.target.value)}
-                                  className="block w-40 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                                  placeholder="Nombre"
-                                  required
-                                />
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  value={editSectorHectares}
-                                  onChange={(e) => setEditSectorHectares(e.target.value)}
-                                  className="block w-24 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                                  placeholder="Has"
-                                  required
-                                />
-                                <input
-                                  type="number"
-                                  value={editSectorBudget}
-                                  onChange={(e) => setEditSectorBudget(e.target.value)}
-                                  className="block w-32 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                                  placeholder="Ppto/Ha ($)"
-                                />
-                                <select
-                                  value={editSectorProductiveStage || 'productivo'}
-                                  onChange={(e) => setEditSectorProductiveStage(e.target.value as Sector['productive_stage'])}
-                                  className="block w-36 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                                >
-                                  {SECTOR_PRODUCTIVE_STAGE_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                  ))}
-                                </select>
-                                <input
-                                  type="text"
-                                  value={editSectorExpectedSeason}
-                                  onChange={(e) => setEditSectorExpectedSeason(e.target.value)}
-                                  className="block w-32 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                                  placeholder="Temp. prod."
-                                />
-                                {isSectorNonProductiveExpected({ productive_stage: editSectorProductiveStage } as Sector) && (
-                                  <>
-                                    <select
-                                      value={editSectorNonProductiveReason}
-                                      onChange={(e) => setEditSectorNonProductiveReason(e.target.value as NonNullable<Sector['non_productive_reason']>)}
-                                      className="block w-40 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                                    >
-                                      {SECTOR_NON_PRODUCTIVE_REASON_OPTIONS.map((option) => (
-                                        <option key={option.value} value={option.value}>{option.label}</option>
-                                      ))}
-                                    </select>
-                                    <input
-                                      type="text"
-                                      value={editSectorEstablishmentNotes}
-                                      onChange={(e) => setEditSectorEstablishmentNotes(e.target.value)}
-                                      className="block w-40 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                                      placeholder="Notas"
-                                    />
-                                  </>
-                                )}
-                                <input
-                                  type="number"
-                                  step="0.000001"
-                                  value={editSectorLatitude}
-                                  onChange={(e) => setEditSectorLatitude(e.target.value)}
-                                  className="block w-28 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                                  placeholder="Lat"
-                                />
-                                <input
-                                  type="number"
-                                  step="0.000001"
-                                  value={editSectorLongitude}
-                                  onChange={(e) => setEditSectorLongitude(e.target.value)}
-                                  className="block w-28 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                                  placeholder="Lon"
-                                />
-                                <button
-                                  type="submit"
-                                  className="text-green-600 hover:text-green-800"
-                                  title="Guardar"
-                                >
-                                  <Check className="h-4 w-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={cancelEditingSector}
-                                  className="text-gray-500 hover:text-gray-700"
-                                  title="Cancelar"
-                                >
-                                  <X className="h-4 w-4" />
-                                </button>
+                              <form onSubmit={(e) => handleUpdateSector(e, sector.id, field.id)} className="w-full rounded-lg border border-green-200 bg-green-50/40 p-3">
+                                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                                  <input
+                                    type="text"
+                                    value={editSectorName}
+                                    onChange={(e) => setEditSectorName(e.target.value)}
+                                    className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                                    placeholder="Nombre"
+                                    required
+                                  />
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={editSectorHectares}
+                                    onChange={(e) => setEditSectorHectares(e.target.value)}
+                                    className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                                    placeholder="Has"
+                                    required
+                                  />
+                                  <input
+                                    type="number"
+                                    value={editSectorBudget}
+                                    onChange={(e) => setEditSectorBudget(e.target.value)}
+                                    className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                                    placeholder="Ppto/Ha ($)"
+                                  />
+                                  <select
+                                    value={editSectorProductiveStage || 'productivo'}
+                                    onChange={(e) => setEditSectorProductiveStage(e.target.value as Sector['productive_stage'])}
+                                    className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                                  >
+                                    {SECTOR_PRODUCTIVE_STAGE_OPTIONS.map((option) => (
+                                      <option key={option.value} value={option.value}>{option.label}</option>
+                                    ))}
+                                  </select>
+                                  <input
+                                    type="text"
+                                    value={editSectorExpectedSeason}
+                                    onChange={(e) => setEditSectorExpectedSeason(e.target.value)}
+                                    className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                                    placeholder="Temp. prod."
+                                  />
+                                  {isSectorNonProductiveExpected({ productive_stage: editSectorProductiveStage } as Sector) && (
+                                    <>
+                                      <select
+                                        value={editSectorNonProductiveReason}
+                                        onChange={(e) => setEditSectorNonProductiveReason(e.target.value as NonNullable<Sector['non_productive_reason']>)}
+                                        className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                                      >
+                                        {SECTOR_NON_PRODUCTIVE_REASON_OPTIONS.map((option) => (
+                                          <option key={option.value} value={option.value}>{option.label}</option>
+                                        ))}
+                                      </select>
+                                      <input
+                                        type="text"
+                                        value={editSectorEstablishmentNotes}
+                                        onChange={(e) => setEditSectorEstablishmentNotes(e.target.value)}
+                                        className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                                        placeholder="Notas"
+                                      />
+                                    </>
+                                  )}
+                                  <input
+                                    type="number"
+                                    step="0.000001"
+                                    value={editSectorLatitude}
+                                    onChange={(e) => setEditSectorLatitude(e.target.value)}
+                                    className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                                    placeholder="Lat"
+                                  />
+                                  <input
+                                    type="number"
+                                    step="0.000001"
+                                    value={editSectorLongitude}
+                                    onChange={(e) => setEditSectorLongitude(e.target.value)}
+                                    className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                                    placeholder="Lon"
+                                  />
+                                </div>
+                                <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={cancelEditingSector}
+                                    className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                                    title="Cancelar"
+                                  >
+                                    <X className="mr-1 h-4 w-4" />
+                                    Cancelar
+                                  </button>
+                                  <button
+                                    type="submit"
+                                    className="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"
+                                    title="Guardar"
+                                  >
+                                    <Check className="mr-1 h-4 w-4" />
+                                    Guardar
+                                  </button>
+                                </div>
                               </form>
                             ) : (
-                              <>
+                              <div className="flex items-center justify-between">
                                 <div className="flex items-center flex-1">
                                   <MapPin className="h-4 w-4 text-gray-400 mr-2" />
                                   <span className="font-medium mr-2">{sector.name}</span>
@@ -888,7 +894,7 @@ export const Fields: React.FC = () => {
                                     </button>
                                   </div>
                                 )}
-                              </>
+                              </div>
                             )}
                           </li>
                         ))}
@@ -896,96 +902,100 @@ export const Fields: React.FC = () => {
 
                       {userRole !== 'viewer' && (
                         showSectorForm === field.id ? (
-                          <form onSubmit={(e) => handleCreateSector(e, field.id)} className="flex items-center space-x-3 mt-2">
-                            <input
-                              type="text"
-                              placeholder="Nombre Sector"
-                              required
-                              value={newSectorName}
-                              onChange={e => setNewSectorName(e.target.value)}
-                              className="block w-40 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                            />
-                            <input
-                              type="number"
-                              step="0.01"
-                              placeholder="Has"
-                              required
-                              value={newSectorHectares}
-                              onChange={e => setNewSectorHectares(e.target.value)}
-                              className="block w-24 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                            />
-                            <input
-                              type="number"
-                              placeholder="Ppto/Ha ($)"
-                              value={newSectorBudget}
-                              onChange={e => setNewSectorBudget(e.target.value)}
-                              className="block w-32 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                            />
-                            <select
-                              value={newSectorProductiveStage || 'productivo'}
-                              onChange={e => setNewSectorProductiveStage(e.target.value as Sector['productive_stage'])}
-                              className="block w-36 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                            >
-                              {SECTOR_PRODUCTIVE_STAGE_OPTIONS.map((option) => (
-                                <option key={option.value} value={option.value}>{option.label}</option>
-                              ))}
-                            </select>
-                            <input
-                              type="text"
-                              placeholder="Temp. prod."
-                              value={newSectorExpectedSeason}
-                              onChange={e => setNewSectorExpectedSeason(e.target.value)}
-                              className="block w-32 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                            />
-                            {isSectorNonProductiveExpected({ productive_stage: newSectorProductiveStage } as Sector) && (
-                              <>
-                                <select
-                                  value={newSectorNonProductiveReason}
-                                  onChange={e => setNewSectorNonProductiveReason(e.target.value as NonNullable<Sector['non_productive_reason']>)}
-                                  className="block w-40 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                                >
-                                  {SECTOR_NON_PRODUCTIVE_REASON_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>{option.label}</option>
-                                  ))}
-                                </select>
-                                <input
-                                  type="text"
-                                  placeholder="Notas"
-                                  value={newSectorEstablishmentNotes}
-                                  onChange={e => setNewSectorEstablishmentNotes(e.target.value)}
-                                  className="block w-40 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                                />
-                              </>
-                            )}
-                            <input
-                              type="number"
-                              step="0.000001"
-                              placeholder="Lat"
-                              value={newSectorLatitude}
-                              onChange={e => setNewSectorLatitude(e.target.value)}
-                              className="block w-28 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                            />
-                            <input
-                              type="number"
-                              step="0.000001"
-                              placeholder="Lon"
-                              value={newSectorLongitude}
-                              onChange={e => setNewSectorLongitude(e.target.value)}
-                              className="block w-28 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
-                            />
-                            <button
-                              type="submit"
-                              className="text-green-600 hover:text-green-800 text-sm font-medium"
-                            >
-                              Guardar
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setShowSectorForm(null)}
-                              className="text-gray-500 hover:text-gray-700 text-sm"
-                            >
-                              Cancelar
-                            </button>
+                          <form onSubmit={(e) => handleCreateSector(e, field.id)} className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                              <input
+                                type="text"
+                                placeholder="Nombre Sector"
+                                required
+                                value={newSectorName}
+                                onChange={e => setNewSectorName(e.target.value)}
+                                className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                              />
+                              <input
+                                type="number"
+                                step="0.01"
+                                placeholder="Has"
+                                required
+                                value={newSectorHectares}
+                                onChange={e => setNewSectorHectares(e.target.value)}
+                                className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                              />
+                              <input
+                                type="number"
+                                placeholder="Ppto/Ha ($)"
+                                value={newSectorBudget}
+                                onChange={e => setNewSectorBudget(e.target.value)}
+                                className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                              />
+                              <select
+                                value={newSectorProductiveStage || 'productivo'}
+                                onChange={e => setNewSectorProductiveStage(e.target.value as Sector['productive_stage'])}
+                                className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                              >
+                                {SECTOR_PRODUCTIVE_STAGE_OPTIONS.map((option) => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                              <input
+                                type="text"
+                                placeholder="Temp. prod."
+                                value={newSectorExpectedSeason}
+                                onChange={e => setNewSectorExpectedSeason(e.target.value)}
+                                className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                              />
+                              {isSectorNonProductiveExpected({ productive_stage: newSectorProductiveStage } as Sector) && (
+                                <>
+                                  <select
+                                    value={newSectorNonProductiveReason}
+                                    onChange={e => setNewSectorNonProductiveReason(e.target.value as NonNullable<Sector['non_productive_reason']>)}
+                                    className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                                  >
+                                    {SECTOR_NON_PRODUCTIVE_REASON_OPTIONS.map((option) => (
+                                      <option key={option.value} value={option.value}>{option.label}</option>
+                                    ))}
+                                  </select>
+                                  <input
+                                    type="text"
+                                    placeholder="Notas"
+                                    value={newSectorEstablishmentNotes}
+                                    onChange={e => setNewSectorEstablishmentNotes(e.target.value)}
+                                    className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                                  />
+                                </>
+                              )}
+                              <input
+                                type="number"
+                                step="0.000001"
+                                placeholder="Lat"
+                                value={newSectorLatitude}
+                                onChange={e => setNewSectorLatitude(e.target.value)}
+                                className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                              />
+                              <input
+                                type="number"
+                                step="0.000001"
+                                placeholder="Lon"
+                                value={newSectorLongitude}
+                                onChange={e => setNewSectorLongitude(e.target.value)}
+                                className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                              />
+                            </div>
+                            <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setShowSectorForm(null)}
+                                className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                type="submit"
+                                className="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700"
+                              >
+                                Guardar
+                              </button>
+                            </div>
                           </form>
                         ) : (
                           <button
