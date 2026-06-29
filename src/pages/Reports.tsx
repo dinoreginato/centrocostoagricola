@@ -270,11 +270,12 @@ const compareSeasonKeys = (left?: string | null, right?: string | null) => {
 
 const isSectorExpectedWithoutProduction = (sector: any, season: string) => {
   const stage = String(sector?.productive_stage || 'productivo');
-  if (stage !== 'en_formacion' && stage !== 'arranque') return false;
-
   const expectedSeason = String(sector?.production_expected_from_season || '').trim();
-  if (!expectedSeason) return true;
-  return compareSeasonKeys(season, expectedSeason) < 0;
+  if (expectedSeason) {
+    return compareSeasonKeys(season, expectedSeason) < 0;
+  }
+
+  return stage === 'en_formacion' || stage === 'arranque';
 };
 
 const formatSectorProductiveStage = (value?: string | null) => {
