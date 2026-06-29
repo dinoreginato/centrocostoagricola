@@ -53,6 +53,12 @@ import {
   loadExecutiveBudgetPlanVersions,
   type ExecutiveBudgetPlanVersionRow
 } from '../services/executiveBudgetPlanVersions';
+import {
+  createExecutiveBudgetPlanWorkflowEvent,
+  loadExecutiveBudgetPlanWorkflowEvents,
+  type ExecutiveBudgetPlanWorkflowAction,
+  type ExecutiveBudgetPlanWorkflowEventRow
+} from '../services/executiveBudgetPlanWorkflow';
 import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
 interface ReportData {
@@ -243,6 +249,7 @@ type ExecutiveExportCirculationReason = 'comite' | 'directorio' | 'revision_inte
 type ClosureTrendDirection = 'mejora' | 'estable' | 'deterioro' | 'sin_base';
 type ExecutiveRecommendationDecision = 'presentar' | 'presentar_con_cautela' | 'no_presentar';
 type ExecutiveRankingTier = 'fuerte' | 'intermedio' | 'fragil';
+type ExecutiveBudgetWorkflowRole = 'gerencia_agricola' | 'control_gestion' | 'gerencia_general' | 'comite';
 type ExecutiveGlobalCompanyClosureRow = {
   season: string;
   totalClosurePct: number;
@@ -310,6 +317,12 @@ const EXECUTIVE_EXPORT_CIRCULATION_REASON_OPTIONS: Array<{ value: ExecutiveExpor
   { value: 'revision_interna', label: 'Revisión interna' },
   { value: 'banco_inversionista', label: 'Banco / inversionista' },
   { value: 'otro', label: 'Otro' }
+];
+const EXECUTIVE_BUDGET_WORKFLOW_ROLE_OPTIONS: Array<{ value: ExecutiveBudgetWorkflowRole; label: string }> = [
+  { value: 'gerencia_agricola', label: 'Gerencia agrícola' },
+  { value: 'control_gestion', label: 'Control de gestión' },
+  { value: 'gerencia_general', label: 'Gerencia general' },
+  { value: 'comite', label: 'Comité' }
 ];
 
 const formatExecutiveExportWarningType = (value: string) => (
@@ -1516,6 +1529,40 @@ const formatExecutiveBudgetPlanVersionKind = (value: string | null | undefined) 
   }
 };
 
+const formatExecutiveBudgetWorkflowAction = (value: string | null | undefined) => {
+  switch (value) {
+    case 'publicada':
+      return 'Publicada';
+    case 'observada':
+      return 'Observada';
+    case 'freeze_comite':
+      return 'Freeze comité';
+    default:
+      return 'Sin acción';
+  }
+};
+
+const formatExecutiveBudgetWorkflowRole = (value: string | null | undefined) => {
+  switch (value) {
+    case 'gerencia_agricola':
+      return 'Gerencia agrícola';
+    case 'control_gestion':
+      return 'Control de gestión';
+    case 'gerencia_general':
+      return 'Gerencia general';
+    case 'comite':
+      return 'Comité';
+    default:
+      return 'Sin rol';
+  }
+};
+
+const getExecutiveBudgetWorkflowRole = (row: Pick<ExecutiveBudgetPlanWorkflowEventRow, 'metadata'> | null | undefined) => {
+  if (!row?.metadata || typeof row.metadata !== 'object') return null;
+  const rawValue = String((row.metadata as Record<string, unknown>).responsible_role || '').trim();
+  return rawValue || null;
+};
+
 const buildExecutiveBudgetGovernanceAnalytics = (
   sectorRows: Array<any>,
   scopeLabel: string
@@ -1663,6 +1710,63 @@ const buildExecutiveBudgetPlanVersionAnalytics = (
     seasonSummary,
     topKind,
     totalVersions: rows.length,
+    summaryLine
+  };
+};
+
+const buildExecutiveBudgetPlanWorkflowAnalytics = (
+  rows: ExecutiveBudgetPlanWorkflowEventRow[],
+  selectedSeason: string,
+  scopeLabel: string
+) => {
+  const currentSeasonRows = rows.filter((row) => row.season === selectedSeason);
+  const latestEvent = rows[0] || null;
+  const latestCurrentSeasonEvent = currentSeasonRows[0] || null;
+  const actionSummary = Array.from(
+    rows.reduce((map, row) => {
+      map.set(row.action_type, (map.get(row.action_type) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([actionType, count]) => ({ actionType, count })).sort((a, b) => b.count - a.count);
+  const currentSeasonActionSummary = Array.from(
+    currentSeasonRows.reduce((map, row) => {
+      map.set(row.action_type, (map.get(row.action_type) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([actionType, count]) => ({ actionType, count })).sort((a, b) => b.count - a.count);
+  const roleSummary = Array.from(
+    rows.reduce((map, row) => {
+      const role = getExecutiveBudgetWorkflowRole(row) || 'sin_rol';
+      map.set(role, (map.get(role) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([role, count]) => ({ role, count })).sort((a, b) => b.count - a.count);
+  const latestFreeze = rows.find((row) => row.action_type === 'freeze_comite') || null;
+  const latestPublication = rows.find((row) => row.action_type === 'publicada') || null;
+  const latestObservation = rows.find((row) => row.action_type === 'observada') || null;
+  const latestResponsible = latestEvent?.responsible_label || null;
+  const latestRole = getExecutiveBudgetWorkflowRole(latestEvent);
+  const summaryLine = latestEvent
+    ? `El workflow presupuestario de ${scopeLabel} registra ${rows.length} eventos. La acción dominante es ${formatExecutiveBudgetWorkflowAction(actionSummary[0]?.actionType)} y la última decisión fue ${formatExecutiveBudgetWorkflowAction(latestEvent.action_type)} por ${latestEvent.responsible_label}${latestRole ? ` (${formatExecutiveBudgetWorkflowRole(latestRole)})` : ''}.`
+    : `No hay eventos de workflow presupuestario para ${scopeLabel}.`;
+
+  return {
+    rows,
+    currentSeasonRows,
+    recentRows: rows.slice(0, 12),
+    latestEvent,
+    latestCurrentSeasonEvent,
+    latestFreeze,
+    latestPublication,
+    latestObservation,
+    latestResponsible,
+    latestRole,
+    actionSummary,
+    currentSeasonActionSummary,
+    roleSummary,
+    topRole: roleSummary[0] || null,
+    topAction: actionSummary[0] || null,
+    totalEvents: rows.length,
     summaryLine
   };
 };
@@ -2433,11 +2537,16 @@ export const Reports: React.FC = () => {
   const [executiveGlobalPreventiveSnapshots, setExecutiveGlobalPreventiveSnapshots] = useState<ExecutiveGlobalPreventiveSnapshotRow[]>([]);
   const [executiveBudgetClosureSnapshots, setExecutiveBudgetClosureSnapshots] = useState<ExecutiveBudgetClosureSnapshotRow[]>([]);
   const [executiveBudgetPlanVersions, setExecutiveBudgetPlanVersions] = useState<ExecutiveBudgetPlanVersionRow[]>([]);
+  const [executiveBudgetPlanWorkflowEvents, setExecutiveBudgetPlanWorkflowEvents] = useState<ExecutiveBudgetPlanWorkflowEventRow[]>([]);
   const [executiveGlobalAlertLoading, setExecutiveGlobalAlertLoading] = useState(false);
   const [costAuditLoading, setCostAuditLoading] = useState(false);
   const [showProductionModal, setShowProductionModal] = useState(false);
   const [savingProductionRecord, setSavingProductionRecord] = useState(false);
   const [editingProductionRecord, setEditingProductionRecord] = useState<EditingProductionRecord>({});
+  const [executiveBudgetWorkflowResponsible, setExecutiveBudgetWorkflowResponsible] = useState('');
+  const [executiveBudgetWorkflowRole, setExecutiveBudgetWorkflowRole] = useState<ExecutiveBudgetWorkflowRole>('gerencia_agricola');
+  const [executiveBudgetWorkflowReason, setExecutiveBudgetWorkflowReason] = useState('');
+  const [submittingExecutiveBudgetWorkflow, setSubmittingExecutiveBudgetWorkflow] = useState(false);
 
   // Comparative State
   const [comparativeData, setComparativeData] = useState<any[]>([]);
@@ -2617,6 +2726,9 @@ export const Reports: React.FC = () => {
     setExecutiveGlobalPreventiveSnapshots([]);
     setExecutiveBudgetClosureSnapshots([]);
     setExecutiveBudgetPlanVersions([]);
+    setExecutiveBudgetPlanWorkflowEvents([]);
+    setExecutiveBudgetWorkflowResponsible('');
+    setExecutiveBudgetWorkflowReason('');
     setReportData([]);
     setMonthlyExpenses([]);
     setCategoryExpenses([]);
@@ -2690,23 +2802,26 @@ export const Reports: React.FC = () => {
 
     void (async () => {
       try {
-        const [rankingRows, preventiveRows, budgetClosureRows, budgetVersionRows] = await Promise.all([
+        const [rankingRows, preventiveRows, budgetClosureRows, budgetVersionRows, budgetWorkflowRows] = await Promise.all([
           loadExecutiveGlobalRankingSnapshots({ companyId, limit: 200 }),
           loadExecutiveGlobalPreventiveSnapshots({ companyId, limit: 200 }),
           loadExecutiveBudgetClosureSnapshots({ companyId, limit: 200 }),
-          loadExecutiveBudgetPlanVersions({ companyId, limit: 200 })
+          loadExecutiveBudgetPlanVersions({ companyId, limit: 200 }),
+          loadExecutiveBudgetPlanWorkflowEvents({ companyId, limit: 200 })
         ]);
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalRankingSnapshots(rankingRows || []);
         setExecutiveGlobalPreventiveSnapshots(preventiveRows || []);
         setExecutiveBudgetClosureSnapshots(budgetClosureRows || []);
         setExecutiveBudgetPlanVersions(budgetVersionRows || []);
+        setExecutiveBudgetPlanWorkflowEvents(budgetWorkflowRows || []);
       } catch {
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalRankingSnapshots([]);
         setExecutiveGlobalPreventiveSnapshots([]);
         setExecutiveBudgetClosureSnapshots([]);
         setExecutiveBudgetPlanVersions([]);
+        setExecutiveBudgetPlanWorkflowEvents([]);
       }
     })();
 
@@ -2877,7 +2992,7 @@ export const Reports: React.FC = () => {
     };
   }, [executiveCompareCompanyId, selectedSeason]);
 
-  const presentationMaxSlide = activeTab === 'executive' ? 14 : activeTab === 'general' ? 3 : 1;
+  const presentationMaxSlide = activeTab === 'executive' ? 15 : activeTab === 'general' ? 3 : 1;
 
   // Update presentation logic to support executive slides and legacy tabs
   useEffect(() => {
@@ -5311,6 +5426,15 @@ export const Reports: React.FC = () => {
     ),
     [executiveBudgetPlanVersions, selectedSeason]
   );
+  const executiveCurrentBudgetPlanVersion = executiveBudgetPlanVersionData.currentSeasonRows[0] || executiveBudgetPlanVersionData.latestVersion || null;
+  const executiveBudgetPlanWorkflowData = useMemo(
+    () => buildExecutiveBudgetPlanWorkflowAnalytics(
+      executiveBudgetPlanWorkflowEvents,
+      selectedSeason,
+      'la empresa activa'
+    ),
+    [executiveBudgetPlanWorkflowEvents, selectedSeason]
+  );
   const executiveExportWarningContext = useMemo(() => {
     const warningTypes: string[] = [];
 
@@ -5816,6 +5940,92 @@ export const Reports: React.FC = () => {
     selectedCompany?.id,
     selectedSeason
   ]);
+  const handleExecutiveBudgetWorkflowAction = useCallback(async (actionType: ExecutiveBudgetPlanWorkflowAction) => {
+    if (!selectedCompany?.id) {
+      toast.error('No hay empresa activa para registrar el workflow presupuestario.');
+      return;
+    }
+
+    if (!executiveCurrentBudgetPlanVersion) {
+      toast.error('Aún no existe una versión presupuestaria vigente para esta temporada.');
+      return;
+    }
+
+    const responsibleLabel = executiveBudgetWorkflowResponsible.trim();
+    const responsibleRole = executiveBudgetWorkflowRole;
+    const reason = executiveBudgetWorkflowReason.trim();
+
+    if (!responsibleLabel) {
+      toast.error('Debes indicar el responsable de la decisión presupuestaria.');
+      return;
+    }
+
+    if (!reason) {
+      toast.error('Debes indicar el motivo o comentario de la decisión.');
+      return;
+    }
+
+    if (
+      actionType === 'freeze_comite'
+      && (
+        executiveTotalDataClosure.readiness.title !== 'Listo para comité'
+        || executiveCompanyBudgetGovernanceData.budgetStatus !== 'completo'
+      )
+    ) {
+      toast.error('El freeze manual de comité solo puede registrarse cuando la temporada está lista para comité y el presupuesto está completo.');
+      return;
+    }
+
+    setSubmittingExecutiveBudgetWorkflow(true);
+    try {
+      await createExecutiveBudgetPlanWorkflowEvent({
+        companyId: selectedCompany.id,
+        versionId: executiveCurrentBudgetPlanVersion.id,
+        season: selectedSeason,
+        versionKind: executiveCurrentBudgetPlanVersion.version_kind,
+        actionType,
+        responsibleLabel,
+        reason,
+        metadata: {
+          company_name: companyName,
+          readiness_title: executiveTotalDataClosure.readiness.title,
+          budget_status: executiveCompanyBudgetGovernanceData.budgetStatus,
+          coverage_pct: Number(executiveCompanyBudgetGovernanceData.areaCoveragePct.toFixed(2)),
+          execution_pct: Number((executiveData.kpis.budgetExecutionPct || 0).toFixed(2)),
+          total_budget: Number((executiveData.kpis.totalBudget || 0).toFixed(2)),
+          responsible_role: responsibleRole
+        }
+      });
+
+      const rows = await loadExecutiveBudgetPlanWorkflowEvents({ companyId: selectedCompany.id, limit: 200 });
+      setExecutiveBudgetPlanWorkflowEvents(rows || []);
+      setExecutiveBudgetWorkflowReason('');
+      toast.success(
+        actionType === 'freeze_comite'
+          ? 'Se registró el freeze manual de comité.'
+          : actionType === 'observada'
+            ? 'Se registró la observación presupuestaria.'
+            : 'Se registró la publicación de la versión presupuestaria.'
+      );
+    } catch (error: any) {
+      toast.error(`No se pudo registrar el workflow presupuestario: ${error?.message || 'intenta nuevamente.'}`);
+    } finally {
+      setSubmittingExecutiveBudgetWorkflow(false);
+    }
+  }, [
+    companyName,
+    executiveBudgetWorkflowReason,
+    executiveBudgetWorkflowRole,
+    executiveBudgetWorkflowResponsible,
+    executiveCompanyBudgetGovernanceData.areaCoveragePct,
+    executiveCompanyBudgetGovernanceData.budgetStatus,
+    executiveCurrentBudgetPlanVersion,
+    executiveData.kpis.budgetExecutionPct,
+    executiveData.kpis.totalBudget,
+    executiveTotalDataClosure.readiness.title,
+    selectedCompany?.id,
+    selectedSeason
+  ]);
   const selectedExecutiveGlobalAlertTransitions = useMemo(
     () => executiveGlobalAlertTransitions.filter((row) => row.event_id === editingExecutiveGlobalAlertId),
     [editingExecutiveGlobalAlertId, executiveGlobalAlertTransitions]
@@ -6103,6 +6313,12 @@ export const Reports: React.FC = () => {
         { Indicador: 'Última versión', Valor: executiveBudgetPlanVersionData.latestVersion ? formatExecutiveBudgetPlanVersionKind(executiveBudgetPlanVersionData.latestVersion.version_kind) : 'Sin versión' },
         { Indicador: 'Versión comité', Valor: executiveBudgetPlanVersionData.latestCommitteeVersion ? executiveBudgetPlanVersionData.latestCommitteeVersion.season : 'Pendiente' },
         { Indicador: 'Resumen versionado presupuestario', Valor: executiveBudgetPlanVersionData.summaryLine },
+        { Indicador: 'Workflow presupuestario', Valor: executiveBudgetPlanWorkflowData.totalEvents },
+        { Indicador: 'Última acción workflow', Valor: executiveBudgetPlanWorkflowData.latestEvent ? formatExecutiveBudgetWorkflowAction(executiveBudgetPlanWorkflowData.latestEvent.action_type) : 'Sin acción' },
+        { Indicador: 'Último responsable workflow', Valor: executiveBudgetPlanWorkflowData.latestResponsible || 'Sin responsable' },
+        { Indicador: 'Último rol workflow', Valor: executiveBudgetPlanWorkflowData.latestRole ? formatExecutiveBudgetWorkflowRole(executiveBudgetPlanWorkflowData.latestRole) : 'Sin rol' },
+        { Indicador: 'Freeze manual comité', Valor: executiveBudgetPlanWorkflowData.latestFreeze ? executiveBudgetPlanWorkflowData.latestFreeze.season : 'Pendiente' },
+        { Indicador: 'Resumen workflow presupuestario', Valor: executiveBudgetPlanWorkflowData.summaryLine },
         { Indicador: 'Costo por ha', Valor: Number((executiveViewData.kpis.averageCostPerHa || 0).toFixed(2)) },
         { Indicador: 'Costo por kg', Valor: Number((executiveViewData.kpis.averageCostPerKg || 0).toFixed(2)) },
         { Indicador: 'Temporada anterior', Valor: Number(executiveViewData.kpis.previousSeasonCost.toFixed(0)) },
@@ -7792,6 +8008,31 @@ export const Reports: React.FC = () => {
           ],
           theme: 'grid',
           headStyles: { fillColor: [79, 70, 229] },
+          styles: { fontSize: 8 }
+        });
+
+        yPos = (doc as any).lastAutoTable.finalY + 8;
+
+        if (yPos > 150) {
+          doc.addPage();
+          yPos = 20;
+        }
+
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Workflow presupuestario', 'Detalle']],
+          body: [
+            ['Resumen', executiveBudgetPlanWorkflowData.summaryLine],
+            ['Eventos históricos', String(executiveBudgetPlanWorkflowData.totalEvents)],
+            ['Última acción', executiveBudgetPlanWorkflowData.latestEvent ? formatExecutiveBudgetWorkflowAction(executiveBudgetPlanWorkflowData.latestEvent.action_type) : 'Sin acción'],
+            ['Último responsable', executiveBudgetPlanWorkflowData.latestResponsible || 'Sin responsable'],
+            ['Último rol', executiveBudgetPlanWorkflowData.latestRole ? formatExecutiveBudgetWorkflowRole(executiveBudgetPlanWorkflowData.latestRole) : 'Sin rol'],
+            ['Última publicación', executiveBudgetPlanWorkflowData.latestPublication ? `${executiveBudgetPlanWorkflowData.latestPublication.responsible_label} · ${new Date(executiveBudgetPlanWorkflowData.latestPublication.created_at).toLocaleString('es-CL')}` : 'Sin publicación'],
+            ['Última observación', executiveBudgetPlanWorkflowData.latestObservation ? `${executiveBudgetPlanWorkflowData.latestObservation.responsible_label} · ${new Date(executiveBudgetPlanWorkflowData.latestObservation.created_at).toLocaleString('es-CL')}` : 'Sin observación'],
+            ['Freeze comité', executiveBudgetPlanWorkflowData.latestFreeze ? `${executiveBudgetPlanWorkflowData.latestFreeze.responsible_label} · ${new Date(executiveBudgetPlanWorkflowData.latestFreeze.created_at).toLocaleString('es-CL')}` : 'Pendiente']
+          ],
+          theme: 'grid',
+          headStyles: { fillColor: [22, 163, 74] },
           styles: { fontSize: 8 }
         });
 
@@ -11013,6 +11254,207 @@ export const Reports: React.FC = () => {
                                 <tr>
                                   <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
                                     Sin secuencia histórica de versiones en la temporada activa.
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {(executiveBudgetPlanWorkflowData.totalEvents > 0 || executiveCurrentBudgetPlanVersion) && (
+                <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">Workflow de aprobación presupuestaria</h3>
+                        <p className="text-sm text-gray-500">Publica, observa o congela manualmente la versión vigente con responsable y motivo trazables.</p>
+                      </div>
+                      <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${
+                        executiveBudgetPlanWorkflowData.latestFreeze
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : executiveBudgetPlanWorkflowData.latestObservation
+                            ? 'border-amber-200 bg-amber-50 text-amber-700'
+                            : 'border-slate-200 bg-slate-50 text-slate-700'
+                      }`}>
+                        {executiveBudgetPlanWorkflowData.latestFreeze
+                          ? 'Freeze visible'
+                          : executiveBudgetPlanWorkflowData.latestObservation
+                            ? 'Con observaciones'
+                            : 'Sin decisión manual'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Eventos workflow</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanWorkflowData.totalEvents}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Última acción</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanWorkflowData.latestEvent ? formatExecutiveBudgetWorkflowAction(executiveBudgetPlanWorkflowData.latestEvent.action_type) : '-'}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Responsable visible</div>
+                        <div className="mt-2 text-lg font-semibold text-slate-900">{executiveBudgetPlanWorkflowData.latestResponsible || 'Sin responsable'}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Rol visible</div>
+                        <div className="mt-2 text-lg font-semibold text-slate-900">
+                          {executiveBudgetPlanWorkflowData.latestRole ? formatExecutiveBudgetWorkflowRole(executiveBudgetPlanWorkflowData.latestRole) : 'Sin rol'}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Versión vigente</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveCurrentBudgetPlanVersion ? formatExecutiveBudgetPlanVersionKind(executiveCurrentBudgetPlanVersion.version_kind) : '-'}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Freeze comité</div>
+                        <div className="mt-2 text-lg font-semibold text-slate-900">{executiveBudgetPlanWorkflowData.latestFreeze ? executiveBudgetPlanWorkflowData.latestFreeze.season : 'Pendiente'}</div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 xl:grid-cols-[0.95fr,1.05fr] gap-4">
+                      <div className="rounded-xl border border-slate-200 p-4 space-y-4">
+                        <div>
+                          <div className="text-sm font-medium text-slate-900">Registrar decisión</div>
+                          <p className="mt-1 text-sm text-slate-500">La decisión se aplica sobre la versión vigente de la temporada activa y queda trazada con su motivo.</p>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <label className="block text-sm">
+                            <span className="mb-1 block font-medium text-slate-700">Responsable</span>
+                            <input
+                              type="text"
+                              value={executiveBudgetWorkflowResponsible}
+                              onChange={(e) => setExecutiveBudgetWorkflowResponsible(e.target.value)}
+                              placeholder="Ej: Gerencia agrícola"
+                              className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                            />
+                          </label>
+                          <label className="block text-sm">
+                            <span className="mb-1 block font-medium text-slate-700">Rol formal</span>
+                            <select
+                              value={executiveBudgetWorkflowRole}
+                              onChange={(e) => setExecutiveBudgetWorkflowRole(e.target.value as ExecutiveBudgetWorkflowRole)}
+                              className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                            >
+                              {EXECUTIVE_BUDGET_WORKFLOW_ROLE_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
+                            <div className="font-medium text-slate-900">Versión objetivo</div>
+                            <div className="mt-1">
+                              {executiveCurrentBudgetPlanVersion
+                                ? `${formatExecutiveBudgetPlanVersionKind(executiveCurrentBudgetPlanVersion.version_kind)} · ${executiveCurrentBudgetPlanVersion.season}`
+                                : 'Sin versión vigente'}
+                            </div>
+                            <div className="mt-2 text-xs text-slate-500">Estado comité: {executiveTotalDataClosure.readiness.title}</div>
+                          </div>
+                        </div>
+                        <label className="block text-sm">
+                          <span className="mb-1 block font-medium text-slate-700">Motivo o comentario</span>
+                          <textarea
+                            value={executiveBudgetWorkflowReason}
+                            onChange={(e) => setExecutiveBudgetWorkflowReason(e.target.value)}
+                            placeholder="Ej: Se publica revisión luego de validar presupuesto por sector, cobertura y cierre de temporada."
+                            rows={4}
+                            className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                          />
+                        </label>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <button
+                            type="button"
+                            disabled={submittingExecutiveBudgetWorkflow || !executiveCurrentBudgetPlanVersion}
+                            onClick={() => void handleExecutiveBudgetWorkflowAction('publicada')}
+                            className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Publicar versión
+                          </button>
+                          <button
+                            type="button"
+                            disabled={submittingExecutiveBudgetWorkflow || !executiveCurrentBudgetPlanVersion}
+                            onClick={() => void handleExecutiveBudgetWorkflowAction('observada')}
+                            className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Registrar observación
+                          </button>
+                          <button
+                            type="button"
+                            disabled={
+                              submittingExecutiveBudgetWorkflow
+                              || !executiveCurrentBudgetPlanVersion
+                              || executiveTotalDataClosure.readiness.title !== 'Listo para comité'
+                              || executiveCompanyBudgetGovernanceData.budgetStatus !== 'completo'
+                            }
+                            onClick={() => void handleExecutiveBudgetWorkflowAction('freeze_comite')}
+                            className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Freeze manual comité
+                          </button>
+                        </div>
+                        {executiveTotalDataClosure.readiness.title !== 'Listo para comité' || executiveCompanyBudgetGovernanceData.budgetStatus !== 'completo' ? (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                            El freeze manual exige temporada lista para comité y presupuesto completo.
+                          </div>
+                        ) : (
+                          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                            La temporada cumple condiciones para registrar freeze manual de comité.
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+                          <div className="font-medium text-slate-900">Lectura del workflow</div>
+                          <p className="mt-2">{executiveBudgetPlanWorkflowData.summaryLine}</p>
+                          <p className="mt-2">
+                            Rol dominante: {executiveBudgetPlanWorkflowData.topRole ? formatExecutiveBudgetWorkflowRole(executiveBudgetPlanWorkflowData.topRole.role) : 'sin rol visible'}.
+                          </p>
+                          <p className="mt-2">
+                            Última publicación: {executiveBudgetPlanWorkflowData.latestPublication
+                              ? `${executiveBudgetPlanWorkflowData.latestPublication.responsible_label} · ${new Date(executiveBudgetPlanWorkflowData.latestPublication.created_at).toLocaleString('es-CL')}`
+                              : 'sin publicación manual visible'}.
+                          </p>
+                          <p className="mt-2">
+                            Último freeze: {executiveBudgetPlanWorkflowData.latestFreeze
+                              ? `${executiveBudgetPlanWorkflowData.latestFreeze.responsible_label} · ${new Date(executiveBudgetPlanWorkflowData.latestFreeze.created_at).toLocaleString('es-CL')}`
+                              : 'sin freeze manual registrado'}.
+                          </p>
+                        </div>
+                        <div className="overflow-x-auto rounded-xl border border-slate-200">
+                          <table className="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead className="bg-slate-50">
+                              <tr>
+                                <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
+                                <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Acción</th>
+                                <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Versión</th>
+                                <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Rol</th>
+                                <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Responsable</th>
+                                <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Motivo</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 bg-white">
+                              {executiveBudgetPlanWorkflowData.recentRows.slice(0, 8).map((row) => (
+                                <tr key={row.id} className={row.season === selectedSeason ? 'bg-emerald-50/40' : ''}>
+                                  <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                                  <td className="px-4 py-3 text-slate-700">{formatExecutiveBudgetWorkflowAction(row.action_type)}</td>
+                                  <td className="px-4 py-3 text-slate-700">{formatExecutiveBudgetPlanVersionKind(row.version_kind)}</td>
+                                  <td className="px-4 py-3 text-slate-700">{formatExecutiveBudgetWorkflowRole(getExecutiveBudgetWorkflowRole(row))}</td>
+                                  <td className="px-4 py-3 text-slate-700">{row.responsible_label}</td>
+                                  <td className="px-4 py-3 text-slate-700">{row.reason}</td>
+                                </tr>
+                              ))}
+                              {executiveBudgetPlanWorkflowData.recentRows.length === 0 && (
+                                <tr>
+                                  <td colSpan={6} className="px-4 py-4 text-center text-sm text-slate-500">
+                                    Aún no hay decisiones manuales registradas para el workflow presupuestario.
                                   </td>
                                 </tr>
                               )}
@@ -16713,7 +17155,7 @@ export const Reports: React.FC = () => {
                               {executiveTotalDataClosure.readiness.title}
                             </span>
                           </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
                             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
                               <div className="text-sm uppercase tracking-wide text-slate-500">Cierre total</div>
                               <div className="mt-3 text-3xl font-bold text-slate-900">{executiveTotalDataClosure.totalClosurePct.toFixed(1)}%</div>
@@ -17542,6 +17984,182 @@ export const Reports: React.FC = () => {
                       )}
 
                       {currentSlide === 14 && (
+                        <div className="space-y-6">
+                          <div className="flex items-start justify-between gap-6">
+                            <div>
+                              <div className="text-sm uppercase tracking-[0.25em] text-slate-400">Workflow Presupuestario</div>
+                              <div className="mt-2 text-3xl font-bold text-slate-900">Aprobación, observación y freeze manual de comité</div>
+                              <div className="mt-2 text-lg text-slate-500">{companyName} · {selectedSeason} · {executiveFieldLabel}</div>
+                            </div>
+                            <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${
+                              executiveBudgetPlanWorkflowData.latestFreeze
+                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                : executiveBudgetPlanWorkflowData.latestObservation
+                                  ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                  : 'border-slate-200 bg-slate-50 text-slate-700'
+                            }`}>
+                              {executiveBudgetPlanWorkflowData.latestFreeze
+                                ? 'Freeze visible'
+                                : executiveBudgetPlanWorkflowData.latestObservation
+                                  ? 'Con observaciones'
+                                  : 'Sin decisión manual'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Eventos workflow</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{executiveBudgetPlanWorkflowData.totalEvents}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Última acción</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">
+                                {executiveBudgetPlanWorkflowData.latestEvent
+                                  ? formatExecutiveBudgetWorkflowAction(executiveBudgetPlanWorkflowData.latestEvent.action_type)
+                                  : '-'}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Responsable visible</div>
+                              <div className="mt-3 text-2xl font-bold text-slate-900">{executiveBudgetPlanWorkflowData.latestResponsible || 'Sin responsable'}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Rol visible</div>
+                              <div className="mt-3 text-2xl font-bold text-slate-900">
+                                {executiveBudgetPlanWorkflowData.latestRole ? formatExecutiveBudgetWorkflowRole(executiveBudgetPlanWorkflowData.latestRole) : 'Sin rol'}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Versión vigente</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">
+                                {executiveCurrentBudgetPlanVersion
+                                  ? formatExecutiveBudgetPlanVersionKind(executiveCurrentBudgetPlanVersion.version_kind)
+                                  : '-'}
+                              </div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Freeze comité</div>
+                              <div className="mt-3 text-2xl font-bold text-slate-900">
+                                {executiveBudgetPlanWorkflowData.latestFreeze
+                                  ? executiveBudgetPlanWorkflowData.latestFreeze.season
+                                  : 'Pendiente'}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 xl:grid-cols-[0.95fr,1.05fr] gap-6">
+                            <div className="space-y-6">
+                              <div className="rounded-2xl border border-slate-200 p-6">
+                                <div className="text-2xl font-bold text-slate-800 mb-5">Lectura del workflow</div>
+                                <p className="text-xl leading-9 text-slate-600">{executiveBudgetPlanWorkflowData.summaryLine}</p>
+                                <p className="mt-5 text-lg text-slate-500">
+                                  Rol dominante: {executiveBudgetPlanWorkflowData.topRole ? formatExecutiveBudgetWorkflowRole(executiveBudgetPlanWorkflowData.topRole.role) : 'sin rol visible'}.
+                                </p>
+                                <p className="mt-5 text-lg text-slate-500">
+                                  Última publicación: {executiveBudgetPlanWorkflowData.latestPublication
+                                    ? `${executiveBudgetPlanWorkflowData.latestPublication.responsible_label} · ${new Date(executiveBudgetPlanWorkflowData.latestPublication.created_at).toLocaleString('es-CL')}`
+                                    : 'sin publicación manual visible'}.
+                                </p>
+                                <p className="mt-5 text-lg text-slate-500">
+                                  Última observación: {executiveBudgetPlanWorkflowData.latestObservation
+                                    ? `${executiveBudgetPlanWorkflowData.latestObservation.responsible_label} · ${new Date(executiveBudgetPlanWorkflowData.latestObservation.created_at).toLocaleString('es-CL')}`
+                                    : 'sin observación manual visible'}.
+                                </p>
+                                <p className="mt-5 text-lg text-slate-500">
+                                  Último freeze: {executiveBudgetPlanWorkflowData.latestFreeze
+                                    ? `${executiveBudgetPlanWorkflowData.latestFreeze.responsible_label} · ${new Date(executiveBudgetPlanWorkflowData.latestFreeze.created_at).toLocaleString('es-CL')}`
+                                    : 'sin freeze manual registrado'}.
+                                </p>
+                              </div>
+
+                              <div className={`rounded-2xl border p-6 ${
+                                executiveTotalDataClosure.readiness.title === 'Listo para comité'
+                                && executiveCompanyBudgetGovernanceData.budgetStatus === 'completo'
+                                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                                  : 'border-amber-200 bg-amber-50 text-amber-800'
+                              }`}>
+                                <div className="text-sm uppercase tracking-[0.25em]">Condición de freeze</div>
+                                <p className="mt-4 text-2xl leading-10">
+                                  {executiveTotalDataClosure.readiness.title === 'Listo para comité'
+                                  && executiveCompanyBudgetGovernanceData.budgetStatus === 'completo'
+                                    ? 'La temporada cumple las condiciones para congelar comité manualmente.'
+                                    : 'El freeze manual exige temporada lista para comité y presupuesto completo.'}
+                                </p>
+                                <div className="mt-5 grid grid-cols-2 gap-4 text-base">
+                                  <div className="rounded-2xl bg-white/70 px-4 py-3">
+                                    Cierre total: {executiveTotalDataClosure.readiness.title}
+                                  </div>
+                                  <div className="rounded-2xl bg-white/70 px-4 py-3">
+                                    Cobertura presupuestaria: {formatExecutiveBudgetClosureStatus(executiveCompanyBudgetGovernanceData.budgetStatus)}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="space-y-6">
+                              <div className="rounded-2xl border border-slate-200 p-6">
+                                <div className="text-2xl font-bold text-slate-800 mb-5">Bitácora reciente</div>
+                                <table className="w-full text-left text-sm">
+                                  <thead className="text-base text-slate-500 bg-slate-50 sticky top-0">
+                                    <tr>
+                                      <th className="p-3">Fecha</th>
+                                      <th className="p-3">Acción</th>
+                                      <th className="p-3">Versión</th>
+                                      <th className="p-3">Rol</th>
+                                      <th className="p-3">Responsable</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {executiveBudgetPlanWorkflowData.recentRows.slice(0, 6).map((row) => (
+                                      <tr key={row.id} className={`border-b border-slate-100 ${row.season === selectedSeason ? 'bg-emerald-50/40' : ''}`}>
+                                        <td className="p-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                                        <td className="p-3 text-slate-700">{formatExecutiveBudgetWorkflowAction(row.action_type)}</td>
+                                        <td className="p-3 text-slate-700">{formatExecutiveBudgetPlanVersionKind(row.version_kind)}</td>
+                                        <td className="p-3 text-slate-700">{formatExecutiveBudgetWorkflowRole(getExecutiveBudgetWorkflowRole(row))}</td>
+                                        <td className="p-3 text-slate-700">{row.responsible_label}</td>
+                                      </tr>
+                                    ))}
+                                    {executiveBudgetPlanWorkflowData.recentRows.length === 0 && (
+                                      <tr>
+                                        <td colSpan={5} className="p-6 text-center text-slate-500">
+                                          Aún no hay decisiones manuales registradas para el workflow presupuestario.
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              <div className="rounded-2xl border border-slate-200 p-6">
+                                <div className="text-2xl font-bold text-slate-800 mb-5">Últimos motivos registrados</div>
+                                <div className="space-y-3">
+                                  {executiveBudgetPlanWorkflowData.recentRows.slice(0, 4).map((row) => (
+                                    <div key={`${row.id}-reason`} className="rounded-2xl bg-slate-50 p-4">
+                                      <div className="flex items-center justify-between gap-4">
+                                        <div className="font-semibold text-slate-900">
+                                          {formatExecutiveBudgetWorkflowAction(row.action_type)} · {row.responsible_label}
+                                        </div>
+                                        <div className="text-sm text-slate-500">{row.season}</div>
+                                      </div>
+                                      <div className="mt-2 text-sm font-medium text-slate-500">
+                                        {formatExecutiveBudgetWorkflowRole(getExecutiveBudgetWorkflowRole(row))}
+                                      </div>
+                                      <p className="mt-2 text-base leading-7 text-slate-600">{row.reason}</p>
+                                    </div>
+                                  ))}
+                                  {executiveBudgetPlanWorkflowData.recentRows.length === 0 && (
+                                    <div className="rounded-2xl bg-slate-50 p-8 text-center text-slate-400">
+                                      Sin trazabilidad manual visible para esta temporada.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {currentSlide === 15 && (
                         <div className="space-y-6">
                           <div className="flex items-start justify-between gap-6">
                             <div>
