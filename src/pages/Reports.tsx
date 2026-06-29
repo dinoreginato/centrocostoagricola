@@ -43,6 +43,11 @@ import {
   type ExecutiveGlobalPreventiveSnapshotRow,
   type ExecutiveGlobalRankingSnapshotRow
 } from '../services/executiveGlobalSnapshots';
+import {
+  createExecutiveBudgetClosureSnapshot,
+  loadExecutiveBudgetClosureSnapshots,
+  type ExecutiveBudgetClosureSnapshotRow
+} from '../services/executiveBudgetSnapshots';
 import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
 interface ReportData {
@@ -1480,6 +1485,124 @@ const buildExecutiveGlobalPreventiveSnapshotAnalytics = (
   };
 };
 
+const formatExecutiveBudgetClosureStatus = (value: string | null | undefined) => {
+  switch (value) {
+    case 'completo':
+      return 'Completo';
+    case 'parcial':
+      return 'Parcial';
+    case 'fragil':
+      return 'Frágil';
+    default:
+      return 'Sin estado';
+  }
+};
+
+const buildExecutiveBudgetGovernanceAnalytics = (
+  sectorRows: Array<any>,
+  scopeLabel: string
+) => {
+  const totalSectors = sectorRows.length;
+  const sectorsWithBudget = sectorRows.filter((row) => Number((row as any).budgetTotal || 0) > 0);
+  const sectorsWithoutBudget = sectorRows.filter((row) => Number((row as any).budgetTotal || 0) <= 0);
+  const sectorsWithCostNoBudget = sectorRows.filter((row) => Number(row.total || 0) > 0 && Number((row as any).budgetTotal || 0) <= 0);
+  const sectorsWithBudgetNoCost = sectorRows.filter((row) => Number(row.total || 0) <= 0 && Number((row as any).budgetTotal || 0) > 0);
+  const totalArea = sectorRows.reduce((sum, row) => sum + Number(row.hectares || 0), 0);
+  const budgetedArea = sectorsWithBudget.reduce((sum, row) => sum + Number(row.hectares || 0), 0);
+  const areaCoveragePct = totalArea > 0 ? (budgetedArea / totalArea) * 100 : 0;
+  const costWithoutBudget = sectorsWithCostNoBudget.reduce((sum, row) => sum + Number(row.total || 0), 0);
+  const fieldMap = sectorRows.reduce((map, row) => {
+    const current = map.get(row.fieldName) || { fieldName: row.fieldName, budgetedCount: 0, missingCount: 0 };
+    if (Number((row as any).budgetTotal || 0) > 0) current.budgetedCount += 1;
+    else current.missingCount += 1;
+    map.set(row.fieldName, current);
+    return map;
+  }, new Map<string, { fieldName: string; budgetedCount: number; missingCount: number }>());
+  const fields: Array<{ fieldName: string; budgetedCount: number; missingCount: number }> = Array.from(fieldMap.values());
+  const mixedFields = fields.filter((row) => row.budgetedCount > 0 && row.missingCount > 0);
+  const topMissingSector = [...sectorsWithCostNoBudget].sort((a, b) => Number(b.total || 0) - Number(a.total || 0))[0] || null;
+  const budgetStatus = sectorsWithCostNoBudget.length > 0
+    ? 'fragil'
+    : sectorsWithoutBudget.length > 0 || areaCoveragePct < 99.9
+      ? 'parcial'
+      : 'completo';
+  const tone = budgetStatus === 'fragil'
+    ? { badge: 'bg-red-100 text-red-700 border-red-200', label: 'Crítico' }
+    : budgetStatus === 'parcial'
+      ? { badge: 'bg-amber-100 text-amber-700 border-amber-200', label: 'Parcial' }
+      : { badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', label: 'Completo' };
+  const summaryLine = totalSectors <= 0
+    ? `No hay sectores visibles para evaluar la cobertura presupuestaria de ${scopeLabel}.`
+    : sectorsWithCostNoBudget.length > 0
+      ? `La cobertura presupuestaria de ${scopeLabel} es frágil: ${sectorsWithCostNoBudget.length} sectores registran costo sin presupuesto y concentran ${formatCLP(costWithoutBudget)} del gasto visible.`
+      : sectorsWithoutBudget.length > 0
+        ? `La cobertura presupuestaria de ${scopeLabel} es parcial: ${sectorsWithBudget.length} de ${totalSectors} sectores tienen presupuesto visible y cubren ${areaCoveragePct.toFixed(1)}% de la superficie analizada.`
+        : `La cobertura presupuestaria visible de ${scopeLabel} es completa: ${totalSectors} sectores cuentan con presupuesto y cubren ${areaCoveragePct.toFixed(1)}% de la superficie analizada.`;
+
+  return {
+    totalSectors,
+    sectorsWithBudget: sectorsWithBudget.length,
+    sectorsWithoutBudget: sectorsWithoutBudget.length,
+    sectorsWithCostNoBudget: sectorsWithCostNoBudget.length,
+    sectorsWithBudgetNoCost: sectorsWithBudgetNoCost.length,
+    mixedFieldsCount: mixedFields.length,
+    areaCoveragePct,
+    costWithoutBudget,
+    topMissingSector,
+    budgetStatus,
+    tone,
+    summaryLine
+  };
+};
+
+const buildExecutiveBudgetClosureSnapshotAnalytics = (
+  rows: ExecutiveBudgetClosureSnapshotRow[],
+  selectedSeason: string,
+  scopeLabel: string
+) => {
+  const currentSeasonRows = rows.filter((row) => row.season === selectedSeason);
+  const latestSnapshot = rows[0] || null;
+  const statusSummary = Array.from(
+    rows.reduce((map, row) => {
+      map.set(row.budget_status, (map.get(row.budget_status) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count);
+  const seasonSummary = Array.from(
+    rows.reduce((map, row) => {
+      map.set(row.season, (map.get(row.season) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([season, count]) => ({ season, count })).sort((a, b) => b.season.localeCompare(a.season));
+  const avgCoverage = rows.length > 0
+    ? rows.reduce((sum, row) => sum + Number(row.coverage_pct || 0), 0) / rows.length
+    : 0;
+  const avgExecution = rows.length > 0
+    ? rows.reduce((sum, row) => sum + Number(row.budget_execution_pct || 0), 0) / rows.length
+    : 0;
+  const avgBudget = rows.length > 0
+    ? rows.reduce((sum, row) => sum + Number(row.total_budget || 0), 0) / rows.length
+    : 0;
+  const summaryLine = latestSnapshot
+    ? `Los cierres presupuestarios materializados para ${scopeLabel} acumulan ${rows.length} registros. El estado dominante es ${formatExecutiveBudgetClosureStatus(statusSummary[0]?.status)} y la cobertura promedio llega a ${avgCoverage.toFixed(1)}%.`
+    : `No hay cierres presupuestarios materializados para ${scopeLabel}.`;
+
+  return {
+    rows,
+    currentSeasonRows,
+    latestSnapshot,
+    recentRows: rows.slice(0, 12),
+    statusSummary,
+    seasonSummary,
+    avgCoverage,
+    avgExecution,
+    avgBudget,
+    topStatus: statusSummary[0] || null,
+    totalSnapshots: rows.length,
+    summaryLine
+  };
+};
+
 const getExecutiveSortMetric = (row: any, sortBy: ExecutiveSortKey) => {
   switch (sortBy) {
     case 'variation':
@@ -2244,6 +2367,7 @@ export const Reports: React.FC = () => {
   const [executiveGlobalAlertResolutions, setExecutiveGlobalAlertResolutions] = useState<ExecutiveGlobalAlertSlaResolutionRow[]>([]);
   const [executiveGlobalRankingSnapshots, setExecutiveGlobalRankingSnapshots] = useState<ExecutiveGlobalRankingSnapshotRow[]>([]);
   const [executiveGlobalPreventiveSnapshots, setExecutiveGlobalPreventiveSnapshots] = useState<ExecutiveGlobalPreventiveSnapshotRow[]>([]);
+  const [executiveBudgetClosureSnapshots, setExecutiveBudgetClosureSnapshots] = useState<ExecutiveBudgetClosureSnapshotRow[]>([]);
   const [executiveGlobalAlertLoading, setExecutiveGlobalAlertLoading] = useState(false);
   const [costAuditLoading, setCostAuditLoading] = useState(false);
   const [showProductionModal, setShowProductionModal] = useState(false);
@@ -2316,6 +2440,7 @@ export const Reports: React.FC = () => {
   const executiveGlobalAlertResolutionLogRef = useRef<string>('');
   const executiveGlobalRankingSnapshotLogRef = useRef<string>('');
   const executiveGlobalPreventiveSnapshotLogRef = useRef<string>('');
+  const executiveBudgetClosureSnapshotLogRef = useRef<string>('');
 
   // Update orientation when tab changes
   useEffect(() => {
@@ -2409,6 +2534,7 @@ export const Reports: React.FC = () => {
     executiveGlobalAlertResolutionLogRef.current = '';
     executiveGlobalRankingSnapshotLogRef.current = '';
     executiveGlobalPreventiveSnapshotLogRef.current = '';
+    executiveBudgetClosureSnapshotLogRef.current = '';
     setRawCostMovements([]);
     setRawMarginRows([]);
     setRawProductionRecords([]);
@@ -2422,6 +2548,7 @@ export const Reports: React.FC = () => {
     setExecutiveGlobalAlertResolutions([]);
     setExecutiveGlobalRankingSnapshots([]);
     setExecutiveGlobalPreventiveSnapshots([]);
+    setExecutiveBudgetClosureSnapshots([]);
     setReportData([]);
     setMonthlyExpenses([]);
     setCategoryExpenses([]);
@@ -2495,17 +2622,20 @@ export const Reports: React.FC = () => {
 
     void (async () => {
       try {
-        const [rankingRows, preventiveRows] = await Promise.all([
+        const [rankingRows, preventiveRows, budgetClosureRows] = await Promise.all([
           loadExecutiveGlobalRankingSnapshots({ companyId, limit: 200 }),
-          loadExecutiveGlobalPreventiveSnapshots({ companyId, limit: 200 })
+          loadExecutiveGlobalPreventiveSnapshots({ companyId, limit: 200 }),
+          loadExecutiveBudgetClosureSnapshots({ companyId, limit: 200 })
         ]);
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalRankingSnapshots(rankingRows || []);
         setExecutiveGlobalPreventiveSnapshots(preventiveRows || []);
+        setExecutiveBudgetClosureSnapshots(budgetClosureRows || []);
       } catch {
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalRankingSnapshots([]);
         setExecutiveGlobalPreventiveSnapshots([]);
+        setExecutiveBudgetClosureSnapshots([]);
       }
     })();
 
@@ -3255,55 +3385,20 @@ export const Reports: React.FC = () => {
     reportData
   ]);
 
-  const executiveBudgetGovernanceData = useMemo(() => {
-    const sectorRows = executiveViewData.sectorRows || [];
-    const totalSectors = sectorRows.length;
-    const sectorsWithBudget = sectorRows.filter((row) => Number((row as any).budgetTotal || 0) > 0);
-    const sectorsWithoutBudget = sectorRows.filter((row) => Number((row as any).budgetTotal || 0) <= 0);
-    const sectorsWithCostNoBudget = sectorRows.filter((row) => Number(row.total || 0) > 0 && Number((row as any).budgetTotal || 0) <= 0);
-    const sectorsWithBudgetNoCost = sectorRows.filter((row) => Number(row.total || 0) <= 0 && Number((row as any).budgetTotal || 0) > 0);
-    const totalArea = sectorRows.reduce((sum, row) => sum + Number(row.hectares || 0), 0);
-    const budgetedArea = sectorsWithBudget.reduce((sum, row) => sum + Number(row.hectares || 0), 0);
-    const areaCoveragePct = totalArea > 0 ? (budgetedArea / totalArea) * 100 : 0;
-    const costWithoutBudget = sectorsWithCostNoBudget.reduce((sum, row) => sum + Number(row.total || 0), 0);
-    const fields = Array.from(
-      sectorRows.reduce((map, row) => {
-        const current = map.get(row.fieldName) || { fieldName: row.fieldName, budgetedCount: 0, missingCount: 0 };
-        if (Number((row as any).budgetTotal || 0) > 0) current.budgetedCount += 1;
-        else current.missingCount += 1;
-        map.set(row.fieldName, current);
-        return map;
-      }, new Map<string, { fieldName: string; budgetedCount: number; missingCount: number }>())
-    ).map(([, value]) => value);
-    const mixedFields = fields.filter((row) => row.budgetedCount > 0 && row.missingCount > 0);
-    const topMissingSector = [...sectorsWithCostNoBudget].sort((a, b) => Number(b.total || 0) - Number(a.total || 0))[0] || null;
-    const tone = sectorsWithCostNoBudget.length > 0
-      ? { badge: 'bg-red-100 text-red-700 border-red-200', label: 'Crítico' }
-      : sectorsWithoutBudget.length > 0 || areaCoveragePct < 99.9
-        ? { badge: 'bg-amber-100 text-amber-700 border-amber-200', label: 'Parcial' }
-        : { badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', label: 'Completo' };
-    const summaryLine = totalSectors <= 0
-      ? 'No hay sectores visibles para evaluar la cobertura presupuestaria.'
-      : sectorsWithCostNoBudget.length > 0
-        ? `La cobertura presupuestaria es frágil: ${sectorsWithCostNoBudget.length} sectores registran costo sin presupuesto y concentran ${formatCLP(costWithoutBudget)} del gasto visible.`
-        : sectorsWithoutBudget.length > 0
-          ? `La cobertura presupuestaria es parcial: ${sectorsWithBudget.length} de ${totalSectors} sectores tienen presupuesto visible y cubren ${areaCoveragePct.toFixed(1)}% de la superficie analizada.`
-          : `La cobertura presupuestaria visible es completa: ${totalSectors} sectores cuentan con presupuesto y cubren ${areaCoveragePct.toFixed(1)}% de la superficie analizada.`;
-
-    return {
-      totalSectors,
-      sectorsWithBudget: sectorsWithBudget.length,
-      sectorsWithoutBudget: sectorsWithoutBudget.length,
-      sectorsWithCostNoBudget: sectorsWithCostNoBudget.length,
-      sectorsWithBudgetNoCost: sectorsWithBudgetNoCost.length,
-      mixedFieldsCount: mixedFields.length,
-      areaCoveragePct,
-      costWithoutBudget,
-      topMissingSector,
-      tone,
-      summaryLine
-    };
-  }, [executiveViewData.sectorRows]);
+  const executiveBudgetGovernanceData = useMemo(
+    () => buildExecutiveBudgetGovernanceAnalytics(
+      executiveViewData.sectorRows || [],
+      executiveFieldFilter === 'all' ? 'la vista ejecutiva actual' : executiveFieldLabel
+    ),
+    [executiveFieldFilter, executiveFieldLabel, executiveViewData.sectorRows]
+  );
+  const executiveCompanyBudgetGovernanceData = useMemo(
+    () => buildExecutiveBudgetGovernanceAnalytics(
+      executiveData.sectorRows || [],
+      'la empresa activa'
+    ),
+    [executiveData.sectorRows]
+  );
 
   const executiveFieldComparison = useMemo(() => {
     if (executiveAllSortedFieldRows.length < 2) return null;
@@ -5045,6 +5140,30 @@ export const Reports: React.FC = () => {
       }))
     })
   ), [executiveGlobalAlertPreventiveData.rows, selectedSeason]);
+  const executiveBudgetClosureSnapshotSignature = useMemo(() => (
+    JSON.stringify({
+      season: selectedSeason,
+      totalBudget: Number((executiveData.kpis.totalBudget || 0).toFixed(2)),
+      totalActualCost: Number(executiveData.kpis.totalSeasonCost.toFixed(2)),
+      budgetExecutionPct: Number((executiveData.kpis.budgetExecutionPct || 0).toFixed(2)),
+      coveragePct: Number(executiveCompanyBudgetGovernanceData.areaCoveragePct.toFixed(2)),
+      status: executiveCompanyBudgetGovernanceData.budgetStatus,
+      rows: executiveData.sectorRows.map((row) => ({
+        fieldName: row.fieldName,
+        sectorName: row.sectorName,
+        budgetTotal: Number((row.budgetTotal || 0).toFixed(2)),
+        total: Number(row.total.toFixed(2))
+      }))
+    })
+  ), [
+    executiveCompanyBudgetGovernanceData.areaCoveragePct,
+    executiveCompanyBudgetGovernanceData.budgetStatus,
+    executiveData.kpis.budgetExecutionPct,
+    executiveData.kpis.totalBudget,
+    executiveData.kpis.totalSeasonCost,
+    executiveData.sectorRows,
+    selectedSeason
+  ]);
   const executiveGlobalRankingSnapshotData = useMemo(
     () => buildExecutiveGlobalRankingSnapshotAnalytics(
       executiveGlobalRankingSnapshots,
@@ -5060,6 +5179,14 @@ export const Reports: React.FC = () => {
       'la empresa activa'
     ),
     [executiveGlobalPreventiveSnapshots, selectedSeason]
+  );
+  const executiveBudgetClosureSnapshotData = useMemo(
+    () => buildExecutiveBudgetClosureSnapshotAnalytics(
+      executiveBudgetClosureSnapshots,
+      selectedSeason,
+      'la empresa activa'
+    ),
+    [executiveBudgetClosureSnapshots, selectedSeason]
   );
   const executiveExportWarningContext = useMemo(() => {
     const warningTypes: string[] = [];
@@ -5419,6 +5546,79 @@ export const Reports: React.FC = () => {
     selectedCompany?.id,
     selectedSeason
   ]);
+  const logExecutiveBudgetClosureSnapshot = useCallback(async () => {
+    if (!selectedCompany?.id || executiveCompanyBudgetGovernanceData.totalSectors <= 0) return;
+
+    try {
+      await createExecutiveBudgetClosureSnapshot({
+        companyId: selectedCompany.id,
+        season: selectedSeason,
+        closureSignature: executiveBudgetClosureSnapshotSignature,
+        budgetStatus: executiveCompanyBudgetGovernanceData.budgetStatus,
+        totalBudget: Number((executiveData.kpis.totalBudget || 0).toFixed(2)),
+        totalActualCost: Number(executiveData.kpis.totalSeasonCost.toFixed(2)),
+        budgetExecutionPct: Number((executiveData.kpis.budgetExecutionPct || 0).toFixed(2)),
+        coveragePct: Number(executiveCompanyBudgetGovernanceData.areaCoveragePct.toFixed(2)),
+        sectorsWithBudget: executiveCompanyBudgetGovernanceData.sectorsWithBudget,
+        totalSectors: executiveCompanyBudgetGovernanceData.totalSectors,
+        mixedFieldsCount: executiveCompanyBudgetGovernanceData.mixedFieldsCount,
+        summary: executiveCompanyBudgetGovernanceData.summaryLine,
+        metadata: {
+          cost_without_budget: Number(executiveCompanyBudgetGovernanceData.costWithoutBudget.toFixed(2)),
+          sectors_with_cost_no_budget: executiveCompanyBudgetGovernanceData.sectorsWithCostNoBudget,
+          sectors_with_budget_no_cost: executiveCompanyBudgetGovernanceData.sectorsWithBudgetNoCost,
+          top_missing_sector: executiveCompanyBudgetGovernanceData.topMissingSector
+            ? `${executiveCompanyBudgetGovernanceData.topMissingSector.fieldName} / ${executiveCompanyBudgetGovernanceData.topMissingSector.sectorName}`
+            : null,
+          company_name: companyName
+        }
+      });
+      const rows = await loadExecutiveBudgetClosureSnapshots({ companyId: selectedCompany.id, limit: 200 });
+      setExecutiveBudgetClosureSnapshots(rows || []);
+    } catch (error) {
+      console.error('No se pudo registrar el cierre presupuestario materializado.', error);
+    }
+  }, [
+    companyName,
+    executiveBudgetClosureSnapshotSignature,
+    executiveCompanyBudgetGovernanceData.areaCoveragePct,
+    executiveCompanyBudgetGovernanceData.budgetStatus,
+    executiveCompanyBudgetGovernanceData.costWithoutBudget,
+    executiveCompanyBudgetGovernanceData.mixedFieldsCount,
+    executiveCompanyBudgetGovernanceData.sectorsWithBudget,
+    executiveCompanyBudgetGovernanceData.sectorsWithBudgetNoCost,
+    executiveCompanyBudgetGovernanceData.sectorsWithCostNoBudget,
+    executiveCompanyBudgetGovernanceData.summaryLine,
+    executiveCompanyBudgetGovernanceData.topMissingSector,
+    executiveCompanyBudgetGovernanceData.totalSectors,
+    executiveData.kpis.budgetExecutionPct,
+    executiveData.kpis.totalBudget,
+    executiveData.kpis.totalSeasonCost,
+    selectedCompany?.id,
+    selectedSeason
+  ]);
+
+  useEffect(() => {
+    if (!selectedCompany?.id || executiveCompanyBudgetGovernanceData.totalSectors <= 0) return;
+
+    const latestSnapshot = executiveBudgetClosureSnapshots[0] || null;
+    const latestSignature = latestSnapshot?.closure_signature || '';
+    if (latestSnapshot?.season === selectedSeason && latestSignature === executiveBudgetClosureSnapshotSignature) {
+      executiveBudgetClosureSnapshotLogRef.current = executiveBudgetClosureSnapshotSignature;
+      return;
+    }
+    if (executiveBudgetClosureSnapshotLogRef.current === executiveBudgetClosureSnapshotSignature) return;
+
+    executiveBudgetClosureSnapshotLogRef.current = executiveBudgetClosureSnapshotSignature;
+    void logExecutiveBudgetClosureSnapshot();
+  }, [
+    executiveBudgetClosureSnapshotSignature,
+    executiveBudgetClosureSnapshots,
+    executiveCompanyBudgetGovernanceData.totalSectors,
+    logExecutiveBudgetClosureSnapshot,
+    selectedCompany?.id,
+    selectedSeason
+  ]);
   const selectedExecutiveGlobalAlertTransitions = useMemo(
     () => executiveGlobalAlertTransitions.filter((row) => row.event_id === editingExecutiveGlobalAlertId),
     [editingExecutiveGlobalAlertId, executiveGlobalAlertTransitions]
@@ -5696,6 +5896,11 @@ export const Reports: React.FC = () => {
         { Indicador: 'Costo sin presupuesto', Valor: Number(executiveBudgetGovernanceData.costWithoutBudget.toFixed(0)) },
         { Indicador: 'Campos con cobertura mixta', Valor: executiveBudgetGovernanceData.mixedFieldsCount },
         { Indicador: 'Resumen gobernanza presupuestaria', Valor: executiveBudgetGovernanceData.summaryLine },
+        { Indicador: 'Snapshots cierre presupuestario', Valor: executiveBudgetClosureSnapshotData.totalSnapshots },
+        { Indicador: 'Estado snapshot presupuestario dominante', Valor: executiveBudgetClosureSnapshotData.topStatus ? formatExecutiveBudgetClosureStatus(executiveBudgetClosureSnapshotData.topStatus.status) : 'Sin snapshot' },
+        { Indicador: 'Cobertura promedio snapshots ppto %', Valor: Number(executiveBudgetClosureSnapshotData.avgCoverage.toFixed(2)) },
+        { Indicador: 'Ejecución promedio snapshots ppto %', Valor: Number(executiveBudgetClosureSnapshotData.avgExecution.toFixed(2)) },
+        { Indicador: 'Resumen cierre presupuestario materializado', Valor: executiveBudgetClosureSnapshotData.summaryLine },
         { Indicador: 'Costo por ha', Valor: Number((executiveViewData.kpis.averageCostPerHa || 0).toFixed(2)) },
         { Indicador: 'Costo por kg', Valor: Number((executiveViewData.kpis.averageCostPerKg || 0).toFixed(2)) },
         { Indicador: 'Temporada anterior', Valor: Number(executiveViewData.kpis.previousSeasonCost.toFixed(0)) },
@@ -7337,6 +7542,31 @@ export const Reports: React.FC = () => {
           ]),
           theme: 'grid',
           headStyles: { fillColor: [185, 28, 28] }
+        });
+
+        yPos = (doc as any).lastAutoTable.finalY + 8;
+
+        if (yPos > 150) {
+          doc.addPage();
+          yPos = 20;
+        }
+
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Cierre presupuestario materializado', 'Detalle']],
+          body: [
+            ['Estado actual', formatExecutiveBudgetClosureStatus(executiveCompanyBudgetGovernanceData.budgetStatus)],
+            ['Resumen', executiveBudgetClosureSnapshotData.summaryLine],
+            ['Snapshots históricos', String(executiveBudgetClosureSnapshotData.totalSnapshots)],
+            ['Cobertura empresa', `${executiveCompanyBudgetGovernanceData.areaCoveragePct.toFixed(1)}%`],
+            ['Ejecución visible', `${Number(executiveData.kpis.budgetExecutionPct || 0).toFixed(1)}%`],
+            ['Costo sin presupuesto', formatCLP(executiveCompanyBudgetGovernanceData.costWithoutBudget)],
+            ['Estado dominante histórico', executiveBudgetClosureSnapshotData.topStatus ? formatExecutiveBudgetClosureStatus(executiveBudgetClosureSnapshotData.topStatus.status) : 'Sin snapshot'],
+            ['Último snapshot', executiveBudgetClosureSnapshotData.latestSnapshot ? `${executiveBudgetClosureSnapshotData.latestSnapshot.season} · ${new Date(executiveBudgetClosureSnapshotData.latestSnapshot.created_at).toLocaleString('es-CL')}` : 'Sin snapshot']
+          ],
+          theme: 'grid',
+          headStyles: { fillColor: [67, 56, 202] },
+          styles: { fontSize: 8 }
         });
 
         yPos = (doc as any).lastAutoTable.finalY + 8;
@@ -10338,6 +10568,121 @@ export const Reports: React.FC = () => {
                   </table>
                 </div>
               </div>
+
+              {(executiveBudgetClosureSnapshotData.totalSnapshots > 0 || executiveCompanyBudgetGovernanceData.totalSectors > 0) && (
+                <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">Cierre presupuestario materializado</h3>
+                        <p className="text-sm text-gray-500">Foto persistida del presupuesto visible, su cobertura y su ejecución para la temporada activa.</p>
+                      </div>
+                      <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${executiveCompanyBudgetGovernanceData.tone.badge}`}>
+                        {formatExecutiveBudgetClosureStatus(executiveCompanyBudgetGovernanceData.budgetStatus)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Snapshots</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetClosureSnapshotData.totalSnapshots}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Cobertura actual</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveCompanyBudgetGovernanceData.areaCoveragePct.toFixed(1)}%</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Ejecución actual</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">{Number(executiveData.kpis.budgetExecutionPct || 0).toFixed(1)}%</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Presupuesto visible</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">{formatCLP(executiveData.kpis.totalBudget || 0)}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Costo ejecutado</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">{formatCLP(executiveData.kpis.totalSeasonCost)}</div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 xl:grid-cols-[1.1fr,0.9fr] gap-4">
+                      <div className="overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="min-w-full divide-y divide-slate-200 text-sm">
+                          <thead className="bg-slate-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Temporada</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Estado</th>
+                              <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Cobertura</th>
+                              <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Ejecución</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200 bg-white">
+                            {executiveBudgetClosureSnapshotData.recentRows.slice(0, 8).map((row) => (
+                              <tr key={row.id} className={row.season === selectedSeason ? 'bg-purple-50/50' : ''}>
+                                <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                                <td className="px-4 py-3 font-medium text-slate-900">{row.season}</td>
+                                <td className="px-4 py-3 text-slate-700">{formatExecutiveBudgetClosureStatus(row.budget_status)}</td>
+                                <td className="px-4 py-3 text-right text-slate-700">{Number(row.coverage_pct || 0).toFixed(1)}%</td>
+                                <td className="px-4 py-3 text-right text-slate-700">{Number(row.budget_execution_pct || 0).toFixed(1)}%</td>
+                              </tr>
+                            ))}
+                            {executiveBudgetClosureSnapshotData.recentRows.length === 0 && (
+                              <tr>
+                                <td colSpan={5} className="px-4 py-4 text-center text-sm text-slate-500">
+                                  Aún no hay snapshots materializados de cierre presupuestario para esta empresa.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="space-y-4">
+                        <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+                          <div className="font-medium text-slate-900">Lectura materializada</div>
+                          <p className="mt-2">{executiveBudgetClosureSnapshotData.summaryLine}</p>
+                          <p className="mt-2">
+                            Último snapshot: {executiveBudgetClosureSnapshotData.latestSnapshot
+                              ? `${executiveBudgetClosureSnapshotData.latestSnapshot.season} · ${new Date(executiveBudgetClosureSnapshotData.latestSnapshot.created_at).toLocaleString('es-CL')}`
+                              : 'sin cierre materializado todavía'}.
+                          </p>
+                          <p className="mt-2">
+                            Estado dominante: {executiveBudgetClosureSnapshotData.topStatus
+                              ? `${formatExecutiveBudgetClosureStatus(executiveBudgetClosureSnapshotData.topStatus.status)} (${executiveBudgetClosureSnapshotData.topStatus.count})`
+                              : 'sin estado histórico dominante'}.
+                          </p>
+                        </div>
+                        <div className="overflow-x-auto rounded-xl border border-slate-200">
+                          <table className="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead className="bg-slate-50">
+                              <tr>
+                                <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Temporada</th>
+                                <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Snapshots</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 bg-white">
+                              {executiveBudgetClosureSnapshotData.seasonSummary.slice(0, 6).map((row) => (
+                                <tr key={row.season} className={row.season === selectedSeason ? 'bg-purple-50/50' : ''}>
+                                  <td className="px-4 py-3 font-medium text-slate-900">{row.season}</td>
+                                  <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                                </tr>
+                              ))}
+                              {executiveBudgetClosureSnapshotData.seasonSummary.length === 0 && (
+                                <tr>
+                                  <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
+                                    Sin histórico materializado por temporada.
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-8 gap-4">
                 <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
@@ -15541,6 +15886,53 @@ export const Reports: React.FC = () => {
                                 {executiveHistoricalSeasonRows.length === 0 && (
                                   <div className="rounded-xl bg-slate-50 px-4 py-6 text-center text-slate-400">No hay temporadas anteriores cargadas.</div>
                                 )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                            <div className="rounded-2xl border border-slate-200 p-6">
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="text-2xl font-bold text-slate-800">Cierre presupuestario materializado</div>
+                                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${executiveCompanyBudgetGovernanceData.tone.badge}`}>
+                                  {formatExecutiveBudgetClosureStatus(executiveCompanyBudgetGovernanceData.budgetStatus)}
+                                </span>
+                              </div>
+                              <p className="mt-5 text-xl leading-9 text-slate-600">{executiveBudgetClosureSnapshotData.summaryLine}</p>
+                              <div className="mt-5 grid grid-cols-2 gap-4 text-sm">
+                                <div className="rounded-2xl bg-slate-50 p-4">
+                                  <div className="uppercase tracking-wide text-slate-500">Snapshots</div>
+                                  <div className="mt-2 text-2xl font-bold text-slate-900">{executiveBudgetClosureSnapshotData.totalSnapshots}</div>
+                                </div>
+                                <div className="rounded-2xl bg-slate-50 p-4">
+                                  <div className="uppercase tracking-wide text-slate-500">Cobertura promedio</div>
+                                  <div className="mt-2 text-2xl font-bold text-slate-900">{executiveBudgetClosureSnapshotData.avgCoverage.toFixed(1)}%</div>
+                                </div>
+                              </div>
+                              <p className="mt-5 text-lg text-slate-500">
+                                Último snapshot: {executiveBudgetClosureSnapshotData.latestSnapshot
+                                  ? `${executiveBudgetClosureSnapshotData.latestSnapshot.season} · ${new Date(executiveBudgetClosureSnapshotData.latestSnapshot.created_at).toLocaleString('es-CL')}`
+                                  : 'sin snapshot materializado todavía'}.
+                              </p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 p-6">
+                              <div className="text-2xl font-bold text-slate-800 mb-5">Lectura actual del presupuesto</div>
+                              <div className="space-y-4">
+                                <div className="rounded-2xl bg-slate-50 p-4 flex items-center justify-between gap-4">
+                                  <span className="text-slate-500">Presupuesto visible</span>
+                                  <span className="text-xl font-bold text-slate-900">{formatCLP(executiveData.kpis.totalBudget || 0)}</span>
+                                </div>
+                                <div className="rounded-2xl bg-slate-50 p-4 flex items-center justify-between gap-4">
+                                  <span className="text-slate-500">Costo ejecutado</span>
+                                  <span className="text-xl font-bold text-slate-900">{formatCLP(executiveData.kpis.totalSeasonCost)}</span>
+                                </div>
+                                <div className="rounded-2xl bg-slate-50 p-4 flex items-center justify-between gap-4">
+                                  <span className="text-slate-500">Cobertura empresa</span>
+                                  <span className="text-xl font-bold text-slate-900">{executiveCompanyBudgetGovernanceData.areaCoveragePct.toFixed(1)}%</span>
+                                </div>
+                                <div className="rounded-2xl bg-slate-50 p-4 flex items-center justify-between gap-4">
+                                  <span className="text-slate-500">Costo sin presupuesto</span>
+                                  <span className="text-xl font-bold text-slate-900">{formatCLP(executiveCompanyBudgetGovernanceData.costWithoutBudget)}</span>
+                                </div>
                               </div>
                             </div>
                           </div>

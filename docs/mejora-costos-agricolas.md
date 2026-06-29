@@ -19,6 +19,7 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - `[x]` recomendaciones automáticas de normalizacion preventiva
   - `[x]` persistencia historica materializada del ranking global
   - `[x]` persistencia preventiva materializada y alertas anticipadas más livianas
+  - `[x]` cierre presupuestario materializado por temporada
 
 ## Avance Del Plan
 ### Fase 1
@@ -72,6 +73,7 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
 - `[x]` Persistencia materializada del ranking global para reducir recalculo.
 - `[x]` Persistencia preventiva materializada y reglas anticipadas más livianas.
 - `[x]` Gobernanza presupuestaria por campo y sector.
+- `[x]` Cierre presupuestario materializado por temporada.
 
 ## Lo Que Ya Esta Bien
 - Modelo predial correcto: `empresa -> campo -> sector`.
@@ -320,6 +322,28 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - distinguir presupuesto cargado de presupuesto realmente utilizable para comité
   - evitar comparar ejecución contra un plan incompleto o estructuralmente débil
   - hacer visible dónde falta presupuesto antes de interpretar desviaciones como conclusiones ejecutivas
+
+## Cierre Presupuestario Materializado Por Temporada
+- Estado: `[x] Implementado`
+- Se agregó la migración `supabase/migrations/20260628170000_create_executive_budget_closure_snapshots.sql`.
+- Se agregó el servicio `src/services/executiveBudgetSnapshots.ts`.
+- La nueva bitácora `executive_budget_closure_snapshots` guarda por empresa y temporada:
+  - firma deduplicada del cierre presupuestario visible
+  - estado del presupuesto: `completo`, `parcial` o `fragil`
+  - presupuesto total visible
+  - costo ejecutado total
+  - porcentaje de ejecución presupuestaria
+  - cobertura presupuestaria de superficie
+  - cantidad de sectores con presupuesto y campos con cobertura mixta
+- `Reportes` ahora:
+  - auto registra snapshots deduplicados del cierre presupuestario de la empresa activa
+  - muestra histórico materializado del cierre presupuestario en la vista ejecutiva
+  - integra esta lectura en fullscreen ejecutivo
+  - la incorpora al resumen Excel y al PDF ejecutivo
+- Objetivo:
+  - congelar la foto presupuestaria por temporada para comité y revisiones posteriores
+  - separar la lectura viva del presupuesto respecto de una evidencia histórica reutilizable
+  - preparar la base para un freeze formal y futuras revisiones/versiones de presupuesto
 
 ## Captura Formal De Produccion
 - Se agrego el servicio `src/services/productionRecords.ts`.
@@ -883,4 +907,4 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
 
 ## Siguiente Paso Recomendado
 - Evaluar refresco programado o corte diario de snapshots si más adelante se quiere una bitácora materializada con cadencia operativa fija.
-- Avanzar hacia cierre formal de presupuesto agrícola por temporada, con versionado de plan inicial y revisiones ejecutivas.
+- Avanzar hacia versionado explícito de presupuesto agrícola por temporada, diferenciando plan base, revisión ejecutiva y freeze final de comité.
