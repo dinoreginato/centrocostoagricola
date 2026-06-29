@@ -54,6 +54,26 @@ const getFieldHectareSummary = (field: Field) => {
   };
 };
 
+const getFieldBudgetSummary = (field: Field) => {
+  const sectors = field.sectors || [];
+  const budgetedSectors = sectors.filter((sector) => Number(sector.budget || 0) > 0);
+  const sectorsWithoutBudget = sectors.filter((sector) => Number(sector.budget || 0) <= 0);
+  const totalBudget = budgetedSectors.reduce(
+    (sum, sector) => sum + (Number(sector.budget || 0) * Number(sector.hectares || 0)),
+    0
+  );
+  const budgetedArea = budgetedSectors.reduce((sum, sector) => sum + Number(sector.hectares || 0), 0);
+  const totalArea = sectors.reduce((sum, sector) => sum + Number(sector.hectares || 0), 0);
+
+  return {
+    budgetedSectors: budgetedSectors.length,
+    sectorsWithoutBudget: sectorsWithoutBudget.length,
+    totalSectors: sectors.length,
+    totalBudget,
+    areaCoveragePct: totalArea > 0 ? (budgetedArea / totalArea) * 100 : 0
+  };
+};
+
 export const Fields: React.FC = () => {
   const { selectedCompany, userRole } = useCompany();
   const [fields, setFields] = useState<Field[]>([]);
@@ -405,11 +425,17 @@ export const Fields: React.FC = () => {
           <ul className="divide-y divide-gray-200">
             {fields.map((field) => {
               const hectareSummary = getFieldHectareSummary(field);
+              const budgetSummary = getFieldBudgetSummary(field);
               const hectareTone = hectareSummary.overAssigned > 0.01
                 ? 'bg-red-100 text-red-700 border-red-200'
                 : hectareSummary.available > 0.01
                   ? 'bg-amber-100 text-amber-700 border-amber-200'
                   : 'bg-emerald-100 text-emerald-700 border-emerald-200';
+              const budgetTone = budgetSummary.sectorsWithoutBudget > 0
+                ? budgetSummary.budgetedSectors > 0
+                  ? 'bg-amber-100 text-amber-700 border-amber-200'
+                  : 'bg-red-100 text-red-700 border-red-200'
+                : 'bg-emerald-100 text-emerald-700 border-emerald-200';
 
               return (
               <li key={field.id}>
@@ -503,6 +529,13 @@ export const Fields: React.FC = () => {
                             <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-medium text-slate-600">
                               Asignado {hectareSummary.assigned.toFixed(2)} / {hectareSummary.total.toFixed(2)} ha
                             </span>
+                            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 font-medium ${budgetTone}`}>
+                              {budgetSummary.totalSectors <= 0
+                                ? 'Sin sectores'
+                                : budgetSummary.sectorsWithoutBudget > 0
+                                  ? `${budgetSummary.budgetedSectors}/${budgetSummary.totalSectors} sectores con presupuesto`
+                                  : 'Presupuesto completo'}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -577,6 +610,43 @@ export const Fields: React.FC = () => {
                           La suma de sectores supera la superficie del campo. La nueva validación bloqueará más sobreasignación hasta regularizar este balance.
                         </div>
                       )}
+
+                      <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Presupuesto total</div>
+                          <div className="mt-1 text-lg font-semibold text-slate-900">{formatCLP(budgetSummary.totalBudget)}</div>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sectores con presupuesto</div>
+                          <div className="mt-1 text-lg font-semibold text-slate-900">{budgetSummary.budgetedSectors} / {budgetSummary.totalSectors}</div>
+                        </div>
+                        <div className={`rounded-lg border p-3 ${
+                          budgetSummary.sectorsWithoutBudget > 0
+                            ? budgetSummary.budgetedSectors > 0
+                              ? 'border-amber-200 bg-amber-50'
+                              : 'border-red-200 bg-red-50'
+                            : 'border-emerald-200 bg-emerald-50'
+                        }`}>
+                          <div className={`text-[11px] font-semibold uppercase tracking-wide ${
+                            budgetSummary.sectorsWithoutBudget > 0
+                              ? budgetSummary.budgetedSectors > 0
+                                ? 'text-amber-700'
+                                : 'text-red-700'
+                              : 'text-emerald-700'
+                          }`}>
+                            Cobertura presupuestaria
+                          </div>
+                          <div className={`mt-1 text-lg font-semibold ${
+                            budgetSummary.sectorsWithoutBudget > 0
+                              ? budgetSummary.budgetedSectors > 0
+                                ? 'text-amber-800'
+                                : 'text-red-800'
+                              : 'text-emerald-800'
+                          }`}>
+                            {budgetSummary.areaCoveragePct.toFixed(1)}%
+                          </div>
+                        </div>
+                      </div>
 
                       <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Sectores</h4>
                       

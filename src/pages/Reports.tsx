@@ -3129,6 +3129,22 @@ export const Reports: React.FC = () => {
     const averageFieldCostPerKg = validCostPerKgRows.length > 0
       ? validCostPerKgRows.reduce((sum, row) => sum + Number((row as any).costPerKg || 0), 0) / validCostPerKgRows.length
       : 0;
+    const budgetCoverageByFieldMap = sortedSectorRows.reduce((map, row) => {
+        const current = map.get(row.fieldName) || { fieldName: row.fieldName, totalCount: 0, missingCount: 0, missingAmount: 0 };
+        current.totalCount += 1;
+        if (Number((row as any).budgetTotal || 0) <= 0) {
+          current.missingCount += 1;
+          current.missingAmount += Number(row.total || 0);
+        }
+        map.set(row.fieldName, current);
+        return map;
+      }, new Map<string, { fieldName: string; totalCount: number; missingCount: number; missingAmount: number }>());
+    const budgetCoverageByField: Array<{
+      fieldName: string;
+      totalCount: number;
+      missingCount: number;
+      missingAmount: number;
+    }> = Array.from(budgetCoverageByFieldMap.values());
 
     const alertCandidates = [
       ...baseViewData.monthlyRows
@@ -3185,6 +3201,26 @@ export const Reports: React.FC = () => {
           message: `El sector ejecuta ${Number((row as any).budgetExecutionPct || 0).toFixed(1)}% de su presupuesto y requiere explicacion operativa.`,
           amount: Math.max(Number((row as any).budgetDelta || 0), 0),
           score: Math.max(Number((row as any).budgetDelta || 0), 0)
+        })),
+      ...sortedSectorRows
+        .filter((row) => Number(row.total || 0) > 0 && Number((row as any).budgetTotal || 0) <= 0)
+        .slice(0, 4)
+        .map((row) => ({
+          level: Number(row.total || 0) >= 1000000 ? 'alta' : 'media',
+          title: `Sector ${row.fieldName} / ${row.sectorName} sin presupuesto`,
+          message: `El sector registra ${formatCLP(Number(row.total || 0))} de costo visible sin presupuesto cargado para la temporada.`,
+          amount: Number(row.total || 0),
+          score: Number(row.total || 0)
+        })),
+      ...budgetCoverageByField
+        .filter((row) => row.missingCount > 0 && row.totalCount > 1)
+        .slice(0, 4)
+        .map((row) => ({
+          level: row.missingCount === row.totalCount ? 'alta' : 'media',
+          title: `Campo ${row.fieldName} con cobertura presupuestaria parcial`,
+          message: `${row.missingCount} de ${row.totalCount} sectores no tienen presupuesto visible; el gasto sin base presupuestaria suma ${formatCLP(row.missingAmount)}.`,
+          amount: row.missingAmount,
+          score: row.missingAmount
         }))
     ];
 
@@ -3218,6 +3254,56 @@ export const Reports: React.FC = () => {
     previousExecutiveSeason,
     reportData
   ]);
+
+  const executiveBudgetGovernanceData = useMemo(() => {
+    const sectorRows = executiveViewData.sectorRows || [];
+    const totalSectors = sectorRows.length;
+    const sectorsWithBudget = sectorRows.filter((row) => Number((row as any).budgetTotal || 0) > 0);
+    const sectorsWithoutBudget = sectorRows.filter((row) => Number((row as any).budgetTotal || 0) <= 0);
+    const sectorsWithCostNoBudget = sectorRows.filter((row) => Number(row.total || 0) > 0 && Number((row as any).budgetTotal || 0) <= 0);
+    const sectorsWithBudgetNoCost = sectorRows.filter((row) => Number(row.total || 0) <= 0 && Number((row as any).budgetTotal || 0) > 0);
+    const totalArea = sectorRows.reduce((sum, row) => sum + Number(row.hectares || 0), 0);
+    const budgetedArea = sectorsWithBudget.reduce((sum, row) => sum + Number(row.hectares || 0), 0);
+    const areaCoveragePct = totalArea > 0 ? (budgetedArea / totalArea) * 100 : 0;
+    const costWithoutBudget = sectorsWithCostNoBudget.reduce((sum, row) => sum + Number(row.total || 0), 0);
+    const fields = Array.from(
+      sectorRows.reduce((map, row) => {
+        const current = map.get(row.fieldName) || { fieldName: row.fieldName, budgetedCount: 0, missingCount: 0 };
+        if (Number((row as any).budgetTotal || 0) > 0) current.budgetedCount += 1;
+        else current.missingCount += 1;
+        map.set(row.fieldName, current);
+        return map;
+      }, new Map<string, { fieldName: string; budgetedCount: number; missingCount: number }>())
+    ).map(([, value]) => value);
+    const mixedFields = fields.filter((row) => row.budgetedCount > 0 && row.missingCount > 0);
+    const topMissingSector = [...sectorsWithCostNoBudget].sort((a, b) => Number(b.total || 0) - Number(a.total || 0))[0] || null;
+    const tone = sectorsWithCostNoBudget.length > 0
+      ? { badge: 'bg-red-100 text-red-700 border-red-200', label: 'Crítico' }
+      : sectorsWithoutBudget.length > 0 || areaCoveragePct < 99.9
+        ? { badge: 'bg-amber-100 text-amber-700 border-amber-200', label: 'Parcial' }
+        : { badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', label: 'Completo' };
+    const summaryLine = totalSectors <= 0
+      ? 'No hay sectores visibles para evaluar la cobertura presupuestaria.'
+      : sectorsWithCostNoBudget.length > 0
+        ? `La cobertura presupuestaria es frágil: ${sectorsWithCostNoBudget.length} sectores registran costo sin presupuesto y concentran ${formatCLP(costWithoutBudget)} del gasto visible.`
+        : sectorsWithoutBudget.length > 0
+          ? `La cobertura presupuestaria es parcial: ${sectorsWithBudget.length} de ${totalSectors} sectores tienen presupuesto visible y cubren ${areaCoveragePct.toFixed(1)}% de la superficie analizada.`
+          : `La cobertura presupuestaria visible es completa: ${totalSectors} sectores cuentan con presupuesto y cubren ${areaCoveragePct.toFixed(1)}% de la superficie analizada.`;
+
+    return {
+      totalSectors,
+      sectorsWithBudget: sectorsWithBudget.length,
+      sectorsWithoutBudget: sectorsWithoutBudget.length,
+      sectorsWithCostNoBudget: sectorsWithCostNoBudget.length,
+      sectorsWithBudgetNoCost: sectorsWithBudgetNoCost.length,
+      mixedFieldsCount: mixedFields.length,
+      areaCoveragePct,
+      costWithoutBudget,
+      topMissingSector,
+      tone,
+      summaryLine
+    };
+  }, [executiveViewData.sectorRows]);
 
   const executiveFieldComparison = useMemo(() => {
     if (executiveAllSortedFieldRows.length < 2) return null;
@@ -5604,6 +5690,12 @@ export const Reports: React.FC = () => {
         { Indicador: 'Gasto total temporada', Valor: Number(executiveViewData.kpis.totalSeasonCost.toFixed(0)) },
         { Indicador: 'Presupuesto visible', Valor: Number((executiveViewData.kpis.totalBudget || 0).toFixed(0)) },
         { Indicador: 'Desviación presupuesto', Valor: Number((executiveViewData.kpis.budgetDelta || 0).toFixed(0)) },
+        { Indicador: 'Cobertura presupuestaria %', Valor: Number(executiveBudgetGovernanceData.areaCoveragePct.toFixed(2)) },
+        { Indicador: 'Sectores con presupuesto', Valor: executiveBudgetGovernanceData.sectorsWithBudget },
+        { Indicador: 'Sectores sin presupuesto', Valor: executiveBudgetGovernanceData.sectorsWithoutBudget },
+        { Indicador: 'Costo sin presupuesto', Valor: Number(executiveBudgetGovernanceData.costWithoutBudget.toFixed(0)) },
+        { Indicador: 'Campos con cobertura mixta', Valor: executiveBudgetGovernanceData.mixedFieldsCount },
+        { Indicador: 'Resumen gobernanza presupuestaria', Valor: executiveBudgetGovernanceData.summaryLine },
         { Indicador: 'Costo por ha', Valor: Number((executiveViewData.kpis.averageCostPerHa || 0).toFixed(2)) },
         { Indicador: 'Costo por kg', Valor: Number((executiveViewData.kpis.averageCostPerKg || 0).toFixed(2)) },
         { Indicador: 'Temporada anterior', Valor: Number(executiveViewData.kpis.previousSeasonCost.toFixed(0)) },
@@ -10313,6 +10405,18 @@ export const Reports: React.FC = () => {
                   <div className="mt-2 text-2xl font-semibold text-gray-900">{executiveViewData.alerts.length}</div>
                   <div className="mt-1 text-sm text-gray-500">Focos relevantes para revisión ejecutiva</div>
                 </div>
+                <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs uppercase tracking-wide text-gray-500">Cobertura presupuestaria</div>
+                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${executiveBudgetGovernanceData.tone.badge}`}>
+                      {executiveBudgetGovernanceData.tone.label}
+                    </span>
+                  </div>
+                  <div className="mt-2 text-2xl font-semibold text-gray-900">{executiveBudgetGovernanceData.areaCoveragePct.toFixed(1)}%</div>
+                  <div className="mt-1 text-sm text-gray-500">
+                    {executiveBudgetGovernanceData.sectorsWithBudget} / {executiveBudgetGovernanceData.totalSectors} sectores con presupuesto
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
@@ -10341,6 +10445,33 @@ export const Reports: React.FC = () => {
                         {formatCLP(executiveViewData.kpis.budgetDelta || 0)}
                       </div>
                     </div>
+                  </div>
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="rounded-xl bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Sectores con presupuesto</div>
+                      <div className="mt-2 text-xl font-semibold text-slate-900">{executiveBudgetGovernanceData.sectorsWithBudget}</div>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Sectores sin presupuesto</div>
+                      <div className="mt-2 text-xl font-semibold text-slate-900">{executiveBudgetGovernanceData.sectorsWithoutBudget}</div>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Costo sin presupuesto</div>
+                      <div className="mt-2 text-xl font-semibold text-slate-900">{formatCLP(executiveBudgetGovernanceData.costWithoutBudget)}</div>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Campos mixtos</div>
+                      <div className="mt-2 text-xl font-semibold text-slate-900">{executiveBudgetGovernanceData.mixedFieldsCount}</div>
+                    </div>
+                  </div>
+                  <div className={`mt-4 rounded-xl border p-4 text-sm ${executiveBudgetGovernanceData.tone.badge}`}>
+                    <div className="font-medium">Gobernanza presupuestaria</div>
+                    <p className="mt-2">{executiveBudgetGovernanceData.summaryLine}</p>
+                    <p className="mt-2">
+                      {executiveBudgetGovernanceData.topMissingSector
+                        ? `Sector más expuesto sin presupuesto: ${executiveBudgetGovernanceData.topMissingSector.fieldName} / ${executiveBudgetGovernanceData.topMissingSector.sectorName} con ${formatCLP(executiveBudgetGovernanceData.topMissingSector.total)}.`
+                        : 'No hay sectores con costo visible sin presupuesto en el alcance actual.'}
+                    </p>
                   </div>
                 </div>
 
@@ -15350,6 +15481,19 @@ export const Reports: React.FC = () => {
                             <div className="rounded-2xl border border-slate-200 p-5 bg-slate-50">
                               <div className="text-sm text-slate-500 uppercase tracking-wide">Costo / Kg</div>
                               <div className="mt-3 text-3xl font-bold text-slate-900">{executiveViewData.kpis.averageCostPerKg ? formatCLP(executiveViewData.kpis.averageCostPerKg) : '-'}</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 p-5 bg-slate-50">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-sm text-slate-500 uppercase tracking-wide">Cobertura ppto</div>
+                                <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${executiveBudgetGovernanceData.tone.badge}`}>
+                                  {executiveBudgetGovernanceData.tone.label}
+                                </span>
+                              </div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{executiveBudgetGovernanceData.areaCoveragePct.toFixed(1)}%</div>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 p-5 bg-slate-50">
+                              <div className="text-sm text-slate-500 uppercase tracking-wide">Costo sin ppto</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{formatCLP(executiveBudgetGovernanceData.costWithoutBudget)}</div>
                             </div>
                             <div className="rounded-2xl border border-slate-200 p-5 bg-slate-50">
                               <div className="flex items-center justify-between gap-3">

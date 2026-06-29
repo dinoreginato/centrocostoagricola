@@ -4,7 +4,7 @@
 Dejar la aplicacion mas confiable para gestion agricola real, con costos mas verdaderos, menos duplicidad y una mejor resolucion de datos para toma de decisiones.
 
 ## Estado General
-- Avance general estimado del roadmap activo: `99%`
+- Avance general estimado del roadmap activo: `100%`
 - Estado actual:
   - `[x]` base canonica de temporadas y costos
   - `[x]` conciliacion y auditoria ejecutiva
@@ -71,6 +71,7 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
 - `[x]` Recomendaciones automáticas de normalización preventiva antes de nueva escalación.
 - `[x]` Persistencia materializada del ranking global para reducir recalculo.
 - `[x]` Persistencia preventiva materializada y reglas anticipadas más livianas.
+- `[x]` Gobernanza presupuestaria por campo y sector.
 
 ## Lo Que Ya Esta Bien
 - Modelo predial correcto: `empresa -> campo -> sector`.
@@ -292,6 +293,33 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - impedir que el dato estructural de superficie quede incoherente desde origen
   - evitar costos, producción o presupuestos montados sobre sectores que exceden la superficie real del campo
   - dejar visible el balance de hectáreas para regularizar datos históricos si existiera sobreasignación previa
+
+## Gobernanza Presupuestaria Por Campo Y Sector
+- Estado: `[x] Implementado`
+- Se agregó la migración `supabase/migrations/20260628160000_harden_sector_budget_integrity.sql`.
+- La base ahora endurece el presupuesto de sectores para que:
+  - `budget` no quede `NULL`
+  - `budget` tenga `0` como valor por defecto
+  - `budget` no pueda ser negativo
+- `Campos` ahora expone por campo:
+  - presupuesto total visible
+  - sectores con y sin presupuesto
+  - cobertura presupuestaria por superficie
+- `Reportes` ahora incorpora una lectura formal de gobernanza presupuestaria con:
+  - cobertura de superficie con presupuesto visible
+  - sectores con costo pero sin presupuesto
+  - costo total operando sin base presupuestaria
+  - campos con cobertura presupuestaria mixta
+  - alertas ejecutivas cuando un sector gasta sin presupuesto o un campo queda con cobertura parcial
+- Esta lectura ya se refleja en:
+  - vista ejecutiva normal
+  - alertas ejecutivas
+  - exportación Excel en el resumen ejecutivo
+  - fullscreen ejecutivo
+- Objetivo:
+  - distinguir presupuesto cargado de presupuesto realmente utilizable para comité
+  - evitar comparar ejecución contra un plan incompleto o estructuralmente débil
+  - hacer visible dónde falta presupuesto antes de interpretar desviaciones como conclusiones ejecutivas
 
 ## Captura Formal De Produccion
 - Se agrego el servicio `src/services/productionRecords.ts`.
@@ -855,4 +883,4 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
 
 ## Siguiente Paso Recomendado
 - Evaluar refresco programado o corte diario de snapshots si más adelante se quiere una bitácora materializada con cadencia operativa fija.
-- Fortalecer la gobernanza agrícola con controles de completitud presupuestaria por campo y sector antes de comité.
+- Avanzar hacia cierre formal de presupuesto agrícola por temporada, con versionado de plan inicial y revisiones ejecutivas.
