@@ -25,6 +25,35 @@ interface Field {
   sectors?: Sector[];
 }
 
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (
+    error
+    && typeof error === 'object'
+    && 'message' in error
+    && typeof (error as { message?: unknown }).message === 'string'
+  ) {
+    return (error as { message: string }).message;
+  }
+
+  return fallback;
+};
+
+const getFieldHectareSummary = (field: Field) => {
+  const total = Number(field.total_hectares || 0);
+  const assigned = Number(
+    (field.sectors || []).reduce((sum, sector) => sum + Number(sector.hectares || 0), 0).toFixed(2)
+  );
+  const rawAvailable = Number((total - assigned).toFixed(2));
+  const overAssigned = rawAvailable < 0 ? Math.abs(rawAvailable) : 0;
+
+  return {
+    total,
+    assigned,
+    available: rawAvailable > 0 ? rawAvailable : 0,
+    overAssigned
+  };
+};
+
 export const Fields: React.FC = () => {
   const { selectedCompany, userRole } = useCompany();
   const [fields, setFields] = useState<Field[]>([]);
@@ -104,8 +133,8 @@ export const Fields: React.FC = () => {
       setNewFieldFruit('');
       setNewFieldLatitude('');
       setNewFieldLongitude('');
-    } catch {
-      toast.error('Error al crear campo.');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Error al crear campo.'));
     }
   };
 
@@ -143,8 +172,8 @@ export const Fields: React.FC = () => {
 
       setFields(fields.map(f => f.id === fieldId ? { ...f, ...data, sectors: f.sectors } : f));
       cancelEditingField();
-    } catch {
-      toast.error('Error al actualizar campo.');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Error al actualizar campo.'));
     }
   };
 
@@ -192,8 +221,8 @@ export const Fields: React.FC = () => {
       setNewSectorBudget('');
       setNewSectorLatitude('');
       setNewSectorLongitude('');
-    } catch {
-      toast.error('Error al crear sector.');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Error al crear sector.'));
     }
   };
 
@@ -239,8 +268,8 @@ export const Fields: React.FC = () => {
         return f;
       }));
       cancelEditingSector();
-    } catch {
-      toast.error('Error al actualizar sector.');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Error al actualizar sector.'));
     }
   };
 
@@ -374,7 +403,15 @@ export const Fields: React.FC = () => {
       ) : (
         <div className="bg-white shadow overflow-hidden sm:rounded-md">
           <ul className="divide-y divide-gray-200">
-            {fields.map((field) => (
+            {fields.map((field) => {
+              const hectareSummary = getFieldHectareSummary(field);
+              const hectareTone = hectareSummary.overAssigned > 0.01
+                ? 'bg-red-100 text-red-700 border-red-200'
+                : hectareSummary.available > 0.01
+                  ? 'bg-amber-100 text-amber-700 border-amber-200'
+                  : 'bg-emerald-100 text-emerald-700 border-emerald-200';
+
+              return (
               <li key={field.id}>
                 <div className="px-4 py-4 sm:px-6 hover:bg-gray-50 transition duration-150 ease-in-out">
                   {editingFieldId === field.id ? (
@@ -455,6 +492,18 @@ export const Fields: React.FC = () => {
                             <span className="mx-2">•</span>
                             <span>{field.total_hectares} ha</span>
                           </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 font-medium ${hectareTone}`}>
+                              {hectareSummary.overAssigned > 0.01
+                                ? `Sobreasignado ${hectareSummary.overAssigned.toFixed(2)} ha`
+                                : hectareSummary.available > 0.01
+                                  ? `Disponible ${hectareSummary.available.toFixed(2)} ha`
+                                  : 'Completamente asignado'}
+                            </span>
+                            <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-medium text-slate-600">
+                              Asignado {hectareSummary.assigned.toFixed(2)} / {hectareSummary.total.toFixed(2)} ha
+                            </span>
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center space-x-4">
@@ -484,6 +533,51 @@ export const Fields: React.FC = () => {
                   {/* Sectors Expansion */}
                   {expandedFieldId === field.id && !editingFieldId && (
                     <div className="mt-4 ml-8 border-l-2 border-gray-200 pl-4">
+                      <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Hectáreas campo</div>
+                          <div className="mt-1 text-lg font-semibold text-slate-900">{hectareSummary.total.toFixed(2)} ha</div>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Asignadas a sectores</div>
+                          <div className="mt-1 text-lg font-semibold text-slate-900">{hectareSummary.assigned.toFixed(2)} ha</div>
+                        </div>
+                        <div className={`rounded-lg border p-3 ${
+                          hectareSummary.overAssigned > 0.01
+                            ? 'border-red-200 bg-red-50'
+                            : hectareSummary.available > 0.01
+                              ? 'border-amber-200 bg-amber-50'
+                              : 'border-emerald-200 bg-emerald-50'
+                        }`}>
+                          <div className={`text-[11px] font-semibold uppercase tracking-wide ${
+                            hectareSummary.overAssigned > 0.01
+                              ? 'text-red-700'
+                              : hectareSummary.available > 0.01
+                                ? 'text-amber-700'
+                                : 'text-emerald-700'
+                          }`}>
+                            Balance disponible
+                          </div>
+                          <div className={`mt-1 text-lg font-semibold ${
+                            hectareSummary.overAssigned > 0.01
+                              ? 'text-red-800'
+                              : hectareSummary.available > 0.01
+                                ? 'text-amber-800'
+                                : 'text-emerald-800'
+                          }`}>
+                            {hectareSummary.overAssigned > 0.01
+                              ? `-${hectareSummary.overAssigned.toFixed(2)} ha`
+                              : `${hectareSummary.available.toFixed(2)} ha`}
+                          </div>
+                        </div>
+                      </div>
+
+                      {hectareSummary.overAssigned > 0.01 && (
+                        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                          La suma de sectores supera la superficie del campo. La nueva validación bloqueará más sobreasignación hasta regularizar este balance.
+                        </div>
+                      )}
+
                       <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Sectores</h4>
                       
                       <ul className="space-y-3 mb-4">
@@ -670,7 +764,8 @@ export const Fields: React.FC = () => {
                   )}
                 </div>
               </li>
-            ))}
+            );
+            })}
           </ul>
         </div>
       )}

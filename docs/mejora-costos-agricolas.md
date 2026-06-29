@@ -4,7 +4,7 @@
 Dejar la aplicacion mas confiable para gestion agricola real, con costos mas verdaderos, menos duplicidad y una mejor resolucion de datos para toma de decisiones.
 
 ## Estado General
-- Avance general estimado del roadmap activo: `97%`
+- Avance general estimado del roadmap activo: `99%`
 - Estado actual:
   - `[x]` base canonica de temporadas y costos
   - `[x]` conciliacion y auditoria ejecutiva
@@ -54,7 +54,7 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - `[x]` porcentajes 0 a 100
   - `[x]` montos no negativos cuando corresponda
   - `[x]` coherencia campo/sector/empresa
-  - `[ ]` coherencia hectareas campo vs sectores
+  - `[x]` coherencia hectareas campo vs sectores
 
 ### Fases Ejecutivas Adicionales
 - `[x]` Cierre economico ejecutivo.
@@ -275,6 +275,23 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - impedir que el margen canónico quede armado con ingresos o producción estructuralmente incoherentes
   - dejar el error lo más cerca posible de la base de datos
   - reducir la necesidad de corregir datos ya contaminados en reportes
+
+## Coherencia De Hectareas Entre Campo Y Sectores
+- Estado: `[x] Implementado`
+- Se agregó la migración `supabase/migrations/20260628153000_add_field_sector_hectare_guards.sql`.
+- La base ahora valida dos reglas estructurales:
+  - `fields.total_hectares` no puede quedar por debajo de la suma ya asignada en sus sectores
+  - la suma proyectada de `sectors.hectares` no puede superar las hectáreas totales del campo
+- La validación usa una tolerancia mínima de redondeo para no romper cargas por diferencias de centésimas.
+- La pantalla `Campos` ahora expone además:
+  - hectáreas totales del campo
+  - hectáreas ya asignadas a sectores
+  - hectáreas disponibles o sobreasignadas
+  - mensajes de error más claros cuando la base bloquea una sobreasignación
+- Objetivo:
+  - impedir que el dato estructural de superficie quede incoherente desde origen
+  - evitar costos, producción o presupuestos montados sobre sectores que exceden la superficie real del campo
+  - dejar visible el balance de hectáreas para regularizar datos históricos si existiera sobreasignación previa
 
 ## Captura Formal De Produccion
 - Se agrego el servicio `src/services/productionRecords.ts`.
@@ -837,5 +854,5 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - separar cálculo en vivo de evidencia histórica materializada
 
 ## Siguiente Paso Recomendado
-- Completar la coherencia estructural entre hectáreas de campo y hectáreas agregadas de sectores como siguiente guarda dura de integridad agrícola.
 - Evaluar refresco programado o corte diario de snapshots si más adelante se quiere una bitácora materializada con cadencia operativa fija.
+- Fortalecer la gobernanza agrícola con controles de completitud presupuestaria por campo y sector antes de comité.
