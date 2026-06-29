@@ -27,7 +27,7 @@ WITH sector_meta AS (
 ),
 worker_manual_coverage AS (
   SELECT
-    wc.company_id,
+    sm.company_id,
     wc.sector_id,
     wc.date,
     CASE
@@ -38,6 +38,7 @@ worker_manual_coverage AS (
     END AS labor_subcategory,
     SUM(wc.amount) AS total_amount
   FROM public.worker_costs wc
+  JOIN sector_meta sm ON sm.sector_id = wc.sector_id
   WHERE NOT (
     coalesce(wc.description, '') LIKE 'Previsión %'
     OR coalesce(wc.description, '') LIKE 'Sueldo Imponible %'
@@ -52,10 +53,11 @@ worker_manual_coverage AS (
 ),
 fuel_consumption_coverage AS (
   SELECT DISTINCT
-    fc.company_id,
+    sm.company_id,
     fc.sector_id,
     date_trunc('month', fc.date::timestamp)::date AS month_date
   FROM public.fuel_consumption fc
+  JOIN sector_meta sm ON sm.sector_id = fc.sector_id
   WHERE coalesce(fc.liters, 0) <> 0
      OR coalesce(fc.estimated_price, 0) <> 0
 ),
@@ -63,7 +65,7 @@ applications_base AS (
   SELECT
     'applications'::text AS source_type,
     a.id AS source_id,
-    a.company_id,
+    sm.company_id,
     sm.field_id,
     sm.field_name,
     a.sector_id,
@@ -134,7 +136,7 @@ worker_costs_base AS (
   SELECT
     'worker_costs'::text AS source_type,
     wc.id AS source_id,
-    wc.company_id,
+    sm.company_id,
     sm.field_id,
     sm.field_name,
     wc.sector_id,
@@ -206,7 +208,7 @@ fuel_consumption_base AS (
   SELECT
     'fuel_consumption'::text AS source_type,
     fc.id AS source_id,
-    fc.company_id,
+    sm.company_id,
     sm.field_id,
     sm.field_name,
     fc.sector_id,
@@ -287,7 +289,7 @@ general_costs_base AS (
   SELECT
     'general_costs'::text AS source_type,
     gc.id AS source_id,
-    gc.company_id,
+    sm.company_id,
     sm.field_id,
     sm.field_name,
     gc.sector_id,
