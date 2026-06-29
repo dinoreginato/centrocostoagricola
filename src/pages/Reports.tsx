@@ -9033,21 +9033,32 @@ export const Reports: React.FC = () => {
         const totalIncomeUsd = usdExport + usdJugo;
         const kgSold = kgExport + kgJugo;
         const pricePerKg = kgSold > 0 ? totalIncomeUsd / kgSold : 0;
-        const finalKgProduced = marginRow ? Number(marginRow.kg_produced || 0) : kgProduced;
-        const finalKgSold = marginRow ? Number(marginRow.kg_sold || 0) : kgSold;
-        const finalKgExport = marginRow ? Number(marginRow.kg_export || 0) : kgExport;
-        const finalUsdExport = marginRow ? Number(marginRow.income_usd_export || 0) : usdExport;
-        const finalPriceExport = marginRow ? Number(marginRow.price_export_usd_per_kg || 0) : priceExport;
-        const finalKgJugo = marginRow ? Number(marginRow.kg_juice || 0) : kgJugo;
-        const finalUsdJugo = marginRow ? Number(marginRow.income_usd_juice || 0) : usdJugo;
-        const finalPriceJugo = marginRow ? Number(marginRow.price_juice_usd_per_kg || 0) : priceJugo;
-        const finalPricePerKg = marginRow ? Number(marginRow.income_price_usd_per_kg || 0) : pricePerKg;
+        const marginKgProduced = marginRow ? Number(marginRow.kg_produced || 0) : 0;
+        const marginKgSold = marginRow ? Number(marginRow.kg_sold || 0) : 0;
+        const marginKgExport = marginRow ? Number(marginRow.kg_export || 0) : 0;
+        const marginUsdExport = marginRow ? Number(marginRow.income_usd_export || 0) : 0;
+        const marginPriceExport = marginRow ? Number(marginRow.price_export_usd_per_kg || 0) : 0;
+        const marginKgJugo = marginRow ? Number(marginRow.kg_juice || 0) : 0;
+        const marginUsdJugo = marginRow ? Number(marginRow.income_usd_juice || 0) : 0;
+        const marginPriceJugo = marginRow ? Number(marginRow.price_juice_usd_per_kg || 0) : 0;
+        const marginPricePerKg = marginRow ? Number(marginRow.income_price_usd_per_kg || 0) : 0;
+        const preferIncomeFallback = Boolean(marginRow) && marginKgProduced <= 0 && kgProduced > 0;
+
+        const finalKgProduced = preferIncomeFallback ? kgProduced : (marginRow ? marginKgProduced : kgProduced);
+        const finalKgSold = preferIncomeFallback ? kgSold : (marginRow ? marginKgSold : kgSold);
+        const finalKgExport = preferIncomeFallback ? kgExport : (marginRow ? marginKgExport : kgExport);
+        const finalUsdExport = preferIncomeFallback ? usdExport : (marginRow ? marginUsdExport : usdExport);
+        const finalPriceExport = preferIncomeFallback ? priceExport : (marginRow ? marginPriceExport : priceExport);
+        const finalKgJugo = preferIncomeFallback ? kgJugo : (marginRow ? marginKgJugo : kgJugo);
+        const finalUsdJugo = preferIncomeFallback ? usdJugo : (marginRow ? marginUsdJugo : usdJugo);
+        const finalPriceJugo = preferIncomeFallback ? priceJugo : (marginRow ? marginPriceJugo : priceJugo);
+        const finalPricePerKg = preferIncomeFallback ? pricePerKg : (marginRow ? marginPricePerKg : pricePerKg);
         const finalIncomeClp = marginRow ? Number(marginRow.total_income_clp || 0) : (kgSold * pricePerKg * (usdExchangeRate || 1));
         const finalCostPerHa = marginRow
           ? Number(marginRow.cost_per_ha || 0)
           : (hectares > 0 ? totalCostGeneral / hectares : 0);
         const finalCostPerKg = marginRow
-          ? Number(marginRow.cost_per_kg || 0)
+          ? (preferIncomeFallback ? (finalKgProduced > 0 ? totalCostGeneral / finalKgProduced : 0) : Number(marginRow.cost_per_kg || 0))
           : (finalKgProduced > 0 ? totalCostGeneral / finalKgProduced : 0);
         const finalProfitClp = marginRow ? Number(marginRow.profit_clp || 0) : (finalIncomeClp - totalCostGeneral);
         const finalMarginPct = marginRow
@@ -9078,8 +9089,8 @@ export const Reports: React.FC = () => {
           budget_per_ha: budgetPerHa,
           total_budget: budgetPerHa * hectares,
           income_estimated: finalIncomeClp,
-          production_source: marginRow?.production_source || 'income_entries',
-          has_production_record: Boolean(marginRow?.has_production_record),
+          production_source: preferIncomeFallback ? 'income_entries' : (marginRow?.production_source || 'income_entries'),
+          has_production_record: preferIncomeFallback ? false : Boolean(marginRow?.has_production_record),
           profit_clp: finalProfitClp,
           margin_pct: finalMarginPct,
           // Specific Costs
