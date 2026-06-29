@@ -48,6 +48,11 @@ import {
   loadExecutiveBudgetClosureSnapshots,
   type ExecutiveBudgetClosureSnapshotRow
 } from '../services/executiveBudgetSnapshots';
+import {
+  createExecutiveBudgetPlanVersion,
+  loadExecutiveBudgetPlanVersions,
+  type ExecutiveBudgetPlanVersionRow
+} from '../services/executiveBudgetPlanVersions';
 import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
 interface ReportData {
@@ -1498,6 +1503,19 @@ const formatExecutiveBudgetClosureStatus = (value: string | null | undefined) =>
   }
 };
 
+const formatExecutiveBudgetPlanVersionKind = (value: string | null | undefined) => {
+  switch (value) {
+    case 'base':
+      return 'Base';
+    case 'revision':
+      return 'Revisión';
+    case 'comite':
+      return 'Comité';
+    default:
+      return 'Sin versión';
+  }
+};
+
 const buildExecutiveBudgetGovernanceAnalytics = (
   sectorRows: Array<any>,
   scopeLabel: string
@@ -1599,6 +1617,52 @@ const buildExecutiveBudgetClosureSnapshotAnalytics = (
     avgBudget,
     topStatus: statusSummary[0] || null,
     totalSnapshots: rows.length,
+    summaryLine
+  };
+};
+
+const buildExecutiveBudgetPlanVersionAnalytics = (
+  rows: ExecutiveBudgetPlanVersionRow[],
+  selectedSeason: string,
+  scopeLabel: string
+) => {
+  const currentSeasonRows = rows.filter((row) => row.season === selectedSeason);
+  const latestVersion = rows[0] || null;
+  const kindSummary = Array.from(
+    rows.reduce((map, row) => {
+      map.set(row.version_kind, (map.get(row.version_kind) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([kind, count]) => ({ kind, count })).sort((a, b) => b.count - a.count);
+  const seasonSummary = Array.from(
+    rows.reduce((map, row) => {
+      map.set(row.season, (map.get(row.season) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([season, count]) => ({ season, count })).sort((a, b) => b.season.localeCompare(a.season));
+  const currentSeasonKindSummary = Array.from(
+    currentSeasonRows.reduce((map, row) => {
+      map.set(row.version_kind, (map.get(row.version_kind) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([kind, count]) => ({ kind, count })).sort((a, b) => b.count - a.count);
+  const topKind = kindSummary[0] || null;
+  const latestCommitteeVersion = rows.find((row) => row.version_kind === 'comite') || null;
+  const summaryLine = latestVersion
+    ? `El versionado presupuestario de ${scopeLabel} acumula ${rows.length} versiones persistidas. La versión dominante es ${formatExecutiveBudgetPlanVersionKind(topKind?.kind)} y la última quedó en ${formatExecutiveBudgetPlanVersionKind(latestVersion.version_kind)} para ${latestVersion.season}.`
+    : `No hay versiones presupuestarias persistidas para ${scopeLabel}.`;
+
+  return {
+    rows,
+    currentSeasonRows,
+    recentRows: rows.slice(0, 12),
+    latestVersion,
+    latestCommitteeVersion,
+    kindSummary,
+    currentSeasonKindSummary,
+    seasonSummary,
+    topKind,
+    totalVersions: rows.length,
     summaryLine
   };
 };
@@ -2368,6 +2432,7 @@ export const Reports: React.FC = () => {
   const [executiveGlobalRankingSnapshots, setExecutiveGlobalRankingSnapshots] = useState<ExecutiveGlobalRankingSnapshotRow[]>([]);
   const [executiveGlobalPreventiveSnapshots, setExecutiveGlobalPreventiveSnapshots] = useState<ExecutiveGlobalPreventiveSnapshotRow[]>([]);
   const [executiveBudgetClosureSnapshots, setExecutiveBudgetClosureSnapshots] = useState<ExecutiveBudgetClosureSnapshotRow[]>([]);
+  const [executiveBudgetPlanVersions, setExecutiveBudgetPlanVersions] = useState<ExecutiveBudgetPlanVersionRow[]>([]);
   const [executiveGlobalAlertLoading, setExecutiveGlobalAlertLoading] = useState(false);
   const [costAuditLoading, setCostAuditLoading] = useState(false);
   const [showProductionModal, setShowProductionModal] = useState(false);
@@ -2441,6 +2506,7 @@ export const Reports: React.FC = () => {
   const executiveGlobalRankingSnapshotLogRef = useRef<string>('');
   const executiveGlobalPreventiveSnapshotLogRef = useRef<string>('');
   const executiveBudgetClosureSnapshotLogRef = useRef<string>('');
+  const executiveBudgetPlanVersionLogRef = useRef<string>('');
 
   // Update orientation when tab changes
   useEffect(() => {
@@ -2535,6 +2601,7 @@ export const Reports: React.FC = () => {
     executiveGlobalRankingSnapshotLogRef.current = '';
     executiveGlobalPreventiveSnapshotLogRef.current = '';
     executiveBudgetClosureSnapshotLogRef.current = '';
+    executiveBudgetPlanVersionLogRef.current = '';
     setRawCostMovements([]);
     setRawMarginRows([]);
     setRawProductionRecords([]);
@@ -2549,6 +2616,7 @@ export const Reports: React.FC = () => {
     setExecutiveGlobalRankingSnapshots([]);
     setExecutiveGlobalPreventiveSnapshots([]);
     setExecutiveBudgetClosureSnapshots([]);
+    setExecutiveBudgetPlanVersions([]);
     setReportData([]);
     setMonthlyExpenses([]);
     setCategoryExpenses([]);
@@ -2622,20 +2690,23 @@ export const Reports: React.FC = () => {
 
     void (async () => {
       try {
-        const [rankingRows, preventiveRows, budgetClosureRows] = await Promise.all([
+        const [rankingRows, preventiveRows, budgetClosureRows, budgetVersionRows] = await Promise.all([
           loadExecutiveGlobalRankingSnapshots({ companyId, limit: 200 }),
           loadExecutiveGlobalPreventiveSnapshots({ companyId, limit: 200 }),
-          loadExecutiveBudgetClosureSnapshots({ companyId, limit: 200 })
+          loadExecutiveBudgetClosureSnapshots({ companyId, limit: 200 }),
+          loadExecutiveBudgetPlanVersions({ companyId, limit: 200 })
         ]);
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalRankingSnapshots(rankingRows || []);
         setExecutiveGlobalPreventiveSnapshots(preventiveRows || []);
         setExecutiveBudgetClosureSnapshots(budgetClosureRows || []);
+        setExecutiveBudgetPlanVersions(budgetVersionRows || []);
       } catch {
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalRankingSnapshots([]);
         setExecutiveGlobalPreventiveSnapshots([]);
         setExecutiveBudgetClosureSnapshots([]);
+        setExecutiveBudgetPlanVersions([]);
       }
     })();
 
@@ -5188,6 +5259,58 @@ export const Reports: React.FC = () => {
     ),
     [executiveBudgetClosureSnapshots, selectedSeason]
   );
+  const executiveBudgetPlanCurrentSeasonRows = useMemo(
+    () => executiveBudgetPlanVersions.filter((row) => row.season === selectedSeason),
+    [executiveBudgetPlanVersions, selectedSeason]
+  );
+  const executiveBudgetPlanNextKind = useMemo(() => {
+    if (executiveBudgetPlanCurrentSeasonRows.length <= 0) return 'base';
+    if (
+      executiveTotalDataClosure.readiness.title === 'Listo para comité'
+      && executiveCompanyBudgetGovernanceData.budgetStatus === 'completo'
+    ) {
+      return 'comite';
+    }
+    return 'revision';
+  }, [
+    executiveBudgetPlanCurrentSeasonRows.length,
+    executiveCompanyBudgetGovernanceData.budgetStatus,
+    executiveTotalDataClosure.readiness.title
+  ]);
+  const executiveBudgetPlanVersionSignature = useMemo(() => (
+    JSON.stringify({
+      season: selectedSeason,
+      versionKind: executiveBudgetPlanNextKind,
+      totalBudget: Number((executiveData.kpis.totalBudget || 0).toFixed(2)),
+      coveragePct: Number(executiveCompanyBudgetGovernanceData.areaCoveragePct.toFixed(2)),
+      executionPct: Number((executiveData.kpis.budgetExecutionPct || 0).toFixed(2)),
+      budgetStatus: executiveCompanyBudgetGovernanceData.budgetStatus,
+      readiness: executiveTotalDataClosure.readiness.title,
+      rows: executiveData.sectorRows.map((row) => ({
+        fieldName: row.fieldName,
+        sectorName: row.sectorName,
+        budgetTotal: Number((row.budgetTotal || 0).toFixed(2)),
+        total: Number(row.total.toFixed(2))
+      }))
+    })
+  ), [
+    executiveBudgetPlanNextKind,
+    executiveCompanyBudgetGovernanceData.areaCoveragePct,
+    executiveCompanyBudgetGovernanceData.budgetStatus,
+    executiveData.kpis.budgetExecutionPct,
+    executiveData.kpis.totalBudget,
+    executiveData.sectorRows,
+    executiveTotalDataClosure.readiness.title,
+    selectedSeason
+  ]);
+  const executiveBudgetPlanVersionData = useMemo(
+    () => buildExecutiveBudgetPlanVersionAnalytics(
+      executiveBudgetPlanVersions,
+      selectedSeason,
+      'la empresa activa'
+    ),
+    [executiveBudgetPlanVersions, selectedSeason]
+  );
   const executiveExportWarningContext = useMemo(() => {
     const warningTypes: string[] = [];
 
@@ -5619,6 +5742,80 @@ export const Reports: React.FC = () => {
     selectedCompany?.id,
     selectedSeason
   ]);
+  const logExecutiveBudgetPlanVersion = useCallback(async () => {
+    if (!selectedCompany?.id || executiveCompanyBudgetGovernanceData.totalSectors <= 0) return;
+
+    try {
+      await createExecutiveBudgetPlanVersion({
+        companyId: selectedCompany.id,
+        season: selectedSeason,
+        versionKind: executiveBudgetPlanNextKind,
+        versionSignature: executiveBudgetPlanVersionSignature,
+        totalBudget: Number((executiveData.kpis.totalBudget || 0).toFixed(2)),
+        coveragePct: Number(executiveCompanyBudgetGovernanceData.areaCoveragePct.toFixed(2)),
+        executionPct: Number((executiveData.kpis.budgetExecutionPct || 0).toFixed(2)),
+        budgetStatus: executiveCompanyBudgetGovernanceData.budgetStatus,
+        summary: executiveCompanyBudgetGovernanceData.summaryLine,
+        metadata: {
+          readiness_title: executiveTotalDataClosure.readiness.title,
+          cost_without_budget: Number(executiveCompanyBudgetGovernanceData.costWithoutBudget.toFixed(2)),
+          sectors_with_budget: executiveCompanyBudgetGovernanceData.sectorsWithBudget,
+          total_sectors: executiveCompanyBudgetGovernanceData.totalSectors,
+          mixed_fields_count: executiveCompanyBudgetGovernanceData.mixedFieldsCount,
+          company_name: companyName
+        }
+      });
+      const rows = await loadExecutiveBudgetPlanVersions({ companyId: selectedCompany.id, limit: 200 });
+      setExecutiveBudgetPlanVersions(rows || []);
+    } catch (error) {
+      console.error('No se pudo registrar la versión presupuestaria ejecutiva.', error);
+    }
+  }, [
+    companyName,
+    executiveBudgetPlanNextKind,
+    executiveBudgetPlanVersionSignature,
+    executiveCompanyBudgetGovernanceData.areaCoveragePct,
+    executiveCompanyBudgetGovernanceData.budgetStatus,
+    executiveCompanyBudgetGovernanceData.costWithoutBudget,
+    executiveCompanyBudgetGovernanceData.mixedFieldsCount,
+    executiveCompanyBudgetGovernanceData.sectorsWithBudget,
+    executiveCompanyBudgetGovernanceData.summaryLine,
+    executiveCompanyBudgetGovernanceData.totalSectors,
+    executiveData.kpis.budgetExecutionPct,
+    executiveData.kpis.totalBudget,
+    executiveTotalDataClosure.readiness.title,
+    selectedCompany?.id,
+    selectedSeason
+  ]);
+
+  useEffect(() => {
+    if (!selectedCompany?.id || executiveCompanyBudgetGovernanceData.totalSectors <= 0) return;
+
+    const latestVersion = executiveBudgetPlanVersions[0] || null;
+    const latestSignature = latestVersion?.version_signature || '';
+    const latestKind = latestVersion?.version_kind || '';
+    if (
+      latestVersion?.season === selectedSeason
+      && latestSignature === executiveBudgetPlanVersionSignature
+      && latestKind === executiveBudgetPlanNextKind
+    ) {
+      executiveBudgetPlanVersionLogRef.current = `${executiveBudgetPlanNextKind}::${executiveBudgetPlanVersionSignature}`;
+      return;
+    }
+    const pendingLogSignature = `${executiveBudgetPlanNextKind}::${executiveBudgetPlanVersionSignature}`;
+    if (executiveBudgetPlanVersionLogRef.current === pendingLogSignature) return;
+
+    executiveBudgetPlanVersionLogRef.current = pendingLogSignature;
+    void logExecutiveBudgetPlanVersion();
+  }, [
+    executiveBudgetPlanNextKind,
+    executiveBudgetPlanVersionSignature,
+    executiveBudgetPlanVersions,
+    executiveCompanyBudgetGovernanceData.totalSectors,
+    logExecutiveBudgetPlanVersion,
+    selectedCompany?.id,
+    selectedSeason
+  ]);
   const selectedExecutiveGlobalAlertTransitions = useMemo(
     () => executiveGlobalAlertTransitions.filter((row) => row.event_id === editingExecutiveGlobalAlertId),
     [editingExecutiveGlobalAlertId, executiveGlobalAlertTransitions]
@@ -5901,6 +6098,11 @@ export const Reports: React.FC = () => {
         { Indicador: 'Cobertura promedio snapshots ppto %', Valor: Number(executiveBudgetClosureSnapshotData.avgCoverage.toFixed(2)) },
         { Indicador: 'Ejecución promedio snapshots ppto %', Valor: Number(executiveBudgetClosureSnapshotData.avgExecution.toFixed(2)) },
         { Indicador: 'Resumen cierre presupuestario materializado', Valor: executiveBudgetClosureSnapshotData.summaryLine },
+        { Indicador: 'Versiones presupuestarias', Valor: executiveBudgetPlanVersionData.totalVersions },
+        { Indicador: 'Versión dominante', Valor: executiveBudgetPlanVersionData.topKind ? formatExecutiveBudgetPlanVersionKind(executiveBudgetPlanVersionData.topKind.kind) : 'Sin versión' },
+        { Indicador: 'Última versión', Valor: executiveBudgetPlanVersionData.latestVersion ? formatExecutiveBudgetPlanVersionKind(executiveBudgetPlanVersionData.latestVersion.version_kind) : 'Sin versión' },
+        { Indicador: 'Versión comité', Valor: executiveBudgetPlanVersionData.latestCommitteeVersion ? executiveBudgetPlanVersionData.latestCommitteeVersion.season : 'Pendiente' },
+        { Indicador: 'Resumen versionado presupuestario', Valor: executiveBudgetPlanVersionData.summaryLine },
         { Indicador: 'Costo por ha', Valor: Number((executiveViewData.kpis.averageCostPerHa || 0).toFixed(2)) },
         { Indicador: 'Costo por kg', Valor: Number((executiveViewData.kpis.averageCostPerKg || 0).toFixed(2)) },
         { Indicador: 'Temporada anterior', Valor: Number(executiveViewData.kpis.previousSeasonCost.toFixed(0)) },
@@ -7566,6 +7768,30 @@ export const Reports: React.FC = () => {
           ],
           theme: 'grid',
           headStyles: { fillColor: [67, 56, 202] },
+          styles: { fontSize: 8 }
+        });
+
+        yPos = (doc as any).lastAutoTable.finalY + 8;
+
+        if (yPos > 150) {
+          doc.addPage();
+          yPos = 20;
+        }
+
+        autoTable(doc, {
+          startY: yPos,
+          head: [['Versionado presupuestario', 'Detalle']],
+          body: [
+            ['Siguiente versión', formatExecutiveBudgetPlanVersionKind(executiveBudgetPlanNextKind)],
+            ['Resumen', executiveBudgetPlanVersionData.summaryLine],
+            ['Versiones históricas', String(executiveBudgetPlanVersionData.totalVersions)],
+            ['Versiones temporada activa', String(executiveBudgetPlanVersionData.currentSeasonRows.length)],
+            ['Versión dominante', executiveBudgetPlanVersionData.topKind ? formatExecutiveBudgetPlanVersionKind(executiveBudgetPlanVersionData.topKind.kind) : 'Sin versión'],
+            ['Última versión', executiveBudgetPlanVersionData.latestVersion ? `${formatExecutiveBudgetPlanVersionKind(executiveBudgetPlanVersionData.latestVersion.version_kind)} · ${executiveBudgetPlanVersionData.latestVersion.season}` : 'Sin versión'],
+            ['Versión comité', executiveBudgetPlanVersionData.latestCommitteeVersion ? `${executiveBudgetPlanVersionData.latestCommitteeVersion.season} · ${new Date(executiveBudgetPlanVersionData.latestCommitteeVersion.created_at).toLocaleString('es-CL')}` : 'Pendiente']
+          ],
+          theme: 'grid',
+          headStyles: { fillColor: [79, 70, 229] },
           styles: { fontSize: 8 }
         });
 
@@ -10672,6 +10898,121 @@ export const Reports: React.FC = () => {
                                 <tr>
                                   <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
                                     Sin histórico materializado por temporada.
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {(executiveBudgetPlanVersionData.totalVersions > 0 || executiveCompanyBudgetGovernanceData.totalSectors > 0) && (
+                <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">Versionado presupuestario por temporada</h3>
+                        <p className="text-sm text-gray-500">Mantiene la secuencia formal del plan presupuestario entre base, revisiones y versión apta para comité.</p>
+                      </div>
+                      <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${executiveCompanyBudgetGovernanceData.tone.badge}`}>
+                        Siguiente versión: {formatExecutiveBudgetPlanVersionKind(executiveBudgetPlanNextKind)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="p-6 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Versiones</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanVersionData.totalVersions}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Temporada activa</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanVersionData.currentSeasonRows.length}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Versión dominante</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanVersionData.topKind ? formatExecutiveBudgetPlanVersionKind(executiveBudgetPlanVersionData.topKind.kind) : '-'}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Última versión</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanVersionData.latestVersion ? formatExecutiveBudgetPlanVersionKind(executiveBudgetPlanVersionData.latestVersion.version_kind) : '-'}</div>
+                      </div>
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-xs uppercase tracking-wide text-slate-500">Versión comité</div>
+                        <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanVersionData.latestCommitteeVersion ? executiveBudgetPlanVersionData.latestCommitteeVersion.season : 'Pendiente'}</div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 xl:grid-cols-[1.1fr,0.9fr] gap-4">
+                      <div className="overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="min-w-full divide-y divide-slate-200 text-sm">
+                          <thead className="bg-slate-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Temporada</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Versión</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Estado</th>
+                              <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Cobertura</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200 bg-white">
+                            {executiveBudgetPlanVersionData.recentRows.slice(0, 8).map((row) => (
+                              <tr key={row.id} className={row.season === selectedSeason ? 'bg-indigo-50/60' : ''}>
+                                <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                                <td className="px-4 py-3 font-medium text-slate-900">{row.season}</td>
+                                <td className="px-4 py-3 text-slate-700">{formatExecutiveBudgetPlanVersionKind(row.version_kind)}</td>
+                                <td className="px-4 py-3 text-slate-700">{formatExecutiveBudgetClosureStatus(row.budget_status)}</td>
+                                <td className="px-4 py-3 text-right text-slate-700">{Number(row.coverage_pct || 0).toFixed(1)}%</td>
+                              </tr>
+                            ))}
+                            {executiveBudgetPlanVersionData.recentRows.length === 0 && (
+                              <tr>
+                                <td colSpan={5} className="px-4 py-4 text-center text-sm text-slate-500">
+                                  Aún no hay versiones presupuestarias persistidas para esta empresa.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="space-y-4">
+                        <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+                          <div className="font-medium text-slate-900">Lectura de versiones</div>
+                          <p className="mt-2">{executiveBudgetPlanVersionData.summaryLine}</p>
+                          <p className="mt-2">
+                            Última versión: {executiveBudgetPlanVersionData.latestVersion
+                              ? `${formatExecutiveBudgetPlanVersionKind(executiveBudgetPlanVersionData.latestVersion.version_kind)} · ${executiveBudgetPlanVersionData.latestVersion.season}`
+                              : 'sin versión persistida todavía'}.
+                          </p>
+                          <p className="mt-2">
+                            Versión de comité: {executiveBudgetPlanVersionData.latestCommitteeVersion
+                              ? `${executiveBudgetPlanVersionData.latestCommitteeVersion.season} · ${new Date(executiveBudgetPlanVersionData.latestCommitteeVersion.created_at).toLocaleString('es-CL')}`
+                              : 'aún no existe freeze de comité visible'}.
+                          </p>
+                        </div>
+                        <div className="overflow-x-auto rounded-xl border border-slate-200">
+                          <table className="min-w-full divide-y divide-slate-200 text-sm">
+                            <thead className="bg-slate-50">
+                              <tr>
+                                <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Versión</th>
+                                <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Cantidad</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200 bg-white">
+                              {executiveBudgetPlanVersionData.currentSeasonKindSummary.slice(0, 6).map((row) => (
+                                <tr key={row.kind}>
+                                  <td className="px-4 py-3 font-medium text-slate-900">{formatExecutiveBudgetPlanVersionKind(row.kind)}</td>
+                                  <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                                </tr>
+                              ))}
+                              {executiveBudgetPlanVersionData.currentSeasonKindSummary.length === 0 && (
+                                <tr>
+                                  <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
+                                    Sin secuencia histórica de versiones en la temporada activa.
                                   </td>
                                 </tr>
                               )}
@@ -15932,6 +16273,53 @@ export const Reports: React.FC = () => {
                                 <div className="rounded-2xl bg-slate-50 p-4 flex items-center justify-between gap-4">
                                   <span className="text-slate-500">Costo sin presupuesto</span>
                                   <span className="text-xl font-bold text-slate-900">{formatCLP(executiveCompanyBudgetGovernanceData.costWithoutBudget)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                            <div className="rounded-2xl border border-slate-200 p-6">
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="text-2xl font-bold text-slate-800">Versionado presupuestario</div>
+                                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${executiveCompanyBudgetGovernanceData.tone.badge}`}>
+                                  {formatExecutiveBudgetPlanVersionKind(executiveBudgetPlanNextKind)}
+                                </span>
+                              </div>
+                              <p className="mt-5 text-xl leading-9 text-slate-600">{executiveBudgetPlanVersionData.summaryLine}</p>
+                              <div className="mt-5 grid grid-cols-2 gap-4 text-sm">
+                                <div className="rounded-2xl bg-slate-50 p-4">
+                                  <div className="uppercase tracking-wide text-slate-500">Versiones</div>
+                                  <div className="mt-2 text-2xl font-bold text-slate-900">{executiveBudgetPlanVersionData.totalVersions}</div>
+                                </div>
+                                <div className="rounded-2xl bg-slate-50 p-4">
+                                  <div className="uppercase tracking-wide text-slate-500">Versión dominante</div>
+                                  <div className="mt-2 text-2xl font-bold text-slate-900">{executiveBudgetPlanVersionData.topKind ? formatExecutiveBudgetPlanVersionKind(executiveBudgetPlanVersionData.topKind.kind) : '-'}</div>
+                                </div>
+                              </div>
+                              <p className="mt-5 text-lg text-slate-500">
+                                Versión comité: {executiveBudgetPlanVersionData.latestCommitteeVersion
+                                  ? `${executiveBudgetPlanVersionData.latestCommitteeVersion.season} · ${new Date(executiveBudgetPlanVersionData.latestCommitteeVersion.created_at).toLocaleString('es-CL')}`
+                                  : 'sin freeze de comité visible'}.
+                              </p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 p-6">
+                              <div className="text-2xl font-bold text-slate-800 mb-5">Secuencia actual</div>
+                              <div className="space-y-4">
+                                <div className="rounded-2xl bg-slate-50 p-4 flex items-center justify-between gap-4">
+                                  <span className="text-slate-500">Siguiente versión</span>
+                                  <span className="text-xl font-bold text-slate-900">{formatExecutiveBudgetPlanVersionKind(executiveBudgetPlanNextKind)}</span>
+                                </div>
+                                <div className="rounded-2xl bg-slate-50 p-4 flex items-center justify-between gap-4">
+                                  <span className="text-slate-500">Versiones temporada</span>
+                                  <span className="text-xl font-bold text-slate-900">{executiveBudgetPlanVersionData.currentSeasonRows.length}</span>
+                                </div>
+                                <div className="rounded-2xl bg-slate-50 p-4 flex items-center justify-between gap-4">
+                                  <span className="text-slate-500">Última versión</span>
+                                  <span className="text-xl font-bold text-slate-900">{executiveBudgetPlanVersionData.latestVersion ? formatExecutiveBudgetPlanVersionKind(executiveBudgetPlanVersionData.latestVersion.version_kind) : '-'}</span>
+                                </div>
+                                <div className="rounded-2xl bg-slate-50 p-4 flex items-center justify-between gap-4">
+                                  <span className="text-slate-500">Cobertura actual</span>
+                                  <span className="text-xl font-bold text-slate-900">{executiveCompanyBudgetGovernanceData.areaCoveragePct.toFixed(1)}%</span>
                                 </div>
                               </div>
                             </div>

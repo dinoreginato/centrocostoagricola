@@ -4,12 +4,20 @@
 Dejar la aplicacion mas confiable para gestion agricola real, con costos mas verdaderos, menos duplicidad y una mejor resolucion de datos para toma de decisiones.
 
 ## Estado General
-- Avance general estimado del roadmap activo: `100%`
+- Avance general estimado del roadmap actualmente identificado: `100%`
+- Macrocapas cerradas: `17 de 17`
+- Fases base cerradas: `5 de 5`
+- Fases ejecutivas/adicionales cerradas: `12 de 12`
+- Pendientes del roadmap actual: `0`
+- Próxima expansión sugerida:
+  - workflow formal de aprobación y publicación de versiones presupuestarias
+  - freeze operativo con responsables y motivo de cambio
 - Estado actual:
   - `[x]` base canonica de temporadas y costos
   - `[x]` conciliacion y auditoria ejecutiva
   - `[x]` margen canonico con produccion e ingresos
   - `[x]` cierre economico y cierre total de datos
+  - `[x]` integridad agricola de campo, sector y hectareas
   - `[x]` comparativos historicos entre empresas
   - `[x]` ranking multiempresa y alertas globales
   - `[x]` bitacora, ciclo de vida y transiciones de alertas globales
@@ -17,9 +25,11 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - `[x]` reescalamiento por cambio de responsable o aumento de severidad
   - `[x]` cierre asistido de incumplimientos SLA
   - `[x]` recomendaciones automáticas de normalizacion preventiva
+  - `[x]` gobernanza presupuestaria por campo y sector
   - `[x]` persistencia historica materializada del ranking global
   - `[x]` persistencia preventiva materializada y alertas anticipadas más livianas
   - `[x]` cierre presupuestario materializado por temporada
+  - `[x]` versionado presupuestario por temporada
 
 ## Avance Del Plan
 ### Fase 1
@@ -74,6 +84,7 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
 - `[x]` Persistencia preventiva materializada y reglas anticipadas más livianas.
 - `[x]` Gobernanza presupuestaria por campo y sector.
 - `[x]` Cierre presupuestario materializado por temporada.
+- `[x]` Versionado presupuestario por temporada.
 
 ## Lo Que Ya Esta Bien
 - Modelo predial correcto: `empresa -> campo -> sector`.
@@ -344,6 +355,32 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - congelar la foto presupuestaria por temporada para comité y revisiones posteriores
   - separar la lectura viva del presupuesto respecto de una evidencia histórica reutilizable
   - preparar la base para un freeze formal y futuras revisiones/versiones de presupuesto
+
+## Versionado Presupuestario Por Temporada
+- Estado: `[x] Implementado`
+- Se agregó la migración `supabase/migrations/20260628173000_create_executive_budget_plan_versions.sql`.
+- Se agregó el servicio `src/services/executiveBudgetPlanVersions.ts`.
+- La nueva bitácora `executive_budget_plan_versions` guarda por empresa y temporada versiones:
+  - `base`
+  - `revision`
+  - `comite`
+- Cada versión persistida conserva:
+  - firma deduplicada del plan visible
+  - presupuesto total
+  - cobertura presupuestaria
+  - porcentaje de ejecución
+  - estado del presupuesto `completo`, `parcial` o `fragil`
+  - resumen ejecutivo reutilizable
+- `Reportes` ahora:
+  - registra la primera foto de una temporada como `base`
+  - registra nuevas fotos como `revision` cuando cambia el presupuesto visible
+  - registra versión `comite` cuando la temporada está lista para comité y el presupuesto está completo
+  - muestra histórico visible de versiones en la vista ejecutiva
+  - integra esta lectura en fullscreen, Excel y PDF
+- Objetivo:
+  - distinguir plan inicial, revisiones y versión apta para comité
+  - dejar trazabilidad formal del presupuesto vigente por temporada
+  - preparar la aplicación para un freeze manual y aprobaciones explícitas en una fase posterior
 
 ## Captura Formal De Produccion
 - Se agrego el servicio `src/services/productionRecords.ts`.
@@ -907,4 +944,4 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
 
 ## Siguiente Paso Recomendado
 - Evaluar refresco programado o corte diario de snapshots si más adelante se quiere una bitácora materializada con cadencia operativa fija.
-- Avanzar hacia versionado explícito de presupuesto agrícola por temporada, diferenciando plan base, revisión ejecutiva y freeze final de comité.
+- Avanzar hacia workflow formal de aprobación/publicación de versiones presupuestarias, con responsable, motivo de cambio y freeze manual de comité.
