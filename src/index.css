@@ -21,6 +21,11 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+.recharts-responsive-container {
+  min-width: 0;
+  min-height: 220px;
+}
+
 @media print {
   @page {
     size: letter; /* Tamaño Carta */
