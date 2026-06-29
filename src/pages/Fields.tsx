@@ -10,6 +10,10 @@ interface Sector {
   name: string;
   hectares: number;
   budget?: number;
+  productive_stage?: 'productivo' | 'en_formacion' | 'renovacion' | 'arranque';
+  production_expected_from_season?: string | null;
+  non_productive_reason?: 'plantacion_nueva' | 'replante' | 'recuperacion' | 'otro' | null;
+  establishment_notes?: string | null;
   total_labor_cost?: number;
   latitude?: number | null;
   longitude?: number | null;
@@ -74,6 +78,53 @@ const getFieldBudgetSummary = (field: Field) => {
   };
 };
 
+const SECTOR_PRODUCTIVE_STAGE_OPTIONS = [
+  { value: 'productivo', label: 'Productivo' },
+  { value: 'en_formacion', label: 'En formacion' },
+  { value: 'renovacion', label: 'Renovacion' },
+  { value: 'arranque', label: 'Arranque' }
+] as const;
+
+const SECTOR_NON_PRODUCTIVE_REASON_OPTIONS = [
+  { value: 'plantacion_nueva', label: 'Plantacion nueva' },
+  { value: 'replante', label: 'Replante' },
+  { value: 'recuperacion', label: 'Recuperacion' },
+  { value: 'otro', label: 'Otro' }
+] as const;
+
+const isSectorNonProductiveExpected = (sector: Sector) => (
+  sector.productive_stage === 'en_formacion' || sector.productive_stage === 'arranque'
+);
+
+const formatSectorStage = (value?: Sector['productive_stage']) => {
+  switch (value) {
+    case 'en_formacion':
+      return 'En formacion';
+    case 'renovacion':
+      return 'Renovacion';
+    case 'arranque':
+      return 'Arranque';
+    case 'productivo':
+    default:
+      return 'Productivo';
+  }
+};
+
+const formatSectorNonProductiveReason = (value?: Sector['non_productive_reason'] | null) => {
+  switch (value) {
+    case 'plantacion_nueva':
+      return 'Plantacion nueva';
+    case 'replante':
+      return 'Replante';
+    case 'recuperacion':
+      return 'Recuperacion';
+    case 'otro':
+      return 'Otro';
+    default:
+      return '';
+  }
+};
+
 export const Fields: React.FC = () => {
   const { selectedCompany, userRole } = useCompany();
   const [fields, setFields] = useState<Field[]>([]);
@@ -92,6 +143,10 @@ export const Fields: React.FC = () => {
   const [newSectorName, setNewSectorName] = useState('');
   const [newSectorHectares, setNewSectorHectares] = useState('');
   const [newSectorBudget, setNewSectorBudget] = useState('');
+  const [newSectorProductiveStage, setNewSectorProductiveStage] = useState<Sector['productive_stage']>('productivo');
+  const [newSectorExpectedSeason, setNewSectorExpectedSeason] = useState('');
+  const [newSectorNonProductiveReason, setNewSectorNonProductiveReason] = useState<NonNullable<Sector['non_productive_reason']>>('plantacion_nueva');
+  const [newSectorEstablishmentNotes, setNewSectorEstablishmentNotes] = useState('');
   const [newSectorLatitude, setNewSectorLatitude] = useState('');
   const [newSectorLongitude, setNewSectorLongitude] = useState('');
 
@@ -108,6 +163,10 @@ export const Fields: React.FC = () => {
   const [editSectorName, setEditSectorName] = useState('');
   const [editSectorHectares, setEditSectorHectares] = useState('');
   const [editSectorBudget, setEditSectorBudget] = useState('');
+  const [editSectorProductiveStage, setEditSectorProductiveStage] = useState<Sector['productive_stage']>('productivo');
+  const [editSectorExpectedSeason, setEditSectorExpectedSeason] = useState('');
+  const [editSectorNonProductiveReason, setEditSectorNonProductiveReason] = useState<NonNullable<Sector['non_productive_reason']>>('plantacion_nueva');
+  const [editSectorEstablishmentNotes, setEditSectorEstablishmentNotes] = useState('');
   const [editSectorLatitude, setEditSectorLatitude] = useState('');
   const [editSectorLongitude, setEditSectorLongitude] = useState('');
 
@@ -220,6 +279,12 @@ export const Fields: React.FC = () => {
           name: newSectorName,
           hectares: parseFloat(newSectorHectares),
           budget: newSectorBudget ? parseFloat(newSectorBudget) : 0,
+          productive_stage: newSectorProductiveStage || 'productivo',
+          production_expected_from_season: newSectorExpectedSeason.trim() || null,
+          non_productive_reason: isSectorNonProductiveExpected({ productive_stage: newSectorProductiveStage } as Sector)
+            ? newSectorNonProductiveReason
+            : null,
+          establishment_notes: newSectorEstablishmentNotes.trim() || null,
           latitude: newSectorLatitude ? parseFloat(newSectorLatitude) : null,
           longitude: newSectorLongitude ? parseFloat(newSectorLongitude) : null
         }
@@ -239,6 +304,10 @@ export const Fields: React.FC = () => {
       setNewSectorName('');
       setNewSectorHectares('');
       setNewSectorBudget('');
+      setNewSectorProductiveStage('productivo');
+      setNewSectorExpectedSeason('');
+      setNewSectorNonProductiveReason('plantacion_nueva');
+      setNewSectorEstablishmentNotes('');
       setNewSectorLatitude('');
       setNewSectorLongitude('');
     } catch (error) {
@@ -251,6 +320,10 @@ export const Fields: React.FC = () => {
     setEditSectorName(sector.name);
     setEditSectorHectares(sector.hectares.toString());
     setEditSectorBudget(sector.budget ? sector.budget.toString() : '');
+    setEditSectorProductiveStage(sector.productive_stage || 'productivo');
+    setEditSectorExpectedSeason(sector.production_expected_from_season || '');
+    setEditSectorNonProductiveReason(sector.non_productive_reason || 'plantacion_nueva');
+    setEditSectorEstablishmentNotes(sector.establishment_notes || '');
     setEditSectorLatitude(sector.latitude != null ? String(sector.latitude) : '');
     setEditSectorLongitude(sector.longitude != null ? String(sector.longitude) : '');
   };
@@ -260,6 +333,10 @@ export const Fields: React.FC = () => {
     setEditSectorName('');
     setEditSectorHectares('');
     setEditSectorBudget('');
+    setEditSectorProductiveStage('productivo');
+    setEditSectorExpectedSeason('');
+    setEditSectorNonProductiveReason('plantacion_nueva');
+    setEditSectorEstablishmentNotes('');
     setEditSectorLatitude('');
     setEditSectorLongitude('');
   };
@@ -273,6 +350,12 @@ export const Fields: React.FC = () => {
           name: editSectorName,
           hectares: parseFloat(editSectorHectares),
           budget: editSectorBudget ? parseFloat(editSectorBudget) : 0,
+          productive_stage: editSectorProductiveStage || 'productivo',
+          production_expected_from_season: editSectorExpectedSeason.trim() || null,
+          non_productive_reason: isSectorNonProductiveExpected({ productive_stage: editSectorProductiveStage } as Sector)
+            ? editSectorNonProductiveReason
+            : null,
+          establishment_notes: editSectorEstablishmentNotes.trim() || null,
           latitude: editSectorLatitude ? parseFloat(editSectorLatitude) : null,
           longitude: editSectorLongitude ? parseFloat(editSectorLongitude) : null
         }
@@ -679,6 +762,42 @@ export const Fields: React.FC = () => {
                                   className="block w-32 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
                                   placeholder="Ppto/Ha ($)"
                                 />
+                                <select
+                                  value={editSectorProductiveStage || 'productivo'}
+                                  onChange={(e) => setEditSectorProductiveStage(e.target.value as Sector['productive_stage'])}
+                                  className="block w-36 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                                >
+                                  {SECTOR_PRODUCTIVE_STAGE_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                  ))}
+                                </select>
+                                <input
+                                  type="text"
+                                  value={editSectorExpectedSeason}
+                                  onChange={(e) => setEditSectorExpectedSeason(e.target.value)}
+                                  className="block w-32 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                                  placeholder="Temp. prod."
+                                />
+                                {isSectorNonProductiveExpected({ productive_stage: editSectorProductiveStage } as Sector) && (
+                                  <>
+                                    <select
+                                      value={editSectorNonProductiveReason}
+                                      onChange={(e) => setEditSectorNonProductiveReason(e.target.value as NonNullable<Sector['non_productive_reason']>)}
+                                      className="block w-40 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                                    >
+                                      {SECTOR_NON_PRODUCTIVE_REASON_OPTIONS.map((option) => (
+                                        <option key={option.value} value={option.value}>{option.label}</option>
+                                      ))}
+                                    </select>
+                                    <input
+                                      type="text"
+                                      value={editSectorEstablishmentNotes}
+                                      onChange={(e) => setEditSectorEstablishmentNotes(e.target.value)}
+                                      className="block w-40 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                                      placeholder="Notas"
+                                    />
+                                  </>
+                                )}
                                 <input
                                   type="number"
                                   step="0.000001"
@@ -717,6 +836,17 @@ export const Fields: React.FC = () => {
                                   <MapPin className="h-4 w-4 text-gray-400 mr-2" />
                                   <span className="font-medium mr-2">{sector.name}</span>
                                   <span className="text-gray-400 mr-6">({sector.hectares} ha)</span>
+                                  {sector.productive_stage && sector.productive_stage !== 'productivo' && (
+                                    <span className="mr-3 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                                      {formatSectorStage(sector.productive_stage)}
+                                    </span>
+                                  )}
+                                  {sector.non_productive_reason && (
+                                    <span className="mr-3 text-xs text-amber-700">
+                                      {formatSectorNonProductiveReason(sector.non_productive_reason)}
+                                      {sector.production_expected_from_season ? ` · Produccion esperada ${sector.production_expected_from_season}` : ''}
+                                    </span>
+                                  )}
                                   
                                   {sector.budget > 0 && (
                                     <div className="hidden sm:flex items-center mr-6 text-sm">
@@ -791,6 +921,42 @@ export const Fields: React.FC = () => {
                               onChange={e => setNewSectorBudget(e.target.value)}
                               className="block w-32 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
                             />
+                            <select
+                              value={newSectorProductiveStage || 'productivo'}
+                              onChange={e => setNewSectorProductiveStage(e.target.value as Sector['productive_stage'])}
+                              className="block w-36 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                            >
+                              {SECTOR_PRODUCTIVE_STAGE_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                            <input
+                              type="text"
+                              placeholder="Temp. prod."
+                              value={newSectorExpectedSeason}
+                              onChange={e => setNewSectorExpectedSeason(e.target.value)}
+                              className="block w-32 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                            />
+                            {isSectorNonProductiveExpected({ productive_stage: newSectorProductiveStage } as Sector) && (
+                              <>
+                                <select
+                                  value={newSectorNonProductiveReason}
+                                  onChange={e => setNewSectorNonProductiveReason(e.target.value as NonNullable<Sector['non_productive_reason']>)}
+                                  className="block w-40 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                                >
+                                  {SECTOR_NON_PRODUCTIVE_REASON_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>{option.label}</option>
+                                  ))}
+                                </select>
+                                <input
+                                  type="text"
+                                  placeholder="Notas"
+                                  value={newSectorEstablishmentNotes}
+                                  onChange={e => setNewSectorEstablishmentNotes(e.target.value)}
+                                  className="block w-40 border-gray-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                                />
+                              </>
+                            )}
                             <input
                               type="number"
                               step="0.000001"

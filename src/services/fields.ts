@@ -12,6 +12,10 @@ export type FieldWithSectors = {
     name: string;
     hectares: number;
     budget?: number;
+    productive_stage?: 'productivo' | 'en_formacion' | 'renovacion' | 'arranque';
+    production_expected_from_season?: string | null;
+    non_productive_reason?: 'plantacion_nueva' | 'replante' | 'recuperacion' | 'otro' | null;
+    establishment_notes?: string | null;
     latitude?: number | null;
     longitude?: number | null;
   }>;
@@ -41,6 +45,10 @@ export type SectorInsert = {
   name: string;
   hectares: number;
   budget?: number;
+  productive_stage?: 'productivo' | 'en_formacion' | 'renovacion' | 'arranque';
+  production_expected_from_season?: string | null;
+  non_productive_reason?: 'plantacion_nueva' | 'replante' | 'recuperacion' | 'otro' | null;
+  establishment_notes?: string | null;
   latitude?: number | null;
   longitude?: number | null;
 };

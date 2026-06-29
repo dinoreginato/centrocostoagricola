@@ -107,6 +107,11 @@ interface ReportData {
   sector_name: string;
   sector_id: string; 
   fruit_type?: string;
+  productive_stage?: string;
+  production_expected_from_season?: string | null;
+  non_productive_reason?: string | null;
+  establishment_notes?: string | null;
+  expected_without_production?: boolean;
   hectares: number;
   total_cost: number;
   cost_per_ha: number;
@@ -255,6 +260,50 @@ const parseExecutiveMonthKey = (rawDate: string) => {
   const parsed = new Date(`${String(rawDate).slice(0, 10)}T12:00:00`);
   if (Number.isNaN(parsed.getTime())) return null;
   return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const compareSeasonKeys = (left?: string | null, right?: string | null) => {
+  const leftYear = Number(String(left || '').split('-')[0] || 0);
+  const rightYear = Number(String(right || '').split('-')[0] || 0);
+  return leftYear - rightYear;
+};
+
+const isSectorExpectedWithoutProduction = (sector: any, season: string) => {
+  const stage = String(sector?.productive_stage || 'productivo');
+  if (stage !== 'en_formacion' && stage !== 'arranque') return false;
+
+  const expectedSeason = String(sector?.production_expected_from_season || '').trim();
+  if (!expectedSeason) return true;
+  return compareSeasonKeys(season, expectedSeason) < 0;
+};
+
+const formatSectorProductiveStage = (value?: string | null) => {
+  switch (value) {
+    case 'en_formacion':
+      return 'En formacion';
+    case 'renovacion':
+      return 'Renovacion';
+    case 'arranque':
+      return 'Arranque';
+    case 'productivo':
+    default:
+      return 'Productivo';
+  }
+};
+
+const formatSectorNonProductiveReason = (value?: string | null) => {
+  switch (value) {
+    case 'plantacion_nueva':
+      return 'Plantacion nueva';
+    case 'replante':
+      return 'Replante';
+    case 'recuperacion':
+      return 'Recuperacion';
+    case 'otro':
+      return 'Otro';
+    default:
+      return '';
+  }
 };
 
 const getExecutiveTone = (variationPct: number) => {
@@ -2712,6 +2761,7 @@ const buildEconomicClosureSummaryFromReportSources = (params: {
       (field.sectors || []).map((sector: any) => {
         const record = productionRecordMap.get(String(sector.id));
         const marginRow = marginRows.find((row) => row.season === season && row.sector_id === sector.id) || null;
+        const expectedWithoutProduction = isSectorExpectedWithoutProduction(sector, season);
         return {
           fieldId: String(field.id),
           fieldName: String(field.name || '-'),
@@ -2722,6 +2772,10 @@ const buildEconomicClosureSummaryFromReportSources = (params: {
           pricePerKg: Number(record?.price_per_kg || 0),
           hasRecord: Boolean(record),
           productionSource: marginRow?.production_source || 'sin_produccion',
+          productiveStage: String(sector.productive_stage || 'productivo'),
+          productionExpectedFromSeason: sector.production_expected_from_season || null,
+          nonProductiveReason: sector.non_productive_reason || null,
+          expectedWithoutProduction,
           totalCost: Number(marginRow?.total_cost || 0),
           totalIncome: Number(marginRow?.total_income_clp || 0),
           marginPct: Number(marginRow?.margin_pct || 0),
@@ -2730,14 +2784,17 @@ const buildEconomicClosureSummaryFromReportSources = (params: {
       })
     )
     .filter((row) => fieldFilter === 'all' || row.fieldId === fieldFilter);
-  const closedRows = visibleRows.filter((row) => row.hasRecord && row.totalIncome > 0 && row.totalCost > 0);
-  const pendingProductionRows = visibleRows.filter((row) => row.totalIncome > 0 && !row.hasRecord);
-  const pendingIncomeRows = visibleRows.filter((row) => row.hasRecord && row.totalIncome <= 0);
-  const costWithoutIncomeRows = visibleRows.filter((row) => row.totalCost > 0 && row.totalIncome <= 0);
-  const closurePct = visibleRows.length > 0 ? (closedRows.length / visibleRows.length) * 100 : 0;
+  const blockingRows = visibleRows.filter((row) => !row.expectedWithoutProduction);
+  const closedRows = blockingRows.filter((row) => row.hasRecord && row.totalIncome > 0 && row.totalCost > 0);
+  const pendingProductionRows = blockingRows.filter((row) => row.totalIncome > 0 && !row.hasRecord);
+  const pendingIncomeRows = blockingRows.filter((row) => row.hasRecord && row.totalIncome <= 0);
+  const costWithoutIncomeRows = blockingRows.filter((row) => row.totalCost > 0 && row.totalIncome <= 0);
+  const expectedNoProductionRows = visibleRows.filter((row) => row.expectedWithoutProduction && row.totalCost > 0);
+  const closurePct = blockingRows.length > 0 ? (closedRows.length / blockingRows.length) * 100 : 0;
   const pendingProductionAmount = pendingProductionRows.reduce((sum, row) => sum + Number(row.totalIncome || 0), 0);
   const pendingIncomeCost = pendingIncomeRows.reduce((sum, row) => sum + Number(row.totalCost || 0), 0);
   const costWithoutIncomeAmount = costWithoutIncomeRows.reduce((sum, row) => sum + Number(row.totalCost || 0), 0);
+  const expectedNoProductionAmount = expectedNoProductionRows.reduce((sum, row) => sum + Number(row.totalCost || 0), 0);
 
   const tone = (() => {
     if (closurePct < 40 || pendingProductionRows.length > 0 || costWithoutIncomeRows.length > 0) {
@@ -2765,7 +2822,7 @@ const buildEconomicClosureSummaryFromReportSources = (params: {
     {
       title: 'Sectores cerrados',
       description: 'Sectores con costo, ingreso y producción formal visibles.',
-      emphasis: `${closedRows.length} de ${visibleRows.length} sectores · ${closurePct.toFixed(1)}%`
+      emphasis: `${closedRows.length} de ${blockingRows.length} sectores exigibles · ${closurePct.toFixed(1)}%`
     },
     {
       title: 'Pendientes de producción',
@@ -2776,6 +2833,11 @@ const buildEconomicClosureSummaryFromReportSources = (params: {
       title: 'Pendientes de ingreso',
       description: 'Sectores con producción formal, pero sin ingresos visibles para cerrar margen.',
       emphasis: `${pendingIncomeRows.length} sectores · ${formatCLP(pendingIncomeCost)}`
+    },
+    {
+      title: 'Sectores en formación',
+      description: 'Sectores eximidos de cierre productivo por estar en etapa no productiva esperada.',
+      emphasis: `${expectedNoProductionRows.length} sectores · ${formatCLP(expectedNoProductionAmount)}`
     }
   ];
 
@@ -2821,10 +2883,12 @@ const buildEconomicClosureSummaryFromReportSources = (params: {
     pendingProductionRows,
     pendingIncomeRows,
     costWithoutIncomeRows,
+    expectedNoProductionRows,
     closurePct,
     pendingProductionAmount,
     pendingIncomeCost,
     costWithoutIncomeAmount,
+    expectedNoProductionAmount,
     tone,
     findings,
     topFocusRows,
@@ -3753,7 +3817,16 @@ export const Reports: React.FC = () => {
   const previousExecutiveMonthKeySet = useMemo(() => new Set(previousExecutiveSeasonMonths.map((month) => month.key)), [previousExecutiveSeasonMonths]);
 
   const executiveSectorMeta = useMemo(() => {
-    const map = new Map<string, { fieldId: string; fieldName: string; sectorName: string; hectares: number }>();
+    const map = new Map<string, {
+      fieldId: string;
+      fieldName: string;
+      sectorName: string;
+      hectares: number;
+      productiveStage: string;
+      productionExpectedFromSeason: string | null;
+      nonProductiveReason: string | null;
+      expectedWithoutProduction: boolean;
+    }>();
 
     rawFields.forEach((field: any) => {
       (field.sectors || []).forEach((sector: any) => {
@@ -3761,13 +3834,17 @@ export const Reports: React.FC = () => {
           fieldId: field.id,
           fieldName: field.name,
           sectorName: sector.name,
-          hectares: Number(sector.hectares || 0)
+          hectares: Number(sector.hectares || 0),
+          productiveStage: String(sector.productive_stage || 'productivo'),
+          productionExpectedFromSeason: sector.production_expected_from_season || null,
+          nonProductiveReason: sector.non_productive_reason || null,
+          expectedWithoutProduction: isSectorExpectedWithoutProduction(sector, selectedSeason)
         });
       });
     });
 
     return map;
-  }, [rawFields]);
+  }, [rawFields, selectedSeason]);
 
   const executiveFieldMeta = useMemo(() => {
     const map = new Map<string, { fieldName: string; hectares: number }>();
@@ -3782,6 +3859,20 @@ export const Reports: React.FC = () => {
 
     return map;
   }, [rawFields]);
+
+  const executiveFieldExpectedWithoutProductionMap = useMemo(() => {
+    const map = new Map<string, boolean>();
+
+    rawFields.forEach((field: any) => {
+      const sectors = (field.sectors || []).filter((sector: any) => Number(sector.hectares || 0) > 0);
+      const expectedWithoutProduction = sectors.length > 0 && sectors.every((sector: any) =>
+        isSectorExpectedWithoutProduction(sector, selectedSeason)
+      );
+      map.set(String(field.name || ''), expectedWithoutProduction);
+    });
+
+    return map;
+  }, [rawFields, selectedSeason]);
 
   const executiveFuelPrices = useMemo(() => {
     let totalDieselLiters = 0;
@@ -4198,7 +4289,12 @@ export const Reports: React.FC = () => {
           score: Math.max(Number((row as any).budgetDelta || 0), 0)
         })),
       ...sortedFieldRows
-        .filter((row) => row.total > 0 && Number((row as any).kgProduced || 0) <= 0 && Number(row.hectares || 0) > 0)
+        .filter((row) =>
+          row.total > 0 &&
+          Number((row as any).kgProduced || 0) <= 0 &&
+          Number(row.hectares || 0) > 0 &&
+          !executiveFieldExpectedWithoutProductionMap.get(String(row.fieldName || ''))
+        )
         .map((row) => ({
           level: row.total >= baseViewData.kpis.averageMonthlyCost ? 'alta' : 'media',
           title: `Campo ${row.fieldName} sin produccion visible`,
@@ -4277,6 +4373,7 @@ export const Reports: React.FC = () => {
     };
   }, [
     executiveData,
+    executiveFieldExpectedWithoutProductionMap,
     executiveFieldSortBy,
     executiveFieldFilter,
     executivePreviousBase.fieldRows,
@@ -4699,6 +4796,7 @@ export const Reports: React.FC = () => {
         .map((sector: any) => {
           const record = productionRecordBySector.get(String(sector.id));
           const marginRow = rawMarginRows.find((row) => row.season === selectedSeason && row.sector_id === sector.id) || null;
+          const expectedWithoutProduction = isSectorExpectedWithoutProduction(sector, selectedSeason);
           return {
             fieldId: String(field.id),
             fieldName: String(field.name || '-'),
@@ -4708,7 +4806,11 @@ export const Reports: React.FC = () => {
             kgProduced: Number(record?.kg_produced || 0),
             pricePerKg: Number(record?.price_per_kg || 0),
             hasRecord: Boolean(record),
-            productionSource: marginRow?.production_source || 'sin_produccion',
+            productionSource: expectedWithoutProduction ? 'en_formacion' : (marginRow?.production_source || 'sin_produccion'),
+            productiveStage: String(sector.productive_stage || 'productivo'),
+            productionExpectedFromSeason: sector.production_expected_from_season || null,
+            nonProductiveReason: sector.non_productive_reason || null,
+            expectedWithoutProduction,
             totalCost: Number(marginRow?.total_cost || 0),
             totalIncome: Number(marginRow?.total_income_clp || 0),
             marginPct: Number(marginRow?.margin_pct || 0),
@@ -4719,11 +4821,14 @@ export const Reports: React.FC = () => {
   ), [productionRecordBySector, rawFields, rawMarginRows, selectedSeason]);
 
   const economicCompletionData = useMemo(() => {
-    const sectorsWithCostNoIncome = productionCoverageRows.filter((row) => row.totalCost > 0 && row.totalIncome <= 0);
-    const sectorsWithIncomeNoFormalProduction = productionCoverageRows.filter((row) => row.totalIncome > 0 && !row.hasRecord);
-    const sectorsWithFormalProductionNoIncome = productionCoverageRows.filter((row) => row.hasRecord && row.totalIncome <= 0);
+    const blockingRows = productionCoverageRows.filter((row) => !row.expectedWithoutProduction);
+    const exemptFormationRows = productionCoverageRows.filter((row) => row.expectedWithoutProduction && row.totalCost > 0);
+    const sectorsWithCostNoIncome = blockingRows.filter((row) => row.totalCost > 0 && row.totalIncome <= 0);
+    const sectorsWithIncomeNoFormalProduction = blockingRows.filter((row) => row.totalIncome > 0 && !row.hasRecord);
+    const sectorsWithFormalProductionNoIncome = blockingRows.filter((row) => row.hasRecord && row.totalIncome <= 0);
 
     return {
+      exemptFormationRows,
       sectorsWithCostNoIncome,
       sectorsWithIncomeNoFormalProduction,
       sectorsWithFormalProductionNoIncome,
@@ -9066,12 +9171,18 @@ export const Reports: React.FC = () => {
           : (finalIncomeClp > 0 ? (finalProfitClp / finalIncomeClp) * 100 : 0);
         
         const budgetPerHa = Number(sector.budget) || 0;
+        const expectedWithoutProduction = isSectorExpectedWithoutProduction(sector, selectedSeason);
         
         data.push({
           field_name: field.name,
           sector_name: sector.name,
           sector_id: sector.id,
           fruit_type: String((field as any).fruit_type || ''),
+          productive_stage: String(sector.productive_stage || 'productivo'),
+          production_expected_from_season: sector.production_expected_from_season || null,
+          non_productive_reason: sector.non_productive_reason || null,
+          establishment_notes: sector.establishment_notes || null,
+          expected_without_production: expectedWithoutProduction,
           hectares: hectares,
           total_cost: totalCostGeneral, // Default for General Table
           cost_per_ha: finalCostPerHa,
@@ -9089,7 +9200,9 @@ export const Reports: React.FC = () => {
           budget_per_ha: budgetPerHa,
           total_budget: budgetPerHa * hectares,
           income_estimated: finalIncomeClp,
-          production_source: preferIncomeFallback ? 'income_entries' : (marginRow?.production_source || 'income_entries'),
+          production_source: expectedWithoutProduction
+            ? 'en_formacion'
+            : (preferIncomeFallback ? 'income_entries' : (marginRow?.production_source || 'income_entries')),
           has_production_record: preferIncomeFallback ? false : Boolean(marginRow?.has_production_record),
           profit_clp: finalProfitClp,
           margin_pct: finalMarginPct,
@@ -17606,7 +17719,7 @@ export const Reports: React.FC = () => {
                   </div>
                   <p className="mt-1 text-sm text-gray-500">Sectores que todavía no tienen una base económica suficientemente completa.</p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4">
                   <div className="rounded-lg border border-red-200 bg-red-50 p-4">
                     <div className="text-xs uppercase tracking-wide text-red-700">Costo sin ingreso</div>
                     <div className="mt-2 text-2xl font-semibold text-red-700">{economicCompletionData.sectorsWithCostNoIncome.length}</div>
@@ -17618,6 +17731,11 @@ export const Reports: React.FC = () => {
                   <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-4">
                     <div className="text-xs uppercase tracking-wide text-indigo-700">Producción formal sin ingreso</div>
                     <div className="mt-2 text-2xl font-semibold text-indigo-700">{economicCompletionData.sectorsWithFormalProductionNoIncome.length}</div>
+                  </div>
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                    <div className="text-xs uppercase tracking-wide text-emerald-700">En formación</div>
+                    <div className="mt-2 text-2xl font-semibold text-emerald-700">{economicCompletionData.exemptFormationRows.length}</div>
+                    <div className="mt-1 text-xs text-emerald-700">No bloquean cierre por falta de producción</div>
                   </div>
                 </div>
               </div>
@@ -17648,6 +17766,13 @@ export const Reports: React.FC = () => {
                       label: 'Producción formal sin ingreso',
                       detail: `${row.fieldName} / ${row.sectorName}`,
                       value: `${Number(row.kgProduced || 0).toLocaleString('es-CL')} Kg`
+                    })),
+                    ...economicCompletionData.exemptFormationRows.map((row) => ({
+                      key: `formation-${row.sectorId}`,
+                      tone: 'text-emerald-700',
+                      label: 'Plantación nueva / formación',
+                      detail: `${row.fieldName} / ${row.sectorName}${row.productionExpectedFromSeason ? ` · Produce desde ${row.productionExpectedFromSeason}` : ''}`,
+                      value: formatCLP(row.totalCost)
                     }))
                   ].slice(0, 6).map((item) => (
                     <div key={item.key} className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 px-4 py-3">
