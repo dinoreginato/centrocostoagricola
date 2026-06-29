@@ -431,7 +431,8 @@ export const Dashboard: React.FC = () => {
         ordersData,
         rainLogs,
         machines,
-        availableSeasons
+        availableSeasons,
+        warnings
       } = await loadDashboardRaw({ companyId: selectedCompany.id, season: selectedSeason });
 
       setCompanyFields(fields || []);
@@ -675,8 +676,13 @@ export const Dashboard: React.FC = () => {
           setMachineAlerts(alerts);
       }
 
-    } catch {
-      toast.error('Error al cargar datos del dashboard.');
+      if (warnings && warnings.length > 0) {
+        const sources = Array.from(new Set(warnings.map((w: any) => w.source))).slice(0, 4);
+        toast.warning(`Dashboard cargó parcialmente. Revisar: ${sources.join(', ')}`);
+      }
+    } catch (error: any) {
+      console.error('Error al cargar datos del dashboard.', error);
+      toast.error(String(error?.message || error?.details || error || 'Error al cargar datos del dashboard.'));
     }
   }, [selectedCompany, selectedSeason]);
 
