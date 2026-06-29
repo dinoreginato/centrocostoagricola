@@ -59,6 +59,15 @@ import {
   type ExecutiveBudgetPlanWorkflowAction,
   type ExecutiveBudgetPlanWorkflowEventRow
 } from '../services/executiveBudgetPlanWorkflow';
+import {
+  EXECUTIVE_BUDGET_PLAN_APPROVAL_STEP_DEFS,
+  ensureExecutiveBudgetPlanApprovalSteps,
+  loadExecutiveBudgetPlanApprovalSteps,
+  updateExecutiveBudgetPlanApprovalStep,
+  type ExecutiveBudgetPlanApprovalRole,
+  type ExecutiveBudgetPlanApprovalStatus,
+  type ExecutiveBudgetPlanApprovalStepRow
+} from '../services/executiveBudgetPlanApprovalSteps';
 import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
 interface ReportData {
@@ -249,7 +258,6 @@ type ExecutiveExportCirculationReason = 'comite' | 'directorio' | 'revision_inte
 type ClosureTrendDirection = 'mejora' | 'estable' | 'deterioro' | 'sin_base';
 type ExecutiveRecommendationDecision = 'presentar' | 'presentar_con_cautela' | 'no_presentar';
 type ExecutiveRankingTier = 'fuerte' | 'intermedio' | 'fragil';
-type ExecutiveBudgetWorkflowRole = 'gerencia_agricola' | 'control_gestion' | 'gerencia_general' | 'comite';
 type ExecutiveGlobalCompanyClosureRow = {
   season: string;
   totalClosurePct: number;
@@ -318,7 +326,7 @@ const EXECUTIVE_EXPORT_CIRCULATION_REASON_OPTIONS: Array<{ value: ExecutiveExpor
   { value: 'banco_inversionista', label: 'Banco / inversionista' },
   { value: 'otro', label: 'Otro' }
 ];
-const EXECUTIVE_BUDGET_WORKFLOW_ROLE_OPTIONS: Array<{ value: ExecutiveBudgetWorkflowRole; label: string }> = [
+const EXECUTIVE_BUDGET_WORKFLOW_ROLE_OPTIONS: Array<{ value: ExecutiveBudgetPlanApprovalRole; label: string }> = [
   { value: 'gerencia_agricola', label: 'Gerencia agrícola' },
   { value: 'control_gestion', label: 'Control de gestión' },
   { value: 'gerencia_general', label: 'Gerencia general' },
@@ -1563,6 +1571,34 @@ const getExecutiveBudgetWorkflowRole = (row: Pick<ExecutiveBudgetPlanWorkflowEve
   return rawValue || null;
 };
 
+const formatExecutiveBudgetApprovalStatus = (value: string | null | undefined) => {
+  switch (value) {
+    case 'aprobada':
+      return 'Aprobada';
+    case 'observada':
+      return 'Observada';
+    case 'congelada':
+      return 'Congelada';
+    case 'pendiente':
+    default:
+      return 'Pendiente';
+  }
+};
+
+const getExecutiveBudgetApprovalStatusTone = (value: string | null | undefined) => {
+  switch (value) {
+    case 'aprobada':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    case 'observada':
+      return 'border-amber-200 bg-amber-50 text-amber-700';
+    case 'congelada':
+      return 'border-blue-200 bg-blue-50 text-blue-700';
+    case 'pendiente':
+    default:
+      return 'border-slate-200 bg-slate-50 text-slate-700';
+  }
+};
+
 const buildExecutiveBudgetGovernanceAnalytics = (
   sectorRows: Array<any>,
   scopeLabel: string
@@ -1767,6 +1803,75 @@ const buildExecutiveBudgetPlanWorkflowAnalytics = (
     topRole: roleSummary[0] || null,
     topAction: actionSummary[0] || null,
     totalEvents: rows.length,
+    summaryLine
+  };
+};
+
+const buildExecutiveBudgetPlanApprovalAnalytics = (params: {
+  rows: ExecutiveBudgetPlanApprovalStepRow[];
+  currentVersion: ExecutiveBudgetPlanVersionRow | null;
+  selectedSeason: string;
+  scopeLabel: string;
+}) => {
+  const currentVersionRows = params.currentVersion
+    ? params.rows
+      .filter((row) => row.version_id === params.currentVersion?.id)
+      .slice()
+      .sort((a, b) => a.step_order - b.step_order)
+    : [];
+  const approvedCount = currentVersionRows.filter((row) => row.approval_status === 'aprobada').length;
+  const observedCount = currentVersionRows.filter((row) => row.approval_status === 'observada').length;
+  const frozenCount = currentVersionRows.filter((row) => row.approval_status === 'congelada').length;
+  const pendingCount = currentVersionRows.filter((row) => row.approval_status === 'pendiente').length;
+  const topStatus = Array.from(
+    currentVersionRows.reduce((map, row) => {
+      map.set(row.approval_status, (map.get(row.approval_status) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count)[0] || null;
+  const currentStep = currentVersionRows.find((row) => row.approval_status === 'observada')
+    || currentVersionRows.find((row) => row.approval_status === 'pendiente')
+    || currentVersionRows[currentVersionRows.length - 1]
+    || null;
+  const readyRolesBeforeCommittee = currentVersionRows
+    .filter((row) => row.approval_role !== 'comite')
+    .every((row) => row.approval_status === 'aprobada' || row.approval_status === 'congelada');
+  const committeeStep = currentVersionRows.find((row) => row.approval_role === 'comite') || null;
+  const allResolved = currentVersionRows.length > 0 && currentVersionRows.every((row) => row.approval_status !== 'pendiente');
+  const tone = committeeStep?.approval_status === 'congelada'
+    ? { badge: 'bg-blue-100 text-blue-700 border-blue-200', label: 'Freeze comité' }
+    : observedCount > 0
+      ? { badge: 'bg-amber-100 text-amber-700 border-amber-200', label: 'Con observaciones' }
+      : pendingCount > 0
+        ? { badge: 'bg-slate-100 text-slate-700 border-slate-200', label: 'En curso' }
+        : approvedCount > 0
+          ? { badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', label: 'Aprobada' }
+          : { badge: 'bg-slate-100 text-slate-700 border-slate-200', label: 'Sin matriz' };
+  const summaryLine = !params.currentVersion
+    ? `No hay versión presupuestaria vigente para desplegar la aprobación multinivel de ${params.scopeLabel}.`
+    : currentVersionRows.length <= 0
+      ? `La versión vigente todavía no tiene pasos de aprobación materializados para ${params.scopeLabel}.`
+      : committeeStep?.approval_status === 'congelada'
+        ? `La matriz multinivel de ${params.scopeLabel} quedó congelada por comité. ${approvedCount} pasos previos aparecen aprobados y la versión vigente ya puede tratarse como freeze manual.`
+        : observedCount > 0
+          ? `La aprobación multinivel de ${params.scopeLabel} mantiene ${observedCount} observación(es) abierta(s). El foco actual está en ${currentStep ? formatExecutiveBudgetWorkflowRole(currentStep.approval_role) : 'sin etapa visible'}.`
+          : pendingCount > 0
+            ? `La aprobación multinivel de ${params.scopeLabel} avanza por etapas. Hay ${approvedCount} roles aprobados, ${pendingCount} pendientes y el siguiente rol visible es ${currentStep ? formatExecutiveBudgetWorkflowRole(currentStep.approval_role) : 'sin etapa visible'}.`
+            : `La aprobación multinivel de ${params.scopeLabel} completó sus ${currentVersionRows.length} pasos visibles.`;
+
+  return {
+    rows: params.rows,
+    currentVersionRows,
+    approvedCount,
+    observedCount,
+    frozenCount,
+    pendingCount,
+    committeeStep,
+    currentStep,
+    topStatus,
+    readyRolesBeforeCommittee,
+    allResolved,
+    tone,
     summaryLine
   };
 };
@@ -2538,13 +2643,14 @@ export const Reports: React.FC = () => {
   const [executiveBudgetClosureSnapshots, setExecutiveBudgetClosureSnapshots] = useState<ExecutiveBudgetClosureSnapshotRow[]>([]);
   const [executiveBudgetPlanVersions, setExecutiveBudgetPlanVersions] = useState<ExecutiveBudgetPlanVersionRow[]>([]);
   const [executiveBudgetPlanWorkflowEvents, setExecutiveBudgetPlanWorkflowEvents] = useState<ExecutiveBudgetPlanWorkflowEventRow[]>([]);
+  const [executiveBudgetPlanApprovalSteps, setExecutiveBudgetPlanApprovalSteps] = useState<ExecutiveBudgetPlanApprovalStepRow[]>([]);
   const [executiveGlobalAlertLoading, setExecutiveGlobalAlertLoading] = useState(false);
   const [costAuditLoading, setCostAuditLoading] = useState(false);
   const [showProductionModal, setShowProductionModal] = useState(false);
   const [savingProductionRecord, setSavingProductionRecord] = useState(false);
   const [editingProductionRecord, setEditingProductionRecord] = useState<EditingProductionRecord>({});
   const [executiveBudgetWorkflowResponsible, setExecutiveBudgetWorkflowResponsible] = useState('');
-  const [executiveBudgetWorkflowRole, setExecutiveBudgetWorkflowRole] = useState<ExecutiveBudgetWorkflowRole>('gerencia_agricola');
+  const [executiveBudgetWorkflowRole, setExecutiveBudgetWorkflowRole] = useState<ExecutiveBudgetPlanApprovalRole>('gerencia_agricola');
   const [executiveBudgetWorkflowReason, setExecutiveBudgetWorkflowReason] = useState('');
   const [submittingExecutiveBudgetWorkflow, setSubmittingExecutiveBudgetWorkflow] = useState(false);
 
@@ -2616,6 +2722,7 @@ export const Reports: React.FC = () => {
   const executiveGlobalPreventiveSnapshotLogRef = useRef<string>('');
   const executiveBudgetClosureSnapshotLogRef = useRef<string>('');
   const executiveBudgetPlanVersionLogRef = useRef<string>('');
+  const executiveBudgetPlanApprovalSyncRef = useRef<string>('');
 
   // Update orientation when tab changes
   useEffect(() => {
@@ -2711,6 +2818,7 @@ export const Reports: React.FC = () => {
     executiveGlobalPreventiveSnapshotLogRef.current = '';
     executiveBudgetClosureSnapshotLogRef.current = '';
     executiveBudgetPlanVersionLogRef.current = '';
+    executiveBudgetPlanApprovalSyncRef.current = '';
     setRawCostMovements([]);
     setRawMarginRows([]);
     setRawProductionRecords([]);
@@ -2727,7 +2835,9 @@ export const Reports: React.FC = () => {
     setExecutiveBudgetClosureSnapshots([]);
     setExecutiveBudgetPlanVersions([]);
     setExecutiveBudgetPlanWorkflowEvents([]);
+    setExecutiveBudgetPlanApprovalSteps([]);
     setExecutiveBudgetWorkflowResponsible('');
+    setExecutiveBudgetWorkflowRole('gerencia_agricola');
     setExecutiveBudgetWorkflowReason('');
     setReportData([]);
     setMonthlyExpenses([]);
@@ -2802,12 +2912,13 @@ export const Reports: React.FC = () => {
 
     void (async () => {
       try {
-        const [rankingRows, preventiveRows, budgetClosureRows, budgetVersionRows, budgetWorkflowRows] = await Promise.all([
+        const [rankingRows, preventiveRows, budgetClosureRows, budgetVersionRows, budgetWorkflowRows, budgetApprovalRows] = await Promise.all([
           loadExecutiveGlobalRankingSnapshots({ companyId, limit: 200 }),
           loadExecutiveGlobalPreventiveSnapshots({ companyId, limit: 200 }),
           loadExecutiveBudgetClosureSnapshots({ companyId, limit: 200 }),
           loadExecutiveBudgetPlanVersions({ companyId, limit: 200 }),
-          loadExecutiveBudgetPlanWorkflowEvents({ companyId, limit: 200 })
+          loadExecutiveBudgetPlanWorkflowEvents({ companyId, limit: 200 }),
+          loadExecutiveBudgetPlanApprovalSteps({ companyId, limit: 400 })
         ]);
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalRankingSnapshots(rankingRows || []);
@@ -2815,6 +2926,7 @@ export const Reports: React.FC = () => {
         setExecutiveBudgetClosureSnapshots(budgetClosureRows || []);
         setExecutiveBudgetPlanVersions(budgetVersionRows || []);
         setExecutiveBudgetPlanWorkflowEvents(budgetWorkflowRows || []);
+        setExecutiveBudgetPlanApprovalSteps(budgetApprovalRows || []);
       } catch {
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalRankingSnapshots([]);
@@ -2822,6 +2934,7 @@ export const Reports: React.FC = () => {
         setExecutiveBudgetClosureSnapshots([]);
         setExecutiveBudgetPlanVersions([]);
         setExecutiveBudgetPlanWorkflowEvents([]);
+        setExecutiveBudgetPlanApprovalSteps([]);
       }
     })();
 
@@ -5435,6 +5548,15 @@ export const Reports: React.FC = () => {
     ),
     [executiveBudgetPlanWorkflowEvents, selectedSeason]
   );
+  const executiveBudgetPlanApprovalData = useMemo(
+    () => buildExecutiveBudgetPlanApprovalAnalytics({
+      rows: executiveBudgetPlanApprovalSteps,
+      currentVersion: executiveCurrentBudgetPlanVersion,
+      selectedSeason,
+      scopeLabel: 'la empresa activa'
+    }),
+    [executiveBudgetPlanApprovalSteps, executiveCurrentBudgetPlanVersion, selectedSeason]
+  );
   const executiveExportWarningContext = useMemo(() => {
     const warningTypes: string[] = [];
 
@@ -5940,6 +6062,37 @@ export const Reports: React.FC = () => {
     selectedCompany?.id,
     selectedSeason
   ]);
+  useEffect(() => {
+    if (!selectedCompany?.id || !executiveCurrentBudgetPlanVersion) return;
+
+    const syncSignature = `${selectedCompany.id}::${executiveCurrentBudgetPlanVersion.id}`;
+    const alreadyLoaded = executiveBudgetPlanApprovalData.currentVersionRows.length === EXECUTIVE_BUDGET_PLAN_APPROVAL_STEP_DEFS.length;
+    if (executiveBudgetPlanApprovalSyncRef.current === syncSignature && alreadyLoaded) return;
+
+    executiveBudgetPlanApprovalSyncRef.current = syncSignature;
+    void (async () => {
+      try {
+        await ensureExecutiveBudgetPlanApprovalSteps({
+          companyId: selectedCompany.id,
+          versionId: executiveCurrentBudgetPlanVersion.id,
+          season: executiveCurrentBudgetPlanVersion.season,
+          versionKind: executiveCurrentBudgetPlanVersion.version_kind,
+          metadata: {
+            company_name: companyName
+          }
+        });
+        const rows = await loadExecutiveBudgetPlanApprovalSteps({ companyId: selectedCompany.id, limit: 400 });
+        setExecutiveBudgetPlanApprovalSteps(rows || []);
+      } catch (error) {
+        console.error('No se pudo sincronizar la matriz de aprobación presupuestaria.', error);
+      }
+    })();
+  }, [
+    companyName,
+    executiveBudgetPlanApprovalData.currentVersionRows.length,
+    executiveCurrentBudgetPlanVersion,
+    selectedCompany?.id
+  ]);
   const handleExecutiveBudgetWorkflowAction = useCallback(async (actionType: ExecutiveBudgetPlanWorkflowAction) => {
     if (!selectedCompany?.id) {
       toast.error('No hay empresa activa para registrar el workflow presupuestario.');
@@ -5965,19 +6118,64 @@ export const Reports: React.FC = () => {
       return;
     }
 
+    const targetApprovalStep = executiveBudgetPlanApprovalData.currentVersionRows
+      .find((row) => row.approval_role === responsibleRole) || null;
+    if (!targetApprovalStep) {
+      toast.error('La matriz de aprobación de la versión vigente todavía no está disponible.');
+      return;
+    }
+
+    if (targetApprovalStep.approval_status === 'congelada') {
+      toast.error('La etapa seleccionada ya quedó congelada y no admite nuevas decisiones manuales.');
+      return;
+    }
+
+    const previousSteps = executiveBudgetPlanApprovalData.currentVersionRows
+      .filter((row) => row.step_order < targetApprovalStep.step_order);
+    const missingPreviousApprovals = previousSteps.filter((row) => row.approval_status !== 'aprobada' && row.approval_status !== 'congelada');
+    if (missingPreviousApprovals.length > 0) {
+      toast.error(`Antes de avanzar ${formatExecutiveBudgetWorkflowRole(responsibleRole)}, debes resolver ${missingPreviousApprovals.map((row) => formatExecutiveBudgetWorkflowRole(row.approval_role)).join(', ')}.`);
+      return;
+    }
+
     if (
       actionType === 'freeze_comite'
       && (
-        executiveTotalDataClosure.readiness.title !== 'Listo para comité'
+        responsibleRole !== 'comite'
+        || !executiveBudgetPlanApprovalData.readyRolesBeforeCommittee
+        || executiveTotalDataClosure.readiness.title !== 'Listo para comité'
         || executiveCompanyBudgetGovernanceData.budgetStatus !== 'completo'
       )
     ) {
-      toast.error('El freeze manual de comité solo puede registrarse cuando la temporada está lista para comité y el presupuesto está completo.');
+      toast.error('El freeze manual de comité solo puede registrarse desde comité, con etapas previas aprobadas, temporada lista para comité y presupuesto completo.');
       return;
     }
 
     setSubmittingExecutiveBudgetWorkflow(true);
     try {
+      const approvalStatus: ExecutiveBudgetPlanApprovalStatus = actionType === 'freeze_comite'
+        ? 'congelada'
+        : actionType === 'observada'
+          ? 'observada'
+          : 'aprobada';
+      const sharedMetadata = {
+        company_name: companyName,
+        readiness_title: executiveTotalDataClosure.readiness.title,
+        budget_status: executiveCompanyBudgetGovernanceData.budgetStatus,
+        coverage_pct: Number(executiveCompanyBudgetGovernanceData.areaCoveragePct.toFixed(2)),
+        execution_pct: Number((executiveData.kpis.budgetExecutionPct || 0).toFixed(2)),
+        total_budget: Number((executiveData.kpis.totalBudget || 0).toFixed(2)),
+        responsible_role: responsibleRole,
+        approval_status: approvalStatus,
+        approval_step_order: targetApprovalStep.step_order
+      };
+      await updateExecutiveBudgetPlanApprovalStep({
+        stepId: targetApprovalStep.id,
+        status: approvalStatus,
+        responsibleLabel,
+        reason,
+        metadata: sharedMetadata
+      });
       await createExecutiveBudgetPlanWorkflowEvent({
         companyId: selectedCompany.id,
         versionId: executiveCurrentBudgetPlanVersion.id,
@@ -5986,19 +6184,15 @@ export const Reports: React.FC = () => {
         actionType,
         responsibleLabel,
         reason,
-        metadata: {
-          company_name: companyName,
-          readiness_title: executiveTotalDataClosure.readiness.title,
-          budget_status: executiveCompanyBudgetGovernanceData.budgetStatus,
-          coverage_pct: Number(executiveCompanyBudgetGovernanceData.areaCoveragePct.toFixed(2)),
-          execution_pct: Number((executiveData.kpis.budgetExecutionPct || 0).toFixed(2)),
-          total_budget: Number((executiveData.kpis.totalBudget || 0).toFixed(2)),
-          responsible_role: responsibleRole
-        }
+        metadata: sharedMetadata
       });
 
-      const rows = await loadExecutiveBudgetPlanWorkflowEvents({ companyId: selectedCompany.id, limit: 200 });
-      setExecutiveBudgetPlanWorkflowEvents(rows || []);
+      const [workflowRows, approvalRows] = await Promise.all([
+        loadExecutiveBudgetPlanWorkflowEvents({ companyId: selectedCompany.id, limit: 200 }),
+        loadExecutiveBudgetPlanApprovalSteps({ companyId: selectedCompany.id, limit: 400 })
+      ]);
+      setExecutiveBudgetPlanWorkflowEvents(workflowRows || []);
+      setExecutiveBudgetPlanApprovalSteps(approvalRows || []);
       setExecutiveBudgetWorkflowReason('');
       toast.success(
         actionType === 'freeze_comite'
@@ -6017,6 +6211,8 @@ export const Reports: React.FC = () => {
     executiveBudgetWorkflowReason,
     executiveBudgetWorkflowRole,
     executiveBudgetWorkflowResponsible,
+    executiveBudgetPlanApprovalData.currentVersionRows,
+    executiveBudgetPlanApprovalData.readyRolesBeforeCommittee,
     executiveCompanyBudgetGovernanceData.areaCoveragePct,
     executiveCompanyBudgetGovernanceData.budgetStatus,
     executiveCurrentBudgetPlanVersion,
@@ -6319,6 +6515,14 @@ export const Reports: React.FC = () => {
         { Indicador: 'Último rol workflow', Valor: executiveBudgetPlanWorkflowData.latestRole ? formatExecutiveBudgetWorkflowRole(executiveBudgetPlanWorkflowData.latestRole) : 'Sin rol' },
         { Indicador: 'Freeze manual comité', Valor: executiveBudgetPlanWorkflowData.latestFreeze ? executiveBudgetPlanWorkflowData.latestFreeze.season : 'Pendiente' },
         { Indicador: 'Resumen workflow presupuestario', Valor: executiveBudgetPlanWorkflowData.summaryLine },
+        { Indicador: 'Aprobación multinivel', Valor: executiveBudgetPlanApprovalData.currentVersionRows.length },
+        { Indicador: 'Etapa actual aprobación', Valor: executiveBudgetPlanApprovalData.currentStep ? formatExecutiveBudgetWorkflowRole(executiveBudgetPlanApprovalData.currentStep.approval_role) : 'Sin etapa' },
+        { Indicador: 'Estado actual aprobación', Valor: executiveBudgetPlanApprovalData.currentStep ? formatExecutiveBudgetApprovalStatus(executiveBudgetPlanApprovalData.currentStep.approval_status) : 'Sin estado' },
+        { Indicador: 'Roles aprobados', Valor: executiveBudgetPlanApprovalData.approvedCount },
+        { Indicador: 'Roles observados', Valor: executiveBudgetPlanApprovalData.observedCount },
+        { Indicador: 'Roles pendientes', Valor: executiveBudgetPlanApprovalData.pendingCount },
+        { Indicador: 'Freeze multinivel', Valor: executiveBudgetPlanApprovalData.frozenCount },
+        { Indicador: 'Resumen aprobación multinivel', Valor: executiveBudgetPlanApprovalData.summaryLine },
         { Indicador: 'Costo por ha', Valor: Number((executiveViewData.kpis.averageCostPerHa || 0).toFixed(2)) },
         { Indicador: 'Costo por kg', Valor: Number((executiveViewData.kpis.averageCostPerKg || 0).toFixed(2)) },
         { Indicador: 'Temporada anterior', Valor: Number(executiveViewData.kpis.previousSeasonCost.toFixed(0)) },
@@ -8027,9 +8231,16 @@ export const Reports: React.FC = () => {
             ['Última acción', executiveBudgetPlanWorkflowData.latestEvent ? formatExecutiveBudgetWorkflowAction(executiveBudgetPlanWorkflowData.latestEvent.action_type) : 'Sin acción'],
             ['Último responsable', executiveBudgetPlanWorkflowData.latestResponsible || 'Sin responsable'],
             ['Último rol', executiveBudgetPlanWorkflowData.latestRole ? formatExecutiveBudgetWorkflowRole(executiveBudgetPlanWorkflowData.latestRole) : 'Sin rol'],
+            ['Matriz multinivel', String(executiveBudgetPlanApprovalData.currentVersionRows.length)],
+            ['Etapa actual', executiveBudgetPlanApprovalData.currentStep ? formatExecutiveBudgetWorkflowRole(executiveBudgetPlanApprovalData.currentStep.approval_role) : 'Sin etapa'],
+            ['Estado etapa actual', executiveBudgetPlanApprovalData.currentStep ? formatExecutiveBudgetApprovalStatus(executiveBudgetPlanApprovalData.currentStep.approval_status) : 'Sin estado'],
+            ['Roles aprobados', String(executiveBudgetPlanApprovalData.approvedCount)],
+            ['Roles observados', String(executiveBudgetPlanApprovalData.observedCount)],
+            ['Roles pendientes', String(executiveBudgetPlanApprovalData.pendingCount)],
             ['Última publicación', executiveBudgetPlanWorkflowData.latestPublication ? `${executiveBudgetPlanWorkflowData.latestPublication.responsible_label} · ${new Date(executiveBudgetPlanWorkflowData.latestPublication.created_at).toLocaleString('es-CL')}` : 'Sin publicación'],
             ['Última observación', executiveBudgetPlanWorkflowData.latestObservation ? `${executiveBudgetPlanWorkflowData.latestObservation.responsible_label} · ${new Date(executiveBudgetPlanWorkflowData.latestObservation.created_at).toLocaleString('es-CL')}` : 'Sin observación'],
-            ['Freeze comité', executiveBudgetPlanWorkflowData.latestFreeze ? `${executiveBudgetPlanWorkflowData.latestFreeze.responsible_label} · ${new Date(executiveBudgetPlanWorkflowData.latestFreeze.created_at).toLocaleString('es-CL')}` : 'Pendiente']
+            ['Freeze comité', executiveBudgetPlanWorkflowData.latestFreeze ? `${executiveBudgetPlanWorkflowData.latestFreeze.responsible_label} · ${new Date(executiveBudgetPlanWorkflowData.latestFreeze.created_at).toLocaleString('es-CL')}` : 'Pendiente'],
+            ['Resumen aprobación multinivel', executiveBudgetPlanApprovalData.summaryLine]
           ],
           theme: 'grid',
           headStyles: { fillColor: [22, 163, 74] },
@@ -11340,7 +11551,7 @@ export const Reports: React.FC = () => {
                             <span className="mb-1 block font-medium text-slate-700">Rol formal</span>
                             <select
                               value={executiveBudgetWorkflowRole}
-                              onChange={(e) => setExecutiveBudgetWorkflowRole(e.target.value as ExecutiveBudgetWorkflowRole)}
+                              onChange={(e) => setExecutiveBudgetWorkflowRole(e.target.value as ExecutiveBudgetPlanApprovalRole)}
                               className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
                             >
                               {EXECUTIVE_BUDGET_WORKFLOW_ROLE_OPTIONS.map((option) => (
@@ -11356,6 +11567,9 @@ export const Reports: React.FC = () => {
                                 : 'Sin versión vigente'}
                             </div>
                             <div className="mt-2 text-xs text-slate-500">Estado comité: {executiveTotalDataClosure.readiness.title}</div>
+                            <div className="mt-2 text-xs text-slate-500">
+                              Etapa objetivo: {formatExecutiveBudgetWorkflowRole(executiveBudgetWorkflowRole)} · {formatExecutiveBudgetApprovalStatus(executiveBudgetPlanApprovalData.currentVersionRows.find((row) => row.approval_role === executiveBudgetWorkflowRole)?.approval_status || 'pendiente')}
+                            </div>
                           </div>
                         </div>
                         <label className="block text-sm">
@@ -11390,6 +11604,8 @@ export const Reports: React.FC = () => {
                             disabled={
                               submittingExecutiveBudgetWorkflow
                               || !executiveCurrentBudgetPlanVersion
+                              || executiveBudgetWorkflowRole !== 'comite'
+                              || !executiveBudgetPlanApprovalData.readyRolesBeforeCommittee
                               || executiveTotalDataClosure.readiness.title !== 'Listo para comité'
                               || executiveCompanyBudgetGovernanceData.budgetStatus !== 'completo'
                             }
@@ -11414,8 +11630,12 @@ export const Reports: React.FC = () => {
                         <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
                           <div className="font-medium text-slate-900">Lectura del workflow</div>
                           <p className="mt-2">{executiveBudgetPlanWorkflowData.summaryLine}</p>
+                          <p className="mt-2">{executiveBudgetPlanApprovalData.summaryLine}</p>
                           <p className="mt-2">
                             Rol dominante: {executiveBudgetPlanWorkflowData.topRole ? formatExecutiveBudgetWorkflowRole(executiveBudgetPlanWorkflowData.topRole.role) : 'sin rol visible'}.
+                          </p>
+                          <p className="mt-2">
+                            Etapa actual: {executiveBudgetPlanApprovalData.currentStep ? `${formatExecutiveBudgetWorkflowRole(executiveBudgetPlanApprovalData.currentStep.approval_role)} · ${formatExecutiveBudgetApprovalStatus(executiveBudgetPlanApprovalData.currentStep.approval_status)}` : 'sin etapa activa'}.
                           </p>
                           <p className="mt-2">
                             Última publicación: {executiveBudgetPlanWorkflowData.latestPublication
@@ -11461,6 +11681,77 @@ export const Reports: React.FC = () => {
                             </tbody>
                           </table>
                         </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 xl:grid-cols-[0.85fr,1.15fr] gap-4">
+                      <div className="rounded-xl border border-slate-200 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-medium text-slate-900">Aprobación multinivel por rol</div>
+                            <p className="mt-1 text-sm text-slate-500">Cada versión vigente avanza por una secuencia formal antes del freeze manual de comité.</p>
+                          </div>
+                          <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${executiveBudgetPlanApprovalData.tone.badge}`}>
+                            {executiveBudgetPlanApprovalData.tone.label}
+                          </span>
+                        </div>
+                        <div className="mt-4 grid grid-cols-2 gap-3">
+                          <div className="rounded-xl bg-slate-50 p-4">
+                            <div className="text-xs uppercase tracking-wide text-slate-500">Aprobadas</div>
+                            <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanApprovalData.approvedCount}</div>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 p-4">
+                            <div className="text-xs uppercase tracking-wide text-slate-500">Observadas</div>
+                            <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanApprovalData.observedCount}</div>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 p-4">
+                            <div className="text-xs uppercase tracking-wide text-slate-500">Pendientes</div>
+                            <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanApprovalData.pendingCount}</div>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 p-4">
+                            <div className="text-xs uppercase tracking-wide text-slate-500">Freeze comité</div>
+                            <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanApprovalData.frozenCount}</div>
+                          </div>
+                        </div>
+                        <div className="mt-4 rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+                          <p>{executiveBudgetPlanApprovalData.summaryLine}</p>
+                        </div>
+                      </div>
+
+                      <div className="overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="min-w-full divide-y divide-slate-200 text-sm">
+                          <thead className="bg-slate-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Orden</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Rol</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Estado</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Responsable</th>
+                              <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Decisión</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-200 bg-white">
+                            {executiveBudgetPlanApprovalData.currentVersionRows.map((row) => (
+                              <tr key={row.id} className={executiveBudgetPlanApprovalData.currentStep?.id === row.id ? 'bg-purple-50/60' : ''}>
+                                <td className="px-4 py-3 text-slate-700">{row.step_order}</td>
+                                <td className="px-4 py-3 font-medium text-slate-900">{formatExecutiveBudgetWorkflowRole(row.approval_role)}</td>
+                                <td className="px-4 py-3">
+                                  <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getExecutiveBudgetApprovalStatusTone(row.approval_status)}`}>
+                                    {formatExecutiveBudgetApprovalStatus(row.approval_status)}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-slate-700">{row.responsible_label || 'Sin responsable'}</td>
+                                <td className="px-4 py-3 text-slate-700">{row.reason || 'Sin comentario'}</td>
+                              </tr>
+                            ))}
+                            {executiveBudgetPlanApprovalData.currentVersionRows.length === 0 && (
+                              <tr>
+                                <td colSpan={5} className="px-4 py-4 text-center text-sm text-slate-500">
+                                  La versión vigente todavía no muestra una matriz de aprobación materializada.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   </div>
@@ -18006,7 +18297,7 @@ export const Reports: React.FC = () => {
                             </span>
                           </div>
 
-                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
                             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
                               <div className="text-sm uppercase tracking-wide text-slate-500">Eventos workflow</div>
                               <div className="mt-3 text-3xl font-bold text-slate-900">{executiveBudgetPlanWorkflowData.totalEvents}</div>
@@ -18052,8 +18343,12 @@ export const Reports: React.FC = () => {
                               <div className="rounded-2xl border border-slate-200 p-6">
                                 <div className="text-2xl font-bold text-slate-800 mb-5">Lectura del workflow</div>
                                 <p className="text-xl leading-9 text-slate-600">{executiveBudgetPlanWorkflowData.summaryLine}</p>
+                                <p className="mt-5 text-lg text-slate-500">{executiveBudgetPlanApprovalData.summaryLine}</p>
                                 <p className="mt-5 text-lg text-slate-500">
                                   Rol dominante: {executiveBudgetPlanWorkflowData.topRole ? formatExecutiveBudgetWorkflowRole(executiveBudgetPlanWorkflowData.topRole.role) : 'sin rol visible'}.
+                                </p>
+                                <p className="mt-5 text-lg text-slate-500">
+                                  Etapa actual: {executiveBudgetPlanApprovalData.currentStep ? `${formatExecutiveBudgetWorkflowRole(executiveBudgetPlanApprovalData.currentStep.approval_role)} · ${formatExecutiveBudgetApprovalStatus(executiveBudgetPlanApprovalData.currentStep.approval_status)}` : 'sin etapa activa'}.
                                 </p>
                                 <p className="mt-5 text-lg text-slate-500">
                                   Última publicación: {executiveBudgetPlanWorkflowData.latestPublication
@@ -18075,6 +18370,7 @@ export const Reports: React.FC = () => {
                               <div className={`rounded-2xl border p-6 ${
                                 executiveTotalDataClosure.readiness.title === 'Listo para comité'
                                 && executiveCompanyBudgetGovernanceData.budgetStatus === 'completo'
+                                && executiveBudgetPlanApprovalData.readyRolesBeforeCommittee
                                   ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
                                   : 'border-amber-200 bg-amber-50 text-amber-800'
                               }`}>
@@ -18082,8 +18378,9 @@ export const Reports: React.FC = () => {
                                 <p className="mt-4 text-2xl leading-10">
                                   {executiveTotalDataClosure.readiness.title === 'Listo para comité'
                                   && executiveCompanyBudgetGovernanceData.budgetStatus === 'completo'
+                                  && executiveBudgetPlanApprovalData.readyRolesBeforeCommittee
                                     ? 'La temporada cumple las condiciones para congelar comité manualmente.'
-                                    : 'El freeze manual exige temporada lista para comité y presupuesto completo.'}
+                                    : 'El freeze manual exige etapas previas aprobadas, temporada lista para comité y presupuesto completo.'}
                                 </p>
                                 <div className="mt-5 grid grid-cols-2 gap-4 text-base">
                                   <div className="rounded-2xl bg-white/70 px-4 py-3">
@@ -18091,6 +18388,12 @@ export const Reports: React.FC = () => {
                                   </div>
                                   <div className="rounded-2xl bg-white/70 px-4 py-3">
                                     Cobertura presupuestaria: {formatExecutiveBudgetClosureStatus(executiveCompanyBudgetGovernanceData.budgetStatus)}
+                                  </div>
+                                  <div className="rounded-2xl bg-white/70 px-4 py-3">
+                                    Etapas previas: {executiveBudgetPlanApprovalData.readyRolesBeforeCommittee ? 'Aprobadas' : 'Pendientes'}
+                                  </div>
+                                  <div className="rounded-2xl bg-white/70 px-4 py-3">
+                                    Estado dominante: {executiveBudgetPlanApprovalData.topStatus ? formatExecutiveBudgetApprovalStatus(executiveBudgetPlanApprovalData.topStatus.status) : 'Sin estado'}
                                   </div>
                                 </div>
                               </div>
@@ -18154,6 +18457,70 @@ export const Reports: React.FC = () => {
                                   )}
                                 </div>
                               </div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 xl:grid-cols-[0.85fr,1.15fr] gap-6">
+                            <div className="rounded-2xl border border-slate-200 p-6">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-2xl font-bold text-slate-800">Matriz de aprobación</div>
+                                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${executiveBudgetPlanApprovalData.tone.badge}`}>
+                                  {executiveBudgetPlanApprovalData.tone.label}
+                                </span>
+                              </div>
+                              <div className="mt-5 grid grid-cols-2 gap-4">
+                                <div className="rounded-2xl bg-slate-50 p-5">
+                                  <div className="text-sm uppercase tracking-wide text-slate-500">Aprobadas</div>
+                                  <div className="mt-3 text-3xl font-bold text-slate-900">{executiveBudgetPlanApprovalData.approvedCount}</div>
+                                </div>
+                                <div className="rounded-2xl bg-slate-50 p-5">
+                                  <div className="text-sm uppercase tracking-wide text-slate-500">Observadas</div>
+                                  <div className="mt-3 text-3xl font-bold text-slate-900">{executiveBudgetPlanApprovalData.observedCount}</div>
+                                </div>
+                                <div className="rounded-2xl bg-slate-50 p-5">
+                                  <div className="text-sm uppercase tracking-wide text-slate-500">Pendientes</div>
+                                  <div className="mt-3 text-3xl font-bold text-slate-900">{executiveBudgetPlanApprovalData.pendingCount}</div>
+                                </div>
+                                <div className="rounded-2xl bg-slate-50 p-5">
+                                  <div className="text-sm uppercase tracking-wide text-slate-500">Congeladas</div>
+                                  <div className="mt-3 text-3xl font-bold text-slate-900">{executiveBudgetPlanApprovalData.frozenCount}</div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-slate-200 p-6">
+                              <div className="text-2xl font-bold text-slate-800 mb-5">Secuencia por rol</div>
+                              <table className="w-full text-left text-sm">
+                                <thead className="text-base text-slate-500 bg-slate-50 sticky top-0">
+                                  <tr>
+                                    <th className="p-3">Orden</th>
+                                    <th className="p-3">Rol</th>
+                                    <th className="p-3">Estado</th>
+                                    <th className="p-3">Responsable</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {executiveBudgetPlanApprovalData.currentVersionRows.map((row) => (
+                                    <tr key={row.id} className={`border-b border-slate-100 ${executiveBudgetPlanApprovalData.currentStep?.id === row.id ? 'bg-purple-50' : ''}`}>
+                                      <td className="p-3 text-slate-700">{row.step_order}</td>
+                                      <td className="p-3 font-semibold text-slate-900">{formatExecutiveBudgetWorkflowRole(row.approval_role)}</td>
+                                      <td className="p-3">
+                                        <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getExecutiveBudgetApprovalStatusTone(row.approval_status)}`}>
+                                          {formatExecutiveBudgetApprovalStatus(row.approval_status)}
+                                        </span>
+                                      </td>
+                                      <td className="p-3 text-slate-700">{row.responsible_label || 'Sin responsable'}</td>
+                                    </tr>
+                                  ))}
+                                  {executiveBudgetPlanApprovalData.currentVersionRows.length === 0 && (
+                                    <tr>
+                                      <td colSpan={4} className="p-6 text-center text-slate-500">
+                                        La versión vigente todavía no muestra una matriz de aprobación materializada.
+                                      </td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
                             </div>
                           </div>
                         </div>

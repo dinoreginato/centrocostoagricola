@@ -5,13 +5,13 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
 
 ## Estado General
 - Avance general estimado del roadmap actualmente identificado: `100%`
-- Macrocapas cerradas: `18 de 18`
+- Macrocapas cerradas: `19 de 19`
 - Fases base cerradas: `5 de 5`
-- Fases ejecutivas/adicionales cerradas: `13 de 13`
+- Fases ejecutivas/adicionales cerradas: `14 de 14`
 - Pendientes del roadmap actual: `0`
 - Próxima expansión sugerida:
-  - workflow multinivel de aprobacion presupuestaria por rol
   - firma ejecutiva y trazabilidad de publicacion externa del presupuesto
+  - evidencia formal de distribucion externa del presupuesto aprobado
 - Estado actual:
   - `[x]` base canonica de temporadas y costos
   - `[x]` conciliacion y auditoria ejecutiva
@@ -31,6 +31,7 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - `[x]` cierre presupuestario materializado por temporada
   - `[x]` versionado presupuestario por temporada
   - `[x]` workflow formal de aprobacion, observacion, publicacion y freeze manual de comite con rol del responsable
+  - `[x]` workflow multinivel de aprobacion presupuestaria por rol sobre la version vigente
 
 ## Avance Del Plan
 ### Fase 1
@@ -87,6 +88,7 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
 - `[x]` Cierre presupuestario materializado por temporada.
 - `[x]` Versionado presupuestario por temporada.
 - `[x]` Workflow formal de aprobación/publicación presupuestaria con responsable, rol formal, motivo y freeze manual de comité.
+- `[x]` Workflow multinivel de aprobación presupuestaria por rol con secuencia formal sobre la versión vigente.
 
 ## Lo Que Ya Esta Bien
 - Modelo predial correcto: `empresa -> campo -> sector`.
