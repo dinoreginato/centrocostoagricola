@@ -35,6 +35,14 @@ import {
   type ExecutiveGlobalAlertTransitionRow,
   type ExecutiveGlobalAlertTransitionStatus
 } from '../services/executiveGlobalAlertEvents';
+import {
+  createExecutiveGlobalPreventiveSnapshot,
+  createExecutiveGlobalRankingSnapshot,
+  loadExecutiveGlobalPreventiveSnapshots,
+  loadExecutiveGlobalRankingSnapshots,
+  type ExecutiveGlobalPreventiveSnapshotRow,
+  type ExecutiveGlobalRankingSnapshotRow
+} from '../services/executiveGlobalSnapshots';
 import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
 interface ReportData {
@@ -1385,6 +1393,93 @@ const buildExecutiveGlobalAlertPreventiveAnalytics = (params: {
   };
 };
 
+const buildExecutiveGlobalRankingSnapshotAnalytics = (
+  rows: ExecutiveGlobalRankingSnapshotRow[],
+  selectedSeason: string,
+  scopeLabel: string
+) => {
+  const currentSeasonRows = rows.filter((row) => row.season === selectedSeason);
+  const latestSnapshot = rows[0] || null;
+  const leaderSummary = Array.from(
+    rows.reduce((map, row) => {
+      const leader = row.leader_company_name || 'Sin líder';
+      map.set(leader, (map.get(leader) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([leader, count]) => ({ leader, count })).sort((a, b) => b.count - a.count);
+  const seasonSummary = Array.from(
+    rows.reduce((map, row) => {
+      map.set(row.season, (map.get(row.season) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([season, count]) => ({ season, count })).sort((a, b) => b.season.localeCompare(a.season));
+  const avgCoverage = rows.length > 0
+    ? rows.reduce((sum, row) => sum + Number(row.total_companies || 0), 0) / rows.length
+    : 0;
+  const avgRank = rows.filter((row) => Number.isFinite(Number(row.selected_company_rank)))
+    .reduce((sum, row, _, arr) => sum + Number(row.selected_company_rank || 0) / Math.max(1, arr.length), 0);
+  const summaryLine = latestSnapshot
+    ? `Los snapshots materializados del ranking global para ${scopeLabel} acumulan ${rows.length} registros. El líder más repetido es ${leaderSummary[0]?.leader || 'sin líder'} y la cobertura promedio es de ${avgCoverage.toFixed(1)} empresas.`
+    : `No hay snapshots materializados del ranking global para ${scopeLabel}.`;
+
+  return {
+    rows,
+    currentSeasonRows,
+    latestSnapshot,
+    recentRows: rows.slice(0, 12),
+    leaderSummary,
+    seasonSummary,
+    avgCoverage,
+    avgRank,
+    topLeader: leaderSummary[0] || null,
+    totalSnapshots: rows.length,
+    summaryLine
+  };
+};
+
+const buildExecutiveGlobalPreventiveSnapshotAnalytics = (
+  rows: ExecutiveGlobalPreventiveSnapshotRow[],
+  selectedSeason: string,
+  scopeLabel: string
+) => {
+  const currentSeasonRows = rows.filter((row) => row.season === selectedSeason);
+  const latestSnapshot = rows[0] || null;
+  const severitySummary = Array.from(
+    rows.reduce((map, row) => {
+      const severity = row.top_severity || 'sin_severidad';
+      map.set(severity, (map.get(severity) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([severity, count]) => ({ severity, count })).sort((a, b) => b.count - a.count);
+  const stageSummary = Array.from(
+    rows.reduce((map, row) => {
+      const stage = row.top_stage_key || 'sin_etapa';
+      map.set(stage, (map.get(stage) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([stageKey, count]) => ({ stageKey, count })).sort((a, b) => b.count - a.count);
+  const avgRecommendations = rows.length > 0
+    ? rows.reduce((sum, row) => sum + Number(row.total_recommendations || 0), 0) / rows.length
+    : 0;
+  const summaryLine = latestSnapshot
+    ? `Los snapshots materializados del riesgo preventivo para ${scopeLabel} acumulan ${rows.length} registros. El nivel dominante es ${severitySummary[0]?.severity || 'sin severidad'} y el promedio visible es de ${avgRecommendations.toFixed(1)} recomendaciones.`
+    : `No hay snapshots materializados del riesgo preventivo para ${scopeLabel}.`;
+
+  return {
+    rows,
+    currentSeasonRows,
+    latestSnapshot,
+    recentRows: rows.slice(0, 12),
+    severitySummary,
+    stageSummary,
+    avgRecommendations,
+    topSeverity: severitySummary[0] || null,
+    topStage: stageSummary[0] || null,
+    totalSnapshots: rows.length,
+    summaryLine
+  };
+};
+
 const getExecutiveSortMetric = (row: any, sortBy: ExecutiveSortKey) => {
   switch (sortBy) {
     case 'variation':
@@ -2147,6 +2242,8 @@ export const Reports: React.FC = () => {
   const [executiveGlobalAlertTransitions, setExecutiveGlobalAlertTransitions] = useState<ExecutiveGlobalAlertTransitionRow[]>([]);
   const [executiveGlobalAlertEscalations, setExecutiveGlobalAlertEscalations] = useState<ExecutiveGlobalAlertSlaEscalationRow[]>([]);
   const [executiveGlobalAlertResolutions, setExecutiveGlobalAlertResolutions] = useState<ExecutiveGlobalAlertSlaResolutionRow[]>([]);
+  const [executiveGlobalRankingSnapshots, setExecutiveGlobalRankingSnapshots] = useState<ExecutiveGlobalRankingSnapshotRow[]>([]);
+  const [executiveGlobalPreventiveSnapshots, setExecutiveGlobalPreventiveSnapshots] = useState<ExecutiveGlobalPreventiveSnapshotRow[]>([]);
   const [executiveGlobalAlertLoading, setExecutiveGlobalAlertLoading] = useState(false);
   const [costAuditLoading, setCostAuditLoading] = useState(false);
   const [showProductionModal, setShowProductionModal] = useState(false);
@@ -2217,6 +2314,8 @@ export const Reports: React.FC = () => {
   const executiveGlobalAlertLogRef = useRef<string>('');
   const executiveGlobalAlertEscalationLogRef = useRef<string>('');
   const executiveGlobalAlertResolutionLogRef = useRef<string>('');
+  const executiveGlobalRankingSnapshotLogRef = useRef<string>('');
+  const executiveGlobalPreventiveSnapshotLogRef = useRef<string>('');
 
   // Update orientation when tab changes
   useEffect(() => {
@@ -2308,6 +2407,8 @@ export const Reports: React.FC = () => {
     executiveGlobalAlertLogRef.current = '';
     executiveGlobalAlertEscalationLogRef.current = '';
     executiveGlobalAlertResolutionLogRef.current = '';
+    executiveGlobalRankingSnapshotLogRef.current = '';
+    executiveGlobalPreventiveSnapshotLogRef.current = '';
     setRawCostMovements([]);
     setRawMarginRows([]);
     setRawProductionRecords([]);
@@ -2319,6 +2420,8 @@ export const Reports: React.FC = () => {
     setExecutiveGlobalAlertTransitions([]);
     setExecutiveGlobalAlertEscalations([]);
     setExecutiveGlobalAlertResolutions([]);
+    setExecutiveGlobalRankingSnapshots([]);
+    setExecutiveGlobalPreventiveSnapshots([]);
     setReportData([]);
     setMonthlyExpenses([]);
     setCategoryExpenses([]);
@@ -2377,6 +2480,32 @@ export const Reports: React.FC = () => {
         if (!cancelled && selectedCompany?.id === companyId) {
           setExecutiveExportWarningLoading(false);
         }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCompany?.id]);
+
+  useEffect(() => {
+    if (!selectedCompany?.id) return;
+    const companyId = selectedCompany.id;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const [rankingRows, preventiveRows] = await Promise.all([
+          loadExecutiveGlobalRankingSnapshots({ companyId, limit: 200 }),
+          loadExecutiveGlobalPreventiveSnapshots({ companyId, limit: 200 })
+        ]);
+        if (cancelled || selectedCompany?.id !== companyId) return;
+        setExecutiveGlobalRankingSnapshots(rankingRows || []);
+        setExecutiveGlobalPreventiveSnapshots(preventiveRows || []);
+      } catch {
+        if (cancelled || selectedCompany?.id !== companyId) return;
+        setExecutiveGlobalRankingSnapshots([]);
+        setExecutiveGlobalPreventiveSnapshots([]);
       }
     })();
 
@@ -4807,6 +4936,45 @@ export const Reports: React.FC = () => {
       executiveGlobalAlertSlaEscalationData.eventStageSummary
     ]
   );
+  const executiveGlobalRankingSnapshotSignature = useMemo(() => (
+    JSON.stringify({
+      season: selectedSeason,
+      rows: executiveGlobalCompanyRanking.rows.map((row) => ({
+        companyId: row.companyId,
+        score: Number(row.score.toFixed(2)),
+        totalClosurePct: Number(row.totalClosurePct.toFixed(2)),
+        blockersCount: row.blockersCount
+      }))
+    })
+  ), [executiveGlobalCompanyRanking.rows, selectedSeason]);
+  const executiveGlobalPreventiveSnapshotSignature = useMemo(() => (
+    JSON.stringify({
+      season: selectedSeason,
+      rows: executiveGlobalAlertPreventiveData.rows.map((row) => ({
+        eventId: row.eventId,
+        stageKey: row.stageKey,
+        severity: row.severity,
+        owner: row.owner,
+        consumptionRatio: Number(row.consumptionRatio.toFixed(3))
+      }))
+    })
+  ), [executiveGlobalAlertPreventiveData.rows, selectedSeason]);
+  const executiveGlobalRankingSnapshotData = useMemo(
+    () => buildExecutiveGlobalRankingSnapshotAnalytics(
+      executiveGlobalRankingSnapshots,
+      selectedSeason,
+      'la empresa activa'
+    ),
+    [executiveGlobalRankingSnapshots, selectedSeason]
+  );
+  const executiveGlobalPreventiveSnapshotData = useMemo(
+    () => buildExecutiveGlobalPreventiveSnapshotAnalytics(
+      executiveGlobalPreventiveSnapshots,
+      selectedSeason,
+      'la empresa activa'
+    ),
+    [executiveGlobalPreventiveSnapshots, selectedSeason]
+  );
   const executiveExportWarningContext = useMemo(() => {
     const warningTypes: string[] = [];
 
@@ -5055,6 +5223,115 @@ export const Reports: React.FC = () => {
     executiveGlobalAlertSlaResolutionCandidates,
     logExecutiveGlobalAlertSlaResolutions,
     selectedCompany?.id
+  ]);
+  const logExecutiveGlobalRankingSnapshot = useCallback(async () => {
+    if (!selectedCompany?.id || executiveGlobalCompanyRanking.rows.length <= 0) return;
+
+    try {
+      await createExecutiveGlobalRankingSnapshot({
+        companyId: selectedCompany.id,
+        season: selectedSeason,
+        rankingSignature: executiveGlobalRankingSnapshotSignature,
+        selectedCompanyRank: executiveGlobalCompanyRanking.selectedCompanyRank,
+        totalCompanies: executiveGlobalCompanyRanking.rows.length,
+        leaderCompanyName: executiveGlobalCompanyRanking.leader?.companyLabel || null,
+        averageScore: Number(executiveGlobalCompanyRanking.averageScore.toFixed(2)),
+        averageClosurePct: Number(executiveGlobalCompanyRanking.averageClosure.toFixed(2)),
+        summary: executiveGlobalCompanyRanking.summaryLine,
+        metadata: {
+          coverage_line: executiveGlobalCompanyRanking.coverageLine,
+          gap: Number(executiveGlobalCompanyRanking.gap.toFixed(2)),
+          ready_count: executiveGlobalCompanyRanking.readyCount,
+          warning_count: executiveGlobalCompanyRanking.warningCount,
+          blocked_count: executiveGlobalCompanyRanking.blockedCount
+        }
+      });
+      const rows = await loadExecutiveGlobalRankingSnapshots({ companyId: selectedCompany.id, limit: 200 });
+      setExecutiveGlobalRankingSnapshots(rows || []);
+    } catch (error) {
+      console.error('No se pudo registrar el snapshot materializado del ranking global.', error);
+    }
+  }, [executiveGlobalCompanyRanking, executiveGlobalRankingSnapshotSignature, selectedCompany?.id, selectedSeason]);
+
+  useEffect(() => {
+    if (!selectedCompany?.id || executiveGlobalCompanyRankingLoading || executiveGlobalCompanyRanking.rows.length <= 0) return;
+
+    const latestSnapshot = executiveGlobalRankingSnapshots[0] || null;
+    const latestSignature = latestSnapshot?.ranking_signature || '';
+    if (latestSnapshot?.season === selectedSeason && latestSignature === executiveGlobalRankingSnapshotSignature) {
+      executiveGlobalRankingSnapshotLogRef.current = executiveGlobalRankingSnapshotSignature;
+      return;
+    }
+    if (executiveGlobalRankingSnapshotLogRef.current === executiveGlobalRankingSnapshotSignature) return;
+
+    executiveGlobalRankingSnapshotLogRef.current = executiveGlobalRankingSnapshotSignature;
+    void logExecutiveGlobalRankingSnapshot();
+  }, [
+    executiveGlobalCompanyRanking.rows.length,
+    executiveGlobalCompanyRankingLoading,
+    executiveGlobalRankingSnapshotSignature,
+    executiveGlobalRankingSnapshots,
+    logExecutiveGlobalRankingSnapshot,
+    selectedCompany?.id,
+    selectedSeason
+  ]);
+
+  const logExecutiveGlobalPreventiveSnapshot = useCallback(async () => {
+    if (!selectedCompany?.id || executiveGlobalAlertPreventiveData.totalRecommendations <= 0) return;
+
+    try {
+      await createExecutiveGlobalPreventiveSnapshot({
+        companyId: selectedCompany.id,
+        season: selectedSeason,
+        preventiveSignature: executiveGlobalPreventiveSnapshotSignature,
+        totalRecommendations: executiveGlobalAlertPreventiveData.totalRecommendations,
+        topSeverity: executiveGlobalAlertPreventiveData.topSeverity?.severity || null,
+        topStageKey: executiveGlobalAlertPreventiveData.topStage?.stageKey || null,
+        topOwnerLabel: executiveGlobalAlertPreventiveData.topOwner?.owner || null,
+        summary: executiveGlobalAlertPreventiveData.summaryLine,
+        metadata: {
+          owner_count: executiveGlobalAlertPreventiveData.ownerSummary.length,
+          top_stage_count: executiveGlobalAlertPreventiveData.topStage?.count || 0
+        }
+      });
+      const rows = await loadExecutiveGlobalPreventiveSnapshots({ companyId: selectedCompany.id, limit: 200 });
+      setExecutiveGlobalPreventiveSnapshots(rows || []);
+    } catch (error) {
+      console.error('No se pudo registrar el snapshot materializado del riesgo preventivo.', error);
+    }
+  }, [
+    executiveGlobalAlertPreventiveData.ownerSummary.length,
+    executiveGlobalAlertPreventiveData.summaryLine,
+    executiveGlobalAlertPreventiveData.topOwner?.owner,
+    executiveGlobalAlertPreventiveData.topSeverity?.severity,
+    executiveGlobalAlertPreventiveData.topStage?.count,
+    executiveGlobalAlertPreventiveData.topStage?.stageKey,
+    executiveGlobalAlertPreventiveData.totalRecommendations,
+    executiveGlobalPreventiveSnapshotSignature,
+    selectedCompany?.id,
+    selectedSeason
+  ]);
+
+  useEffect(() => {
+    if (!selectedCompany?.id || executiveGlobalAlertPreventiveData.totalRecommendations <= 0) return;
+
+    const latestSnapshot = executiveGlobalPreventiveSnapshots[0] || null;
+    const latestSignature = latestSnapshot?.preventive_signature || '';
+    if (latestSnapshot?.season === selectedSeason && latestSignature === executiveGlobalPreventiveSnapshotSignature) {
+      executiveGlobalPreventiveSnapshotLogRef.current = executiveGlobalPreventiveSnapshotSignature;
+      return;
+    }
+    if (executiveGlobalPreventiveSnapshotLogRef.current === executiveGlobalPreventiveSnapshotSignature) return;
+
+    executiveGlobalPreventiveSnapshotLogRef.current = executiveGlobalPreventiveSnapshotSignature;
+    void logExecutiveGlobalPreventiveSnapshot();
+  }, [
+    executiveGlobalAlertPreventiveData.totalRecommendations,
+    executiveGlobalPreventiveSnapshotSignature,
+    executiveGlobalPreventiveSnapshots,
+    logExecutiveGlobalPreventiveSnapshot,
+    selectedCompany?.id,
+    selectedSeason
   ]);
   const selectedExecutiveGlobalAlertTransitions = useMemo(
     () => executiveGlobalAlertTransitions.filter((row) => row.event_id === editingExecutiveGlobalAlertId),
@@ -5370,6 +5647,9 @@ export const Reports: React.FC = () => {
         { Indicador: 'Posición empresa activa multiempresa', Valor: executiveGlobalCompanyRanking.selectedCompanyRank || 'Sin datos' },
         { Indicador: 'Cobertura ranking multiempresa', Valor: executiveGlobalCompanyRanking.coverageLine },
         { Indicador: 'Resumen ranking multiempresa', Valor: executiveGlobalCompanyRanking.summaryLine },
+        { Indicador: 'Snapshots ranking materializado', Valor: executiveGlobalRankingSnapshotData.totalSnapshots },
+        { Indicador: 'Líder snapshot dominante', Valor: executiveGlobalRankingSnapshotData.topLeader?.leader || 'Sin snapshot' },
+        { Indicador: 'Resumen ranking materializado', Valor: executiveGlobalRankingSnapshotData.summaryLine },
         { Indicador: 'Alerta ranking multiempresa', Valor: executiveGlobalRankingAlert?.tone.title || 'Sin alerta' },
         { Indicador: 'Detalle alerta ranking global', Valor: executiveGlobalRankingAlert?.detail || 'Empresa activa dentro del tramo superior o sin base comparable' },
         { Indicador: 'Historial liderazgo global', Valor: executiveGlobalHistoricalInsights.summaryLine },
@@ -5405,6 +5685,9 @@ export const Reports: React.FC = () => {
         { Indicador: 'Etapa preventiva dominante', Valor: executiveGlobalAlertPreventiveData.topStage ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertPreventiveData.topStage.stageKey) : 'Sin etapa' },
         { Indicador: 'Responsable preventivo dominante', Valor: executiveGlobalAlertPreventiveData.topOwner?.owner || 'Sin responsable' },
         { Indicador: 'Resumen preventivo SLA', Valor: executiveGlobalAlertPreventiveData.summaryLine },
+        { Indicador: 'Snapshots preventivos materializados', Valor: executiveGlobalPreventiveSnapshotData.totalSnapshots },
+        { Indicador: 'Severidad snapshot preventiva', Valor: executiveGlobalPreventiveSnapshotData.topSeverity?.severity || 'Sin snapshot' },
+        { Indicador: 'Resumen snapshot preventivo', Valor: executiveGlobalPreventiveSnapshotData.summaryLine },
         { Indicador: 'Severidad escalación dominante', Valor: executiveGlobalAlertSlaEscalationData.topSeverity ? formatExecutiveGlobalAlertSlaEscalationSeverity(executiveGlobalAlertSlaEscalationData.topSeverity.severity) : 'Sin escalaciones' },
         { Indicador: 'Etapa escalada dominante', Valor: executiveGlobalAlertSlaEscalationData.topStage ? formatExecutiveGlobalAlertSlaStage(executiveGlobalAlertSlaEscalationData.topStage.stageKey) : 'Sin etapa' },
         { Indicador: 'Responsable escalado dominante', Valor: executiveGlobalAlertSlaEscalationData.topOwner?.owner || 'Sin responsable' },
@@ -5669,6 +5952,16 @@ export const Reports: React.FC = () => {
         'Empresa activa top cuartil': row.selectedCompanyRank === null ? 'Sin datos' : row.selectedCompanyInTopQuartile ? 'Si' : 'No',
         Resumen: row.summaryLine
       }));
+      const globalRankingSnapshotRows = executiveGlobalRankingSnapshotData.recentRows.map((row) => ({
+        Fecha: new Date(row.created_at).toLocaleString('es-CL'),
+        Temporada: row.season,
+        Líder: row.leader_company_name || 'Sin líder',
+        'Posición empresa activa': row.selected_company_rank || 'Sin datos',
+        'Empresas visibles': row.total_companies,
+        'Puntaje promedio': Number(Number(row.average_score || 0).toFixed(2)),
+        'Cierre promedio': Number(Number(row.average_closure_pct || 0).toFixed(2)),
+        Resumen: row.summary
+      }));
       const globalAlertRows = executiveGlobalRankingAlert ? [{
         Temporada: executiveGlobalRankingAlert.season,
         Alerta: executiveGlobalRankingAlert.tone.title,
@@ -5851,6 +6144,15 @@ export const Reports: React.FC = () => {
         'Uso SLA máximo %': Number((row.maxConsumptionRatio * 100).toFixed(1)),
         Etapas: row.stages
       }));
+      const globalPreventiveSnapshotRows = executiveGlobalPreventiveSnapshotData.recentRows.map((row) => ({
+        Fecha: new Date(row.created_at).toLocaleString('es-CL'),
+        Temporada: row.season,
+        Recomendaciones: row.total_recommendations,
+        Severidad: row.top_severity || 'Sin severidad',
+        Etapa: row.top_stage_key ? formatExecutiveGlobalAlertSlaStage(row.top_stage_key) : 'Sin etapa',
+        Responsable: row.top_owner_label || 'Sin responsable',
+        Resumen: row.summary
+      }));
       const exportWarningHistoryRows = executiveExportWarningFilteredData.rows.map((row) => ({
         Fecha: new Date(row.created_at).toLocaleString('es-CL'),
         Temporada: row.season,
@@ -5997,6 +6299,7 @@ export const Reports: React.FC = () => {
           ...(rankingRows.length > 0 ? [{ name: 'Ranking Empresas', rows: rankingRows }] : []),
           ...(globalRankingRows.length > 0 ? [{ name: 'Ranking Multiempresa', rows: globalRankingRows }] : []),
           ...(globalRankingHistoryRows.length > 0 ? [{ name: 'Historial Ranking Global', rows: globalRankingHistoryRows }] : []),
+          ...(globalRankingSnapshotRows.length > 0 ? [{ name: 'Snapshots Ranking Global', rows: globalRankingSnapshotRows }] : []),
           ...(globalAlertRows.length > 0 ? [{ name: 'Alerta Ranking Global', rows: globalAlertRows }] : []),
           ...(globalConsecutiveAlertRows.length > 0 ? [{ name: 'Alerta Consecutiva Global', rows: globalConsecutiveAlertRows }] : []),
           ...(globalAlertHistoryRows.length > 0 ? [{ name: 'Historial Alertas Globales', rows: globalAlertHistoryRows }] : []),
@@ -6020,6 +6323,7 @@ export const Reports: React.FC = () => {
           ...(globalAlertPreventiveStageRows.length > 0 ? [{ name: 'Prevención SLA', rows: globalAlertPreventiveStageRows }] : []),
           ...(globalAlertPreventiveOwnerRows.length > 0 ? [{ name: 'Responsables Preventivos', rows: globalAlertPreventiveOwnerRows }] : []),
           ...(globalAlertPreventiveRows.length > 0 ? [{ name: 'Recomendaciones Preventivas', rows: globalAlertPreventiveRows }] : []),
+          ...(globalPreventiveSnapshotRows.length > 0 ? [{ name: 'Snapshots Preventivos', rows: globalPreventiveSnapshotRows }] : []),
           ...(totalDataBlockerRows.length > 0 ? [{ name: 'Bloqueos Dato', rows: totalDataBlockerRows }] : []),
           ...(compareCompanyRows.length > 0 ? [{ name: 'Comparacion Empresas', rows: compareCompanyRows }] : []),
           ...(compareCompanyHistoryRows.length > 0 ? [{ name: 'Historial Empresas', rows: compareCompanyHistoryRows }] : []),
@@ -7447,6 +7751,26 @@ export const Reports: React.FC = () => {
 
               yPos = (doc as any).lastAutoTable.finalY + 8;
             }
+
+            if (executiveGlobalPreventiveSnapshotData.totalSnapshots > 0) {
+              autoTable(doc, {
+                startY: yPos,
+                head: [['Snapshots preventivos', 'Detalle']],
+                body: [
+                  ['Resumen', executiveGlobalPreventiveSnapshotData.summaryLine],
+                  ['Snapshots históricos', String(executiveGlobalPreventiveSnapshotData.totalSnapshots)],
+                  ['Severidad dominante', executiveGlobalPreventiveSnapshotData.topSeverity?.severity || 'Sin severidad'],
+                  ['Etapa dominante', executiveGlobalPreventiveSnapshotData.topStage
+                    ? `${formatExecutiveGlobalAlertSlaStage(executiveGlobalPreventiveSnapshotData.topStage.stageKey)} (${executiveGlobalPreventiveSnapshotData.topStage.count})`
+                    : 'Sin etapa dominante']
+                ],
+                theme: 'grid',
+                headStyles: { fillColor: [180, 83, 9] },
+                styles: { fontSize: 8 }
+              });
+
+              yPos = (doc as any).lastAutoTable.finalY + 8;
+            }
           }
 
           if (executiveGlobalRankingHistory.length > 0) {
@@ -7521,6 +7845,26 @@ export const Reports: React.FC = () => {
           });
 
           yPos = (doc as any).lastAutoTable.finalY + 8;
+
+          if (executiveGlobalRankingSnapshotData.totalSnapshots > 0) {
+            autoTable(doc, {
+              startY: yPos,
+              head: [['Snapshots ranking materializado', 'Detalle']],
+              body: [
+                ['Resumen', executiveGlobalRankingSnapshotData.summaryLine],
+                ['Snapshots históricos', String(executiveGlobalRankingSnapshotData.totalSnapshots)],
+                ['Líder dominante', executiveGlobalRankingSnapshotData.topLeader
+                  ? `${executiveGlobalRankingSnapshotData.topLeader.leader} (${executiveGlobalRankingSnapshotData.topLeader.count})`
+                  : 'Sin líder dominante'],
+                ['Cobertura promedio', `${executiveGlobalRankingSnapshotData.avgCoverage.toFixed(1)} empresas`]
+              ],
+              theme: 'grid',
+              headStyles: { fillColor: [29, 78, 216] },
+              styles: { fontSize: 8 }
+            });
+
+            yPos = (doc as any).lastAutoTable.finalY + 8;
+          }
         }
 
         if (executiveExportWarningFilteredData.totalEvents > 0) {
@@ -10334,6 +10678,124 @@ export const Reports: React.FC = () => {
                       </div>
                     </div>
                   )}
+                  {(executiveGlobalCompanyRanking.rows.length > 0 || executiveGlobalRankingSnapshotData.totalSnapshots > 0) && (
+                    <div className="mt-6 rounded-xl border border-slate-200 overflow-hidden">
+                      <div className="px-4 py-4 border-b border-slate-200 bg-slate-50">
+                        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                          <div>
+                            <div className="text-sm font-medium text-slate-900">Snapshots materializados del ranking global</div>
+                            <p className="text-sm text-slate-500">Deja histórico reutilizable de la foto multiempresa para esta empresa, sin depender siempre del recálculo en vivo.</p>
+                          </div>
+                          <div className="text-sm font-semibold text-slate-700">
+                            {executiveGlobalRankingSnapshotData.summaryLine}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="p-4 space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                            <div className="text-xs uppercase tracking-wide text-slate-500">Snapshots históricos</div>
+                            <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveGlobalRankingSnapshotData.totalSnapshots}</div>
+                            <div className="mt-1 text-sm text-slate-500">Registros persistidos del ranking global</div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                            <div className="text-xs uppercase tracking-wide text-slate-500">Temporada activa</div>
+                            <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveGlobalRankingSnapshotData.currentSeasonRows.length}</div>
+                            <div className="mt-1 text-sm text-slate-500">{selectedSeason} con snapshots visibles</div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                            <div className="text-xs uppercase tracking-wide text-slate-500">Líder dominante</div>
+                            <div className="mt-2 text-lg font-semibold text-slate-900">{executiveGlobalRankingSnapshotData.topLeader?.leader || 'Sin líder'}</div>
+                            <div className="mt-1 text-sm text-slate-500">
+                              {executiveGlobalRankingSnapshotData.topLeader
+                                ? `${executiveGlobalRankingSnapshotData.topLeader.count} snapshots`
+                                : 'Sin recurrencia histórica'}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                            <div className="text-xs uppercase tracking-wide text-slate-500">Cobertura promedio</div>
+                            <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveGlobalRankingSnapshotData.avgCoverage.toFixed(1)}</div>
+                            <div className="mt-1 text-sm text-slate-500">Empresas por snapshot materializado</div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 xl:grid-cols-[1.1fr,0.9fr] gap-4">
+                          <div className="overflow-x-auto rounded-xl border border-slate-200">
+                            <table className="min-w-full divide-y divide-slate-200 text-sm">
+                              <thead className="bg-slate-50">
+                                <tr>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Temporada</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Líder</th>
+                                  <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Pos. activa</th>
+                                  <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Cobertura</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200 bg-white">
+                                {executiveGlobalRankingSnapshotData.recentRows.slice(0, 8).map((row) => (
+                                  <tr key={row.id} className={row.season === selectedSeason ? 'bg-purple-50/50' : ''}>
+                                    <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                                    <td className="px-4 py-3 font-medium text-slate-900">{row.season}</td>
+                                    <td className="px-4 py-3 text-slate-700">{row.leader_company_name || 'Sin líder'}</td>
+                                    <td className="px-4 py-3 text-right text-slate-700">{row.selected_company_rank || '-'}</td>
+                                    <td className="px-4 py-3 text-right text-slate-700">{row.total_companies}</td>
+                                  </tr>
+                                ))}
+                                {executiveGlobalRankingSnapshotData.recentRows.length === 0 && (
+                                  <tr>
+                                    <td colSpan={5} className="px-4 py-4 text-center text-sm text-slate-500">
+                                      Aún no hay snapshots materializados del ranking global para esta empresa.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div className="space-y-4">
+                            <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+                              <div className="font-medium text-slate-900">Lectura materializada</div>
+                              <p className="mt-2">{executiveGlobalRankingSnapshotData.summaryLine}</p>
+                              <p className="mt-2">
+                                Último snapshot: {executiveGlobalRankingSnapshotData.latestSnapshot
+                                  ? `${executiveGlobalRankingSnapshotData.latestSnapshot.season} · ${new Date(executiveGlobalRankingSnapshotData.latestSnapshot.created_at).toLocaleString('es-CL')}`
+                                  : 'sin registro materializado todavía'}.
+                              </p>
+                              <p className="mt-2">
+                                Posición promedio de la empresa activa: {executiveGlobalRankingSnapshotData.avgRank > 0
+                                  ? executiveGlobalRankingSnapshotData.avgRank.toFixed(1)
+                                  : 'sin posición histórica visible'}.
+                              </p>
+                            </div>
+                            <div className="overflow-x-auto rounded-xl border border-slate-200">
+                              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                                <thead className="bg-slate-50">
+                                  <tr>
+                                    <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Temporada</th>
+                                    <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Snapshots</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200 bg-white">
+                                  {executiveGlobalRankingSnapshotData.seasonSummary.slice(0, 6).map((row) => (
+                                    <tr key={row.season} className={row.season === selectedSeason ? 'bg-purple-50/50' : ''}>
+                                      <td className="px-4 py-3 font-medium text-slate-900">{row.season}</td>
+                                      <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                                    </tr>
+                                  ))}
+                                  {executiveGlobalRankingSnapshotData.seasonSummary.length === 0 && (
+                                    <tr>
+                                      <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
+                                        Sin distribución histórica por temporada.
+                                      </td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   {(executiveGlobalRankingAlert || executiveGlobalRankingHistory.length > 0) && (
                     <div className="mt-6 grid grid-cols-1 xl:grid-cols-[0.9fr,1.1fr] gap-6">
                       <div className="space-y-4">
@@ -11712,6 +12174,127 @@ export const Reports: React.FC = () => {
                       </tbody>
                     </table>
                   </div>
+
+                  {(executiveGlobalAlertPreventiveData.totalRecommendations > 0 || executiveGlobalPreventiveSnapshotData.totalSnapshots > 0) && (
+                    <div className="rounded-xl border border-slate-200 overflow-hidden">
+                      <div className="px-4 py-4 border-b border-slate-200 bg-slate-50">
+                        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                          <div>
+                            <div className="text-sm font-medium text-slate-900">Snapshots materializados del riesgo preventivo</div>
+                            <p className="text-sm text-slate-500">Guarda una foto persistida del riesgo preventivo para sostener histórico y semáforos sin recalcular todo el contexto cada vez.</p>
+                          </div>
+                          <div className="text-sm font-semibold text-slate-700">
+                            {executiveGlobalPreventiveSnapshotData.summaryLine}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="p-4 space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                            <div className="text-xs uppercase tracking-wide text-slate-500">Snapshots históricos</div>
+                            <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveGlobalPreventiveSnapshotData.totalSnapshots}</div>
+                            <div className="mt-1 text-sm text-slate-500">Persistencia preventiva reutilizable</div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                            <div className="text-xs uppercase tracking-wide text-slate-500">Temporada activa</div>
+                            <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveGlobalPreventiveSnapshotData.currentSeasonRows.length}</div>
+                            <div className="mt-1 text-sm text-slate-500">{selectedSeason} con snapshots preventivos</div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                            <div className="text-xs uppercase tracking-wide text-slate-500">Severidad dominante</div>
+                            <div className="mt-2 text-lg font-semibold text-slate-900">{executiveGlobalPreventiveSnapshotData.topSeverity?.severity || 'Sin severidad'}</div>
+                            <div className="mt-1 text-sm text-slate-500">
+                              {executiveGlobalPreventiveSnapshotData.topSeverity
+                                ? `${executiveGlobalPreventiveSnapshotData.topSeverity.count} snapshots`
+                                : 'Sin recurrencia visible'}
+                            </div>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                            <div className="text-xs uppercase tracking-wide text-slate-500">Promedio recomendaciones</div>
+                            <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveGlobalPreventiveSnapshotData.avgRecommendations.toFixed(1)}</div>
+                            <div className="mt-1 text-sm text-slate-500">Riesgos materializados por snapshot</div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 xl:grid-cols-[1.1fr,0.9fr] gap-4">
+                          <div className="overflow-x-auto rounded-xl border border-slate-200">
+                            <table className="min-w-full divide-y divide-slate-200 text-sm">
+                              <thead className="bg-slate-50">
+                                <tr>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Temporada</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Severidad</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Etapa</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Responsable</th>
+                                  <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Recs.</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200 bg-white">
+                                {executiveGlobalPreventiveSnapshotData.recentRows.slice(0, 8).map((row) => (
+                                  <tr key={row.id} className={row.season === selectedSeason ? 'bg-amber-50/60' : ''}>
+                                    <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                                    <td className="px-4 py-3 font-medium text-slate-900">{row.season}</td>
+                                    <td className="px-4 py-3 text-slate-700">{row.top_severity || 'Sin severidad'}</td>
+                                    <td className="px-4 py-3 text-slate-700">{formatExecutiveGlobalAlertSlaStage(row.top_stage_key)}</td>
+                                    <td className="px-4 py-3 text-slate-700">{row.top_owner_label || 'Sin responsable'}</td>
+                                    <td className="px-4 py-3 text-right text-slate-700">{row.total_recommendations}</td>
+                                  </tr>
+                                ))}
+                                {executiveGlobalPreventiveSnapshotData.recentRows.length === 0 && (
+                                  <tr>
+                                    <td colSpan={6} className="px-4 py-4 text-center text-sm text-slate-500">
+                                      Aún no hay snapshots materializados del riesgo preventivo para esta empresa.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div className="space-y-4">
+                            <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+                              <div className="font-medium text-slate-900">Lectura materializada</div>
+                              <p className="mt-2">{executiveGlobalPreventiveSnapshotData.summaryLine}</p>
+                              <p className="mt-2">
+                                Último snapshot: {executiveGlobalPreventiveSnapshotData.latestSnapshot
+                                  ? `${executiveGlobalPreventiveSnapshotData.latestSnapshot.season} · ${new Date(executiveGlobalPreventiveSnapshotData.latestSnapshot.created_at).toLocaleString('es-CL')}`
+                                  : 'sin registro materializado todavía'}.
+                              </p>
+                              <p className="mt-2">
+                                Etapa dominante materializada: {executiveGlobalPreventiveSnapshotData.topStage
+                                  ? `${formatExecutiveGlobalAlertSlaStage(executiveGlobalPreventiveSnapshotData.topStage.stageKey)} (${executiveGlobalPreventiveSnapshotData.topStage.count})`
+                                  : 'sin etapa preventiva dominante'}.
+                              </p>
+                            </div>
+                            <div className="overflow-x-auto rounded-xl border border-slate-200">
+                              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                                <thead className="bg-slate-50">
+                                  <tr>
+                                    <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Etapa</th>
+                                    <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Snapshots</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200 bg-white">
+                                  {executiveGlobalPreventiveSnapshotData.stageSummary.slice(0, 6).map((row) => (
+                                    <tr key={row.stageKey}>
+                                      <td className="px-4 py-3 font-medium text-slate-900">{formatExecutiveGlobalAlertSlaStage(row.stageKey)}</td>
+                                      <td className="px-4 py-3 text-right text-slate-700">{row.count}</td>
+                                    </tr>
+                                  ))}
+                                  {executiveGlobalPreventiveSnapshotData.stageSummary.length === 0 && (
+                                    <tr>
+                                      <td colSpan={2} className="px-4 py-4 text-center text-sm text-slate-500">
+                                        Sin etapa preventiva dominante en histórico.
+                                      </td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
                     <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -15655,6 +16238,47 @@ export const Reports: React.FC = () => {
                                   </div>
                                 </div>
                               </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                  <div className="text-sm uppercase tracking-wide text-slate-500">Snapshots ranking</div>
+                                  <div className="mt-3 text-3xl font-bold text-slate-900">{executiveGlobalRankingSnapshotData.totalSnapshots}</div>
+                                  <div className="text-sm text-slate-500">Histórico materializado disponible</div>
+                                </div>
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                  <div className="text-sm uppercase tracking-wide text-slate-500">Temporada activa</div>
+                                  <div className="mt-3 text-3xl font-bold text-slate-900">{executiveGlobalRankingSnapshotData.currentSeasonRows.length}</div>
+                                  <div className="text-sm text-slate-500">{selectedSeason} con snapshots visibles</div>
+                                </div>
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                  <div className="text-sm uppercase tracking-wide text-slate-500">Líder dominante</div>
+                                  <div className="mt-3 text-3xl font-bold text-slate-900">{executiveGlobalRankingSnapshotData.topLeader?.leader || '-'}</div>
+                                  <div className="text-sm text-slate-500">
+                                    {executiveGlobalRankingSnapshotData.topLeader
+                                      ? `${executiveGlobalRankingSnapshotData.topLeader.count} snapshots`
+                                      : 'Sin recurrencia'}
+                                  </div>
+                                </div>
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                                  <div className="text-sm uppercase tracking-wide text-slate-500">Cobertura promedio</div>
+                                  <div className="mt-3 text-3xl font-bold text-slate-900">{executiveGlobalRankingSnapshotData.avgCoverage.toFixed(1)}</div>
+                                  <div className="text-sm text-slate-500">Empresas por corte materializado</div>
+                                </div>
+                              </div>
+
+                              <div className="rounded-2xl border border-slate-200 p-6">
+                                <div className="text-2xl font-bold text-slate-800 mb-5">Histórico materializado del ranking</div>
+                                <p className="text-xl leading-9 text-slate-600">{executiveGlobalRankingSnapshotData.summaryLine}</p>
+                                <p className="mt-5 text-lg text-slate-500">
+                                  Último snapshot visible: {executiveGlobalRankingSnapshotData.latestSnapshot
+                                    ? `${executiveGlobalRankingSnapshotData.latestSnapshot.season} · ${new Date(executiveGlobalRankingSnapshotData.latestSnapshot.created_at).toLocaleString('es-CL')}`
+                                    : 'sin snapshot materializado todavía'}.
+                                </p>
+                                <p className="mt-5 text-lg text-slate-500">
+                                  Posición promedio de la empresa activa: {executiveGlobalRankingSnapshotData.avgRank > 0
+                                    ? executiveGlobalRankingSnapshotData.avgRank.toFixed(1)
+                                    : 'sin posición materializada'}.
+                                </p>
+                              </div>
                             </>
                           ) : (
                             <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-12 text-center">
@@ -15947,6 +16571,47 @@ export const Reports: React.FC = () => {
                               <div className="mt-3 text-3xl font-bold text-slate-900">
                                 {executiveGlobalAlertPreventiveData.topOwner?.owner || '-'}
                               </div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                            <div className="rounded-2xl border border-slate-200 p-6">
+                              <div className="text-2xl font-bold text-slate-800 mb-5">Snapshots ranking global</div>
+                              <p className="text-xl leading-9 text-slate-600">{executiveGlobalRankingSnapshotData.summaryLine}</p>
+                              <div className="mt-5 grid grid-cols-2 gap-4 text-sm">
+                                <div className="rounded-2xl bg-slate-50 p-4">
+                                  <div className="uppercase tracking-wide text-slate-500">Históricos</div>
+                                  <div className="mt-2 text-2xl font-bold text-slate-900">{executiveGlobalRankingSnapshotData.totalSnapshots}</div>
+                                </div>
+                                <div className="rounded-2xl bg-slate-50 p-4">
+                                  <div className="uppercase tracking-wide text-slate-500">Cobertura media</div>
+                                  <div className="mt-2 text-2xl font-bold text-slate-900">{executiveGlobalRankingSnapshotData.avgCoverage.toFixed(1)}</div>
+                                </div>
+                              </div>
+                              <p className="mt-5 text-lg text-slate-500">
+                                Líder dominante: {executiveGlobalRankingSnapshotData.topLeader
+                                  ? `${executiveGlobalRankingSnapshotData.topLeader.leader} (${executiveGlobalRankingSnapshotData.topLeader.count})`
+                                  : 'sin líder materializado'}.
+                              </p>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200 p-6">
+                              <div className="text-2xl font-bold text-slate-800 mb-5">Snapshots preventivos</div>
+                              <p className="text-xl leading-9 text-slate-600">{executiveGlobalPreventiveSnapshotData.summaryLine}</p>
+                              <div className="mt-5 grid grid-cols-2 gap-4 text-sm">
+                                <div className="rounded-2xl bg-amber-50 p-4">
+                                  <div className="uppercase tracking-wide text-amber-700">Históricos</div>
+                                  <div className="mt-2 text-2xl font-bold text-amber-800">{executiveGlobalPreventiveSnapshotData.totalSnapshots}</div>
+                                </div>
+                                <div className="rounded-2xl bg-amber-50 p-4">
+                                  <div className="uppercase tracking-wide text-amber-700">Promedio riesgo</div>
+                                  <div className="mt-2 text-2xl font-bold text-amber-800">{executiveGlobalPreventiveSnapshotData.avgRecommendations.toFixed(1)}</div>
+                                </div>
+                              </div>
+                              <p className="mt-5 text-lg text-slate-500">
+                                Etapa dominante: {executiveGlobalPreventiveSnapshotData.topStage
+                                  ? `${formatExecutiveGlobalAlertSlaStage(executiveGlobalPreventiveSnapshotData.topStage.stageKey)} (${executiveGlobalPreventiveSnapshotData.topStage.count})`
+                                  : 'sin etapa materializada'}.
+                              </p>
                             </div>
                           </div>
                         </div>

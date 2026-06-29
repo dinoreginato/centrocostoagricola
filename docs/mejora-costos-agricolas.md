@@ -4,7 +4,7 @@
 Dejar la aplicacion mas confiable para gestion agricola real, con costos mas verdaderos, menos duplicidad y una mejor resolucion de datos para toma de decisiones.
 
 ## Estado General
-- Avance general estimado del roadmap activo: `94%`
+- Avance general estimado del roadmap activo: `97%`
 - Estado actual:
   - `[x]` base canonica de temporadas y costos
   - `[x]` conciliacion y auditoria ejecutiva
@@ -17,8 +17,8 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - `[x]` reescalamiento por cambio de responsable o aumento de severidad
   - `[x]` cierre asistido de incumplimientos SLA
   - `[x]` recomendaciones automáticas de normalizacion preventiva
-  - `[ ]` persistencia historica materializada del ranking global
-  - `[ ]` persistencia preventiva materializada y alertas anticipadas más livianas
+  - `[x]` persistencia historica materializada del ranking global
+  - `[x]` persistencia preventiva materializada y alertas anticipadas más livianas
 
 ## Avance Del Plan
 ### Fase 1
@@ -69,8 +69,8 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
 - `[x]` Reescalamiento por cambio de responsable o cambio de severidad.
 - `[x]` Cierre asistido cuando una etapa deja de incumplir SLA o la alerta queda cerrada.
 - `[x]` Recomendaciones automáticas de normalización preventiva antes de nueva escalación.
-- `[ ]` Persistencia materializada del ranking global para reducir recalculo.
-- `[ ]` Persistencia preventiva materializada y reglas anticipadas más livianas.
+- `[x]` Persistencia materializada del ranking global para reducir recalculo.
+- `[x]` Persistencia preventiva materializada y reglas anticipadas más livianas.
 
 ## Lo Que Ya Esta Bien
 - Modelo predial correcto: `empresa -> campo -> sector`.
@@ -806,6 +806,36 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - ayudar a comités y responsables a actuar mientras la alerta todavía está dentro de SLA
   - distinguir entre control estable y control frágil con riesgo de recaída
 
+## Persistencia Materializada Del Ranking Global Y Riesgo Preventivo
+- Estado: `[x] Implementado`
+- Se agregó la migración `supabase/migrations/20260628142000_create_executive_global_snapshots.sql`.
+- La persistencia ahora guarda dos bitácoras materializadas separadas:
+  - `executive_global_ranking_snapshots`
+  - `executive_global_preventive_snapshots`
+- Se agregó el servicio `src/services/executiveGlobalSnapshots.ts` para:
+  - registrar snapshots de ranking global
+  - cargar snapshots históricos por empresa y temporada
+  - registrar snapshots preventivos
+  - reutilizar estos históricos en UI y exportaciones
+- `Reportes` ahora:
+  - auto registra snapshots deduplicados por firma de ranking y firma preventiva
+  - recarga histórico materializado al cambiar de empresa
+  - expone tarjetas y tablas visibles en la vista ejecutiva normal
+  - integra la lectura materializada dentro de la presentación fullscreen
+  - exporta estos snapshots en Excel y PDF ejecutivo
+- La lectura materializada resume:
+  - snapshots históricos totales
+  - snapshots de la temporada visible
+  - líder dominante del ranking materializado
+  - cobertura promedio del universo global
+  - severidad preventiva dominante
+  - etapa preventiva dominante y promedio de recomendaciones
+- Objetivo:
+  - reducir recálculo repetido de capas ejecutivas globales
+  - sostener histórico reutilizable para auditoría y comité
+  - dejar una foto persistida tanto del liderazgo multiempresa como del riesgo preventivo
+  - separar cálculo en vivo de evidencia histórica materializada
+
 ## Siguiente Paso Recomendado
-- Evaluar persistencia historica del ranking global para medir cambios de liderazgo sin recalculo completo en tiempo real.
-- Considerar persistencia materializada del riesgo preventivo para reducir cálculo en tiempo real y sostener semáforos históricos.
+- Completar la coherencia estructural entre hectáreas de campo y hectáreas agregadas de sectores como siguiente guarda dura de integridad agrícola.
+- Evaluar refresco programado o corte diario de snapshots si más adelante se quiere una bitácora materializada con cadencia operativa fija.
