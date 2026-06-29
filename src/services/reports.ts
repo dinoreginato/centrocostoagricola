@@ -3,6 +3,8 @@ import { getSeasonFromDate } from '../lib/seasonUtils';
 import { collectAvailableSeasons } from '../lib/agriculturalData';
 import type { AgriculturalCostMovement } from '../lib/costMovements';
 
+type ReportsWarning = { source: string; message: string };
+
 type ReportFieldRow = {
   id: string;
   name: string;
@@ -43,15 +45,62 @@ const mapCostMovementViewRow = (row: CostMovementViewRow): AgriculturalCostMovem
   amount: Number(row.amount || 0)
 });
 
+const describeReportsError = (error: any) => {
+  const message = String(error?.message || error?.details || error?.hint || error || '');
+  const code = String(error?.code || '');
+  const status = String(error?.status || error?.statusCode || '');
+  const prefix = [status, code].filter(Boolean).join(' ');
+  return prefix ? `${prefix}: ${message}` : message;
+};
+
 export async function loadReportsRawData(params: { companyId: string }) {
+  const warnings: ReportsWarning[] = [];
+
+  let typedFields: ReportFieldRow[] = [];
   const { data: fields, error: fieldsError } = await supabase
     .from('fields')
     .select('id, name, fruit_type, sectors(id, name, hectares)')
     .eq('company_id', params.companyId);
 
-  if (fieldsError) throw fieldsError;
+  if (fieldsError) {
+    warnings.push({ source: 'fields', message: describeReportsError(fieldsError) });
+    const { data: basicFields, error: basicFieldsError } = await supabase
+      .from('fields')
+      .select('id, name, fruit_type')
+      .eq('company_id', params.companyId);
+    if (basicFieldsError) throw basicFieldsError;
+    typedFields = (basicFields || []) as unknown as ReportFieldRow[];
 
-  const typedFields = (fields || []) as unknown as ReportFieldRow[];
+    const { data: sectorsData, error: sectorsError } = await supabase
+      .from('sectors')
+      .select('id, name, hectares, field_id, fields!inner(company_id)')
+      .eq('fields.company_id', params.companyId);
+
+    if (sectorsError) {
+      warnings.push({ source: 'sectors', message: describeReportsError(sectorsError) });
+    }
+
+    const sectorByField = new Map<string, ReportFieldRow['sectors']>();
+    (sectorsData || []).forEach((row: any) => {
+      const fieldId = String(row.field_id || '');
+      if (!fieldId) return;
+      const current = sectorByField.get(fieldId) || [];
+      current.push({
+        id: String(row.id),
+        name: String(row.name || ''),
+        hectares: Number(row.hectares || 0)
+      });
+      sectorByField.set(fieldId, current);
+    });
+
+    typedFields = typedFields.map((field) => ({
+      ...field,
+      sectors: sectorByField.get(field.id) || []
+    }));
+  } else {
+    typedFields = (fields || []) as unknown as ReportFieldRow[];
+  }
+
   const fieldIds = typedFields.map((f) => f.id);
   const sectorIds = typedFields.flatMap((f) => (f.sectors || []).map((s) => s.id));
 
@@ -69,7 +118,8 @@ export async function loadReportsRawData(params: { companyId: string }) {
     incomeEntries: [] as any[],
     invoices: [] as any[],
     products: [] as any[],
-    availableSeasons: [getSeasonFromDate(new Date())]
+    availableSeasons: [getSeasonFromDate(new Date())],
+    warnings
   };
 
   if (fieldIds.length === 0 || sectorIds.length === 0) {
@@ -103,25 +153,37 @@ export async function loadReportsRawData(params: { companyId: string }) {
         .eq('company_id', params.companyId)
     ]);
 
-    const lightweightErrors = [incomeRes.error, invoicesRes.error, productsRes.error, fuelConsRes.error, costMovementsRes.error].filter(Boolean);
-    if (lightweightErrors.length > 0) throw lightweightErrors[0];
-    const costMovements = (costMovementsRes.data || []).map((row: any) => mapCostMovementViewRow(row));
+    const resolveRows = <T,>(res: { data: T[] | null; error: any }, source: string): T[] => {
+      if (res.error) {
+        warnings.push({ source, message: describeReportsError(res.error) });
+        return [];
+      }
+      return (res.data || []) as T[];
+    };
+
+    const incomeEntries = resolveRows<any>(incomeRes as any, 'income_entries');
+    const invoices = resolveRows<any>(invoicesRes as any, 'invoices');
+    const products = resolveRows<any>(productsRes as any, 'products');
+    const fuelConsumption = resolveRows<any>(fuelConsRes as any, 'fuel_consumption');
+    const costMovements = resolveRows<any>(costMovementsRes as any, 'v_agricultural_cost_movements').map((row: any) =>
+      mapCostMovementViewRow(row)
+    );
 
     const availableSeasons = collectAvailableSeasons([
       { rows: costMovements, getDate: (row) => row.date },
-      { rows: incomeRes.data || [], getDate: (row) => row.date },
-      { rows: invoicesRes.data || [], getDate: (row) => row.invoice_date },
-      { rows: fuelConsRes.data || [], getDate: (row) => row.date }
+      { rows: incomeEntries, getDate: (row) => row.date },
+      { rows: invoices, getDate: (row) => row.invoice_date },
+      { rows: fuelConsumption, getDate: (row) => row.date }
     ], getSeasonFromDate(new Date()));
 
     return {
       ...emptyResult,
-      incomeEntries: incomeRes.data || [],
-      invoices: invoicesRes.data || [],
-      products: productsRes.data || [],
-      fuelConsumption: fuelConsRes.data || [],
+      incomeEntries,
+      invoices,
+      products,
+      fuelConsumption,
       costMovements,
-      availableSeasons
+      availableSeasons: availableSeasons.length > 0 ? availableSeasons : emptyResult.availableSeasons
     };
   }
 
@@ -175,54 +237,57 @@ export async function loadReportsRawData(params: { companyId: string }) {
       .eq('company_id', params.companyId)
   ]);
 
-  const errors = [
-    applicationsRes.error,
-    laborRes.error,
-    workerCostsRes.error,
-    fuelRes.error,
-    fuelConsRes.error,
-    machineryRes.error,
-    irrigationRes.error,
-    generalCostsRes.error,
-    incomeRes.error,
-    invoicesRes.error,
-    productsRes.error,
-    costMovementsRes.error
-  ].filter(Boolean);
+  const resolveRows = <T,>(res: { data: T[] | null; error: any }, source: string): T[] => {
+    if (res.error) {
+      warnings.push({ source, message: describeReportsError(res.error) });
+      return [];
+    }
+    return (res.data || []) as T[];
+  };
 
-  if (errors.length > 0) throw errors[0];
-
-  const applications = (applicationsRes.data || []) as unknown as ReportApplicationRow[];
-  const invoices = (invoicesRes.data || []) as unknown as ReportInvoiceRow[];
-  const costMovements = (costMovementsRes.data || []).map((row: any) => mapCostMovementViewRow(row));
+  const applications = resolveRows<ReportApplicationRow>(applicationsRes as any, 'applications');
+  const labor = resolveRows<any>(laborRes as any, 'labor_assignments');
+  const workerCosts = resolveRows<any>(workerCostsRes as any, 'worker_costs');
+  const fuel = resolveRows<any>(fuelRes as any, 'fuel_assignments');
+  const fuelConsumption = resolveRows<any>(fuelConsRes as any, 'fuel_consumption');
+  const machinery = resolveRows<any>(machineryRes as any, 'machinery_assignments');
+  const irrigation = resolveRows<any>(irrigationRes as any, 'irrigation_assignments');
+  const generalCosts = resolveRows<any>(generalCostsRes as any, 'general_costs');
+  const incomeEntries = resolveRows<any>(incomeRes as any, 'income_entries');
+  const invoices = resolveRows<ReportInvoiceRow>(invoicesRes as any, 'invoices');
+  const products = resolveRows<any>(productsRes as any, 'products');
+  const costMovements = resolveRows<any>(costMovementsRes as any, 'v_agricultural_cost_movements').map((row: any) =>
+    mapCostMovementViewRow(row)
+  );
   const availableSeasons = collectAvailableSeasons([
     { rows: costMovements, getDate: (row) => row.date },
     { rows: applications, getDate: (row) => row.application_date },
-    { rows: laborRes.data || [], getDate: (row) => row.assigned_date },
-    { rows: workerCostsRes.data || [], getDate: (row) => row.date },
-    { rows: fuelRes.data || [], getDate: (row) => row.assigned_date },
-    { rows: fuelConsRes.data || [], getDate: (row) => row.date },
-    { rows: machineryRes.data || [], getDate: (row) => row.assigned_date },
-    { rows: irrigationRes.data || [], getDate: (row) => row.assigned_date },
-    { rows: generalCostsRes.data || [], getDate: (row) => row.date },
-    { rows: incomeRes.data || [], getDate: (row) => row.date },
+    { rows: labor, getDate: (row) => row.assigned_date },
+    { rows: workerCosts, getDate: (row) => row.date },
+    { rows: fuel, getDate: (row) => row.assigned_date },
+    { rows: fuelConsumption, getDate: (row) => row.date },
+    { rows: machinery, getDate: (row) => row.assigned_date },
+    { rows: irrigation, getDate: (row) => row.assigned_date },
+    { rows: generalCosts, getDate: (row) => row.date },
+    { rows: incomeEntries, getDate: (row) => row.date },
     { rows: invoices, getDate: (row) => row.invoice_date }
   ], getSeasonFromDate(new Date()));
 
   return {
     fields: typedFields,
     applications,
-    labor: laborRes.data || [],
-    workerCosts: workerCostsRes.data || [],
-    fuel: fuelRes.data || [],
-    fuelConsumption: fuelConsRes.data || [],
-    machinery: machineryRes.data || [],
-    irrigation: irrigationRes.data || [],
-    generalCosts: generalCostsRes.data || [],
+    labor,
+    workerCosts,
+    fuel,
+    fuelConsumption,
+    machinery,
+    irrigation,
+    generalCosts,
     costMovements,
-    incomeEntries: incomeRes.data || [],
+    incomeEntries,
     invoices,
-    products: productsRes.data || [],
-    availableSeasons
+    products,
+    availableSeasons: availableSeasons.length > 0 ? availableSeasons : emptyResult.availableSeasons,
+    warnings
   };
 }

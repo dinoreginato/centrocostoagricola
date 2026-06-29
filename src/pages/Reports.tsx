@@ -3586,12 +3586,21 @@ export const Reports: React.FC = () => {
         const snapshots = await Promise.all(
           companies.map(async (company) => {
             try {
-              const [raw, marginRows, productionRecords, auditSummary] = await Promise.all([
+              const [rawResult, marginResult, productionResult, auditResult] = await Promise.allSettled([
                 loadReportsRawData({ companyId: company.id }),
                 loadAgriculturalMarginRows({ companyId: company.id }),
                 loadProductionRecords({ companyId: company.id }),
                 loadAgriculturalCostAuditSummary({ companyId: company.id })
               ]);
+
+              if (rawResult.status !== 'fulfilled') {
+                throw rawResult.reason;
+              }
+
+              const raw = rawResult.value;
+              const marginRows = marginResult.status === 'fulfilled' ? (marginResult.value || []) : [];
+              const productionRecords = productionResult.status === 'fulfilled' ? (productionResult.value || []) : [];
+              const auditSummary = auditResult.status === 'fulfilled' ? (auditResult.value || []) : [];
 
               const seasons = Array.from(new Set([
                 ...(Array.isArray(raw.availableSeasons) ? raw.availableSeasons : []),
@@ -3664,12 +3673,21 @@ export const Reports: React.FC = () => {
     let cancelled = false;
     void (async () => {
       try {
-        const [raw, marginRows, productionRecords, auditSummary] = await Promise.all([
+        const [rawResult, marginResult, productionResult, auditResult] = await Promise.allSettled([
           loadReportsRawData({ companyId: executiveCompareCompanyId }),
           loadAgriculturalMarginRows({ companyId: executiveCompareCompanyId }),
           loadProductionRecords({ companyId: executiveCompareCompanyId }),
           loadAgriculturalCostAuditSummary({ companyId: executiveCompareCompanyId })
         ]);
+
+        if (rawResult.status !== 'fulfilled') {
+          throw rawResult.reason;
+        }
+
+        const raw = rawResult.value;
+        const marginRows = marginResult.status === 'fulfilled' ? (marginResult.value || []) : [];
+        const productionRecords = productionResult.status === 'fulfilled' ? (productionResult.value || []) : [];
+        const auditSummary = auditResult.status === 'fulfilled' ? (auditResult.value || []) : [];
         if (!cancelled) {
           setExecutiveCompareCompanyRaw({
             ...raw,
@@ -6433,8 +6451,8 @@ export const Reports: React.FC = () => {
         await createExecutiveGlobalAlertSlaEscalation({
           companyId: selectedCompany.id,
           eventId: escalation.eventId,
-          stageKey: escalation.stageKey,
-          escalationSeverity: escalation.escalationSeverity,
+          stageKey: escalation.stageKey as any,
+          escalationSeverity: escalation.escalationSeverity as any,
           ownerLabel: escalation.ownerLabel,
           overdueHours: Number(escalation.overdueHours.toFixed(2)),
           targetHours: Number(escalation.targetHours.toFixed(2)),
@@ -6493,8 +6511,8 @@ export const Reports: React.FC = () => {
         await createExecutiveGlobalAlertSlaResolution({
           companyId: selectedCompany.id,
           eventId: resolution.eventId,
-          stageKey: resolution.stageKey,
-          resolutionKind: resolution.resolutionKind,
+          stageKey: resolution.stageKey as any,
+          resolutionKind: resolution.resolutionKind as any,
           ownerLabel: resolution.ownerLabel,
           detail: resolution.detail,
           recommendation: resolution.recommendation,
@@ -6604,8 +6622,8 @@ export const Reports: React.FC = () => {
         season: selectedSeason,
         preventiveSignature: executiveGlobalPreventiveSnapshotSignature,
         totalRecommendations: executiveGlobalAlertPreventiveData.totalRecommendations,
-        topSeverity: executiveGlobalAlertPreventiveData.topSeverity?.severity || null,
-        topStageKey: executiveGlobalAlertPreventiveData.topStage?.stageKey || null,
+        topSeverity: (executiveGlobalAlertPreventiveData.topSeverity?.severity as any) || null,
+        topStageKey: (executiveGlobalAlertPreventiveData.topStage?.stageKey as any) || null,
         topOwnerLabel: executiveGlobalAlertPreventiveData.topOwner?.owner || null,
         summary: executiveGlobalAlertPreventiveData.summaryLine,
         metadata: {
@@ -6660,7 +6678,7 @@ export const Reports: React.FC = () => {
         companyId: selectedCompany.id,
         season: selectedSeason,
         closureSignature: executiveBudgetClosureSnapshotSignature,
-        budgetStatus: executiveCompanyBudgetGovernanceData.budgetStatus,
+        budgetStatus: executiveCompanyBudgetGovernanceData.budgetStatus as any,
         totalBudget: Number((executiveData.kpis.totalBudget || 0).toFixed(2)),
         totalActualCost: Number(executiveData.kpis.totalSeasonCost.toFixed(2)),
         budgetExecutionPct: Number((executiveData.kpis.budgetExecutionPct || 0).toFixed(2)),
@@ -6737,7 +6755,7 @@ export const Reports: React.FC = () => {
         totalBudget: Number((executiveData.kpis.totalBudget || 0).toFixed(2)),
         coveragePct: Number(executiveCompanyBudgetGovernanceData.areaCoveragePct.toFixed(2)),
         executionPct: Number((executiveData.kpis.budgetExecutionPct || 0).toFixed(2)),
-        budgetStatus: executiveCompanyBudgetGovernanceData.budgetStatus,
+        budgetStatus: executiveCompanyBudgetGovernanceData.budgetStatus as any,
         summary: executiveCompanyBudgetGovernanceData.summaryLine,
         metadata: {
           readiness_title: executiveTotalDataClosure.readiness.title,
@@ -8707,6 +8725,14 @@ export const Reports: React.FC = () => {
     processReports();
   }, [rawFields, rawApplications, rawCostMovements, rawInvoices, rawProducts, rawMarginRows, incomeEntries, selectedSeason, processReports]);
 
+  const describeReportsLoadError = (error: any) => {
+    const message = String(error?.message || error?.details || error?.hint || error || '');
+    const code = String(error?.code || '');
+    const status = String(error?.status || error?.statusCode || '');
+    const prefix = [status, code].filter(Boolean).join(' ');
+    return prefix ? `${prefix}: ${message}` : message;
+  };
+
   async function loadRawDataImpl() {
     if (!selectedCompany) return;
     const companyId = selectedCompany.id;
@@ -8741,12 +8767,32 @@ export const Reports: React.FC = () => {
       setRawMarginRows(marginResult.status === 'fulfilled' ? (marginResult.value || []) : []);
       setRawProductionRecords(productionResult.status === 'fulfilled' ? (productionResult.value || []) : []);
 
+      const warnings = Array.isArray((res as any).warnings) ? (res as any).warnings : [];
+      if (warnings.length > 0) {
+        const sources = Array.from(new Set(warnings.map((w: any) => w.source))).slice(0, 4);
+        toast.warning(`Reportes cargó parcialmente. Revisar: ${sources.join(', ')}`);
+        console.warn('Reportes: carga parcial.', warnings);
+      }
+
+      const unavailableModules: string[] = [];
+      if (marginResult.status !== 'fulfilled') {
+        unavailableModules.push('margen');
+        console.warn('Reportes: no se pudo cargar margen.', marginResult.reason);
+      }
+      if (productionResult.status !== 'fulfilled') {
+        unavailableModules.push('producción');
+        console.warn('Reportes: no se pudo cargar producción.', productionResult.reason);
+      }
+      if (unavailableModules.length > 0) {
+        toast.warning(`Algunos módulos no cargaron: ${unavailableModules.join(', ')}`);
+      }
+
       setAvailableSeasons(res.availableSeasons || []);
       if (res.availableSeasons && res.availableSeasons.length > 0 && !res.availableSeasons.includes(selectedSeason)) {
         setSelectedSeason(res.availableSeasons[0]);
       }
 
-    } catch {
+    } catch (error: any) {
       if (reportLoadSeqRef.current !== loadSeq || selectedCompany?.id !== companyId) return;
       setRawFields([]);
       setRawApplications([]);
@@ -8771,7 +8817,8 @@ export const Reports: React.FC = () => {
       setChemicalProducts([]);
       setDetailedReport([]);
       setComparativeData([]);
-      toast.error('Error al cargar datos de reportes.');
+      console.error('Error al cargar datos de reportes.', error);
+      toast.error(describeReportsLoadError(error) || 'Error al cargar datos de reportes.');
     } finally {
       if (reportLoadSeqRef.current === loadSeq) {
         setLoading(false);
