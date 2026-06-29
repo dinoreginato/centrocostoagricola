@@ -71,9 +71,13 @@ import {
 import {
   createExecutiveBudgetPlanPublicationEvent,
   loadExecutiveBudgetPlanPublicationEvents,
+  createExecutiveBudgetPlanPublicationReceipt,
+  loadExecutiveBudgetPlanPublicationReceipts,
   type ExecutiveBudgetPlanPublicationAction,
   type ExecutiveBudgetPlanPublicationChannel,
-  type ExecutiveBudgetPlanPublicationEventRow
+  type ExecutiveBudgetPlanPublicationEventRow,
+  type ExecutiveBudgetPlanPublicationReceiptRow,
+  type ExecutiveBudgetPlanPublicationReceiptType
 } from '../services/executiveBudgetPlanPublications';
 import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
@@ -1921,12 +1925,16 @@ const buildExecutiveBudgetPlanApprovalAnalytics = (params: {
 
 const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
   rows: ExecutiveBudgetPlanPublicationEventRow[];
+  receipts: ExecutiveBudgetPlanPublicationReceiptRow[];
   currentVersion: ExecutiveBudgetPlanVersionRow | null;
   scopeLabel: string;
   approvalReady: boolean;
 }) => {
   const currentVersionRows = params.currentVersion
     ? params.rows.filter((row) => row.version_id === params.currentVersion?.id)
+    : [];
+  const currentVersionReceiptRows = params.currentVersion
+    ? params.receipts.filter((row) => row.version_id === params.currentVersion?.id)
     : [];
   const actionSummary = Array.from(
     params.rows.reduce((map, row) => {
@@ -1971,6 +1979,23 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
   const latestExternalPublication = params.rows.find((row) => row.action_type === 'publicada_externa') || null;
   const currentVersionSignoff = currentVersionRows.find((row) => row.action_type === 'firmada') || null;
   const currentVersionExternalPublication = currentVersionRows.find((row) => row.action_type === 'publicada_externa') || null;
+  const currentVersionAcuse = currentVersionReceiptRows.find((row) => row.receipt_type === 'acuse') || null;
+  const currentVersionRead = currentVersionReceiptRows.find((row) => row.receipt_type === 'lectura') || null;
+  const latestAcuse = params.receipts.find((row) => row.receipt_type === 'acuse') || null;
+  const latestRead = params.receipts.find((row) => row.receipt_type === 'lectura') || null;
+  const receiptSummary = Array.from(
+    params.receipts.reduce((map, row) => {
+      map.set(row.receipt_type, (map.get(row.receipt_type) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([receiptType, count]) => ({ receiptType, count })).sort((a, b) => b.count - a.count);
+  const recipientReceiptSummary = Array.from(
+    params.receipts.reduce((map, row) => {
+      const recipient = row.recipient_label?.trim() || 'Sin destinatario';
+      map.set(recipient, (map.get(recipient) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([recipient, count]) => ({ recipient, count })).sort((a, b) => b.count - a.count);
   const summaryLine = !params.currentVersion
     ? `No hay versión vigente para firmar o publicar externamente en ${params.scopeLabel}.`
     : currentVersionExternalPublication
@@ -1990,24 +2015,37 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
 
   return {
     rows: params.rows,
+    receipts: params.receipts,
     currentVersionRows,
+    currentVersionReceiptRows,
     latestEvent,
     latestCurrentVersionEvent,
     latestSignoff,
     latestExternalPublication,
+    latestAcuse,
+    latestRead,
     currentVersionSignoff,
     currentVersionExternalPublication,
+    currentVersionAcuse,
+    currentVersionRead,
     recentRows: params.rows.slice(0, 12),
+    recentReceiptRows: params.receipts.slice(0, 12),
     actionSummary,
     channelSummary,
     recipientSummary,
+    receiptSummary,
+    recipientReceiptSummary,
     topAction: actionSummary[0] || null,
     topChannel: channelSummary[0] || null,
     topRecipient: recipientSummary[0] || null,
+    topReceipt: receiptSummary[0] || null,
+    topReceiptRecipient: recipientReceiptSummary[0] || null,
     totalEvents: params.rows.length,
+    totalReceipts: params.receipts.length,
     tone,
     canSign: params.approvalReady && !currentVersionSignoff,
     canPublishExternally: Boolean(params.approvalReady && currentVersionSignoff),
+    canRegisterReceipt: Boolean(currentVersionExternalPublication),
     summaryLine
   };
 };
@@ -2781,6 +2819,7 @@ export const Reports: React.FC = () => {
   const [executiveBudgetPlanWorkflowEvents, setExecutiveBudgetPlanWorkflowEvents] = useState<ExecutiveBudgetPlanWorkflowEventRow[]>([]);
   const [executiveBudgetPlanApprovalSteps, setExecutiveBudgetPlanApprovalSteps] = useState<ExecutiveBudgetPlanApprovalStepRow[]>([]);
   const [executiveBudgetPlanPublicationEvents, setExecutiveBudgetPlanPublicationEvents] = useState<ExecutiveBudgetPlanPublicationEventRow[]>([]);
+  const [executiveBudgetPlanPublicationReceipts, setExecutiveBudgetPlanPublicationReceipts] = useState<ExecutiveBudgetPlanPublicationReceiptRow[]>([]);
   const [executiveGlobalAlertLoading, setExecutiveGlobalAlertLoading] = useState(false);
   const [costAuditLoading, setCostAuditLoading] = useState(false);
   const [showProductionModal, setShowProductionModal] = useState(false);
@@ -2794,9 +2833,17 @@ export const Reports: React.FC = () => {
   const [executiveBudgetPublicationRole, setExecutiveBudgetPublicationRole] = useState<ExecutiveBudgetPlanApprovalRole>('gerencia_general');
   const [executiveBudgetPublicationRecipient, setExecutiveBudgetPublicationRecipient] = useState('');
   const [executiveBudgetPublicationChannel, setExecutiveBudgetPublicationChannel] = useState<ExecutiveBudgetPublicationChannelOption>('directorio');
+  const [executiveBudgetPublicationDocumentRef, setExecutiveBudgetPublicationDocumentRef] = useState('');
+  const [executiveBudgetPublicationDocumentHash, setExecutiveBudgetPublicationDocumentHash] = useState('');
   const [executiveBudgetPublicationReason, setExecutiveBudgetPublicationReason] = useState('');
   const [executiveBudgetPublicationNotes, setExecutiveBudgetPublicationNotes] = useState('');
   const [submittingExecutiveBudgetPublication, setSubmittingExecutiveBudgetPublication] = useState(false);
+  const [executiveBudgetPublicationReceiptResponsible, setExecutiveBudgetPublicationReceiptResponsible] = useState('');
+  const [executiveBudgetPublicationReceiptRole, setExecutiveBudgetPublicationReceiptRole] = useState<ExecutiveBudgetPlanApprovalRole>('control_gestion');
+  const [executiveBudgetPublicationReceiptRecipient, setExecutiveBudgetPublicationReceiptRecipient] = useState('');
+  const [executiveBudgetPublicationReceiptType, setExecutiveBudgetPublicationReceiptType] = useState<ExecutiveBudgetPlanPublicationReceiptType>('acuse');
+  const [executiveBudgetPublicationReceiptNotes, setExecutiveBudgetPublicationReceiptNotes] = useState('');
+  const [submittingExecutiveBudgetPublicationReceipt, setSubmittingExecutiveBudgetPublicationReceipt] = useState(false);
 
   // Comparative State
   const [comparativeData, setComparativeData] = useState<any[]>([]);
@@ -2981,6 +3028,7 @@ export const Reports: React.FC = () => {
     setExecutiveBudgetPlanWorkflowEvents([]);
     setExecutiveBudgetPlanApprovalSteps([]);
     setExecutiveBudgetPlanPublicationEvents([]);
+    setExecutiveBudgetPlanPublicationReceipts([]);
     setExecutiveBudgetWorkflowResponsible('');
     setExecutiveBudgetWorkflowRole('gerencia_agricola');
     setExecutiveBudgetWorkflowReason('');
@@ -2988,8 +3036,15 @@ export const Reports: React.FC = () => {
     setExecutiveBudgetPublicationRole('gerencia_general');
     setExecutiveBudgetPublicationRecipient('');
     setExecutiveBudgetPublicationChannel('directorio');
+    setExecutiveBudgetPublicationDocumentRef('');
+    setExecutiveBudgetPublicationDocumentHash('');
     setExecutiveBudgetPublicationReason('');
     setExecutiveBudgetPublicationNotes('');
+    setExecutiveBudgetPublicationReceiptResponsible('');
+    setExecutiveBudgetPublicationReceiptRole('control_gestion');
+    setExecutiveBudgetPublicationReceiptRecipient('');
+    setExecutiveBudgetPublicationReceiptType('acuse');
+    setExecutiveBudgetPublicationReceiptNotes('');
     setReportData([]);
     setMonthlyExpenses([]);
     setCategoryExpenses([]);
@@ -3063,14 +3118,15 @@ export const Reports: React.FC = () => {
 
     void (async () => {
       try {
-        const [rankingRows, preventiveRows, budgetClosureRows, budgetVersionRows, budgetWorkflowRows, budgetApprovalRows, budgetPublicationRows] = await Promise.all([
+        const [rankingRows, preventiveRows, budgetClosureRows, budgetVersionRows, budgetWorkflowRows, budgetApprovalRows, budgetPublicationRows, budgetPublicationReceiptRows] = await Promise.all([
           loadExecutiveGlobalRankingSnapshots({ companyId, limit: 200 }),
           loadExecutiveGlobalPreventiveSnapshots({ companyId, limit: 200 }),
           loadExecutiveBudgetClosureSnapshots({ companyId, limit: 200 }),
           loadExecutiveBudgetPlanVersions({ companyId, limit: 200 }),
           loadExecutiveBudgetPlanWorkflowEvents({ companyId, limit: 200 }),
           loadExecutiveBudgetPlanApprovalSteps({ companyId, limit: 400 }),
-          loadExecutiveBudgetPlanPublicationEvents({ companyId, limit: 300 })
+          loadExecutiveBudgetPlanPublicationEvents({ companyId, limit: 300 }),
+          loadExecutiveBudgetPlanPublicationReceipts({ companyId, limit: 400 })
         ]);
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalRankingSnapshots(rankingRows || []);
@@ -3080,6 +3136,7 @@ export const Reports: React.FC = () => {
         setExecutiveBudgetPlanWorkflowEvents(budgetWorkflowRows || []);
         setExecutiveBudgetPlanApprovalSteps(budgetApprovalRows || []);
         setExecutiveBudgetPlanPublicationEvents(budgetPublicationRows || []);
+        setExecutiveBudgetPlanPublicationReceipts(budgetPublicationReceiptRows || []);
       } catch {
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalRankingSnapshots([]);
@@ -3089,6 +3146,7 @@ export const Reports: React.FC = () => {
         setExecutiveBudgetPlanWorkflowEvents([]);
         setExecutiveBudgetPlanApprovalSteps([]);
         setExecutiveBudgetPlanPublicationEvents([]);
+        setExecutiveBudgetPlanPublicationReceipts([]);
       }
     })();
 
@@ -5721,11 +5779,12 @@ export const Reports: React.FC = () => {
   const executiveBudgetPlanPublicationData = useMemo(
     () => buildExecutiveBudgetPlanPublicationAnalytics({
       rows: executiveBudgetPlanPublicationEvents,
+      receipts: executiveBudgetPlanPublicationReceipts,
       currentVersion: executiveCurrentBudgetPlanVersion,
       scopeLabel: 'la empresa activa',
       approvalReady: executiveBudgetPublicationApprovalReady
     }),
-    [executiveBudgetPlanPublicationEvents, executiveCurrentBudgetPlanVersion, executiveBudgetPublicationApprovalReady]
+    [executiveBudgetPlanPublicationEvents, executiveBudgetPlanPublicationReceipts, executiveCurrentBudgetPlanVersion, executiveBudgetPublicationApprovalReady]
   );
   const executiveExportWarningContext = useMemo(() => {
     const warningTypes: string[] = [];
@@ -6443,6 +6502,8 @@ export const Reports: React.FC = () => {
 
     setSubmittingExecutiveBudgetPublication(true);
     try {
+      const documentRef = executiveBudgetPublicationDocumentRef.trim();
+      const documentHash = executiveBudgetPublicationDocumentHash.trim();
       await createExecutiveBudgetPlanPublicationEvent({
         companyId: selectedCompany.id,
         versionId: executiveCurrentBudgetPlanVersion.id,
@@ -6453,6 +6514,8 @@ export const Reports: React.FC = () => {
         responsibleRole,
         recipientLabel: actionType === 'publicada_externa' ? recipientLabel : null,
         publicationChannel: actionType === 'publicada_externa' ? executiveBudgetPublicationChannel : null,
+        documentRef: documentRef || null,
+        documentHash: documentHash || null,
         reason,
         notes: notes || null,
         metadata: {
@@ -6463,7 +6526,9 @@ export const Reports: React.FC = () => {
           approval_summary: executiveBudgetPlanApprovalData.summaryLine,
           signed_current_version: Boolean(executiveBudgetPlanPublicationData.currentVersionSignoff),
           publication_channel: actionType === 'publicada_externa' ? executiveBudgetPublicationChannel : null,
-          recipient_label: actionType === 'publicada_externa' ? recipientLabel : null
+          recipient_label: actionType === 'publicada_externa' ? recipientLabel : null,
+          document_ref: documentRef || null,
+          document_hash: documentHash || null
         }
       });
 
@@ -6471,6 +6536,10 @@ export const Reports: React.FC = () => {
       setExecutiveBudgetPlanPublicationEvents(rows || []);
       setExecutiveBudgetPublicationReason('');
       setExecutiveBudgetPublicationNotes('');
+      if (actionType === 'firmada') {
+        setExecutiveBudgetPublicationDocumentRef('');
+        setExecutiveBudgetPublicationDocumentHash('');
+      }
       if (actionType === 'publicada_externa') {
         setExecutiveBudgetPublicationRecipient('');
       }
@@ -6491,6 +6560,8 @@ export const Reports: React.FC = () => {
     executiveBudgetPlanPublicationData.currentVersionSignoff,
     executiveBudgetPublicationApprovalReady,
     executiveBudgetPublicationChannel,
+    executiveBudgetPublicationDocumentHash,
+    executiveBudgetPublicationDocumentRef,
     executiveBudgetPublicationNotes,
     executiveBudgetPublicationReason,
     executiveBudgetPublicationRecipient,
@@ -6499,6 +6570,83 @@ export const Reports: React.FC = () => {
     executiveCompanyBudgetGovernanceData.budgetStatus,
     executiveCurrentBudgetPlanVersion,
     executiveTotalDataClosure.readiness.title,
+    selectedCompany?.id,
+    selectedSeason
+  ]);
+  const handleExecutiveBudgetPublicationReceipt = useCallback(async () => {
+    if (!selectedCompany?.id) {
+      toast.error('No hay empresa activa para registrar el acuse o lectura del presupuesto.');
+      return;
+    }
+
+    if (!executiveCurrentBudgetPlanVersion) {
+      toast.error('Aún no existe una versión presupuestaria vigente para esta temporada.');
+      return;
+    }
+
+    if (!executiveBudgetPlanPublicationData.currentVersionExternalPublication) {
+      toast.error('Debes registrar una publicación externa antes de capturar acuses o lecturas.');
+      return;
+    }
+
+    const responsibleLabel = executiveBudgetPublicationReceiptResponsible.trim();
+    const recipientLabel = executiveBudgetPublicationReceiptRecipient.trim();
+    const notes = executiveBudgetPublicationReceiptNotes.trim();
+
+    if (!responsibleLabel) {
+      toast.error('Debes indicar quién registra el acuse/lectura.');
+      return;
+    }
+
+    if (!recipientLabel) {
+      toast.error('Debes indicar el destinatario que acusa o lee.');
+      return;
+    }
+
+    setSubmittingExecutiveBudgetPublicationReceipt(true);
+    try {
+      await createExecutiveBudgetPlanPublicationReceipt({
+        companyId: selectedCompany.id,
+        publicationEventId: executiveBudgetPlanPublicationData.currentVersionExternalPublication.id,
+        versionId: executiveCurrentBudgetPlanVersion.id,
+        season: selectedSeason,
+        receiptType: executiveBudgetPublicationReceiptType,
+        recipientLabel,
+        responsibleLabel,
+        responsibleRole: executiveBudgetPublicationReceiptRole,
+        notes: notes || null,
+        metadata: {
+          company_name: companyName,
+          receipt_type: executiveBudgetPublicationReceiptType,
+          publication_recipient: executiveBudgetPlanPublicationData.currentVersionExternalPublication.recipient_label,
+          publication_channel: executiveBudgetPlanPublicationData.currentVersionExternalPublication.publication_channel,
+          document_ref: executiveBudgetPlanPublicationData.currentVersionExternalPublication.document_ref,
+          document_hash: executiveBudgetPlanPublicationData.currentVersionExternalPublication.document_hash
+        }
+      });
+
+      const rows = await loadExecutiveBudgetPlanPublicationReceipts({ companyId: selectedCompany.id, limit: 400 });
+      setExecutiveBudgetPlanPublicationReceipts(rows || []);
+      setExecutiveBudgetPublicationReceiptNotes('');
+      toast.success(executiveBudgetPublicationReceiptType === 'acuse' ? 'Se registró el acuse de recibo.' : 'Se registró la evidencia de lectura.');
+    } catch (error: any) {
+      toast.error(`No se pudo registrar el acuse/lectura: ${error?.message || 'intenta nuevamente.'}`);
+    } finally {
+      setSubmittingExecutiveBudgetPublicationReceipt(false);
+    }
+  }, [
+    companyName,
+    executiveBudgetPlanPublicationData.currentVersionExternalPublication,
+    executiveBudgetPlanPublicationData.currentVersionExternalPublication?.document_hash,
+    executiveBudgetPlanPublicationData.currentVersionExternalPublication?.document_ref,
+    executiveBudgetPlanPublicationData.currentVersionExternalPublication?.publication_channel,
+    executiveBudgetPlanPublicationData.currentVersionExternalPublication?.recipient_label,
+    executiveBudgetPublicationReceiptNotes,
+    executiveBudgetPublicationReceiptRecipient,
+    executiveBudgetPublicationReceiptResponsible,
+    executiveBudgetPublicationReceiptRole,
+    executiveBudgetPublicationReceiptType,
+    executiveCurrentBudgetPlanVersion,
     selectedCompany?.id,
     selectedSeason
   ]);
@@ -6808,6 +6956,12 @@ export const Reports: React.FC = () => {
         { Indicador: 'Última firma', Valor: executiveBudgetPlanPublicationData.latestSignoff ? executiveBudgetPlanPublicationData.latestSignoff.responsible_label : 'Sin firma' },
         { Indicador: 'Última publicación externa', Valor: executiveBudgetPlanPublicationData.latestExternalPublication ? executiveBudgetPlanPublicationData.latestExternalPublication.recipient_label || 'Sin destinatario' : 'Sin publicación' },
         { Indicador: 'Canal dominante publicación', Valor: executiveBudgetPlanPublicationData.topChannel ? formatExecutiveBudgetPublicationChannel(executiveBudgetPlanPublicationData.topChannel.channel) : 'Sin canal' },
+        { Indicador: 'Documento ref', Valor: executiveBudgetPlanPublicationData.currentVersionSignoff?.document_ref || executiveBudgetPlanPublicationData.currentVersionExternalPublication?.document_ref || 'Sin referencia' },
+        { Indicador: 'Documento hash', Valor: executiveBudgetPlanPublicationData.currentVersionSignoff?.document_hash || executiveBudgetPlanPublicationData.currentVersionExternalPublication?.document_hash || 'Sin hash' },
+        { Indicador: 'Acuses', Valor: executiveBudgetPlanPublicationData.receiptSummary.find((row) => row.receiptType === 'acuse')?.count || 0 },
+        { Indicador: 'Lecturas', Valor: executiveBudgetPlanPublicationData.receiptSummary.find((row) => row.receiptType === 'lectura')?.count || 0 },
+        { Indicador: 'Último acuse', Valor: executiveBudgetPlanPublicationData.latestAcuse ? executiveBudgetPlanPublicationData.latestAcuse.recipient_label : 'Sin acuse' },
+        { Indicador: 'Última lectura', Valor: executiveBudgetPlanPublicationData.latestRead ? executiveBudgetPlanPublicationData.latestRead.recipient_label : 'Sin lectura' },
         { Indicador: 'Resumen firma/publicación', Valor: executiveBudgetPlanPublicationData.summaryLine },
         { Indicador: 'Costo por ha', Valor: Number((executiveViewData.kpis.averageCostPerHa || 0).toFixed(2)) },
         { Indicador: 'Costo por kg', Valor: Number((executiveViewData.kpis.averageCostPerKg || 0).toFixed(2)) },
@@ -8546,6 +8700,12 @@ export const Reports: React.FC = () => {
             ['Última publicación externa', executiveBudgetPlanPublicationData.latestExternalPublication ? `${executiveBudgetPlanPublicationData.latestExternalPublication.recipient_label || 'Sin destinatario'} · ${formatExecutiveBudgetPublicationChannel(executiveBudgetPlanPublicationData.latestExternalPublication.publication_channel)}` : 'Sin publicación'],
             ['Canal dominante', executiveBudgetPlanPublicationData.topChannel ? formatExecutiveBudgetPublicationChannel(executiveBudgetPlanPublicationData.topChannel.channel) : 'Sin canal'],
             ['Destinatario dominante', executiveBudgetPlanPublicationData.topRecipient?.recipient || 'Sin destinatario'],
+            ['Documento ref', executiveBudgetPlanPublicationData.currentVersionSignoff?.document_ref || executiveBudgetPlanPublicationData.currentVersionExternalPublication?.document_ref || 'Sin referencia'],
+            ['Documento hash', executiveBudgetPlanPublicationData.currentVersionSignoff?.document_hash || executiveBudgetPlanPublicationData.currentVersionExternalPublication?.document_hash || 'Sin hash'],
+            ['Acuses', String(executiveBudgetPlanPublicationData.receiptSummary.find((row) => row.receiptType === 'acuse')?.count || 0)],
+            ['Lecturas', String(executiveBudgetPlanPublicationData.receiptSummary.find((row) => row.receiptType === 'lectura')?.count || 0)],
+            ['Último acuse', executiveBudgetPlanPublicationData.latestAcuse ? `${executiveBudgetPlanPublicationData.latestAcuse.recipient_label} · ${new Date(executiveBudgetPlanPublicationData.latestAcuse.received_at).toLocaleString('es-CL')}` : 'Sin acuse'],
+            ['Última lectura', executiveBudgetPlanPublicationData.latestRead ? `${executiveBudgetPlanPublicationData.latestRead.recipient_label} · ${new Date(executiveBudgetPlanPublicationData.latestRead.received_at).toLocaleString('es-CL')}` : 'Sin lectura'],
             ['Versión firmada actual', executiveBudgetPlanPublicationData.currentVersionSignoff ? 'Sí' : 'No'],
             ['Versión publicada externamente', executiveBudgetPlanPublicationData.currentVersionExternalPublication ? 'Sí' : 'No']
           ],
@@ -12170,6 +12330,28 @@ export const Reports: React.FC = () => {
                             </select>
                           </label>
                         </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <label className="block text-sm">
+                            <span className="mb-1 block font-medium text-slate-700">Referencia documento</span>
+                            <input
+                              type="text"
+                              value={executiveBudgetPublicationDocumentRef}
+                              onChange={(e) => setExecutiveBudgetPublicationDocumentRef(e.target.value)}
+                              placeholder="Ej: Presupuesto_2026_T1_v3.pdf"
+                              className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                            />
+                          </label>
+                          <label className="block text-sm">
+                            <span className="mb-1 block font-medium text-slate-700">Hash documento</span>
+                            <input
+                              type="text"
+                              value={executiveBudgetPublicationDocumentHash}
+                              onChange={(e) => setExecutiveBudgetPublicationDocumentHash(e.target.value)}
+                              placeholder="Ej: sha256:..."
+                              className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                            />
+                          </label>
+                        </div>
                         <label className="block text-sm">
                           <span className="mb-1 block font-medium text-slate-700">Motivo o contexto</span>
                           <textarea
@@ -12233,6 +12415,121 @@ export const Reports: React.FC = () => {
                               ? `${executiveBudgetPlanPublicationData.latestExternalPublication.recipient_label || 'Sin destinatario'} · ${formatExecutiveBudgetPublicationChannel(executiveBudgetPlanPublicationData.latestExternalPublication.publication_channel)}`
                               : 'sin circulación externa visible'}.
                           </p>
+                          <p className="mt-2">
+                            Documento firmado: {executiveBudgetPlanPublicationData.currentVersionSignoff?.document_ref || executiveBudgetPlanPublicationData.currentVersionExternalPublication?.document_ref || 'sin referencia'}
+                            {' · '}
+                            {executiveBudgetPlanPublicationData.currentVersionSignoff?.document_hash || executiveBudgetPlanPublicationData.currentVersionExternalPublication?.document_hash || 'sin hash'}.
+                          </p>
+                          <p className="mt-2">
+                            Último acuse: {executiveBudgetPlanPublicationData.latestAcuse
+                              ? `${executiveBudgetPlanPublicationData.latestAcuse.recipient_label} · ${new Date(executiveBudgetPlanPublicationData.latestAcuse.received_at).toLocaleString('es-CL')}`
+                              : 'sin acuse visible'}.
+                          </p>
+                          <p className="mt-2">
+                            Última lectura: {executiveBudgetPlanPublicationData.latestRead
+                              ? `${executiveBudgetPlanPublicationData.latestRead.recipient_label} · ${new Date(executiveBudgetPlanPublicationData.latestRead.received_at).toLocaleString('es-CL')}`
+                              : 'sin lectura visible'}.
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 p-4 space-y-4">
+                          <div>
+                            <div className="text-sm font-medium text-slate-900">Registrar acuse / lectura</div>
+                            <p className="mt-1 text-sm text-slate-500">Disponible solo cuando la versión vigente ya tiene publicación externa registrada.</p>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <label className="block text-sm">
+                              <span className="mb-1 block font-medium text-slate-700">Responsable</span>
+                              <input
+                                type="text"
+                                value={executiveBudgetPublicationReceiptResponsible}
+                                onChange={(e) => setExecutiveBudgetPublicationReceiptResponsible(e.target.value)}
+                                placeholder="Ej: Control de gestión"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                              />
+                            </label>
+                            <label className="block text-sm">
+                              <span className="mb-1 block font-medium text-slate-700">Rol</span>
+                              <select
+                                value={executiveBudgetPublicationReceiptRole}
+                                onChange={(e) => setExecutiveBudgetPublicationReceiptRole(e.target.value as ExecutiveBudgetPlanApprovalRole)}
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                              >
+                                {EXECUTIVE_BUDGET_WORKFLOW_ROLE_OPTIONS.map((option) => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="block text-sm">
+                              <span className="mb-1 block font-medium text-slate-700">Tipo</span>
+                              <select
+                                value={executiveBudgetPublicationReceiptType}
+                                onChange={(e) => setExecutiveBudgetPublicationReceiptType(e.target.value as ExecutiveBudgetPlanPublicationReceiptType)}
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                              >
+                                <option value="acuse">Acuse</option>
+                                <option value="lectura">Lectura</option>
+                              </select>
+                            </label>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <label className="block text-sm">
+                              <span className="mb-1 block font-medium text-slate-700">Destinatario</span>
+                              <input
+                                type="text"
+                                value={executiveBudgetPublicationReceiptRecipient}
+                                onChange={(e) => setExecutiveBudgetPublicationReceiptRecipient(e.target.value)}
+                                placeholder="Ej: Directorio agrícola"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                              />
+                            </label>
+                            <label className="block text-sm">
+                              <span className="mb-1 block font-medium text-slate-700">Notas</span>
+                              <input
+                                type="text"
+                                value={executiveBudgetPublicationReceiptNotes}
+                                onChange={(e) => setExecutiveBudgetPublicationReceiptNotes(e.target.value)}
+                                placeholder="Ej: confirmación por correo"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                              />
+                            </label>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={submittingExecutiveBudgetPublicationReceipt || !executiveBudgetPlanPublicationData.canRegisterReceipt}
+                            onClick={() => void handleExecutiveBudgetPublicationReceipt()}
+                            className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-medium text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Registrar acuse/lectura
+                          </button>
+                          <div className="overflow-x-auto rounded-xl border border-slate-200">
+                            <table className="min-w-full divide-y divide-slate-200 text-sm">
+                              <thead className="bg-slate-50">
+                                <tr>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Tipo</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Destinatario</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Responsable</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200 bg-white">
+                                {executiveBudgetPlanPublicationData.recentReceiptRows.slice(0, 6).map((row) => (
+                                  <tr key={row.id} className={row.season === selectedSeason ? 'bg-indigo-50/40' : ''}>
+                                    <td className="px-4 py-3 text-slate-700">{new Date(row.received_at).toLocaleString('es-CL')}</td>
+                                    <td className="px-4 py-3 text-slate-700">{row.receipt_type === 'acuse' ? 'Acuse' : 'Lectura'}</td>
+                                    <td className="px-4 py-3 text-slate-700">{row.recipient_label}</td>
+                                    <td className="px-4 py-3 text-slate-700">{row.responsible_label}</td>
+                                  </tr>
+                                ))}
+                                {executiveBudgetPlanPublicationData.recentReceiptRows.length === 0 && (
+                                  <tr>
+                                    <td colSpan={4} className="px-4 py-4 text-center text-sm text-slate-500">
+                                      Sin acuses ni lecturas visibles todavía.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                         <div className="overflow-x-auto rounded-xl border border-slate-200">
                           <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -19097,6 +19394,21 @@ export const Reports: React.FC = () => {
                                   Última publicación externa: {executiveBudgetPlanPublicationData.latestExternalPublication
                                     ? `${executiveBudgetPlanPublicationData.latestExternalPublication.recipient_label || 'Sin destinatario'} · ${formatExecutiveBudgetPublicationChannel(executiveBudgetPlanPublicationData.latestExternalPublication.publication_channel)}`
                                     : 'sin circulación externa visible'}.
+                                </p>
+                                <p className="mt-5 text-lg text-slate-500">
+                                  Documento firmado: {executiveBudgetPlanPublicationData.currentVersionSignoff?.document_ref || executiveBudgetPlanPublicationData.currentVersionExternalPublication?.document_ref || 'sin referencia'}
+                                  {' · '}
+                                  {executiveBudgetPlanPublicationData.currentVersionSignoff?.document_hash || executiveBudgetPlanPublicationData.currentVersionExternalPublication?.document_hash || 'sin hash'}.
+                                </p>
+                                <p className="mt-5 text-lg text-slate-500">
+                                  Último acuse: {executiveBudgetPlanPublicationData.latestAcuse
+                                    ? `${executiveBudgetPlanPublicationData.latestAcuse.recipient_label} · ${new Date(executiveBudgetPlanPublicationData.latestAcuse.received_at).toLocaleString('es-CL')}`
+                                    : 'sin acuse visible'}.
+                                </p>
+                                <p className="mt-5 text-lg text-slate-500">
+                                  Última lectura: {executiveBudgetPlanPublicationData.latestRead
+                                    ? `${executiveBudgetPlanPublicationData.latestRead.recipient_label} · ${new Date(executiveBudgetPlanPublicationData.latestRead.received_at).toLocaleString('es-CL')}`
+                                    : 'sin lectura visible'}.
                                 </p>
                                 <p className="mt-5 text-lg text-slate-500">
                                   Destinatario dominante: {executiveBudgetPlanPublicationData.topRecipient?.recipient || 'sin destinatario dominante'}.
