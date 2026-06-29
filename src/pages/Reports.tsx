@@ -79,6 +79,18 @@ import {
   type ExecutiveBudgetPlanPublicationReceiptRow,
   type ExecutiveBudgetPlanPublicationReceiptType
 } from '../services/executiveBudgetPlanPublications';
+import {
+  createExecutiveBudgetPlanPublicationDivergence,
+  loadExecutiveBudgetPlanPublicationDivergences,
+  type ExecutiveBudgetPlanPublicationDivergenceRow,
+  type ExecutiveBudgetPlanPublicationDivergenceStatus
+} from '../services/executiveBudgetPlanPublicationDivergences';
+import {
+  createExecutiveBudgetPlanVerificationFolio,
+  loadExecutiveBudgetPlanVerificationFolios,
+  type ExecutiveBudgetPlanVerificationFolioRow,
+  type ExecutiveBudgetPlanVerificationFolioStatus
+} from '../services/executiveBudgetPlanVerificationFolios';
 import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
 interface ReportData {
@@ -1618,6 +1630,65 @@ const formatExecutiveBudgetPublicationChannel = (value: string | null | undefine
   }
 };
 
+const formatExecutiveBudgetPublicationDivergenceStatus = (value: string | null | undefined) => {
+  switch (value) {
+    case 'alineado':
+      return 'Alineado';
+    case 'documento_faltante':
+      return 'Documento faltante';
+    case 'referencia_distinta':
+      return 'Referencia distinta';
+    case 'hash_distinto':
+      return 'Hash distinto';
+    case 'hash_y_referencia_distintos':
+      return 'Hash y referencia distintos';
+    default:
+      return 'Sin estado';
+  }
+};
+
+const getExecutiveBudgetPublicationDivergenceTone = (value: string | null | undefined) => {
+  switch (value) {
+    case 'alineado':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    case 'documento_faltante':
+      return 'border-slate-200 bg-slate-50 text-slate-700';
+    case 'referencia_distinta':
+      return 'border-amber-200 bg-amber-50 text-amber-700';
+    case 'hash_distinto':
+    case 'hash_y_referencia_distintos':
+      return 'border-red-200 bg-red-50 text-red-700';
+    default:
+      return 'border-slate-200 bg-slate-50 text-slate-700';
+  }
+};
+
+const formatExecutiveBudgetVerificationFolioStatus = (value: string | null | undefined) => {
+  switch (value) {
+    case 'emitido':
+      return 'Emitido';
+    case 'publicado':
+      return 'Publicado';
+    case 'acusado':
+      return 'Publicado y acusado';
+    default:
+      return 'Sin estado';
+  }
+};
+
+const getExecutiveBudgetVerificationFolioTone = (value: string | null | undefined) => {
+  switch (value) {
+    case 'emitido':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    case 'publicado':
+      return 'border-blue-200 bg-blue-50 text-blue-700';
+    case 'acusado':
+      return 'border-indigo-200 bg-indigo-50 text-indigo-700';
+    default:
+      return 'border-slate-200 bg-slate-50 text-slate-700';
+  }
+};
+
 const formatExecutiveBudgetApprovalStatus = (value: string | null | undefined) => {
   switch (value) {
     case 'aprobada':
@@ -1926,6 +1997,8 @@ const buildExecutiveBudgetPlanApprovalAnalytics = (params: {
 const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
   rows: ExecutiveBudgetPlanPublicationEventRow[];
   receipts: ExecutiveBudgetPlanPublicationReceiptRow[];
+  divergences: ExecutiveBudgetPlanPublicationDivergenceRow[];
+  folios: ExecutiveBudgetPlanVerificationFolioRow[];
   currentVersion: ExecutiveBudgetPlanVersionRow | null;
   scopeLabel: string;
   approvalReady: boolean;
@@ -1935,6 +2008,12 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
     : [];
   const currentVersionReceiptRows = params.currentVersion
     ? params.receipts.filter((row) => row.version_id === params.currentVersion?.id)
+    : [];
+  const currentVersionDivergenceRows = params.currentVersion
+    ? params.divergences.filter((row) => row.version_id === params.currentVersion?.id)
+    : [];
+  const currentVersionFolioRows = params.currentVersion
+    ? params.folios.filter((row) => row.version_id === params.currentVersion?.id)
     : [];
   const actionSummary = Array.from(
     params.rows.reduce((map, row) => {
@@ -1983,6 +2062,10 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
   const currentVersionRead = currentVersionReceiptRows.find((row) => row.receipt_type === 'lectura') || null;
   const latestAcuse = params.receipts.find((row) => row.receipt_type === 'acuse') || null;
   const latestRead = params.receipts.find((row) => row.receipt_type === 'lectura') || null;
+  const latestDivergence = params.divergences[0] || null;
+  const currentVersionDivergence = currentVersionDivergenceRows[0] || null;
+  const latestFolio = params.folios[0] || null;
+  const currentVersionFolio = currentVersionFolioRows[0] || null;
   const receiptSummary = Array.from(
     params.receipts.reduce((map, row) => {
       map.set(row.receipt_type, (map.get(row.receipt_type) || 0) + 1);
@@ -1996,6 +2079,18 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
       return map;
     }, new Map<string, number>())
   ).map(([recipient, count]) => ({ recipient, count })).sort((a, b) => b.count - a.count);
+  const divergenceSummary = Array.from(
+    params.divergences.reduce((map, row) => {
+      map.set(row.divergence_status, (map.get(row.divergence_status) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count);
+  const folioStatusSummary = Array.from(
+    params.folios.reduce((map, row) => {
+      map.set(row.folio_status, (map.get(row.folio_status) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count);
   const summaryLine = !params.currentVersion
     ? `No hay versión vigente para firmar o publicar externamente en ${params.scopeLabel}.`
     : currentVersionExternalPublication
@@ -2005,48 +2100,88 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
         : params.approvalReady
           ? `La versión vigente de ${params.scopeLabel} ya cumple condiciones para firma ejecutiva.`
           : `La versión vigente de ${params.scopeLabel} todavía no completa las condiciones para firma o publicación externa.`;
-  const tone = currentVersionExternalPublication
-    ? { badge: 'bg-blue-100 text-blue-700 border-blue-200', label: 'Publicado externamente' }
+  const tone = currentVersionDivergence?.divergence_status && currentVersionDivergence.divergence_status !== 'alineado'
+    ? { badge: 'bg-red-100 text-red-700 border-red-200', label: 'Divergencia documental' }
+    : currentVersionExternalPublication
+      ? { badge: 'bg-blue-100 text-blue-700 border-blue-200', label: 'Publicado externamente' }
     : currentVersionSignoff
       ? { badge: 'bg-emerald-100 text-emerald-700 border-emerald-200', label: 'Firmado' }
       : params.approvalReady
         ? { badge: 'bg-amber-100 text-amber-700 border-amber-200', label: 'Listo para firma' }
         : { badge: 'bg-slate-100 text-slate-700 border-slate-200', label: 'Pendiente' };
+  const divergenceSummaryLine = !params.currentVersion
+    ? `No hay versión vigente para auditar divergencias documentales en ${params.scopeLabel}.`
+    : !currentVersionSignoff || !currentVersionExternalPublication
+      ? `La auditoría documental de ${params.scopeLabel} requiere una firma y una publicación externa visibles sobre la misma versión.`
+      : currentVersionDivergence?.divergence_status === 'alineado'
+        ? `La firma y la publicación externa de ${params.scopeLabel} aparecen alineadas documentalmente.`
+        : currentVersionDivergence
+          ? `La auditoría documental de ${params.scopeLabel} detecta ${formatExecutiveBudgetPublicationDivergenceStatus(currentVersionDivergence.divergence_status).toLowerCase()}.`
+          : `La auditoría documental de ${params.scopeLabel} aún no tiene una evidencia persistida para la versión vigente.`;
+  const folioSummaryLine = !params.currentVersion
+    ? `No hay versión vigente para emitir un folio verificable en ${params.scopeLabel}.`
+    : !currentVersionSignoff
+      ? `El folio verificable de ${params.scopeLabel} se emite cuando la versión vigente ya cuenta con firma ejecutiva visible.`
+      : currentVersionFolio?.folio_status === 'acusado'
+        ? `La versión vigente de ${params.scopeLabel} ya tiene el folio ${currentVersionFolio.folio_code} con publicación y acuse visible.`
+        : currentVersionFolio?.folio_status === 'publicado'
+          ? `La versión vigente de ${params.scopeLabel} ya tiene el folio ${currentVersionFolio.folio_code} asociado a una publicación externa visible.`
+          : currentVersionFolio
+            ? `La versión vigente de ${params.scopeLabel} ya tiene el folio ${currentVersionFolio.folio_code} emitido para verificación documental.`
+            : `La versión vigente de ${params.scopeLabel} aún no tiene un folio verificable persistido.`;
 
   return {
     rows: params.rows,
     receipts: params.receipts,
+    divergences: params.divergences,
+    folios: params.folios,
     currentVersionRows,
     currentVersionReceiptRows,
+    currentVersionDivergenceRows,
+    currentVersionFolioRows,
     latestEvent,
     latestCurrentVersionEvent,
     latestSignoff,
     latestExternalPublication,
     latestAcuse,
     latestRead,
+    latestDivergence,
+    latestFolio,
     currentVersionSignoff,
     currentVersionExternalPublication,
     currentVersionAcuse,
     currentVersionRead,
+    currentVersionDivergence,
+    currentVersionFolio,
     recentRows: params.rows.slice(0, 12),
     recentReceiptRows: params.receipts.slice(0, 12),
+    recentDivergenceRows: params.divergences.slice(0, 12),
+    recentFolioRows: params.folios.slice(0, 12),
     actionSummary,
     channelSummary,
     recipientSummary,
     receiptSummary,
     recipientReceiptSummary,
+    divergenceSummary,
+    folioStatusSummary,
     topAction: actionSummary[0] || null,
     topChannel: channelSummary[0] || null,
     topRecipient: recipientSummary[0] || null,
     topReceipt: receiptSummary[0] || null,
     topReceiptRecipient: recipientReceiptSummary[0] || null,
+    topDivergence: divergenceSummary[0] || null,
+    topFolioStatus: folioStatusSummary[0] || null,
     totalEvents: params.rows.length,
     totalReceipts: params.receipts.length,
+    totalDivergences: params.divergences.length,
+    totalFolios: params.folios.length,
     tone,
     canSign: params.approvalReady && !currentVersionSignoff,
     canPublishExternally: Boolean(params.approvalReady && currentVersionSignoff),
     canRegisterReceipt: Boolean(currentVersionExternalPublication),
-    summaryLine
+    summaryLine,
+    divergenceSummaryLine,
+    folioSummaryLine
   };
 };
 
@@ -2820,6 +2955,8 @@ export const Reports: React.FC = () => {
   const [executiveBudgetPlanApprovalSteps, setExecutiveBudgetPlanApprovalSteps] = useState<ExecutiveBudgetPlanApprovalStepRow[]>([]);
   const [executiveBudgetPlanPublicationEvents, setExecutiveBudgetPlanPublicationEvents] = useState<ExecutiveBudgetPlanPublicationEventRow[]>([]);
   const [executiveBudgetPlanPublicationReceipts, setExecutiveBudgetPlanPublicationReceipts] = useState<ExecutiveBudgetPlanPublicationReceiptRow[]>([]);
+  const [executiveBudgetPlanPublicationDivergences, setExecutiveBudgetPlanPublicationDivergences] = useState<ExecutiveBudgetPlanPublicationDivergenceRow[]>([]);
+  const [executiveBudgetPlanVerificationFolios, setExecutiveBudgetPlanVerificationFolios] = useState<ExecutiveBudgetPlanVerificationFolioRow[]>([]);
   const [executiveGlobalAlertLoading, setExecutiveGlobalAlertLoading] = useState(false);
   const [costAuditLoading, setCostAuditLoading] = useState(false);
   const [showProductionModal, setShowProductionModal] = useState(false);
@@ -2914,6 +3051,8 @@ export const Reports: React.FC = () => {
   const executiveBudgetClosureSnapshotLogRef = useRef<string>('');
   const executiveBudgetPlanVersionLogRef = useRef<string>('');
   const executiveBudgetPlanApprovalSyncRef = useRef<string>('');
+  const executiveBudgetPlanPublicationDivergenceLogRef = useRef<string>('');
+  const executiveBudgetPlanVerificationFolioLogRef = useRef<string>('');
 
   // Update orientation when tab changes
   useEffect(() => {
@@ -3010,6 +3149,8 @@ export const Reports: React.FC = () => {
     executiveBudgetClosureSnapshotLogRef.current = '';
     executiveBudgetPlanVersionLogRef.current = '';
     executiveBudgetPlanApprovalSyncRef.current = '';
+    executiveBudgetPlanPublicationDivergenceLogRef.current = '';
+    executiveBudgetPlanVerificationFolioLogRef.current = '';
     setRawCostMovements([]);
     setRawMarginRows([]);
     setRawProductionRecords([]);
@@ -3029,6 +3170,8 @@ export const Reports: React.FC = () => {
     setExecutiveBudgetPlanApprovalSteps([]);
     setExecutiveBudgetPlanPublicationEvents([]);
     setExecutiveBudgetPlanPublicationReceipts([]);
+    setExecutiveBudgetPlanPublicationDivergences([]);
+    setExecutiveBudgetPlanVerificationFolios([]);
     setExecutiveBudgetWorkflowResponsible('');
     setExecutiveBudgetWorkflowRole('gerencia_agricola');
     setExecutiveBudgetWorkflowReason('');
@@ -3118,7 +3261,7 @@ export const Reports: React.FC = () => {
 
     void (async () => {
       try {
-        const [rankingRows, preventiveRows, budgetClosureRows, budgetVersionRows, budgetWorkflowRows, budgetApprovalRows, budgetPublicationRows, budgetPublicationReceiptRows] = await Promise.all([
+        const [rankingRows, preventiveRows, budgetClosureRows, budgetVersionRows, budgetWorkflowRows, budgetApprovalRows, budgetPublicationRows, budgetPublicationReceiptRows, budgetPublicationDivergenceRows, budgetVerificationFolioRows] = await Promise.all([
           loadExecutiveGlobalRankingSnapshots({ companyId, limit: 200 }),
           loadExecutiveGlobalPreventiveSnapshots({ companyId, limit: 200 }),
           loadExecutiveBudgetClosureSnapshots({ companyId, limit: 200 }),
@@ -3126,7 +3269,9 @@ export const Reports: React.FC = () => {
           loadExecutiveBudgetPlanWorkflowEvents({ companyId, limit: 200 }),
           loadExecutiveBudgetPlanApprovalSteps({ companyId, limit: 400 }),
           loadExecutiveBudgetPlanPublicationEvents({ companyId, limit: 300 }),
-          loadExecutiveBudgetPlanPublicationReceipts({ companyId, limit: 400 })
+          loadExecutiveBudgetPlanPublicationReceipts({ companyId, limit: 400 }),
+          loadExecutiveBudgetPlanPublicationDivergences({ companyId, limit: 300 }),
+          loadExecutiveBudgetPlanVerificationFolios({ companyId, limit: 300 })
         ]);
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalRankingSnapshots(rankingRows || []);
@@ -3137,6 +3282,8 @@ export const Reports: React.FC = () => {
         setExecutiveBudgetPlanApprovalSteps(budgetApprovalRows || []);
         setExecutiveBudgetPlanPublicationEvents(budgetPublicationRows || []);
         setExecutiveBudgetPlanPublicationReceipts(budgetPublicationReceiptRows || []);
+        setExecutiveBudgetPlanPublicationDivergences(budgetPublicationDivergenceRows || []);
+        setExecutiveBudgetPlanVerificationFolios(budgetVerificationFolioRows || []);
       } catch {
         if (cancelled || selectedCompany?.id !== companyId) return;
         setExecutiveGlobalRankingSnapshots([]);
@@ -3147,6 +3294,8 @@ export const Reports: React.FC = () => {
         setExecutiveBudgetPlanApprovalSteps([]);
         setExecutiveBudgetPlanPublicationEvents([]);
         setExecutiveBudgetPlanPublicationReceipts([]);
+        setExecutiveBudgetPlanPublicationDivergences([]);
+        setExecutiveBudgetPlanVerificationFolios([]);
       }
     })();
 
@@ -5780,12 +5929,131 @@ export const Reports: React.FC = () => {
     () => buildExecutiveBudgetPlanPublicationAnalytics({
       rows: executiveBudgetPlanPublicationEvents,
       receipts: executiveBudgetPlanPublicationReceipts,
+      divergences: executiveBudgetPlanPublicationDivergences,
+      folios: executiveBudgetPlanVerificationFolios,
       currentVersion: executiveCurrentBudgetPlanVersion,
       scopeLabel: 'la empresa activa',
       approvalReady: executiveBudgetPublicationApprovalReady
     }),
-    [executiveBudgetPlanPublicationEvents, executiveBudgetPlanPublicationReceipts, executiveCurrentBudgetPlanVersion, executiveBudgetPublicationApprovalReady]
+    [executiveBudgetPlanPublicationEvents, executiveBudgetPlanPublicationReceipts, executiveBudgetPlanPublicationDivergences, executiveBudgetPlanVerificationFolios, executiveCurrentBudgetPlanVersion, executiveBudgetPublicationApprovalReady]
   );
+  const executiveBudgetPublicationDivergenceDraft = useMemo(() => {
+    const signoff = executiveBudgetPlanPublicationData.currentVersionSignoff;
+    const publication = executiveBudgetPlanPublicationData.currentVersionExternalPublication;
+    if (!signoff || !publication || !executiveCurrentBudgetPlanVersion) return null;
+
+    const signedRef = (signoff.document_ref || '').trim();
+    const signedHash = (signoff.document_hash || '').trim();
+    const publishedRef = (publication.document_ref || '').trim();
+    const publishedHash = (publication.document_hash || '').trim();
+
+    let divergenceStatus: ExecutiveBudgetPlanPublicationDivergenceStatus = 'alineado';
+    if (!signedRef || !signedHash || !publishedRef || !publishedHash) {
+      divergenceStatus = 'documento_faltante';
+    } else if (signedRef !== publishedRef && signedHash !== publishedHash) {
+      divergenceStatus = 'hash_y_referencia_distintos';
+    } else if (signedHash !== publishedHash) {
+      divergenceStatus = 'hash_distinto';
+    } else if (signedRef !== publishedRef) {
+      divergenceStatus = 'referencia_distinta';
+    }
+
+    const summary = divergenceStatus === 'alineado'
+      ? 'La referencia y el hash del documento firmado coinciden con la publicación externa.'
+      : divergenceStatus === 'documento_faltante'
+        ? 'La auditoría documental no puede cerrarse porque falta referencia o hash en la firma o en la publicación.'
+        : divergenceStatus === 'hash_y_referencia_distintos'
+          ? 'La publicación externa difiere del documento firmado tanto en referencia como en hash.'
+          : divergenceStatus === 'hash_distinto'
+            ? 'La publicación externa mantiene una diferencia de hash respecto del documento firmado.'
+            : 'La publicación externa mantiene una referencia distinta respecto del documento firmado.';
+
+    const signature = JSON.stringify({
+      versionId: executiveCurrentBudgetPlanVersion.id,
+      signoffEventId: signoff.id,
+      publicationEventId: publication.id,
+      divergenceStatus,
+      signedRef,
+      signedHash,
+      publishedRef,
+      publishedHash
+    });
+
+    return {
+      signature,
+      divergenceStatus,
+      summary,
+      signoff,
+      publication,
+      signedRef,
+      signedHash,
+      publishedRef,
+      publishedHash
+    };
+  }, [
+    executiveBudgetPlanPublicationData.currentVersionExternalPublication,
+    executiveBudgetPlanPublicationData.currentVersionSignoff,
+    executiveCurrentBudgetPlanVersion
+  ]);
+  const executiveBudgetVerificationFolioDraft = useMemo(() => {
+    const signoff = executiveBudgetPlanPublicationData.currentVersionSignoff;
+    if (!signoff || !executiveCurrentBudgetPlanVersion) return null;
+
+    const publication = executiveBudgetPlanPublicationData.currentVersionExternalPublication;
+    const receipt = executiveBudgetPlanPublicationData.currentVersionRead || executiveBudgetPlanPublicationData.currentVersionAcuse || null;
+    const documentRef = (signoff.document_ref || publication?.document_ref || '').trim();
+    const documentHash = (signoff.document_hash || publication?.document_hash || '').trim();
+    const folioStatus: ExecutiveBudgetPlanVerificationFolioStatus = receipt
+      ? 'acusado'
+      : publication
+        ? 'publicado'
+        : 'emitido';
+    const seasonCode = (executiveCurrentBudgetPlanVersion.season || selectedSeason || 'TEMP')
+      .replace(/[^0-9A-Za-z]/g, '')
+      .toUpperCase()
+      .slice(0, 8) || 'TEMP';
+    const versionCode = executiveCurrentBudgetPlanVersion.version_kind.toUpperCase().slice(0, 3);
+    const versionSeed = executiveCurrentBudgetPlanVersion.id.replace(/-/g, '').slice(0, 8).toUpperCase();
+    const signoffSeed = signoff.id.replace(/-/g, '').slice(0, 4).toUpperCase();
+    const publicationSeed = (publication?.id || executiveCurrentBudgetPlanVersion.id).replace(/-/g, '').slice(0, 4).toUpperCase();
+    const receiptSeed = (receipt?.id || executiveCurrentBudgetPlanVersion.id).replace(/-/g, '').slice(-4).toUpperCase();
+    const folioCode = `PRES-${seasonCode}-${versionCode}-${versionSeed}`;
+    const verificationCode = `VF-${signoffSeed}-${publicationSeed}-${receiptSeed}`;
+    const summary = folioStatus === 'acusado'
+      ? `El folio ${folioCode} respalda una versión firmada, publicada y con evidencia visible de recepción o lectura.`
+      : folioStatus === 'publicado'
+        ? `El folio ${folioCode} respalda una versión firmada y publicada externamente.`
+        : `El folio ${folioCode} respalda una versión firmada pendiente de circulación externa confirmada.`;
+    const signature = JSON.stringify({
+      versionId: executiveCurrentBudgetPlanVersion.id,
+      signoffEventId: signoff.id,
+      publicationEventId: publication?.id || null,
+      receiptId: receipt?.id || null,
+      folioStatus,
+      documentRef,
+      documentHash
+    });
+
+    return {
+      signature,
+      folioStatus,
+      folioCode,
+      verificationCode,
+      documentRef,
+      documentHash,
+      summary,
+      signoff,
+      publication,
+      receipt
+    };
+  }, [
+    executiveBudgetPlanPublicationData.currentVersionAcuse,
+    executiveBudgetPlanPublicationData.currentVersionExternalPublication,
+    executiveBudgetPlanPublicationData.currentVersionRead,
+    executiveBudgetPlanPublicationData.currentVersionSignoff,
+    executiveCurrentBudgetPlanVersion,
+    selectedSeason
+  ]);
   const executiveExportWarningContext = useMemo(() => {
     const warningTypes: string[] = [];
 
@@ -6319,6 +6587,105 @@ export const Reports: React.FC = () => {
   }, [
     companyName,
     executiveBudgetPlanApprovalData.currentVersionRows.length,
+    executiveCurrentBudgetPlanVersion,
+    selectedCompany?.id
+  ]);
+  useEffect(() => {
+    if (!selectedCompany?.id || !executiveCurrentBudgetPlanVersion || !executiveBudgetPublicationDivergenceDraft) return;
+
+    const currentLogged = executiveBudgetPlanPublicationDivergenceLogRef.current;
+    const latestPersistedSignature = executiveBudgetPlanPublicationData.currentVersionDivergence?.divergence_signature || '';
+    if (latestPersistedSignature === executiveBudgetPublicationDivergenceDraft.signature) {
+      executiveBudgetPlanPublicationDivergenceLogRef.current = executiveBudgetPublicationDivergenceDraft.signature;
+      return;
+    }
+    if (currentLogged === executiveBudgetPublicationDivergenceDraft.signature) return;
+
+    executiveBudgetPlanPublicationDivergenceLogRef.current = executiveBudgetPublicationDivergenceDraft.signature;
+    void (async () => {
+      try {
+        await createExecutiveBudgetPlanPublicationDivergence({
+          companyId: selectedCompany.id,
+          versionId: executiveCurrentBudgetPlanVersion.id,
+          signoffEventId: executiveBudgetPublicationDivergenceDraft.signoff.id,
+          publicationEventId: executiveBudgetPublicationDivergenceDraft.publication.id,
+          season: executiveCurrentBudgetPlanVersion.season,
+          divergenceSignature: executiveBudgetPublicationDivergenceDraft.signature,
+          divergenceStatus: executiveBudgetPublicationDivergenceDraft.divergenceStatus,
+          signedDocumentRef: executiveBudgetPublicationDivergenceDraft.signedRef || null,
+          signedDocumentHash: executiveBudgetPublicationDivergenceDraft.signedHash || null,
+          publishedDocumentRef: executiveBudgetPublicationDivergenceDraft.publishedRef || null,
+          publishedDocumentHash: executiveBudgetPublicationDivergenceDraft.publishedHash || null,
+          summary: executiveBudgetPublicationDivergenceDraft.summary,
+          metadata: {
+            company_name: companyName,
+            signoff_responsible: executiveBudgetPublicationDivergenceDraft.signoff.responsible_label,
+            publication_responsible: executiveBudgetPublicationDivergenceDraft.publication.responsible_label,
+            publication_recipient: executiveBudgetPublicationDivergenceDraft.publication.recipient_label,
+            publication_channel: executiveBudgetPublicationDivergenceDraft.publication.publication_channel
+          }
+        });
+        const rows = await loadExecutiveBudgetPlanPublicationDivergences({ companyId: selectedCompany.id, limit: 300 });
+        setExecutiveBudgetPlanPublicationDivergences(rows || []);
+      } catch (error) {
+        console.error('No se pudo registrar la divergencia documental del presupuesto publicado.', error);
+      }
+    })();
+  }, [
+    companyName,
+    executiveBudgetPlanPublicationData.currentVersionDivergence?.divergence_signature,
+    executiveBudgetPublicationDivergenceDraft,
+    executiveCurrentBudgetPlanVersion,
+    selectedCompany?.id
+  ]);
+  useEffect(() => {
+    if (!selectedCompany?.id || !executiveCurrentBudgetPlanVersion || !executiveBudgetVerificationFolioDraft) return;
+
+    const currentLogged = executiveBudgetPlanVerificationFolioLogRef.current;
+    const latestPersistedSignature = executiveBudgetPlanPublicationData.currentVersionFolio?.verification_signature || '';
+    if (latestPersistedSignature === executiveBudgetVerificationFolioDraft.signature) {
+      executiveBudgetPlanVerificationFolioLogRef.current = executiveBudgetVerificationFolioDraft.signature;
+      return;
+    }
+    if (currentLogged === executiveBudgetVerificationFolioDraft.signature) return;
+
+    executiveBudgetPlanVerificationFolioLogRef.current = executiveBudgetVerificationFolioDraft.signature;
+    void (async () => {
+      try {
+        await createExecutiveBudgetPlanVerificationFolio({
+          companyId: selectedCompany.id,
+          versionId: executiveCurrentBudgetPlanVersion.id,
+          signoffEventId: executiveBudgetVerificationFolioDraft.signoff.id,
+          publicationEventId: executiveBudgetVerificationFolioDraft.publication?.id || null,
+          receiptId: executiveBudgetVerificationFolioDraft.receipt?.id || null,
+          season: executiveCurrentBudgetPlanVersion.season,
+          versionKind: executiveCurrentBudgetPlanVersion.version_kind,
+          verificationSignature: executiveBudgetVerificationFolioDraft.signature,
+          folioCode: executiveBudgetVerificationFolioDraft.folioCode,
+          verificationCode: executiveBudgetVerificationFolioDraft.verificationCode,
+          folioStatus: executiveBudgetVerificationFolioDraft.folioStatus,
+          documentRef: executiveBudgetVerificationFolioDraft.documentRef || null,
+          documentHash: executiveBudgetVerificationFolioDraft.documentHash || null,
+          summary: executiveBudgetVerificationFolioDraft.summary,
+          metadata: {
+            company_name: companyName,
+            signoff_responsible: executiveBudgetVerificationFolioDraft.signoff.responsible_label,
+            publication_recipient: executiveBudgetVerificationFolioDraft.publication?.recipient_label || null,
+            publication_channel: executiveBudgetVerificationFolioDraft.publication?.publication_channel || null,
+            receipt_type: executiveBudgetVerificationFolioDraft.receipt?.receipt_type || null,
+            receipt_recipient: executiveBudgetVerificationFolioDraft.receipt?.recipient_label || null
+          }
+        });
+        const rows = await loadExecutiveBudgetPlanVerificationFolios({ companyId: selectedCompany.id, limit: 300 });
+        setExecutiveBudgetPlanVerificationFolios(rows || []);
+      } catch (error) {
+        console.error('No se pudo registrar el folio verificable de la versión presupuestaria.', error);
+      }
+    })();
+  }, [
+    companyName,
+    executiveBudgetPlanPublicationData.currentVersionFolio?.verification_signature,
+    executiveBudgetVerificationFolioDraft,
     executiveCurrentBudgetPlanVersion,
     selectedCompany?.id
   ]);
@@ -6962,6 +7329,15 @@ export const Reports: React.FC = () => {
         { Indicador: 'Lecturas', Valor: executiveBudgetPlanPublicationData.receiptSummary.find((row) => row.receiptType === 'lectura')?.count || 0 },
         { Indicador: 'Último acuse', Valor: executiveBudgetPlanPublicationData.latestAcuse ? executiveBudgetPlanPublicationData.latestAcuse.recipient_label : 'Sin acuse' },
         { Indicador: 'Última lectura', Valor: executiveBudgetPlanPublicationData.latestRead ? executiveBudgetPlanPublicationData.latestRead.recipient_label : 'Sin lectura' },
+        { Indicador: 'Divergencias documentales', Valor: executiveBudgetPlanPublicationData.totalDivergences },
+        { Indicador: 'Última divergencia', Valor: executiveBudgetPlanPublicationData.latestDivergence ? formatExecutiveBudgetPublicationDivergenceStatus(executiveBudgetPlanPublicationData.latestDivergence.divergence_status) : 'Sin auditoría' },
+        { Indicador: 'Divergencia actual', Valor: executiveBudgetPlanPublicationData.currentVersionDivergence ? formatExecutiveBudgetPublicationDivergenceStatus(executiveBudgetPlanPublicationData.currentVersionDivergence.divergence_status) : 'Sin auditoría' },
+        { Indicador: 'Resumen divergencia documental', Valor: executiveBudgetPlanPublicationData.divergenceSummaryLine },
+        { Indicador: 'Folios verificables', Valor: executiveBudgetPlanPublicationData.totalFolios },
+        { Indicador: 'Último folio', Valor: executiveBudgetPlanPublicationData.latestFolio ? executiveBudgetPlanPublicationData.latestFolio.folio_code : 'Sin folio' },
+        { Indicador: 'Estado folio actual', Valor: executiveBudgetPlanPublicationData.currentVersionFolio ? formatExecutiveBudgetVerificationFolioStatus(executiveBudgetPlanPublicationData.currentVersionFolio.folio_status) : 'Sin folio' },
+        { Indicador: 'Código verificación actual', Valor: executiveBudgetPlanPublicationData.currentVersionFolio?.verification_code || 'Sin código' },
+        { Indicador: 'Resumen folio verificable', Valor: executiveBudgetPlanPublicationData.folioSummaryLine },
         { Indicador: 'Resumen firma/publicación', Valor: executiveBudgetPlanPublicationData.summaryLine },
         { Indicador: 'Costo por ha', Valor: Number((executiveViewData.kpis.averageCostPerHa || 0).toFixed(2)) },
         { Indicador: 'Costo por kg', Valor: Number((executiveViewData.kpis.averageCostPerKg || 0).toFixed(2)) },
@@ -8706,6 +9082,13 @@ export const Reports: React.FC = () => {
             ['Lecturas', String(executiveBudgetPlanPublicationData.receiptSummary.find((row) => row.receiptType === 'lectura')?.count || 0)],
             ['Último acuse', executiveBudgetPlanPublicationData.latestAcuse ? `${executiveBudgetPlanPublicationData.latestAcuse.recipient_label} · ${new Date(executiveBudgetPlanPublicationData.latestAcuse.received_at).toLocaleString('es-CL')}` : 'Sin acuse'],
             ['Última lectura', executiveBudgetPlanPublicationData.latestRead ? `${executiveBudgetPlanPublicationData.latestRead.recipient_label} · ${new Date(executiveBudgetPlanPublicationData.latestRead.received_at).toLocaleString('es-CL')}` : 'Sin lectura'],
+            ['Divergencias documentales', String(executiveBudgetPlanPublicationData.totalDivergences)],
+            ['Divergencia actual', executiveBudgetPlanPublicationData.currentVersionDivergence ? formatExecutiveBudgetPublicationDivergenceStatus(executiveBudgetPlanPublicationData.currentVersionDivergence.divergence_status) : 'Sin auditoría'],
+            ['Resumen divergencia', executiveBudgetPlanPublicationData.divergenceSummaryLine],
+            ['Folios verificables', String(executiveBudgetPlanPublicationData.totalFolios)],
+            ['Folio actual', executiveBudgetPlanPublicationData.currentVersionFolio ? `${executiveBudgetPlanPublicationData.currentVersionFolio.folio_code} · ${formatExecutiveBudgetVerificationFolioStatus(executiveBudgetPlanPublicationData.currentVersionFolio.folio_status)}` : 'Sin folio'],
+            ['Código verificación', executiveBudgetPlanPublicationData.currentVersionFolio?.verification_code || 'Sin código'],
+            ['Resumen folio', executiveBudgetPlanPublicationData.folioSummaryLine],
             ['Versión firmada actual', executiveBudgetPlanPublicationData.currentVersionSignoff ? 'Sí' : 'No'],
             ['Versión publicada externamente', executiveBudgetPlanPublicationData.currentVersionExternalPublication ? 'Sí' : 'No']
           ],
@@ -12266,6 +12649,25 @@ export const Reports: React.FC = () => {
                       </div>
                     </div>
 
+                    <div className={`rounded-xl border px-4 py-3 text-sm ${getExecutiveBudgetPublicationDivergenceTone(executiveBudgetPlanPublicationData.currentVersionDivergence?.divergence_status)}`}>
+                      <div className="font-medium">
+                        Divergencia documental actual: {executiveBudgetPlanPublicationData.currentVersionDivergence ? formatExecutiveBudgetPublicationDivergenceStatus(executiveBudgetPlanPublicationData.currentVersionDivergence.divergence_status) : 'Sin auditoría'}
+                      </div>
+                      <p className="mt-2">{executiveBudgetPlanPublicationData.divergenceSummaryLine}</p>
+                    </div>
+
+                    <div className={`rounded-xl border px-4 py-3 text-sm ${getExecutiveBudgetVerificationFolioTone(executiveBudgetPlanPublicationData.currentVersionFolio?.folio_status)}`}>
+                      <div className="font-medium">
+                        Folio verificable actual: {executiveBudgetPlanPublicationData.currentVersionFolio ? executiveBudgetPlanPublicationData.currentVersionFolio.folio_code : 'Sin folio emitido'}
+                      </div>
+                      <p className="mt-2">
+                        Estado: {executiveBudgetPlanPublicationData.currentVersionFolio ? formatExecutiveBudgetVerificationFolioStatus(executiveBudgetPlanPublicationData.currentVersionFolio.folio_status) : 'Pendiente'}.
+                        {' '}
+                        Código: {executiveBudgetPlanPublicationData.currentVersionFolio?.verification_code || 'Sin código'}.
+                      </p>
+                      <p className="mt-2">{executiveBudgetPlanPublicationData.folioSummaryLine}</p>
+                    </div>
+
                     <div className="grid grid-cols-1 xl:grid-cols-[0.95fr,1.05fr] gap-4">
                       <div className="rounded-xl border border-slate-200 p-4 space-y-4">
                         <div>
@@ -12430,6 +12832,78 @@ export const Reports: React.FC = () => {
                               ? `${executiveBudgetPlanPublicationData.latestRead.recipient_label} · ${new Date(executiveBudgetPlanPublicationData.latestRead.received_at).toLocaleString('es-CL')}`
                               : 'sin lectura visible'}.
                           </p>
+                          <p className="mt-2">
+                            Divergencia documental: {executiveBudgetPlanPublicationData.currentVersionDivergence
+                              ? formatExecutiveBudgetPublicationDivergenceStatus(executiveBudgetPlanPublicationData.currentVersionDivergence.divergence_status)
+                              : 'sin auditoría visible'}.
+                          </p>
+                          <p className="mt-2">{executiveBudgetPlanPublicationData.divergenceSummaryLine}</p>
+                          <p className="mt-2">
+                            Folio verificable: {executiveBudgetPlanPublicationData.currentVersionFolio
+                              ? `${executiveBudgetPlanPublicationData.currentVersionFolio.folio_code} · ${formatExecutiveBudgetVerificationFolioStatus(executiveBudgetPlanPublicationData.currentVersionFolio.folio_status)} · ${executiveBudgetPlanPublicationData.currentVersionFolio.verification_code}`
+                              : 'sin folio visible'}.
+                          </p>
+                          <p className="mt-2">{executiveBudgetPlanPublicationData.folioSummaryLine}</p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 p-4 space-y-4">
+                          <div>
+                            <div className="text-sm font-medium text-slate-900">Folio verificable por versión</div>
+                            <p className="mt-1 text-sm text-slate-500">Se emite automáticamente cuando la versión vigente ya tiene firma visible y se refresca si aparece publicación o acuse.</p>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="rounded-lg bg-slate-50 p-4">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Folios</div>
+                              <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanPublicationData.totalFolios}</div>
+                            </div>
+                            <div className="rounded-lg bg-slate-50 p-4">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Estado actual</div>
+                              <div className="mt-2 text-lg font-semibold text-slate-900">
+                                {executiveBudgetPlanPublicationData.currentVersionFolio ? formatExecutiveBudgetVerificationFolioStatus(executiveBudgetPlanPublicationData.currentVersionFolio.folio_status) : 'Sin folio'}
+                              </div>
+                            </div>
+                            <div className="rounded-lg bg-slate-50 p-4">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Código verificación</div>
+                              <div className="mt-2 text-sm font-semibold text-slate-900 break-all">
+                                {executiveBudgetPlanPublicationData.currentVersionFolio?.verification_code || 'Sin código'}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto rounded-xl border border-slate-200">
+                            <table className="min-w-full divide-y divide-slate-200 text-sm">
+                              <thead className="bg-slate-50">
+                                <tr>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Folio</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Estado</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Documento</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200 bg-white">
+                                {executiveBudgetPlanPublicationData.recentFolioRows.slice(0, 6).map((row) => (
+                                  <tr key={row.id} className={row.season === selectedSeason ? 'bg-violet-50/40' : ''}>
+                                    <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                                    <td className="px-4 py-3 text-slate-700">
+                                      <div className="font-medium text-slate-900">{row.folio_code}</div>
+                                      <div className="text-xs text-slate-500">{row.verification_code}</div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getExecutiveBudgetVerificationFolioTone(row.folio_status)}`}>
+                                        {formatExecutiveBudgetVerificationFolioStatus(row.folio_status)}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-3 text-slate-700">{row.document_ref || row.document_hash || 'Sin documento'}</td>
+                                  </tr>
+                                ))}
+                                {executiveBudgetPlanPublicationData.recentFolioRows.length === 0 && (
+                                  <tr>
+                                    <td colSpan={4} className="px-4 py-4 text-center text-sm text-slate-500">
+                                      Aún no hay folios verificables visibles.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                         <div className="rounded-xl border border-slate-200 p-4 space-y-4">
                           <div>
@@ -12524,6 +12998,63 @@ export const Reports: React.FC = () => {
                                   <tr>
                                     <td colSpan={4} className="px-4 py-4 text-center text-sm text-slate-500">
                                       Sin acuses ni lecturas visibles todavía.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 p-4 space-y-4">
+                          <div>
+                            <div className="text-sm font-medium text-slate-900">Auditoría de divergencias documentales</div>
+                            <p className="mt-1 text-sm text-slate-500">Compara referencia y hash entre la firma vigente y la publicación externa vigente.</p>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="rounded-lg bg-slate-50 p-4">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Historial</div>
+                              <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanPublicationData.totalDivergences}</div>
+                            </div>
+                            <div className="rounded-lg bg-slate-50 p-4">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Estado actual</div>
+                              <div className="mt-2 text-lg font-semibold text-slate-900">
+                                {executiveBudgetPlanPublicationData.currentVersionDivergence ? formatExecutiveBudgetPublicationDivergenceStatus(executiveBudgetPlanPublicationData.currentVersionDivergence.divergence_status) : 'Sin auditoría'}
+                              </div>
+                            </div>
+                            <div className="rounded-lg bg-slate-50 p-4">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Dominante</div>
+                              <div className="mt-2 text-lg font-semibold text-slate-900">
+                                {executiveBudgetPlanPublicationData.topDivergence ? formatExecutiveBudgetPublicationDivergenceStatus(executiveBudgetPlanPublicationData.topDivergence.status) : 'Sin estado'}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto rounded-xl border border-slate-200">
+                            <table className="min-w-full divide-y divide-slate-200 text-sm">
+                              <thead className="bg-slate-50">
+                                <tr>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Estado</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Firmado</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Publicado</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200 bg-white">
+                                {executiveBudgetPlanPublicationData.recentDivergenceRows.slice(0, 6).map((row) => (
+                                  <tr key={row.id} className={row.season === selectedSeason ? 'bg-rose-50/40' : ''}>
+                                    <td className="px-4 py-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                                    <td className="px-4 py-3">
+                                      <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getExecutiveBudgetPublicationDivergenceTone(row.divergence_status)}`}>
+                                        {formatExecutiveBudgetPublicationDivergenceStatus(row.divergence_status)}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-3 text-slate-700">{row.signed_document_ref || row.signed_document_hash || 'Sin documento'}</td>
+                                    <td className="px-4 py-3 text-slate-700">{row.published_document_ref || row.published_document_hash || 'Sin documento'}</td>
+                                  </tr>
+                                ))}
+                                {executiveBudgetPlanPublicationData.recentDivergenceRows.length === 0 && (
+                                  <tr>
+                                    <td colSpan={4} className="px-4 py-4 text-center text-sm text-slate-500">
+                                      Aún no hay auditorías documentales visibles.
                                     </td>
                                   </tr>
                                 )}
@@ -19411,6 +19942,18 @@ export const Reports: React.FC = () => {
                                     : 'sin lectura visible'}.
                                 </p>
                                 <p className="mt-5 text-lg text-slate-500">
+                                  Divergencia documental: {executiveBudgetPlanPublicationData.currentVersionDivergence
+                                    ? formatExecutiveBudgetPublicationDivergenceStatus(executiveBudgetPlanPublicationData.currentVersionDivergence.divergence_status)
+                                    : 'sin auditoría visible'}.
+                                </p>
+                                <p className="mt-5 text-lg text-slate-500">{executiveBudgetPlanPublicationData.divergenceSummaryLine}</p>
+                                <p className="mt-5 text-lg text-slate-500">
+                                  Folio verificable: {executiveBudgetPlanPublicationData.currentVersionFolio
+                                    ? `${executiveBudgetPlanPublicationData.currentVersionFolio.folio_code} · ${formatExecutiveBudgetVerificationFolioStatus(executiveBudgetPlanPublicationData.currentVersionFolio.folio_status)} · ${executiveBudgetPlanPublicationData.currentVersionFolio.verification_code}`
+                                    : 'sin folio visible'}.
+                                </p>
+                                <p className="mt-5 text-lg text-slate-500">{executiveBudgetPlanPublicationData.folioSummaryLine}</p>
+                                <p className="mt-5 text-lg text-slate-500">
                                   Destinatario dominante: {executiveBudgetPlanPublicationData.topRecipient?.recipient || 'sin destinatario dominante'}.
                                 </p>
                               </div>
@@ -19490,6 +20033,98 @@ export const Reports: React.FC = () => {
                                     </div>
                                   )}
                                 </div>
+                              </div>
+
+                              <div className="rounded-2xl border border-slate-200 p-6">
+                                <div className="text-2xl font-bold text-slate-800 mb-5">Folio verificable</div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                  <div className="rounded-2xl bg-slate-50 p-5">
+                                    <div className="text-sm uppercase tracking-wide text-slate-500">Folios</div>
+                                    <div className="mt-3 text-3xl font-bold text-slate-900">{executiveBudgetPlanPublicationData.totalFolios}</div>
+                                  </div>
+                                  <div className="rounded-2xl bg-slate-50 p-5">
+                                    <div className="text-sm uppercase tracking-wide text-slate-500">Estado actual</div>
+                                    <div className="mt-3 text-2xl font-bold text-slate-900">
+                                      {executiveBudgetPlanPublicationData.currentVersionFolio ? formatExecutiveBudgetVerificationFolioStatus(executiveBudgetPlanPublicationData.currentVersionFolio.folio_status) : 'Sin folio'}
+                                    </div>
+                                  </div>
+                                  <div className="rounded-2xl bg-slate-50 p-5">
+                                    <div className="text-sm uppercase tracking-wide text-slate-500">Código</div>
+                                    <div className="mt-3 text-base font-bold text-slate-900 break-all">
+                                      {executiveBudgetPlanPublicationData.currentVersionFolio?.verification_code || 'Sin código'}
+                                    </div>
+                                  </div>
+                                </div>
+                                <p className="mt-5 text-lg text-slate-500">{executiveBudgetPlanPublicationData.folioSummaryLine}</p>
+                                <table className="mt-5 w-full text-left text-sm">
+                                  <thead className="text-base text-slate-500 bg-slate-50 sticky top-0">
+                                    <tr>
+                                      <th className="p-3">Fecha</th>
+                                      <th className="p-3">Folio</th>
+                                      <th className="p-3">Estado</th>
+                                      <th className="p-3">Documento</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {executiveBudgetPlanPublicationData.recentFolioRows.slice(0, 4).map((row) => (
+                                      <tr key={row.id} className={`border-b border-slate-100 ${row.season === selectedSeason ? 'bg-violet-50/40' : ''}`}>
+                                        <td className="p-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                                        <td className="p-3 text-slate-700">
+                                          <div className="font-semibold text-slate-900">{row.folio_code}</div>
+                                          <div className="text-xs text-slate-500">{row.verification_code}</div>
+                                        </td>
+                                        <td className="p-3">
+                                          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getExecutiveBudgetVerificationFolioTone(row.folio_status)}`}>
+                                            {formatExecutiveBudgetVerificationFolioStatus(row.folio_status)}
+                                          </span>
+                                        </td>
+                                        <td className="p-3 text-slate-700">{row.document_ref || row.document_hash || 'Sin documento'}</td>
+                                      </tr>
+                                    ))}
+                                    {executiveBudgetPlanPublicationData.recentFolioRows.length === 0 && (
+                                      <tr>
+                                        <td colSpan={4} className="p-6 text-center text-slate-500">
+                                          Aún no hay folios verificables visibles para esta temporada.
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              <div className="rounded-2xl border border-slate-200 p-6">
+                                <div className="text-2xl font-bold text-slate-800 mb-5">Auditoría documental</div>
+                                <table className="w-full text-left text-sm">
+                                  <thead className="text-base text-slate-500 bg-slate-50 sticky top-0">
+                                    <tr>
+                                      <th className="p-3">Fecha</th>
+                                      <th className="p-3">Estado</th>
+                                      <th className="p-3">Firmado</th>
+                                      <th className="p-3">Publicado</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {executiveBudgetPlanPublicationData.recentDivergenceRows.slice(0, 4).map((row) => (
+                                      <tr key={row.id} className={`border-b border-slate-100 ${row.season === selectedSeason ? 'bg-rose-50/40' : ''}`}>
+                                        <td className="p-3 text-slate-700">{new Date(row.created_at).toLocaleString('es-CL')}</td>
+                                        <td className="p-3">
+                                          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getExecutiveBudgetPublicationDivergenceTone(row.divergence_status)}`}>
+                                            {formatExecutiveBudgetPublicationDivergenceStatus(row.divergence_status)}
+                                          </span>
+                                        </td>
+                                        <td className="p-3 text-slate-700">{row.signed_document_ref || row.signed_document_hash || 'Sin documento'}</td>
+                                        <td className="p-3 text-slate-700">{row.published_document_ref || row.published_document_hash || 'Sin documento'}</td>
+                                      </tr>
+                                    ))}
+                                    {executiveBudgetPlanPublicationData.recentDivergenceRows.length === 0 && (
+                                      <tr>
+                                        <td colSpan={4} className="p-6 text-center text-slate-500">
+                                          Aún no hay auditorías documentales visibles para esta temporada.
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </tbody>
+                                </table>
                               </div>
                             </div>
                           </div>
