@@ -2763,6 +2763,7 @@ const buildEconomicClosureSummaryFromReportSources = (params: {
         const record = productionRecordMap.get(String(sector.id));
         const marginRow = marginRows.find((row) => row.season === season && row.sector_id === sector.id) || null;
         const expectedWithoutProduction = isSectorExpectedWithoutProduction(sector, season);
+        const hasPositiveProductionRecord = Number(record?.kg_produced || 0) > 0;
         return {
           fieldId: String(field.id),
           fieldName: String(field.name || '-'),
@@ -2771,7 +2772,7 @@ const buildEconomicClosureSummaryFromReportSources = (params: {
           hectares: Number(sector.hectares || 0),
           kgProduced: Number(record?.kg_produced || 0),
           pricePerKg: Number(record?.price_per_kg || 0),
-          hasRecord: Boolean(record),
+          hasRecord: hasPositiveProductionRecord,
           productionSource: marginRow?.production_source || 'sin_produccion',
           productiveStage: String(sector.productive_stage || 'productivo'),
           productionExpectedFromSeason: sector.production_expected_from_season || null,
@@ -4798,6 +4799,7 @@ export const Reports: React.FC = () => {
           const record = productionRecordBySector.get(String(sector.id));
           const marginRow = rawMarginRows.find((row) => row.season === selectedSeason && row.sector_id === sector.id) || null;
           const expectedWithoutProduction = isSectorExpectedWithoutProduction(sector, selectedSeason);
+          const hasPositiveProductionRecord = Number(record?.kg_produced || 0) > 0;
           return {
             fieldId: String(field.id),
             fieldName: String(field.name || '-'),
@@ -4806,7 +4808,7 @@ export const Reports: React.FC = () => {
             hectares: Number(sector.hectares || 0),
             kgProduced: Number(record?.kg_produced || 0),
             pricePerKg: Number(record?.price_per_kg || 0),
-            hasRecord: Boolean(record),
+            hasRecord: hasPositiveProductionRecord,
             productionSource: expectedWithoutProduction ? 'en_formacion' : (marginRow?.production_source || 'sin_produccion'),
             productiveStage: String(sector.productive_stage || 'productivo'),
             productionExpectedFromSeason: sector.production_expected_from_season || null,
