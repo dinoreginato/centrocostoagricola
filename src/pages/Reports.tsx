@@ -90,7 +90,8 @@ import {
   createExecutiveBudgetPlanVerificationFolio,
   loadExecutiveBudgetPlanVerificationFolios,
   type ExecutiveBudgetPlanVerificationFolioRow,
-  type ExecutiveBudgetPlanVerificationFolioStatus
+  type ExecutiveBudgetPlanVerificationFolioStatus,
+  type ExecutiveBudgetPlanVerificationValidationStatus
 } from '../services/executiveBudgetPlanVerificationFolios';
 import { exportJsonToXlsx, exportWorkbookToXlsx } from '../lib/excel';
 
@@ -1698,6 +1699,30 @@ const getExecutiveBudgetVerificationFolioTone = (value: string | null | undefine
   }
 };
 
+const formatExecutiveBudgetVerificationValidationStatus = (value: string | null | undefined) => {
+  switch (value) {
+    case 'listo':
+      return 'Listo para validar';
+    case 'documento_incompleto':
+      return 'Documento incompleto';
+    case 'pendiente':
+    default:
+      return 'Pendiente';
+  }
+};
+
+const getExecutiveBudgetVerificationValidationTone = (value: string | null | undefined) => {
+  switch (value) {
+    case 'listo':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    case 'documento_incompleto':
+      return 'border-amber-200 bg-amber-50 text-amber-700';
+    case 'pendiente':
+    default:
+      return 'border-slate-200 bg-slate-50 text-slate-700';
+  }
+};
+
 const formatExecutiveBudgetPublicationReceiptSource = (value: string | null | undefined) => {
   switch (value) {
     case 'manual':
@@ -2094,6 +2119,7 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
   const currentVersionDivergence = currentVersionDivergenceRows[0] || null;
   const latestFolio = params.folios[0] || null;
   const currentVersionFolio = currentVersionFolioRows[0] || null;
+  const latestExternallyReadyFolio = params.folios.find((row) => row.validation_status === 'listo') || null;
   const receiptSummary = Array.from(
     params.receipts.reduce((map, row) => {
       map.set(row.receipt_type, (map.get(row.receipt_type) || 0) + 1);
@@ -2127,6 +2153,14 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
       return map;
     }, new Map<string, number>())
   ).map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count);
+  const folioValidationSummary = Array.from(
+    params.folios.reduce((map, row) => {
+      const status = row.validation_status || 'pendiente';
+      map.set(status, (map.get(status) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count);
+  const externallyReadyFolioCount = params.folios.filter((row) => row.validation_status === 'listo').length;
   const summaryLine = !params.currentVersion
     ? `No hay versión vigente para firmar o publicar externamente en ${params.scopeLabel}.`
     : currentVersionExternalPublication
@@ -2174,6 +2208,15 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
         : automatedReceiptCount > 0
           ? `Existen confirmaciones integradas históricas, pero la versión vigente de ${params.scopeLabel} aún no registra una evidencia automatizada.`
           : `Las confirmaciones de ${params.scopeLabel} todavía se capturan de forma manual y aún no muestran una integración visible.`;
+  const folioValidationSummaryLine = !params.currentVersion
+    ? `No hay versión vigente para preparar la validación externa del folio en ${params.scopeLabel}.`
+    : !currentVersionFolio
+      ? `La validación externa de ${params.scopeLabel} requiere que primero exista un folio verificable emitido para la versión vigente.`
+      : currentVersionFolio.validation_status === 'listo'
+        ? `La versión vigente de ${params.scopeLabel} ya tiene enlace y código externo listos para validación del folio ${currentVersionFolio.folio_code}.`
+        : currentVersionFolio.validation_status === 'documento_incompleto'
+          ? `La validación externa del folio ${currentVersionFolio.folio_code} aún no puede cerrarse porque falta referencia o hash documental.`
+          : `La validación externa del folio ${currentVersionFolio.folio_code} todavía está pendiente de preparación.`;
 
   return {
     rows: params.rows,
@@ -2193,6 +2236,7 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
     latestIntegratedReceipt,
     latestDivergence,
     latestFolio,
+    latestExternallyReadyFolio,
     currentVersionSignoff,
     currentVersionExternalPublication,
     currentVersionAcuse,
@@ -2212,6 +2256,7 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
     receiptSourceSummary,
     divergenceSummary,
     folioStatusSummary,
+    folioValidationSummary,
     topAction: actionSummary[0] || null,
     topChannel: channelSummary[0] || null,
     topRecipient: recipientSummary[0] || null,
@@ -2220,11 +2265,13 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
     topReceiptSource: receiptSourceSummary[0] || null,
     topDivergence: divergenceSummary[0] || null,
     topFolioStatus: folioStatusSummary[0] || null,
+    topFolioValidationStatus: folioValidationSummary[0] || null,
     totalEvents: params.rows.length,
     totalReceipts: params.receipts.length,
     automatedReceiptCount,
     totalDivergences: params.divergences.length,
     totalFolios: params.folios.length,
+    externallyReadyFolioCount,
     tone,
     canSign: params.approvalReady && !currentVersionSignoff,
     canPublishExternally: Boolean(params.approvalReady && currentVersionSignoff),
@@ -2232,7 +2279,8 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
     summaryLine,
     divergenceSummaryLine,
     folioSummaryLine,
-    receiptIntegrationSummaryLine
+    receiptIntegrationSummaryLine,
+    folioValidationSummaryLine
   };
 };
 
@@ -6078,6 +6126,13 @@ export const Reports: React.FC = () => {
     const receiptSeed = (receipt?.id || executiveCurrentBudgetPlanVersion.id).replace(/-/g, '').slice(-4).toUpperCase();
     const folioCode = `PRES-${seasonCode}-${versionCode}-${versionSeed}`;
     const verificationCode = `VF-${signoffSeed}-${publicationSeed}-${receiptSeed}`;
+    const validationStatus: ExecutiveBudgetPlanVerificationValidationStatus = documentRef && documentHash ? 'listo' : 'documento_incompleto';
+    const externalValidationCode = `EXT-${seasonCode}-${versionSeed}-${signoffSeed}`;
+    const verificationPath = `/budget/verification/${externalValidationCode}`;
+    const verificationUrl = typeof window !== 'undefined' && window.location?.origin
+      ? `${window.location.origin}${verificationPath}`
+      : verificationPath;
+    const qrPayload = verificationUrl;
     const summary = folioStatus === 'acusado'
       ? `El folio ${folioCode} respalda una versión firmada, publicada y con evidencia visible de recepción o lectura.`
       : folioStatus === 'publicado'
@@ -6089,6 +6144,10 @@ export const Reports: React.FC = () => {
       publicationEventId: publication?.id || null,
       receiptId: receipt?.id || null,
       folioStatus,
+      validationStatus,
+      externalValidationCode,
+      verificationUrl,
+      qrPayload,
       documentRef,
       documentHash
     });
@@ -6098,6 +6157,10 @@ export const Reports: React.FC = () => {
       folioStatus,
       folioCode,
       verificationCode,
+      validationStatus,
+      externalValidationCode,
+      verificationUrl,
+      qrPayload,
       documentRef,
       documentHash,
       summary,
@@ -6723,6 +6786,10 @@ export const Reports: React.FC = () => {
           folioCode: executiveBudgetVerificationFolioDraft.folioCode,
           verificationCode: executiveBudgetVerificationFolioDraft.verificationCode,
           folioStatus: executiveBudgetVerificationFolioDraft.folioStatus,
+          validationStatus: executiveBudgetVerificationFolioDraft.validationStatus,
+          externalValidationCode: executiveBudgetVerificationFolioDraft.externalValidationCode,
+          verificationUrl: executiveBudgetVerificationFolioDraft.verificationUrl,
+          qrPayload: executiveBudgetVerificationFolioDraft.qrPayload,
           documentRef: executiveBudgetVerificationFolioDraft.documentRef || null,
           documentHash: executiveBudgetVerificationFolioDraft.documentHash || null,
           summary: executiveBudgetVerificationFolioDraft.summary,
@@ -6732,7 +6799,9 @@ export const Reports: React.FC = () => {
             publication_recipient: executiveBudgetVerificationFolioDraft.publication?.recipient_label || null,
             publication_channel: executiveBudgetVerificationFolioDraft.publication?.publication_channel || null,
             receipt_type: executiveBudgetVerificationFolioDraft.receipt?.receipt_type || null,
-            receipt_recipient: executiveBudgetVerificationFolioDraft.receipt?.recipient_label || null
+            receipt_recipient: executiveBudgetVerificationFolioDraft.receipt?.recipient_label || null,
+            external_validation_code: executiveBudgetVerificationFolioDraft.externalValidationCode,
+            verification_url: executiveBudgetVerificationFolioDraft.verificationUrl
           }
         });
         const rows = await loadExecutiveBudgetPlanVerificationFolios({ companyId: selectedCompany.id, limit: 300 });
@@ -7434,6 +7503,11 @@ export const Reports: React.FC = () => {
         { Indicador: 'Último folio', Valor: executiveBudgetPlanPublicationData.latestFolio ? executiveBudgetPlanPublicationData.latestFolio.folio_code : 'Sin folio' },
         { Indicador: 'Estado folio actual', Valor: executiveBudgetPlanPublicationData.currentVersionFolio ? formatExecutiveBudgetVerificationFolioStatus(executiveBudgetPlanPublicationData.currentVersionFolio.folio_status) : 'Sin folio' },
         { Indicador: 'Código verificación actual', Valor: executiveBudgetPlanPublicationData.currentVersionFolio?.verification_code || 'Sin código' },
+        { Indicador: 'Folios listos para validación externa', Valor: executiveBudgetPlanPublicationData.externallyReadyFolioCount },
+        { Indicador: 'Estado validación externa', Valor: executiveBudgetPlanPublicationData.currentVersionFolio ? formatExecutiveBudgetVerificationValidationStatus(executiveBudgetPlanPublicationData.currentVersionFolio.validation_status) : 'Sin folio' },
+        { Indicador: 'Código validación externa', Valor: executiveBudgetPlanPublicationData.currentVersionFolio?.external_validation_code || 'Sin código' },
+        { Indicador: 'Enlace validación externa', Valor: executiveBudgetPlanPublicationData.currentVersionFolio?.verification_url || 'Sin enlace' },
+        { Indicador: 'Resumen validación externa', Valor: executiveBudgetPlanPublicationData.folioValidationSummaryLine },
         { Indicador: 'Resumen folio verificable', Valor: executiveBudgetPlanPublicationData.folioSummaryLine },
         { Indicador: 'Resumen firma/publicación', Valor: executiveBudgetPlanPublicationData.summaryLine },
         { Indicador: 'Costo por ha', Valor: Number((executiveViewData.kpis.averageCostPerHa || 0).toFixed(2)) },
@@ -9189,6 +9263,10 @@ export const Reports: React.FC = () => {
             ['Folios verificables', String(executiveBudgetPlanPublicationData.totalFolios)],
             ['Folio actual', executiveBudgetPlanPublicationData.currentVersionFolio ? `${executiveBudgetPlanPublicationData.currentVersionFolio.folio_code} · ${formatExecutiveBudgetVerificationFolioStatus(executiveBudgetPlanPublicationData.currentVersionFolio.folio_status)}` : 'Sin folio'],
             ['Código verificación', executiveBudgetPlanPublicationData.currentVersionFolio?.verification_code || 'Sin código'],
+            ['Validación externa', executiveBudgetPlanPublicationData.currentVersionFolio ? formatExecutiveBudgetVerificationValidationStatus(executiveBudgetPlanPublicationData.currentVersionFolio.validation_status) : 'Sin folio'],
+            ['Código validación externa', executiveBudgetPlanPublicationData.currentVersionFolio?.external_validation_code || 'Sin código'],
+            ['Enlace validación externa', executiveBudgetPlanPublicationData.currentVersionFolio?.verification_url || 'Sin enlace'],
+            ['Resumen validación externa', executiveBudgetPlanPublicationData.folioValidationSummaryLine],
             ['Resumen folio', executiveBudgetPlanPublicationData.folioSummaryLine],
             ['Versión firmada actual', executiveBudgetPlanPublicationData.currentVersionSignoff ? 'Sí' : 'No'],
             ['Versión publicada externamente', executiveBudgetPlanPublicationData.currentVersionExternalPublication ? 'Sí' : 'No']
@@ -12769,6 +12847,18 @@ export const Reports: React.FC = () => {
                       <p className="mt-2">{executiveBudgetPlanPublicationData.folioSummaryLine}</p>
                     </div>
 
+                    <div className={`rounded-xl border px-4 py-3 text-sm ${getExecutiveBudgetVerificationValidationTone(executiveBudgetPlanPublicationData.currentVersionFolio?.validation_status)}`}>
+                      <div className="font-medium">
+                        Validación externa del folio: {executiveBudgetPlanPublicationData.currentVersionFolio ? formatExecutiveBudgetVerificationValidationStatus(executiveBudgetPlanPublicationData.currentVersionFolio.validation_status) : 'Sin preparación'}
+                      </div>
+                      <p className="mt-2">
+                        Código externo: {executiveBudgetPlanPublicationData.currentVersionFolio?.external_validation_code || 'Sin código'}.
+                        {' '}
+                        Enlace: {executiveBudgetPlanPublicationData.currentVersionFolio?.verification_url || 'Sin enlace'}.
+                      </p>
+                      <p className="mt-2">{executiveBudgetPlanPublicationData.folioValidationSummaryLine}</p>
+                    </div>
+
                     <div className="grid grid-cols-1 xl:grid-cols-[0.95fr,1.05fr] gap-4">
                       <div className="rounded-xl border border-slate-200 p-4 space-y-4">
                         <div>
@@ -12951,11 +13041,17 @@ export const Reports: React.FC = () => {
                               : 'sin folio visible'}.
                           </p>
                           <p className="mt-2">{executiveBudgetPlanPublicationData.folioSummaryLine}</p>
+                          <p className="mt-2">
+                            Validación externa: {executiveBudgetPlanPublicationData.currentVersionFolio
+                              ? `${formatExecutiveBudgetVerificationValidationStatus(executiveBudgetPlanPublicationData.currentVersionFolio.validation_status)} · ${executiveBudgetPlanPublicationData.currentVersionFolio.external_validation_code || 'sin código'}`
+                              : 'sin preparación visible'}.
+                          </p>
+                          <p className="mt-2">{executiveBudgetPlanPublicationData.folioValidationSummaryLine}</p>
                         </div>
                         <div className="rounded-xl border border-slate-200 p-4 space-y-4">
                           <div>
                             <div className="text-sm font-medium text-slate-900">Folio verificable por versión</div>
-                            <p className="mt-1 text-sm text-slate-500">Se emite automáticamente cuando la versión vigente ya tiene firma visible y se refresca si aparece publicación o acuse.</p>
+                            <p className="mt-1 text-sm text-slate-500">Se emite automáticamente cuando la versión vigente ya tiene firma visible, se refresca si aparece publicación o acuse y deja un enlace verificable para consulta externa.</p>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                             <div className="rounded-lg bg-slate-50 p-4">
@@ -12975,6 +13071,37 @@ export const Reports: React.FC = () => {
                               </div>
                             </div>
                           </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="rounded-lg bg-slate-50 p-4">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Listos para validar</div>
+                              <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanPublicationData.externallyReadyFolioCount}</div>
+                            </div>
+                            <div className="rounded-lg bg-slate-50 p-4">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Estado externo</div>
+                              <div className="mt-2 text-lg font-semibold text-slate-900">
+                                {executiveBudgetPlanPublicationData.currentVersionFolio ? formatExecutiveBudgetVerificationValidationStatus(executiveBudgetPlanPublicationData.currentVersionFolio.validation_status) : 'Sin folio'}
+                              </div>
+                            </div>
+                            <div className="rounded-lg bg-slate-50 p-4">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Código externo</div>
+                              <div className="mt-2 text-sm font-semibold text-slate-900 break-all">
+                                {executiveBudgetPlanPublicationData.currentVersionFolio?.external_validation_code || 'Sin código'}
+                              </div>
+                            </div>
+                          </div>
+                          <div className={`rounded-lg border px-3 py-2 text-sm ${getExecutiveBudgetVerificationValidationTone(executiveBudgetPlanPublicationData.currentVersionFolio?.validation_status)}`}>
+                            {executiveBudgetPlanPublicationData.folioValidationSummaryLine}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                              <div className="font-medium text-slate-900">Enlace verificable</div>
+                              <div className="mt-2 break-all">{executiveBudgetPlanPublicationData.currentVersionFolio?.verification_url || 'Sin enlace generado'}</div>
+                            </div>
+                            <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                              <div className="font-medium text-slate-900">Payload QR</div>
+                              <div className="mt-2 break-all">{executiveBudgetPlanPublicationData.currentVersionFolio?.qr_payload || 'Sin payload QR'}</div>
+                            </div>
+                          </div>
                           <div className="overflow-x-auto rounded-xl border border-slate-200">
                             <table className="min-w-full divide-y divide-slate-200 text-sm">
                               <thead className="bg-slate-50">
@@ -12982,6 +13109,7 @@ export const Reports: React.FC = () => {
                                   <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
                                   <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Folio</th>
                                   <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Estado</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Validación externa</th>
                                   <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Documento</th>
                                 </tr>
                               </thead>
@@ -12998,12 +13126,18 @@ export const Reports: React.FC = () => {
                                         {formatExecutiveBudgetVerificationFolioStatus(row.folio_status)}
                                       </span>
                                     </td>
+                                    <td className="px-4 py-3">
+                                      <div className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getExecutiveBudgetVerificationValidationTone(row.validation_status)}`}>
+                                        {formatExecutiveBudgetVerificationValidationStatus(row.validation_status)}
+                                      </div>
+                                      <div className="mt-1 text-xs text-slate-500">{row.external_validation_code || 'Sin código'}</div>
+                                    </td>
                                     <td className="px-4 py-3 text-slate-700">{row.document_ref || row.document_hash || 'Sin documento'}</td>
                                   </tr>
                                 ))}
                                 {executiveBudgetPlanPublicationData.recentFolioRows.length === 0 && (
                                   <tr>
-                                    <td colSpan={4} className="px-4 py-4 text-center text-sm text-slate-500">
+                                    <td colSpan={5} className="px-4 py-4 text-center text-sm text-slate-500">
                                       Aún no hay folios verificables visibles.
                                     </td>
                                   </tr>
@@ -20150,6 +20284,12 @@ export const Reports: React.FC = () => {
                                 </p>
                                 <p className="mt-5 text-lg text-slate-500">{executiveBudgetPlanPublicationData.folioSummaryLine}</p>
                                 <p className="mt-5 text-lg text-slate-500">
+                                  Validación externa: {executiveBudgetPlanPublicationData.currentVersionFolio
+                                    ? `${formatExecutiveBudgetVerificationValidationStatus(executiveBudgetPlanPublicationData.currentVersionFolio.validation_status)} · ${executiveBudgetPlanPublicationData.currentVersionFolio.external_validation_code || 'sin código'}`
+                                    : 'sin preparación visible'}.
+                                </p>
+                                <p className="mt-5 text-lg text-slate-500">{executiveBudgetPlanPublicationData.folioValidationSummaryLine}</p>
+                                <p className="mt-5 text-lg text-slate-500">
                                   Destinatario dominante: {executiveBudgetPlanPublicationData.topRecipient?.recipient || 'sin destinatario dominante'}.
                                 </p>
                               </div>
@@ -20277,12 +20417,46 @@ export const Reports: React.FC = () => {
                                   </div>
                                 </div>
                                 <p className="mt-5 text-lg text-slate-500">{executiveBudgetPlanPublicationData.folioSummaryLine}</p>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
+                                  <div className="rounded-2xl bg-slate-50 p-5">
+                                    <div className="text-sm uppercase tracking-wide text-slate-500">Listos para validar</div>
+                                    <div className="mt-3 text-3xl font-bold text-slate-900">{executiveBudgetPlanPublicationData.externallyReadyFolioCount}</div>
+                                  </div>
+                                  <div className="rounded-2xl bg-slate-50 p-5">
+                                    <div className="text-sm uppercase tracking-wide text-slate-500">Estado externo</div>
+                                    <div className="mt-3 text-2xl font-bold text-slate-900">
+                                      {executiveBudgetPlanPublicationData.currentVersionFolio ? formatExecutiveBudgetVerificationValidationStatus(executiveBudgetPlanPublicationData.currentVersionFolio.validation_status) : 'Sin folio'}
+                                    </div>
+                                  </div>
+                                  <div className="rounded-2xl bg-slate-50 p-5">
+                                    <div className="text-sm uppercase tracking-wide text-slate-500">Código externo</div>
+                                    <div className="mt-3 text-base font-bold text-slate-900 break-all">
+                                      {executiveBudgetPlanPublicationData.currentVersionFolio?.external_validation_code || 'Sin código'}
+                                    </div>
+                                  </div>
+                                </div>
+                                <p className="mt-5 text-lg text-slate-500">{executiveBudgetPlanPublicationData.folioValidationSummaryLine}</p>
+                                <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                                    <div className="text-sm uppercase tracking-wide text-slate-500">Enlace verificable</div>
+                                    <div className="mt-3 text-base font-bold text-slate-900 break-all">
+                                      {executiveBudgetPlanPublicationData.currentVersionFolio?.verification_url || 'Sin enlace'}
+                                    </div>
+                                  </div>
+                                  <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                                    <div className="text-sm uppercase tracking-wide text-slate-500">Payload QR</div>
+                                    <div className="mt-3 text-base font-bold text-slate-900 break-all">
+                                      {executiveBudgetPlanPublicationData.currentVersionFolio?.qr_payload || 'Sin payload'}
+                                    </div>
+                                  </div>
+                                </div>
                                 <table className="mt-5 w-full text-left text-sm">
                                   <thead className="text-base text-slate-500 bg-slate-50 sticky top-0">
                                     <tr>
                                       <th className="p-3">Fecha</th>
                                       <th className="p-3">Folio</th>
                                       <th className="p-3">Estado</th>
+                                      <th className="p-3">Validación externa</th>
                                       <th className="p-3">Documento</th>
                                     </tr>
                                   </thead>
@@ -20299,12 +20473,18 @@ export const Reports: React.FC = () => {
                                             {formatExecutiveBudgetVerificationFolioStatus(row.folio_status)}
                                           </span>
                                         </td>
+                                        <td className="p-3">
+                                          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getExecutiveBudgetVerificationValidationTone(row.validation_status)}`}>
+                                            {formatExecutiveBudgetVerificationValidationStatus(row.validation_status)}
+                                          </span>
+                                          <div className="mt-2 text-xs text-slate-500">{row.external_validation_code || 'Sin código'}</div>
+                                        </td>
                                         <td className="p-3 text-slate-700">{row.document_ref || row.document_hash || 'Sin documento'}</td>
                                       </tr>
                                     ))}
                                     {executiveBudgetPlanPublicationData.recentFolioRows.length === 0 && (
                                       <tr>
-                                        <td colSpan={4} className="p-6 text-center text-slate-500">
+                                        <td colSpan={5} className="p-6 text-center text-slate-500">
                                           Aún no hay folios verificables visibles para esta temporada.
                                         </td>
                                       </tr>

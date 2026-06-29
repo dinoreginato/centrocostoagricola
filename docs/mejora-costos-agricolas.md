@@ -4,19 +4,19 @@
 Dejar la aplicacion mas confiable para gestion agricola real, con costos mas verdaderos, menos duplicidad y una mejor resolucion de datos para toma de decisiones.
 
 ## Estado General
-- Avance general estimado del programa total de mejora identificado hoy: `92%`
-- Macrocapas cerradas: `24 de 26`
+- Avance general estimado del programa total de mejora identificado hoy: `96%`
+- Macrocapas cerradas: `25 de 26`
 - Fases base cerradas: `5 de 5`
-- Fases ejecutivas/adicionales cerradas: `19 de 21`
-- Pendientes generales abiertos: `2`
+- Fases ejecutivas/adicionales cerradas: `20 de 21`
+- Pendientes generales abiertos: `1`
 - Estado del frente actual:
   - `[x]` confirmacion integrable del acuse y lectura desde correo / whatsapp / drive / portal
+  - `[x]` validacion externa del folio por portal, QR o enlace verificable
   - `[ ]` conectores reales para confirmar acuses automaticamente desde integraciones externas
-  - `[ ]` validacion externa del folio por portal, QR o enlace verificable
 - Criterio del porcentaje general:
   - base: `5/5` cerradas
-  - ejecutivo/adicional: `19/21` cerradas
-  - total identificado hoy: `24/26`
+  - ejecutivo/adicional: `20/21` cerradas
+  - total identificado hoy: `25/26`
 - Cerrado a la fecha:
   - `[x]` base canonica de temporadas y costos
   - `[x]` conciliacion y auditoria ejecutiva
@@ -42,14 +42,14 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - `[x]` auditoria de divergencias entre documento firmado y documento publicado
   - `[x]` folio documental verificable por version presupuestaria
   - `[x]` confirmacion integrable del acuse y lectura con fuente, proveedor, referencia y evidencia
+  - `[x]` validacion externa del folio con codigo publico, enlace verificable y payload QR
 - Falta en general:
   - `[ ]` webhook / polling real desde correo, whatsapp, drive o portal para confirmar sin carga manual
-  - `[ ]` validacion externa del folio por portal, QR o enlace verificable para terceros
 
 ## Resumen Ejecutivo Del Avance
 - Lo ya resuelto cubre costos, produccion, ingresos, cierre economico, cierre total del dato, comparativos historicos, ranking global, alertas, SLA, gobernanza presupuestaria y todo el flujo ejecutivo de versionado, aprobacion, firma, publicacion, acuse, lectura, divergencia documental y folio verificable.
 - La capa documental ya no solo registra eventos manuales: tambien distingue confirmaciones manuales versus confirmaciones integrables por canal externo, con evidencia y referencia externa.
-- La brecha principal restante ya no está en el analisis agricola base, sino en las integraciones reales y en la verificacion externa del documento presupuestario ante terceros.
+- La brecha principal restante ya no está en el analisis agricola base, sino en las integraciones reales para confirmar automaticamente acuses desde fuentes externas.
 
 ## Detalle De Lo Que Llevamos
 - `[x]` Temporadas, consolidacion y fuente canonica comun para dashboard y reportes.
@@ -62,16 +62,13 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
 - `[x]` Aprobacion multinivel por rol sobre la version vigente.
 - `[x]` Firma ejecutiva, publicacion externa, acuse, lectura, hash, referencia, divergencias documentales y folio verificable.
 - `[x]` Confirmacion integrable del acuse o lectura con fuente (`manual`, `correo`, `whatsapp`, `drive`, `portal`), proveedor, referencia externa, URL de evidencia y marca de auto confirmacion.
+- `[x]` Validacion externa del folio con estado (`pendiente`, `listo`, `documento_incompleto`), codigo externo, enlace verificable y payload QR.
 
 ## Lo Que Falta En General
 - `[ ]` Conector real de integraciones:
   - captura automatica desde correo, whatsapp, drive o portal
   - lectura de referencias externas sin digitacion manual
   - confirmacion real por webhook, polling o importador
-- `[ ]` Verificacion externa del folio:
-  - portal o pantalla publica/interna de consulta
-  - QR o enlace verificable
-  - validacion contra hash, referencia y version vigente
 
 ## Estado Del Programa Por Bloque
 - Costos y temporadas: `100%`
@@ -79,8 +76,8 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
 - Cierre economico y calidad del dato: `100%`
 - Comparativos, ranking y alertas globales: `100%`
 - Gobernanza y workflow presupuestario: `100%`
-- Trazabilidad documental presupuestaria interna: `95%`
-- Integraciones externas reales y verificacion de terceros: `0%`
+- Trazabilidad documental presupuestaria interna: `100%`
+- Integraciones externas reales y verificacion de terceros: `50%`
 
 ## Avance Del Plan
 ### Fase 1
@@ -143,6 +140,7 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
 - `[x]` Auditoría de divergencias entre documento firmado y documento publicado.
 - `[x]` Folio documental verificable por versión presupuestaria.
 - `[x]` Confirmación integrable del acuse o lectura desde fuentes externas con evidencia y referencia.
+- `[x]` Validación externa del folio con enlace verificable, código público y payload QR.
 
 ## Lo Que Ya Esta Bien
 - Modelo predial correcto: `empresa -> campo -> sector`.

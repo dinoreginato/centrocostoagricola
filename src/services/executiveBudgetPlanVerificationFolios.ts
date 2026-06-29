@@ -2,6 +2,7 @@ import { supabase } from '../supabase/client';
 import type { ExecutiveBudgetPlanVersionKind } from './executiveBudgetPlanVersions';
 
 export type ExecutiveBudgetPlanVerificationFolioStatus = 'emitido' | 'publicado' | 'acusado';
+export type ExecutiveBudgetPlanVerificationValidationStatus = 'pendiente' | 'listo' | 'documento_incompleto';
 
 export type ExecutiveBudgetPlanVerificationFolioCreate = {
   companyId: string;
@@ -15,6 +16,10 @@ export type ExecutiveBudgetPlanVerificationFolioCreate = {
   folioCode: string;
   verificationCode: string;
   folioStatus: ExecutiveBudgetPlanVerificationFolioStatus;
+  validationStatus?: ExecutiveBudgetPlanVerificationValidationStatus;
+  externalValidationCode?: string | null;
+  verificationUrl?: string | null;
+  qrPayload?: string | null;
   documentRef?: string | null;
   documentHash?: string | null;
   summary: string;
@@ -35,6 +40,10 @@ export type ExecutiveBudgetPlanVerificationFolioRow = {
   folio_code: string;
   verification_code: string;
   folio_status: ExecutiveBudgetPlanVerificationFolioStatus;
+  validation_status: ExecutiveBudgetPlanVerificationValidationStatus;
+  external_validation_code: string | null;
+  verification_url: string | null;
+  qr_payload: string | null;
   document_ref: string | null;
   document_hash: string | null;
   summary: string;
@@ -57,6 +66,10 @@ export async function createExecutiveBudgetPlanVerificationFolio(params: Executi
       folio_code: params.folioCode,
       verification_code: params.verificationCode,
       folio_status: params.folioStatus,
+      validation_status: params.validationStatus || 'pendiente',
+      external_validation_code: params.externalValidationCode || null,
+      verification_url: params.verificationUrl || null,
+      qr_payload: params.qrPayload || null,
       document_ref: params.documentRef || null,
       document_hash: params.documentHash || null,
       summary: params.summary,
