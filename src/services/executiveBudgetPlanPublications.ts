@@ -4,6 +4,7 @@ import type { ExecutiveBudgetPlanApprovalRole } from './executiveBudgetPlanAppro
 
 export type ExecutiveBudgetPlanPublicationAction = 'firmada' | 'publicada_externa';
 export type ExecutiveBudgetPlanPublicationChannel = 'comite' | 'directorio' | 'banco_inversionista' | 'auditoria_externa' | 'otro';
+export type ExecutiveBudgetPlanPublicationReceiptSource = 'manual' | 'correo' | 'whatsapp' | 'drive' | 'portal';
 
 export type ExecutiveBudgetPlanPublicationEventCreate = {
   companyId: string;
@@ -106,6 +107,12 @@ export type ExecutiveBudgetPlanPublicationReceiptRow = {
   recipient_label: string;
   responsible_label: string;
   responsible_role: ExecutiveBudgetPlanApprovalRole;
+  confirmation_source: ExecutiveBudgetPlanPublicationReceiptSource;
+  integration_provider: string | null;
+  external_reference: string | null;
+  evidence_url: string | null;
+  auto_confirmed: boolean;
+  confirmation_origin_label: string | null;
   received_at: string;
   notes: string | null;
   metadata: Record<string, unknown> | null;
@@ -121,6 +128,12 @@ export async function createExecutiveBudgetPlanPublicationReceipt(params: {
   recipientLabel: string;
   responsibleLabel: string;
   responsibleRole: ExecutiveBudgetPlanApprovalRole;
+  confirmationSource?: ExecutiveBudgetPlanPublicationReceiptSource;
+  integrationProvider?: string | null;
+  externalReference?: string | null;
+  evidenceUrl?: string | null;
+  autoConfirmed?: boolean;
+  confirmationOriginLabel?: string | null;
   receivedAt?: string | null;
   notes?: string | null;
   metadata?: Record<string, unknown>;
@@ -136,6 +149,12 @@ export async function createExecutiveBudgetPlanPublicationReceipt(params: {
       recipient_label: params.recipientLabel,
       responsible_label: params.responsibleLabel,
       responsible_role: params.responsibleRole,
+      confirmation_source: params.confirmationSource || 'manual',
+      integration_provider: params.integrationProvider || null,
+      external_reference: params.externalReference || null,
+      evidence_url: params.evidenceUrl || null,
+      auto_confirmed: Boolean(params.autoConfirmed),
+      confirmation_origin_label: params.confirmationOriginLabel || null,
       received_at: params.receivedAt || new Date().toISOString(),
       notes: params.notes || null,
       metadata: params.metadata || {}

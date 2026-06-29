@@ -4,15 +4,20 @@
 Dejar la aplicacion mas confiable para gestion agricola real, con costos mas verdaderos, menos duplicidad y una mejor resolucion de datos para toma de decisiones.
 
 ## Estado General
-- Avance general estimado del roadmap actualmente identificado: `100%`
-- Macrocapas cerradas: `23 de 23`
+- Avance general estimado del programa total de mejora identificado hoy: `92%`
+- Macrocapas cerradas: `24 de 26`
 - Fases base cerradas: `5 de 5`
-- Fases ejecutivas/adicionales cerradas: `18 de 18`
-- Pendientes del roadmap actual: `0`
-- Próxima expansión sugerida:
-  - confirmacion automatizada del acuse desde integraciones (correo / whatsapp / drive)
-  - validacion externa del folio por portal, QR o enlace verificable
-- Estado actual:
+- Fases ejecutivas/adicionales cerradas: `19 de 21`
+- Pendientes generales abiertos: `2`
+- Estado del frente actual:
+  - `[x]` confirmacion integrable del acuse y lectura desde correo / whatsapp / drive / portal
+  - `[ ]` conectores reales para confirmar acuses automaticamente desde integraciones externas
+  - `[ ]` validacion externa del folio por portal, QR o enlace verificable
+- Criterio del porcentaje general:
+  - base: `5/5` cerradas
+  - ejecutivo/adicional: `19/21` cerradas
+  - total identificado hoy: `24/26`
+- Cerrado a la fecha:
   - `[x]` base canonica de temporadas y costos
   - `[x]` conciliacion y auditoria ejecutiva
   - `[x]` margen canonico con produccion e ingresos
@@ -36,6 +41,46 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
   - `[x]` acuse de recibo, evidencia de lectura y hash/referencia formal del documento presupuestario
   - `[x]` auditoria de divergencias entre documento firmado y documento publicado
   - `[x]` folio documental verificable por version presupuestaria
+  - `[x]` confirmacion integrable del acuse y lectura con fuente, proveedor, referencia y evidencia
+- Falta en general:
+  - `[ ]` webhook / polling real desde correo, whatsapp, drive o portal para confirmar sin carga manual
+  - `[ ]` validacion externa del folio por portal, QR o enlace verificable para terceros
+
+## Resumen Ejecutivo Del Avance
+- Lo ya resuelto cubre costos, produccion, ingresos, cierre economico, cierre total del dato, comparativos historicos, ranking global, alertas, SLA, gobernanza presupuestaria y todo el flujo ejecutivo de versionado, aprobacion, firma, publicacion, acuse, lectura, divergencia documental y folio verificable.
+- La capa documental ya no solo registra eventos manuales: tambien distingue confirmaciones manuales versus confirmaciones integrables por canal externo, con evidencia y referencia externa.
+- La brecha principal restante ya no está en el analisis agricola base, sino en las integraciones reales y en la verificacion externa del documento presupuestario ante terceros.
+
+## Detalle De Lo Que Llevamos
+- `[x]` Temporadas, consolidacion y fuente canonica comun para dashboard y reportes.
+- `[x]` Reglas anti duplicidad de mano de obra y combustible con trazabilidad de origen.
+- `[x]` Integracion formal de produccion e ingresos en margen y cierre economico.
+- `[x]` Validaciones de base de datos para consistencia de temporada, campo, sector, porcentajes y montos.
+- `[x]` Lectura ejecutiva por empresa, temporada, campo, sector y comparativo historico multiempresa.
+- `[x]` Ranking global, alertas preventivas, bitacora, ciclo de vida, transiciones, SLA, escalamiento y normalizacion.
+- `[x]` Gobernanza presupuestaria, snapshots materializados, versionado y workflow formal de comité.
+- `[x]` Aprobacion multinivel por rol sobre la version vigente.
+- `[x]` Firma ejecutiva, publicacion externa, acuse, lectura, hash, referencia, divergencias documentales y folio verificable.
+- `[x]` Confirmacion integrable del acuse o lectura con fuente (`manual`, `correo`, `whatsapp`, `drive`, `portal`), proveedor, referencia externa, URL de evidencia y marca de auto confirmacion.
+
+## Lo Que Falta En General
+- `[ ]` Conector real de integraciones:
+  - captura automatica desde correo, whatsapp, drive o portal
+  - lectura de referencias externas sin digitacion manual
+  - confirmacion real por webhook, polling o importador
+- `[ ]` Verificacion externa del folio:
+  - portal o pantalla publica/interna de consulta
+  - QR o enlace verificable
+  - validacion contra hash, referencia y version vigente
+
+## Estado Del Programa Por Bloque
+- Costos y temporadas: `100%`
+- Produccion, ingresos y margen: `100%`
+- Cierre economico y calidad del dato: `100%`
+- Comparativos, ranking y alertas globales: `100%`
+- Gobernanza y workflow presupuestario: `100%`
+- Trazabilidad documental presupuestaria interna: `95%`
+- Integraciones externas reales y verificacion de terceros: `0%`
 
 ## Avance Del Plan
 ### Fase 1
@@ -97,6 +142,7 @@ Dejar la aplicacion mas confiable para gestion agricola real, con costos mas ver
 - `[x]` Acuse de recibo, evidencia de lectura y hash/referencia formal del documento presupuestario.
 - `[x]` Auditoría de divergencias entre documento firmado y documento publicado.
 - `[x]` Folio documental verificable por versión presupuestaria.
+- `[x]` Confirmación integrable del acuse o lectura desde fuentes externas con evidencia y referencia.
 
 ## Lo Que Ya Esta Bien
 - Modelo predial correcto: `empresa -> campo -> sector`.

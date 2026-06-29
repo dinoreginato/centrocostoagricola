@@ -77,6 +77,7 @@ import {
   type ExecutiveBudgetPlanPublicationChannel,
   type ExecutiveBudgetPlanPublicationEventRow,
   type ExecutiveBudgetPlanPublicationReceiptRow,
+  type ExecutiveBudgetPlanPublicationReceiptSource,
   type ExecutiveBudgetPlanPublicationReceiptType
 } from '../services/executiveBudgetPlanPublications';
 import {
@@ -279,6 +280,7 @@ type ExecutiveAuditLayerFilter = 'all' | AgriculturalCostAuditRow['source_layer'
 type ExecutiveExportAction = 'pdf' | 'excel';
 type ExecutiveExportCirculationReason = 'comite' | 'directorio' | 'revision_interna' | 'banco_inversionista' | 'otro';
 type ExecutiveBudgetPublicationChannelOption = ExecutiveBudgetPlanPublicationChannel;
+type ExecutiveBudgetPublicationReceiptSourceOption = ExecutiveBudgetPlanPublicationReceiptSource;
 type ClosureTrendDirection = 'mejora' | 'estable' | 'deterioro' | 'sin_base';
 type ExecutiveRecommendationDecision = 'presentar' | 'presentar_con_cautela' | 'no_presentar';
 type ExecutiveRankingTier = 'fuerte' | 'intermedio' | 'fragil';
@@ -362,6 +364,13 @@ const EXECUTIVE_BUDGET_PUBLICATION_CHANNEL_OPTIONS: Array<{ value: ExecutiveBudg
   { value: 'banco_inversionista', label: 'Banco / inversionista' },
   { value: 'auditoria_externa', label: 'Auditoría externa' },
   { value: 'otro', label: 'Otro' }
+];
+const EXECUTIVE_BUDGET_PUBLICATION_RECEIPT_SOURCE_OPTIONS: Array<{ value: ExecutiveBudgetPublicationReceiptSourceOption; label: string }> = [
+  { value: 'manual', label: 'Manual' },
+  { value: 'correo', label: 'Correo' },
+  { value: 'whatsapp', label: 'WhatsApp' },
+  { value: 'drive', label: 'Drive' },
+  { value: 'portal', label: 'Portal' }
 ];
 
 const formatExecutiveExportWarningType = (value: string) => (
@@ -1689,6 +1698,23 @@ const getExecutiveBudgetVerificationFolioTone = (value: string | null | undefine
   }
 };
 
+const formatExecutiveBudgetPublicationReceiptSource = (value: string | null | undefined) => {
+  switch (value) {
+    case 'manual':
+      return 'Manual';
+    case 'correo':
+      return 'Correo';
+    case 'whatsapp':
+      return 'WhatsApp';
+    case 'drive':
+      return 'Drive';
+    case 'portal':
+      return 'Portal';
+    default:
+      return 'Sin fuente';
+  }
+};
+
 const formatExecutiveBudgetApprovalStatus = (value: string | null | undefined) => {
   switch (value) {
     case 'aprobada':
@@ -2062,6 +2088,8 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
   const currentVersionRead = currentVersionReceiptRows.find((row) => row.receipt_type === 'lectura') || null;
   const latestAcuse = params.receipts.find((row) => row.receipt_type === 'acuse') || null;
   const latestRead = params.receipts.find((row) => row.receipt_type === 'lectura') || null;
+  const latestIntegratedReceipt = params.receipts.find((row) => row.auto_confirmed) || null;
+  const currentVersionIntegratedReceipt = currentVersionReceiptRows.find((row) => row.auto_confirmed) || null;
   const latestDivergence = params.divergences[0] || null;
   const currentVersionDivergence = currentVersionDivergenceRows[0] || null;
   const latestFolio = params.folios[0] || null;
@@ -2079,6 +2107,14 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
       return map;
     }, new Map<string, number>())
   ).map(([recipient, count]) => ({ recipient, count })).sort((a, b) => b.count - a.count);
+  const receiptSourceSummary = Array.from(
+    params.receipts.reduce((map, row) => {
+      const source = row.confirmation_source || 'manual';
+      map.set(source, (map.get(source) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  ).map(([source, count]) => ({ source, count })).sort((a, b) => b.count - a.count);
+  const automatedReceiptCount = params.receipts.filter((row) => row.auto_confirmed).length;
   const divergenceSummary = Array.from(
     params.divergences.reduce((map, row) => {
       map.set(row.divergence_status, (map.get(row.divergence_status) || 0) + 1);
@@ -2129,6 +2165,15 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
           : currentVersionFolio
             ? `La versión vigente de ${params.scopeLabel} ya tiene el folio ${currentVersionFolio.folio_code} emitido para verificación documental.`
             : `La versión vigente de ${params.scopeLabel} aún no tiene un folio verificable persistido.`;
+  const receiptIntegrationSummaryLine = !params.currentVersion
+    ? `No hay versión vigente para consolidar acuses desde integraciones en ${params.scopeLabel}.`
+    : !currentVersionExternalPublication
+      ? `La confirmación desde integraciones de ${params.scopeLabel} requiere una publicación externa visible en la versión vigente.`
+      : currentVersionIntegratedReceipt
+        ? `La versión vigente de ${params.scopeLabel} ya tiene confirmación automatizada desde ${formatExecutiveBudgetPublicationReceiptSource(currentVersionIntegratedReceipt.confirmation_source).toLowerCase()}.`
+        : automatedReceiptCount > 0
+          ? `Existen confirmaciones integradas históricas, pero la versión vigente de ${params.scopeLabel} aún no registra una evidencia automatizada.`
+          : `Las confirmaciones de ${params.scopeLabel} todavía se capturan de forma manual y aún no muestran una integración visible.`;
 
   return {
     rows: params.rows,
@@ -2145,12 +2190,14 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
     latestExternalPublication,
     latestAcuse,
     latestRead,
+    latestIntegratedReceipt,
     latestDivergence,
     latestFolio,
     currentVersionSignoff,
     currentVersionExternalPublication,
     currentVersionAcuse,
     currentVersionRead,
+    currentVersionIntegratedReceipt,
     currentVersionDivergence,
     currentVersionFolio,
     recentRows: params.rows.slice(0, 12),
@@ -2162,6 +2209,7 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
     recipientSummary,
     receiptSummary,
     recipientReceiptSummary,
+    receiptSourceSummary,
     divergenceSummary,
     folioStatusSummary,
     topAction: actionSummary[0] || null,
@@ -2169,10 +2217,12 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
     topRecipient: recipientSummary[0] || null,
     topReceipt: receiptSummary[0] || null,
     topReceiptRecipient: recipientReceiptSummary[0] || null,
+    topReceiptSource: receiptSourceSummary[0] || null,
     topDivergence: divergenceSummary[0] || null,
     topFolioStatus: folioStatusSummary[0] || null,
     totalEvents: params.rows.length,
     totalReceipts: params.receipts.length,
+    automatedReceiptCount,
     totalDivergences: params.divergences.length,
     totalFolios: params.folios.length,
     tone,
@@ -2181,7 +2231,8 @@ const buildExecutiveBudgetPlanPublicationAnalytics = (params: {
     canRegisterReceipt: Boolean(currentVersionExternalPublication),
     summaryLine,
     divergenceSummaryLine,
-    folioSummaryLine
+    folioSummaryLine,
+    receiptIntegrationSummaryLine
   };
 };
 
@@ -2979,6 +3030,10 @@ export const Reports: React.FC = () => {
   const [executiveBudgetPublicationReceiptRole, setExecutiveBudgetPublicationReceiptRole] = useState<ExecutiveBudgetPlanApprovalRole>('control_gestion');
   const [executiveBudgetPublicationReceiptRecipient, setExecutiveBudgetPublicationReceiptRecipient] = useState('');
   const [executiveBudgetPublicationReceiptType, setExecutiveBudgetPublicationReceiptType] = useState<ExecutiveBudgetPlanPublicationReceiptType>('acuse');
+  const [executiveBudgetPublicationReceiptSource, setExecutiveBudgetPublicationReceiptSource] = useState<ExecutiveBudgetPublicationReceiptSourceOption>('manual');
+  const [executiveBudgetPublicationReceiptProvider, setExecutiveBudgetPublicationReceiptProvider] = useState('');
+  const [executiveBudgetPublicationReceiptExternalReference, setExecutiveBudgetPublicationReceiptExternalReference] = useState('');
+  const [executiveBudgetPublicationReceiptEvidenceUrl, setExecutiveBudgetPublicationReceiptEvidenceUrl] = useState('');
   const [executiveBudgetPublicationReceiptNotes, setExecutiveBudgetPublicationReceiptNotes] = useState('');
   const [submittingExecutiveBudgetPublicationReceipt, setSubmittingExecutiveBudgetPublicationReceipt] = useState(false);
 
@@ -3187,6 +3242,10 @@ export const Reports: React.FC = () => {
     setExecutiveBudgetPublicationReceiptRole('control_gestion');
     setExecutiveBudgetPublicationReceiptRecipient('');
     setExecutiveBudgetPublicationReceiptType('acuse');
+    setExecutiveBudgetPublicationReceiptSource('manual');
+    setExecutiveBudgetPublicationReceiptProvider('');
+    setExecutiveBudgetPublicationReceiptExternalReference('');
+    setExecutiveBudgetPublicationReceiptEvidenceUrl('');
     setExecutiveBudgetPublicationReceiptNotes('');
     setReportData([]);
     setMonthlyExpenses([]);
@@ -6958,6 +7017,10 @@ export const Reports: React.FC = () => {
 
     const responsibleLabel = executiveBudgetPublicationReceiptResponsible.trim();
     const recipientLabel = executiveBudgetPublicationReceiptRecipient.trim();
+    const confirmationSource = executiveBudgetPublicationReceiptSource;
+    const integrationProvider = executiveBudgetPublicationReceiptProvider.trim();
+    const externalReference = executiveBudgetPublicationReceiptExternalReference.trim();
+    const evidenceUrl = executiveBudgetPublicationReceiptEvidenceUrl.trim();
     const notes = executiveBudgetPublicationReceiptNotes.trim();
 
     if (!responsibleLabel) {
@@ -6967,6 +7030,11 @@ export const Reports: React.FC = () => {
 
     if (!recipientLabel) {
       toast.error('Debes indicar el destinatario que acusa o lee.');
+      return;
+    }
+
+    if (confirmationSource !== 'manual' && !integrationProvider && !externalReference && !evidenceUrl) {
+      toast.error('Debes dejar al menos un proveedor, referencia o evidencia para una confirmación integrada.');
       return;
     }
 
@@ -6981,10 +7049,23 @@ export const Reports: React.FC = () => {
         recipientLabel,
         responsibleLabel,
         responsibleRole: executiveBudgetPublicationReceiptRole,
+        confirmationSource,
+        integrationProvider: integrationProvider || null,
+        externalReference: externalReference || null,
+        evidenceUrl: evidenceUrl || null,
+        autoConfirmed: confirmationSource !== 'manual',
+        confirmationOriginLabel: confirmationSource === 'manual'
+          ? 'Registro manual'
+          : `${formatExecutiveBudgetPublicationReceiptSource(confirmationSource)}${integrationProvider ? ` · ${integrationProvider}` : ''}`,
         notes: notes || null,
         metadata: {
           company_name: companyName,
           receipt_type: executiveBudgetPublicationReceiptType,
+          confirmation_source: confirmationSource,
+          integration_provider: integrationProvider || null,
+          external_reference: externalReference || null,
+          evidence_url: evidenceUrl || null,
+          auto_confirmed: confirmationSource !== 'manual',
           publication_recipient: executiveBudgetPlanPublicationData.currentVersionExternalPublication.recipient_label,
           publication_channel: executiveBudgetPlanPublicationData.currentVersionExternalPublication.publication_channel,
           document_ref: executiveBudgetPlanPublicationData.currentVersionExternalPublication.document_ref,
@@ -6994,8 +7075,16 @@ export const Reports: React.FC = () => {
 
       const rows = await loadExecutiveBudgetPlanPublicationReceipts({ companyId: selectedCompany.id, limit: 400 });
       setExecutiveBudgetPlanPublicationReceipts(rows || []);
+      setExecutiveBudgetPublicationReceiptSource('manual');
+      setExecutiveBudgetPublicationReceiptProvider('');
+      setExecutiveBudgetPublicationReceiptExternalReference('');
+      setExecutiveBudgetPublicationReceiptEvidenceUrl('');
       setExecutiveBudgetPublicationReceiptNotes('');
-      toast.success(executiveBudgetPublicationReceiptType === 'acuse' ? 'Se registró el acuse de recibo.' : 'Se registró la evidencia de lectura.');
+      toast.success(
+        confirmationSource === 'manual'
+          ? (executiveBudgetPublicationReceiptType === 'acuse' ? 'Se registró el acuse de recibo.' : 'Se registró la evidencia de lectura.')
+          : `Se registró la confirmación integrada por ${formatExecutiveBudgetPublicationReceiptSource(confirmationSource).toLowerCase()}.`
+      );
     } catch (error: any) {
       toast.error(`No se pudo registrar el acuse/lectura: ${error?.message || 'intenta nuevamente.'}`);
     } finally {
@@ -7008,10 +7097,14 @@ export const Reports: React.FC = () => {
     executiveBudgetPlanPublicationData.currentVersionExternalPublication?.document_ref,
     executiveBudgetPlanPublicationData.currentVersionExternalPublication?.publication_channel,
     executiveBudgetPlanPublicationData.currentVersionExternalPublication?.recipient_label,
+    executiveBudgetPublicationReceiptEvidenceUrl,
+    executiveBudgetPublicationReceiptExternalReference,
     executiveBudgetPublicationReceiptNotes,
+    executiveBudgetPublicationReceiptProvider,
     executiveBudgetPublicationReceiptRecipient,
     executiveBudgetPublicationReceiptResponsible,
     executiveBudgetPublicationReceiptRole,
+    executiveBudgetPublicationReceiptSource,
     executiveBudgetPublicationReceiptType,
     executiveCurrentBudgetPlanVersion,
     selectedCompany?.id,
@@ -7329,6 +7422,10 @@ export const Reports: React.FC = () => {
         { Indicador: 'Lecturas', Valor: executiveBudgetPlanPublicationData.receiptSummary.find((row) => row.receiptType === 'lectura')?.count || 0 },
         { Indicador: 'Último acuse', Valor: executiveBudgetPlanPublicationData.latestAcuse ? executiveBudgetPlanPublicationData.latestAcuse.recipient_label : 'Sin acuse' },
         { Indicador: 'Última lectura', Valor: executiveBudgetPlanPublicationData.latestRead ? executiveBudgetPlanPublicationData.latestRead.recipient_label : 'Sin lectura' },
+        { Indicador: 'Confirmaciones integradas', Valor: executiveBudgetPlanPublicationData.automatedReceiptCount },
+        { Indicador: 'Fuente dominante confirmación', Valor: executiveBudgetPlanPublicationData.topReceiptSource ? formatExecutiveBudgetPublicationReceiptSource(executiveBudgetPlanPublicationData.topReceiptSource.source) : 'Sin fuente' },
+        { Indicador: 'Última confirmación integrada', Valor: executiveBudgetPlanPublicationData.latestIntegratedReceipt ? `${executiveBudgetPlanPublicationData.latestIntegratedReceipt.recipient_label} · ${formatExecutiveBudgetPublicationReceiptSource(executiveBudgetPlanPublicationData.latestIntegratedReceipt.confirmation_source)}` : 'Sin confirmación' },
+        { Indicador: 'Resumen integración acuses', Valor: executiveBudgetPlanPublicationData.receiptIntegrationSummaryLine },
         { Indicador: 'Divergencias documentales', Valor: executiveBudgetPlanPublicationData.totalDivergences },
         { Indicador: 'Última divergencia', Valor: executiveBudgetPlanPublicationData.latestDivergence ? formatExecutiveBudgetPublicationDivergenceStatus(executiveBudgetPlanPublicationData.latestDivergence.divergence_status) : 'Sin auditoría' },
         { Indicador: 'Divergencia actual', Valor: executiveBudgetPlanPublicationData.currentVersionDivergence ? formatExecutiveBudgetPublicationDivergenceStatus(executiveBudgetPlanPublicationData.currentVersionDivergence.divergence_status) : 'Sin auditoría' },
@@ -9082,6 +9179,10 @@ export const Reports: React.FC = () => {
             ['Lecturas', String(executiveBudgetPlanPublicationData.receiptSummary.find((row) => row.receiptType === 'lectura')?.count || 0)],
             ['Último acuse', executiveBudgetPlanPublicationData.latestAcuse ? `${executiveBudgetPlanPublicationData.latestAcuse.recipient_label} · ${new Date(executiveBudgetPlanPublicationData.latestAcuse.received_at).toLocaleString('es-CL')}` : 'Sin acuse'],
             ['Última lectura', executiveBudgetPlanPublicationData.latestRead ? `${executiveBudgetPlanPublicationData.latestRead.recipient_label} · ${new Date(executiveBudgetPlanPublicationData.latestRead.received_at).toLocaleString('es-CL')}` : 'Sin lectura'],
+            ['Confirmaciones integradas', String(executiveBudgetPlanPublicationData.automatedReceiptCount)],
+            ['Fuente dominante confirmación', executiveBudgetPlanPublicationData.topReceiptSource ? formatExecutiveBudgetPublicationReceiptSource(executiveBudgetPlanPublicationData.topReceiptSource.source) : 'Sin fuente'],
+            ['Última confirmación integrada', executiveBudgetPlanPublicationData.latestIntegratedReceipt ? `${executiveBudgetPlanPublicationData.latestIntegratedReceipt.recipient_label} · ${formatExecutiveBudgetPublicationReceiptSource(executiveBudgetPlanPublicationData.latestIntegratedReceipt.confirmation_source)}` : 'Sin confirmación'],
+            ['Resumen integración acuses', executiveBudgetPlanPublicationData.receiptIntegrationSummaryLine],
             ['Divergencias documentales', String(executiveBudgetPlanPublicationData.totalDivergences)],
             ['Divergencia actual', executiveBudgetPlanPublicationData.currentVersionDivergence ? formatExecutiveBudgetPublicationDivergenceStatus(executiveBudgetPlanPublicationData.currentVersionDivergence.divergence_status) : 'Sin auditoría'],
             ['Resumen divergencia', executiveBudgetPlanPublicationData.divergenceSummaryLine],
@@ -12833,6 +12934,12 @@ export const Reports: React.FC = () => {
                               : 'sin lectura visible'}.
                           </p>
                           <p className="mt-2">
+                            Confirmación integrada más reciente: {executiveBudgetPlanPublicationData.latestIntegratedReceipt
+                              ? `${executiveBudgetPlanPublicationData.latestIntegratedReceipt.recipient_label} · ${formatExecutiveBudgetPublicationReceiptSource(executiveBudgetPlanPublicationData.latestIntegratedReceipt.confirmation_source)}${executiveBudgetPlanPublicationData.latestIntegratedReceipt.integration_provider ? ` · ${executiveBudgetPlanPublicationData.latestIntegratedReceipt.integration_provider}` : ''}`
+                              : 'sin confirmación automatizada visible'}.
+                          </p>
+                          <p className="mt-2">{executiveBudgetPlanPublicationData.receiptIntegrationSummaryLine}</p>
+                          <p className="mt-2">
                             Divergencia documental: {executiveBudgetPlanPublicationData.currentVersionDivergence
                               ? formatExecutiveBudgetPublicationDivergenceStatus(executiveBudgetPlanPublicationData.currentVersionDivergence.divergence_status)
                               : 'sin auditoría visible'}.
@@ -12908,7 +13015,7 @@ export const Reports: React.FC = () => {
                         <div className="rounded-xl border border-slate-200 p-4 space-y-4">
                           <div>
                             <div className="text-sm font-medium text-slate-900">Registrar acuse / lectura</div>
-                            <p className="mt-1 text-sm text-slate-500">Disponible solo cuando la versión vigente ya tiene publicación externa registrada.</p>
+                            <p className="mt-1 text-sm text-slate-500">Disponible solo cuando la versión vigente ya tiene publicación externa registrada. Puede quedar manual o confirmada desde correo, WhatsApp, Drive o portal.</p>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <label className="block text-sm">
@@ -12944,6 +13051,18 @@ export const Reports: React.FC = () => {
                                 <option value="lectura">Lectura</option>
                               </select>
                             </label>
+                            <label className="block text-sm">
+                              <span className="mb-1 block font-medium text-slate-700">Fuente confirmación</span>
+                              <select
+                                value={executiveBudgetPublicationReceiptSource}
+                                onChange={(e) => setExecutiveBudgetPublicationReceiptSource(e.target.value as ExecutiveBudgetPublicationReceiptSourceOption)}
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                              >
+                                {EXECUTIVE_BUDGET_PUBLICATION_RECEIPT_SOURCE_OPTIONS.map((option) => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            </label>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <label className="block text-sm">
@@ -12956,6 +13075,72 @@ export const Reports: React.FC = () => {
                                 className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
                               />
                             </label>
+                            <label className="block text-sm">
+                              <span className="mb-1 block font-medium text-slate-700">Proveedor / integración</span>
+                              <input
+                                type="text"
+                                value={executiveBudgetPublicationReceiptProvider}
+                                onChange={(e) => setExecutiveBudgetPublicationReceiptProvider(e.target.value)}
+                                placeholder="Ej: Gmail, WhatsApp Business, Drive, portal comité"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                              />
+                            </label>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <label className="block text-sm">
+                              <span className="mb-1 block font-medium text-slate-700">Referencia externa</span>
+                              <input
+                                type="text"
+                                value={executiveBudgetPublicationReceiptExternalReference}
+                                onChange={(e) => setExecutiveBudgetPublicationReceiptExternalReference(e.target.value)}
+                                placeholder="Ej: mail-2026-04-001 / wa-msg-8891"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                              />
+                            </label>
+                            <label className="block text-sm">
+                              <span className="mb-1 block font-medium text-slate-700">URL evidencia</span>
+                              <input
+                                type="text"
+                                value={executiveBudgetPublicationReceiptEvidenceUrl}
+                                onChange={(e) => setExecutiveBudgetPublicationReceiptEvidenceUrl(e.target.value)}
+                                placeholder="Ej: https://.../acuse"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                              />
+                            </label>
+                          </div>
+                          <div className={`rounded-lg border px-3 py-2 text-sm ${
+                            executiveBudgetPublicationReceiptSource === 'manual'
+                              ? 'border-slate-200 bg-slate-50 text-slate-700'
+                              : 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                          }`}>
+                            {executiveBudgetPublicationReceiptSource === 'manual'
+                              ? 'El acuse o lectura quedará como registro manual.'
+                              : `La confirmación quedará marcada como integrada desde ${formatExecutiveBudgetPublicationReceiptSource(executiveBudgetPublicationReceiptSource).toLowerCase()}.`}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div className="rounded-lg bg-slate-50 p-4">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Integradas</div>
+                              <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveBudgetPlanPublicationData.automatedReceiptCount}</div>
+                            </div>
+                            <div className="rounded-lg bg-slate-50 p-4">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Fuente dominante</div>
+                              <div className="mt-2 text-lg font-semibold text-slate-900">
+                                {executiveBudgetPlanPublicationData.topReceiptSource ? formatExecutiveBudgetPublicationReceiptSource(executiveBudgetPlanPublicationData.topReceiptSource.source) : 'Sin fuente'}
+                              </div>
+                            </div>
+                            <div className="rounded-lg bg-slate-50 p-4">
+                              <div className="text-xs uppercase tracking-wide text-slate-500">Última integrada</div>
+                              <div className="mt-2 text-sm font-semibold text-slate-900">
+                                {executiveBudgetPlanPublicationData.latestIntegratedReceipt
+                                  ? `${executiveBudgetPlanPublicationData.latestIntegratedReceipt.recipient_label} · ${formatExecutiveBudgetPublicationReceiptSource(executiveBudgetPlanPublicationData.latestIntegratedReceipt.confirmation_source)}`
+                                  : 'Sin confirmación'}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="rounded-lg border border-dashed border-indigo-200 bg-indigo-50/60 px-3 py-2 text-sm text-indigo-700">
+                            {executiveBudgetPlanPublicationData.receiptIntegrationSummaryLine}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <label className="block text-sm">
                               <span className="mb-1 block font-medium text-slate-700">Notas</span>
                               <input
@@ -12981,6 +13166,7 @@ export const Reports: React.FC = () => {
                                 <tr>
                                   <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fecha</th>
                                   <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Tipo</th>
+                                  <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Fuente</th>
                                   <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Destinatario</th>
                                   <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Responsable</th>
                                 </tr>
@@ -12990,13 +13176,17 @@ export const Reports: React.FC = () => {
                                   <tr key={row.id} className={row.season === selectedSeason ? 'bg-indigo-50/40' : ''}>
                                     <td className="px-4 py-3 text-slate-700">{new Date(row.received_at).toLocaleString('es-CL')}</td>
                                     <td className="px-4 py-3 text-slate-700">{row.receipt_type === 'acuse' ? 'Acuse' : 'Lectura'}</td>
+                                    <td className="px-4 py-3 text-slate-700">
+                                      {formatExecutiveBudgetPublicationReceiptSource(row.confirmation_source)}
+                                      {row.auto_confirmed ? ` · ${row.integration_provider || 'Automática'}` : ''}
+                                    </td>
                                     <td className="px-4 py-3 text-slate-700">{row.recipient_label}</td>
                                     <td className="px-4 py-3 text-slate-700">{row.responsible_label}</td>
                                   </tr>
                                 ))}
                                 {executiveBudgetPlanPublicationData.recentReceiptRows.length === 0 && (
                                   <tr>
-                                    <td colSpan={4} className="px-4 py-4 text-center text-sm text-slate-500">
+                                    <td colSpan={5} className="px-4 py-4 text-center text-sm text-slate-500">
                                       Sin acuses ni lecturas visibles todavía.
                                     </td>
                                   </tr>
@@ -19942,6 +20132,12 @@ export const Reports: React.FC = () => {
                                     : 'sin lectura visible'}.
                                 </p>
                                 <p className="mt-5 text-lg text-slate-500">
+                                  Última confirmación integrada: {executiveBudgetPlanPublicationData.latestIntegratedReceipt
+                                    ? `${executiveBudgetPlanPublicationData.latestIntegratedReceipt.recipient_label} · ${formatExecutiveBudgetPublicationReceiptSource(executiveBudgetPlanPublicationData.latestIntegratedReceipt.confirmation_source)}${executiveBudgetPlanPublicationData.latestIntegratedReceipt.integration_provider ? ` · ${executiveBudgetPlanPublicationData.latestIntegratedReceipt.integration_provider}` : ''}`
+                                    : 'sin confirmación automatizada visible'}.
+                                </p>
+                                <p className="mt-5 text-lg text-slate-500">{executiveBudgetPlanPublicationData.receiptIntegrationSummaryLine}</p>
+                                <p className="mt-5 text-lg text-slate-500">
                                   Divergencia documental: {executiveBudgetPlanPublicationData.currentVersionDivergence
                                     ? formatExecutiveBudgetPublicationDivergenceStatus(executiveBudgetPlanPublicationData.currentVersionDivergence.divergence_status)
                                     : 'sin auditoría visible'}.
@@ -20033,6 +20229,31 @@ export const Reports: React.FC = () => {
                                     </div>
                                   )}
                                 </div>
+                              </div>
+
+                              <div className="rounded-2xl border border-slate-200 p-6">
+                                <div className="text-2xl font-bold text-slate-800 mb-5">Confirmaciones integradas</div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                  <div className="rounded-2xl bg-slate-50 p-5">
+                                    <div className="text-sm uppercase tracking-wide text-slate-500">Integradas</div>
+                                    <div className="mt-3 text-3xl font-bold text-slate-900">{executiveBudgetPlanPublicationData.automatedReceiptCount}</div>
+                                  </div>
+                                  <div className="rounded-2xl bg-slate-50 p-5">
+                                    <div className="text-sm uppercase tracking-wide text-slate-500">Fuente dominante</div>
+                                    <div className="mt-3 text-2xl font-bold text-slate-900">
+                                      {executiveBudgetPlanPublicationData.topReceiptSource ? formatExecutiveBudgetPublicationReceiptSource(executiveBudgetPlanPublicationData.topReceiptSource.source) : 'Sin fuente'}
+                                    </div>
+                                  </div>
+                                  <div className="rounded-2xl bg-slate-50 p-5">
+                                    <div className="text-sm uppercase tracking-wide text-slate-500">Última integrada</div>
+                                    <div className="mt-3 text-base font-bold text-slate-900">
+                                      {executiveBudgetPlanPublicationData.latestIntegratedReceipt
+                                        ? `${executiveBudgetPlanPublicationData.latestIntegratedReceipt.recipient_label} · ${formatExecutiveBudgetPublicationReceiptSource(executiveBudgetPlanPublicationData.latestIntegratedReceipt.confirmation_source)}`
+                                        : 'Sin confirmación'}
+                                    </div>
+                                  </div>
+                                </div>
+                                <p className="mt-5 text-lg text-slate-500">{executiveBudgetPlanPublicationData.receiptIntegrationSummaryLine}</p>
                               </div>
 
                               <div className="rounded-2xl border border-slate-200 p-6">
