@@ -2764,6 +2764,7 @@ const buildEconomicClosureSummaryFromReportSources = (params: {
         const marginRow = marginRows.find((row) => row.season === season && row.sector_id === sector.id) || null;
         const expectedWithoutProduction = isSectorExpectedWithoutProduction(sector, season);
         const hasPositiveProductionRecord = Number(record?.kg_produced || 0) > 0;
+        const hasProductionEvidence = hasPositiveProductionRecord || Number(marginRow?.kg_produced || 0) > 0;
         return {
           fieldId: String(field.id),
           fieldName: String(field.name || '-'),
@@ -2773,6 +2774,7 @@ const buildEconomicClosureSummaryFromReportSources = (params: {
           kgProduced: Number(record?.kg_produced || 0),
           pricePerKg: Number(record?.price_per_kg || 0),
           hasRecord: hasPositiveProductionRecord,
+          hasProductionEvidence,
           productionSource: marginRow?.production_source || 'sin_produccion',
           productiveStage: String(sector.productive_stage || 'productivo'),
           productionExpectedFromSeason: sector.production_expected_from_season || null,
@@ -2787,9 +2789,9 @@ const buildEconomicClosureSummaryFromReportSources = (params: {
     )
     .filter((row) => fieldFilter === 'all' || row.fieldId === fieldFilter);
   const blockingRows = visibleRows.filter((row) => !row.expectedWithoutProduction);
-  const closedRows = blockingRows.filter((row) => row.hasRecord && row.totalIncome > 0 && row.totalCost > 0);
-  const pendingProductionRows = blockingRows.filter((row) => row.totalIncome > 0 && !row.hasRecord);
-  const pendingIncomeRows = blockingRows.filter((row) => row.hasRecord && row.totalIncome <= 0);
+  const closedRows = blockingRows.filter((row) => row.hasProductionEvidence && row.totalIncome > 0 && row.totalCost > 0);
+  const pendingProductionRows = blockingRows.filter((row) => row.totalIncome > 0 && !row.hasProductionEvidence);
+  const pendingIncomeRows = blockingRows.filter((row) => row.hasProductionEvidence && row.totalIncome <= 0);
   const costWithoutIncomeRows = blockingRows.filter((row) => row.totalCost > 0 && row.totalIncome <= 0);
   const expectedNoProductionRows = visibleRows.filter((row) => row.expectedWithoutProduction && row.totalCost > 0);
   const closurePct = blockingRows.length > 0 ? (closedRows.length / blockingRows.length) * 100 : 0;
@@ -4800,6 +4802,7 @@ export const Reports: React.FC = () => {
           const marginRow = rawMarginRows.find((row) => row.season === selectedSeason && row.sector_id === sector.id) || null;
           const expectedWithoutProduction = isSectorExpectedWithoutProduction(sector, selectedSeason);
           const hasPositiveProductionRecord = Number(record?.kg_produced || 0) > 0;
+          const hasProductionEvidence = hasPositiveProductionRecord || Number(marginRow?.kg_produced || 0) > 0;
           return {
             fieldId: String(field.id),
             fieldName: String(field.name || '-'),
@@ -4809,6 +4812,7 @@ export const Reports: React.FC = () => {
             kgProduced: Number(record?.kg_produced || 0),
             pricePerKg: Number(record?.price_per_kg || 0),
             hasRecord: hasPositiveProductionRecord,
+            hasProductionEvidence,
             productionSource: expectedWithoutProduction ? 'en_formacion' : (marginRow?.production_source || 'sin_produccion'),
             productiveStage: String(sector.productive_stage || 'productivo'),
             productionExpectedFromSeason: sector.production_expected_from_season || null,
@@ -4827,8 +4831,8 @@ export const Reports: React.FC = () => {
     const blockingRows = productionCoverageRows.filter((row) => !row.expectedWithoutProduction);
     const exemptFormationRows = productionCoverageRows.filter((row) => row.expectedWithoutProduction && row.totalCost > 0);
     const sectorsWithCostNoIncome = blockingRows.filter((row) => row.totalCost > 0 && row.totalIncome <= 0);
-    const sectorsWithIncomeNoFormalProduction = blockingRows.filter((row) => row.totalIncome > 0 && !row.hasRecord);
-    const sectorsWithFormalProductionNoIncome = blockingRows.filter((row) => row.hasRecord && row.totalIncome <= 0);
+    const sectorsWithIncomeNoFormalProduction = blockingRows.filter((row) => row.totalIncome > 0 && !row.hasProductionEvidence);
+    const sectorsWithFormalProductionNoIncome = blockingRows.filter((row) => row.hasProductionEvidence && row.totalIncome <= 0);
 
     return {
       exemptFormationRows,
