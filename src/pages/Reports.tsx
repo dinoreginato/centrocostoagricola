@@ -14436,6 +14436,56 @@ export const Reports: React.FC = () => {
                         : 'Aún faltan metas de producción y precio estimado para convertir el presupuesto en referencia comercial visible.'}
                     </p>
                   </div>
+                  <div className="mt-6">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h4 className="text-base font-semibold text-gray-900">Detalle presupuestario por sector</h4>
+                        <p className="text-sm text-gray-500">Compara por sector el plan de costo, la meta productiva y el resultado real visible.</p>
+                      </div>
+                      <div className="text-xs text-gray-500">{executiveFieldLabel}</div>
+                    </div>
+                    <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Campo</th>
+                            <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Sector</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Ppto total</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Prod. esp.</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Prod. real</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Ingreso est.</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Ingreso real</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Margen est.</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Margen real</th>
+                            <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Desv. ppto</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white">
+                          {executiveViewData.sectorRows.map((row) => (
+                            <tr key={`${row.fieldName}-${row.sectorId}`} className="hover:bg-slate-50">
+                              <td className="px-4 py-3 text-slate-700">{row.fieldName}</td>
+                              <td className="px-4 py-3 text-slate-900">{row.sectorName}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{formatCLP(Number((row as any).budgetTotal || 0))}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{Number((row as any).expectedKg || 0).toLocaleString('es-CL')} kg</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{Number((row as any).kgProduced || 0).toLocaleString('es-CL')} kg</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{formatCLP(Number((row as any).expectedRevenue || 0))}</td>
+                              <td className="px-4 py-3 text-right text-slate-700">{formatCLP(Number((row as any).actualIncome || 0))}</td>
+                              <td className={`px-4 py-3 text-right font-medium ${Number((row as any).expectedMargin || 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatCLP(Number((row as any).expectedMargin || 0))}</td>
+                              <td className={`px-4 py-3 text-right font-medium ${Number((row as any).actualProfit || 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatCLP(Number((row as any).actualProfit || 0))}</td>
+                              <td className={`px-4 py-3 text-right font-medium ${Number((row as any).budgetDelta || 0) <= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatCLP(Number((row as any).budgetDelta || 0))}</td>
+                            </tr>
+                          ))}
+                          {executiveViewData.sectorRows.length === 0 && (
+                            <tr>
+                              <td colSpan={10} className="px-4 py-4 text-center text-sm text-slate-500">
+                                No hay sectores visibles para mostrar detalle presupuestario.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="bg-white rounded-lg shadow border border-gray-200 p-6">
