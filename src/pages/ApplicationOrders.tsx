@@ -2,7 +2,7 @@ import { toast } from 'sonner';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCompany } from '../contexts/CompanyContext';
-import { Plus, Loader2, Save, Trash2, Printer, Edit, Copy, ClipboardList } from 'lucide-react';
+import { Plus, Loader2, Save, Trash2, Printer, Edit, Copy, ClipboardList, Search } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfPreviewModal } from '../components/PdfPreviewModal';
@@ -148,6 +148,7 @@ export const ApplicationOrders: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const canWrite = userRole !== 'viewer';
   const [loadErrorShown, setLoadErrorShown] = useState(false);
+  const [ordersSearchTerm, setOrdersSearchTerm] = useState('');
   
   // PDF Preview State
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
@@ -259,6 +260,30 @@ export const ApplicationOrders: React.FC = () => {
     })),
     [currentOrder.items]
   );
+  const filteredOrders = useMemo(() => {
+    const query = ordersSearchTerm.trim().toLowerCase();
+    if (!query) return orders;
+
+    return orders.filter((order) => {
+      const haystack = [
+        String(order.order_number || ''),
+        String(order.scheduled_date || ''),
+        String(order.completed_date || ''),
+        String(order.field?.name || ''),
+        String(order.sector?.name || ''),
+        String(order.objective || ''),
+        String(order.status || ''),
+        ...((order.items || []).flatMap((item) => [
+          String(item.product_name || ''),
+          String(item.active_ingredient || '')
+        ]))
+      ]
+        .join(' ')
+        .toLowerCase();
+
+      return haystack.includes(query);
+    });
+  }, [orders, ordersSearchTerm]);
 
   useEffect(() => {
     if (!pageQuery.isError) {
@@ -1483,6 +1508,18 @@ export const ApplicationOrders: React.FC = () => {
           </div>
       ) : (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+            <div className="border-b border-gray-200 dark:border-gray-700 px-4 py-3">
+              <div className="relative max-w-md">
+                <input
+                  type="text"
+                  value={ordersSearchTerm}
+                  onChange={(e) => setOrdersSearchTerm(e.target.value)}
+                  placeholder="Buscar por N°, huerto, sector, objetivo, estado o producto..."
+                  className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 py-2 pl-10 pr-3 text-sm text-gray-900 dark:text-gray-100"
+                />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                   <thead className="bg-gray-50 dark:bg-gray-900">
@@ -1496,7 +1533,7 @@ export const ApplicationOrders: React.FC = () => {
                       </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                      {orders.map((order) => (
+                      {filteredOrders.map((order) => (
                           <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900">
                               <td className="px-4 py-4 whitespace-nowrap text-sm font-bold text-gray-900 dark:text-gray-100">#{order.order_number}</td>
                               <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
@@ -1601,9 +1638,11 @@ export const ApplicationOrders: React.FC = () => {
                               </td>
                           </tr>
                       ))}
-                      {orders.length === 0 && (
+                      {filteredOrders.length === 0 && (
                           <tr>
-                              <td colSpan={6} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">No hay ordenes registradas</td>
+                              <td colSpan={6} className="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                                {ordersSearchTerm.trim() ? 'No se encontraron órdenes para esa búsqueda' : 'No hay ordenes registradas'}
+                              </td>
                           </tr>
                       )}
                   </tbody>
