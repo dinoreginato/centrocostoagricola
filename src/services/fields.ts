@@ -88,12 +88,35 @@ export type SectorBudgetSeasonPlanInsert = {
 
 export type SectorBudgetSeasonPlanUpdate = Partial<SectorBudgetSeasonPlanInsert>;
 
+const isMissingSeasonPlansRelationError = (error: any) => {
+  const message = String(error?.message || error?.details || error?.hint || error || '').toLowerCase();
+  return message.includes('sector_budget_season_plans')
+    && (
+      message.includes('does not exist')
+      || message.includes('could not find')
+      || message.includes('relationship')
+      || message.includes('schema cache')
+      || message.includes('not found')
+    );
+};
+
 export async function fetchFieldsWithSectors(params: { companyId: string }) {
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('fields')
     .select('*, sectors(*, sector_budget_season_plans(*))')
     .eq('company_id', params.companyId)
     .order('created_at', { ascending: false });
+
+  if (error && isMissingSeasonPlansRelationError(error)) {
+    const fallbackRes = await supabase
+      .from('fields')
+      .select('*, sectors(*)')
+      .eq('company_id', params.companyId)
+      .order('created_at', { ascending: false });
+
+    data = fallbackRes.data;
+    error = fallbackRes.error;
+  }
 
   if (error) throw error;
   return (data || []) as unknown as FieldWithSectors[];

@@ -74,14 +74,43 @@ const describeReportsError = (error: any) => {
   return prefix ? `${prefix}: ${message}` : message;
 };
 
+const isMissingSeasonPlansRelationError = (error: any) => {
+  const message = String(error?.message || error?.details || error?.hint || error || '').toLowerCase();
+  return message.includes('sector_budget_season_plans')
+    && (
+      message.includes('does not exist')
+      || message.includes('could not find')
+      || message.includes('relationship')
+      || message.includes('schema cache')
+      || message.includes('not found')
+    );
+};
+
+const fieldsSelectWithSeasonPlans = 'id, name, fruit_type, sectors(id, name, hectares, productive_stage, production_expected_from_season, non_productive_reason, establishment_notes, sector_budget_season_plans(id, season, budget_cost_clp_per_ha, budget_cost_usd_per_ha, expected_production_kg, expected_sale_price_clp_per_kg, expected_sale_price_usd_per_kg, exchange_rate_reference, notes))';
+const fieldsSelectWithoutSeasonPlans = 'id, name, fruit_type, sectors(id, name, hectares, productive_stage, production_expected_from_season, non_productive_reason, establishment_notes)';
+const sectorsSelectWithSeasonPlans = 'id, name, hectares, productive_stage, production_expected_from_season, non_productive_reason, establishment_notes, sector_budget_season_plans(id, season, budget_cost_clp_per_ha, budget_cost_usd_per_ha, expected_production_kg, expected_sale_price_clp_per_kg, expected_sale_price_usd_per_kg, exchange_rate_reference, notes), field_id, fields!inner(company_id)';
+const sectorsSelectWithoutSeasonPlans = 'id, name, hectares, productive_stage, production_expected_from_season, non_productive_reason, establishment_notes, field_id, fields!inner(company_id)';
+
 export async function loadReportsRawData(params: { companyId: string }) {
   const warnings: ReportsWarning[] = [];
 
   let typedFields: ReportFieldRow[] = [];
-  const { data: fields, error: fieldsError } = await supabase
+  const fieldsRes = await supabase
     .from('fields')
-    .select('id, name, fruit_type, sectors(id, name, hectares, productive_stage, production_expected_from_season, non_productive_reason, establishment_notes, sector_budget_season_plans(id, season, budget_cost_clp_per_ha, budget_cost_usd_per_ha, expected_production_kg, expected_sale_price_clp_per_kg, expected_sale_price_usd_per_kg, exchange_rate_reference, notes))')
+    .select(fieldsSelectWithSeasonPlans)
     .eq('company_id', params.companyId);
+  let fields = fieldsRes.data as any[] | null;
+  let fieldsError: any = fieldsRes.error;
+
+  if (fieldsError && isMissingSeasonPlansRelationError(fieldsError)) {
+    const fallbackFieldsRes = await supabase
+      .from('fields')
+      .select(fieldsSelectWithoutSeasonPlans)
+      .eq('company_id', params.companyId);
+
+    fields = fallbackFieldsRes.data;
+    fieldsError = fallbackFieldsRes.error;
+  }
 
   if (fieldsError) {
     warnings.push({ source: 'fields', message: describeReportsError(fieldsError) });
@@ -92,10 +121,22 @@ export async function loadReportsRawData(params: { companyId: string }) {
     if (basicFieldsError) throw basicFieldsError;
     typedFields = (basicFields || []) as unknown as ReportFieldRow[];
 
-    const { data: sectorsData, error: sectorsError } = await supabase
+    const sectorsRes = await supabase
       .from('sectors')
-      .select('id, name, hectares, productive_stage, production_expected_from_season, non_productive_reason, establishment_notes, sector_budget_season_plans(id, season, budget_cost_clp_per_ha, budget_cost_usd_per_ha, expected_production_kg, expected_sale_price_clp_per_kg, expected_sale_price_usd_per_kg, exchange_rate_reference, notes), field_id, fields!inner(company_id)')
+      .select(sectorsSelectWithSeasonPlans)
       .eq('fields.company_id', params.companyId);
+    let sectorsData = sectorsRes.data as any[] | null;
+    let sectorsError: any = sectorsRes.error;
+
+    if (sectorsError && isMissingSeasonPlansRelationError(sectorsError)) {
+      const fallbackSectorsRes = await supabase
+        .from('sectors')
+        .select(sectorsSelectWithoutSeasonPlans)
+        .eq('fields.company_id', params.companyId);
+
+      sectorsData = fallbackSectorsRes.data;
+      sectorsError = fallbackSectorsRes.error;
+    }
 
     if (sectorsError) {
       warnings.push({ source: 'sectors', message: describeReportsError(sectorsError) });
