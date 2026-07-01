@@ -1,5 +1,5 @@
 import { toast } from 'sonner';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { getSeasonFromDate } from '../lib/seasonUtils';
@@ -246,6 +246,24 @@ export const Fields: React.FC = () => {
   const [planExchangeRate, setPlanExchangeRate] = useState('');
   const [planNotes, setPlanNotes] = useState('');
   const currentPlanningSeason = getSeasonFromDate(new Date());
+  const [selectedPlanningSeason, setSelectedPlanningSeason] = useState(currentPlanningSeason);
+
+  const planningSeasonOptions = useMemo(() => {
+    const [startYearStr] = String(currentPlanningSeason).split('-');
+    const startYear = Number(startYearStr) || new Date().getFullYear();
+    const suggestedSeasons = Array.from({ length: 5 }, (_, index) => {
+      const year = startYear - 2 + index;
+      return `${year}-${year + 1}`;
+    });
+    const existingSeasons = fields.flatMap((field) =>
+      (field.sectors || []).flatMap((sector) =>
+        (sector.sector_budget_season_plans || []).map((plan) => String(plan.season || '').trim()).filter(Boolean)
+      )
+    );
+
+    return Array.from(new Set([selectedPlanningSeason, currentPlanningSeason, ...suggestedSeasons, ...existingSeasons]))
+      .sort((a, b) => String(b).localeCompare(String(a)));
+  }, [currentPlanningSeason, fields, selectedPlanningSeason]);
 
   const loadFields = useCallback(async () => {
     if (!selectedCompany) return;
@@ -471,7 +489,7 @@ export const Fields: React.FC = () => {
   const openPlanEditor = (sector: Sector, plan?: SectorBudgetSeasonPlan | null) => {
     setPlanEditorSectorId(sector.id);
     setPlanEditorPlanId(plan?.id || null);
-    setPlanSeason(plan?.season || currentPlanningSeason);
+    setPlanSeason(plan?.season || selectedPlanningSeason);
     setPlanBudgetClpPerHa(plan?.budget_cost_clp_per_ha ? String(plan.budget_cost_clp_per_ha) : '');
     setPlanBudgetUsdPerHa(plan?.budget_cost_usd_per_ha ? String(plan.budget_cost_usd_per_ha) : '');
     setPlanExpectedKg(plan?.expected_production_kg ? String(plan.expected_production_kg) : '');
@@ -484,7 +502,7 @@ export const Fields: React.FC = () => {
   const cancelPlanEditor = () => {
     setPlanEditorSectorId(null);
     setPlanEditorPlanId(null);
-    setPlanSeason(currentPlanningSeason);
+    setPlanSeason(selectedPlanningSeason);
     setPlanBudgetClpPerHa('');
     setPlanBudgetUsdPerHa('');
     setPlanExpectedKg('');
@@ -667,7 +685,7 @@ export const Fields: React.FC = () => {
           <ul className="divide-y divide-gray-200">
             {fields.map((field) => {
               const hectareSummary = getFieldHectareSummary(field);
-              const budgetSummary = getFieldBudgetSummary(field, currentPlanningSeason);
+              const budgetSummary = getFieldBudgetSummary(field, selectedPlanningSeason);
               const hectareTone = hectareSummary.overAssigned > 0.01
                 ? 'bg-red-100 text-red-700 border-red-200'
                 : hectareSummary.available > 0.01
@@ -775,7 +793,7 @@ export const Fields: React.FC = () => {
                               {budgetSummary.totalSectors <= 0
                                 ? 'Sin sectores'
                                 : budgetSummary.sectorsWithoutBudget > 0
-                                  ? `${budgetSummary.budgetedSectors}/${budgetSummary.totalSectors} sectores con plan ${currentPlanningSeason}`
+                                  ? `${budgetSummary.budgetedSectors}/${budgetSummary.totalSectors} sectores con plan ${selectedPlanningSeason}`
                                   : 'Presupuesto completo'}
                             </span>
                           </div>
@@ -809,7 +827,21 @@ export const Fields: React.FC = () => {
                   {expandedFieldId === field.id && !editingFieldId && (
                     <div className="mt-4 ml-8 border-l-2 border-gray-200 pl-4">
                       <div className="mb-4 flex items-center justify-between gap-3">
-                        <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Resumen temporada {currentPlanningSeason}</h4>
+                        <div>
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Resumen temporada {selectedPlanningSeason}</h4>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs font-medium uppercase tracking-wide text-gray-500">Temporada visible</label>
+                          <select
+                            value={selectedPlanningSeason}
+                            onChange={(e) => setSelectedPlanningSeason(e.target.value)}
+                            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm"
+                          >
+                            {planningSeasonOptions.map((season) => (
+                              <option key={season} value={season}>{season}</option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
 
                       <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -926,7 +958,7 @@ export const Fields: React.FC = () => {
                       
                       <ul className="space-y-3 mb-4">
                         {field.sectors?.map((sector) => {
-                          const currentSeasonPlan = getSectorSeasonPlan(sector, currentPlanningSeason);
+                          const currentSeasonPlan = getSectorSeasonPlan(sector, selectedPlanningSeason);
                           const currentSeasonPlanMetrics = resolveSeasonPlanMetrics(currentSeasonPlan);
                           const seasonPlans = [...(sector.sector_budget_season_plans || [])].sort((a, b) => String(b.season).localeCompare(String(a.season)));
 
@@ -1047,7 +1079,7 @@ export const Fields: React.FC = () => {
                                   {currentSeasonPlan && (
                                     <div className="hidden sm:flex items-center mr-6 text-sm">
                                       <div className="flex flex-col">
-                                        <span className="text-[10px] uppercase text-gray-400 font-bold">Plan {currentPlanningSeason}</span>
+                                        <span className="text-[10px] uppercase text-gray-400 font-bold">Plan {selectedPlanningSeason}</span>
                                         <span className="font-medium text-blue-600">{formatCLP(currentSeasonPlanMetrics.budgetClpPerHa * Number(sector.hectares || 0))}</span>
                                       </div>
                                     </div>
@@ -1069,18 +1101,6 @@ export const Fields: React.FC = () => {
                                     </div>
                                   )}
 
-                                  {(sector.total_labor_cost || 0) > 0 && (
-                                    <div className="hidden sm:flex items-center space-x-6 text-sm">
-                                        <div className="flex flex-col">
-                                            <span className="text-[10px] uppercase text-gray-400 font-bold">Mano de Obra</span>
-                                            <span className="font-medium text-green-600">{formatCLP(sector.total_labor_cost || 0)}</span>
-                                        </div>
-                                        <div className="flex flex-col">
-                                            <span className="text-[10px] uppercase text-gray-400 font-bold">Costo / Ha</span>
-                                            <span className="font-medium text-gray-700">{formatCLP((sector.total_labor_cost || 0) / (sector.hectares || 1))}</span>
-                                        </div>
-                                    </div>
-                                  )}
                                 </div>
                                 {userRole !== 'viewer' && (
                                   <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1112,7 +1132,7 @@ export const Fields: React.FC = () => {
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                   <div>
                                     <div className="text-xs font-semibold uppercase tracking-wide text-violet-700">Planificación por temporada</div>
-                                    <div className="text-xs text-violet-700">Temporada visible: {currentPlanningSeason}</div>
+                                    <div className="text-xs text-violet-700">Temporada visible: {selectedPlanningSeason}</div>
                                   </div>
                                   {userRole !== 'viewer' && (
                                     <button
