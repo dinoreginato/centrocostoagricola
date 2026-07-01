@@ -15,6 +15,17 @@ type ReportFieldRow = {
     hectares?: number;
     expected_production_kg?: number;
     expected_price_per_kg?: number;
+    sector_budget_season_plans?: Array<{
+      id: string;
+      season: string;
+      budget_cost_clp_per_ha?: number;
+      budget_cost_usd_per_ha?: number;
+      expected_production_kg?: number;
+      expected_sale_price_clp_per_kg?: number;
+      expected_sale_price_usd_per_kg?: number;
+      exchange_rate_reference?: number;
+      notes?: string | null;
+    }>;
     productive_stage?: string | null;
     production_expected_from_season?: string | null;
     non_productive_reason?: string | null;
@@ -69,7 +80,7 @@ export async function loadReportsRawData(params: { companyId: string }) {
   let typedFields: ReportFieldRow[] = [];
   const { data: fields, error: fieldsError } = await supabase
     .from('fields')
-    .select('id, name, fruit_type, sectors(id, name, hectares, expected_production_kg, expected_price_per_kg, productive_stage, production_expected_from_season, non_productive_reason, establishment_notes)')
+    .select('id, name, fruit_type, sectors(id, name, hectares, productive_stage, production_expected_from_season, non_productive_reason, establishment_notes, sector_budget_season_plans(id, season, budget_cost_clp_per_ha, budget_cost_usd_per_ha, expected_production_kg, expected_sale_price_clp_per_kg, expected_sale_price_usd_per_kg, exchange_rate_reference, notes))')
     .eq('company_id', params.companyId);
 
   if (fieldsError) {
@@ -83,7 +94,7 @@ export async function loadReportsRawData(params: { companyId: string }) {
 
     const { data: sectorsData, error: sectorsError } = await supabase
       .from('sectors')
-      .select('id, name, hectares, expected_production_kg, expected_price_per_kg, productive_stage, production_expected_from_season, non_productive_reason, establishment_notes, field_id, fields!inner(company_id)')
+      .select('id, name, hectares, productive_stage, production_expected_from_season, non_productive_reason, establishment_notes, sector_budget_season_plans(id, season, budget_cost_clp_per_ha, budget_cost_usd_per_ha, expected_production_kg, expected_sale_price_clp_per_kg, expected_sale_price_usd_per_kg, exchange_rate_reference, notes), field_id, fields!inner(company_id)')
       .eq('fields.company_id', params.companyId);
 
     if (sectorsError) {
@@ -99,8 +110,19 @@ export async function loadReportsRawData(params: { companyId: string }) {
         id: String(row.id),
         name: String(row.name || ''),
         hectares: Number(row.hectares || 0),
-        expected_production_kg: Number(row.expected_production_kg || 0),
-        expected_price_per_kg: Number(row.expected_price_per_kg || 0),
+        sector_budget_season_plans: Array.isArray(row.sector_budget_season_plans)
+          ? row.sector_budget_season_plans.map((plan: any) => ({
+            id: String(plan.id),
+            season: String(plan.season || ''),
+            budget_cost_clp_per_ha: Number(plan.budget_cost_clp_per_ha || 0),
+            budget_cost_usd_per_ha: Number(plan.budget_cost_usd_per_ha || 0),
+            expected_production_kg: Number(plan.expected_production_kg || 0),
+            expected_sale_price_clp_per_kg: Number(plan.expected_sale_price_clp_per_kg || 0),
+            expected_sale_price_usd_per_kg: Number(plan.expected_sale_price_usd_per_kg || 0),
+            exchange_rate_reference: Number(plan.exchange_rate_reference || 0),
+            notes: plan.notes || null
+          }))
+          : [],
         productive_stage: row.productive_stage || null,
         production_expected_from_season: row.production_expected_from_season || null,
         non_productive_reason: row.non_productive_reason || null,

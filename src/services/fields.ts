@@ -14,6 +14,7 @@ export type FieldWithSectors = {
     budget?: number;
     expected_production_kg?: number;
     expected_price_per_kg?: number;
+    sector_budget_season_plans?: SectorBudgetSeasonPlan[];
     productive_stage?: 'productivo' | 'en_formacion' | 'renovacion' | 'arranque';
     production_expected_from_season?: string | null;
     non_productive_reason?: 'plantacion_nueva' | 'replante' | 'recuperacion' | 'otro' | null;
@@ -21,6 +22,21 @@ export type FieldWithSectors = {
     latitude?: number | null;
     longitude?: number | null;
   }>;
+};
+
+export type SectorBudgetSeasonPlan = {
+  id: string;
+  sector_id: string;
+  season: string;
+  budget_cost_clp_per_ha?: number;
+  budget_cost_usd_per_ha?: number;
+  expected_production_kg?: number;
+  expected_sale_price_clp_per_kg?: number;
+  expected_sale_price_usd_per_kg?: number;
+  exchange_rate_reference?: number;
+  notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
 type LaborAssignmentRow = { sector_id: string; assigned_amount: number | null };
@@ -59,10 +75,23 @@ export type SectorInsert = {
 
 export type SectorUpdate = Partial<SectorInsert>;
 
+export type SectorBudgetSeasonPlanInsert = {
+  season: string;
+  budget_cost_clp_per_ha?: number;
+  budget_cost_usd_per_ha?: number;
+  expected_production_kg?: number;
+  expected_sale_price_clp_per_kg?: number;
+  expected_sale_price_usd_per_kg?: number;
+  exchange_rate_reference?: number;
+  notes?: string | null;
+};
+
+export type SectorBudgetSeasonPlanUpdate = Partial<SectorBudgetSeasonPlanInsert>;
+
 export async function fetchFieldsWithSectors(params: { companyId: string }) {
   const { data, error } = await supabase
     .from('fields')
-    .select('*, sectors(*)')
+    .select('*, sectors(*, sector_budget_season_plans(*))')
     .eq('company_id', params.companyId)
     .order('created_at', { ascending: false });
 
@@ -134,5 +163,34 @@ export async function updateSector(params: { sectorId: string; patch: SectorUpda
 
 export async function deleteSector(params: { sectorId: string }) {
   const { error } = await supabase.from('sectors').delete().eq('id', params.sectorId);
+  if (error) throw error;
+}
+
+export async function createSectorBudgetSeasonPlan(params: { sectorId: string; payload: SectorBudgetSeasonPlanInsert }) {
+  const { data, error } = await supabase
+    .from('sector_budget_season_plans')
+    .insert([{ ...params.payload, sector_id: params.sectorId }])
+    .select()
+    .single();
+  if (error) throw error;
+  return data as SectorBudgetSeasonPlan;
+}
+
+export async function updateSectorBudgetSeasonPlan(params: { planId: string; patch: SectorBudgetSeasonPlanUpdate }) {
+  const { data, error } = await supabase
+    .from('sector_budget_season_plans')
+    .update(params.patch)
+    .eq('id', params.planId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as SectorBudgetSeasonPlan;
+}
+
+export async function deleteSectorBudgetSeasonPlan(params: { planId: string }) {
+  const { error } = await supabase
+    .from('sector_budget_season_plans')
+    .delete()
+    .eq('id', params.planId);
   if (error) throw error;
 }

@@ -2,16 +2,27 @@ import { toast } from 'sonner';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
+import { getSeasonFromDate } from '../lib/seasonUtils';
 import { Plus, Map, MapPin, ChevronDown, ChevronRight, Loader2, Edit2, X, Check, Trash2 } from 'lucide-react';
-import { createField, createSector, deleteField, deleteSector, fetchFieldsWithLaborCosts, updateField, updateSector } from '../services/fields';
+import {
+  createField,
+  createSector,
+  createSectorBudgetSeasonPlan,
+  deleteField,
+  deleteSector,
+  deleteSectorBudgetSeasonPlan,
+  fetchFieldsWithLaborCosts,
+  updateField,
+  updateSector,
+  updateSectorBudgetSeasonPlan,
+  type SectorBudgetSeasonPlan
+} from '../services/fields';
 
 interface Sector {
   id: string;
   name: string;
   hectares: number;
-  budget?: number;
-  expected_production_kg?: number;
-  expected_price_per_kg?: number;
+  sector_budget_season_plans?: SectorBudgetSeasonPlan[];
   productive_stage?: 'productivo' | 'en_formacion' | 'renovacion' | 'arranque';
   production_expected_from_season?: string | null;
   non_productive_reason?: 'plantacion_nueva' | 'replante' | 'recuperacion' | 'otro' | null;
@@ -30,6 +41,45 @@ interface Field {
   longitude?: number | null;
   sectors?: Sector[];
 }
+
+const resolveSeasonPlanMetrics = (plan?: SectorBudgetSeasonPlan | null) => {
+  const exchangeRate = Number(plan?.exchange_rate_reference || 0);
+  const budgetClpPerHa = Number(plan?.budget_cost_clp_per_ha || 0) > 0
+    ? Number(plan?.budget_cost_clp_per_ha || 0)
+    : exchangeRate > 0
+      ? Number(plan?.budget_cost_usd_per_ha || 0) * exchangeRate
+      : 0;
+  const budgetUsdPerHa = Number(plan?.budget_cost_usd_per_ha || 0) > 0
+    ? Number(plan?.budget_cost_usd_per_ha || 0)
+    : exchangeRate > 0
+      ? Number(plan?.budget_cost_clp_per_ha || 0) / exchangeRate
+      : 0;
+  const expectedKg = Number(plan?.expected_production_kg || 0);
+  const expectedSalePriceClp = Number(plan?.expected_sale_price_clp_per_kg || 0) > 0
+    ? Number(plan?.expected_sale_price_clp_per_kg || 0)
+    : exchangeRate > 0
+      ? Number(plan?.expected_sale_price_usd_per_kg || 0) * exchangeRate
+      : 0;
+  const expectedSalePriceUsd = Number(plan?.expected_sale_price_usd_per_kg || 0) > 0
+    ? Number(plan?.expected_sale_price_usd_per_kg || 0)
+    : exchangeRate > 0
+      ? Number(plan?.expected_sale_price_clp_per_kg || 0) / exchangeRate
+      : 0;
+
+  return {
+    exchangeRate,
+    budgetClpPerHa,
+    budgetUsdPerHa,
+    expectedKg,
+    expectedSalePriceClp,
+    expectedSalePriceUsd,
+    expectedRevenueClp: expectedKg * expectedSalePriceClp,
+    expectedRevenueUsd: expectedKg * expectedSalePriceUsd
+  };
+};
+
+const getSectorSeasonPlan = (sector: Sector, season: string) =>
+  (sector.sector_budget_season_plans || []).find((plan) => plan.season === season) || null;
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (
@@ -60,21 +110,24 @@ const getFieldHectareSummary = (field: Field) => {
   };
 };
 
-const getFieldBudgetSummary = (field: Field) => {
+const getFieldBudgetSummary = (field: Field, season: string) => {
   const sectors = field.sectors || [];
-  const budgetedSectors = sectors.filter((sector) => Number(sector.budget || 0) > 0);
-  const sectorsWithoutBudget = sectors.filter((sector) => Number(sector.budget || 0) <= 0);
-  const projectedSectors = sectors.filter((sector) => Number(sector.expected_production_kg || 0) > 0);
-  const totalBudget = budgetedSectors.reduce(
-    (sum, sector) => sum + (Number(sector.budget || 0) * Number(sector.hectares || 0)),
+  const sectorPlans = sectors.map((sector) => ({ sector, plan: getSectorSeasonPlan(sector, season) }));
+  const budgetedSectors = sectorPlans.filter(({ plan }) => resolveSeasonPlanMetrics(plan).budgetClpPerHa > 0);
+  const sectorsWithoutBudget = sectorPlans.filter(({ plan }) => resolveSeasonPlanMetrics(plan).budgetClpPerHa <= 0);
+  const projectedSectors = sectorPlans.filter(({ plan }) => resolveSeasonPlanMetrics(plan).expectedKg > 0);
+  const totalBudgetClp = budgetedSectors.reduce(
+    (sum, { sector, plan }) => sum + (resolveSeasonPlanMetrics(plan).budgetClpPerHa * Number(sector.hectares || 0)),
     0
   );
-  const totalExpectedProductionKg = sectors.reduce((sum, sector) => sum + Number(sector.expected_production_kg || 0), 0);
-  const totalExpectedRevenue = sectors.reduce(
-    (sum, sector) => sum + (Number(sector.expected_production_kg || 0) * Number(sector.expected_price_per_kg || 0)),
+  const totalBudgetUsd = budgetedSectors.reduce(
+    (sum, { sector, plan }) => sum + (resolveSeasonPlanMetrics(plan).budgetUsdPerHa * Number(sector.hectares || 0)),
     0
   );
-  const budgetedArea = budgetedSectors.reduce((sum, sector) => sum + Number(sector.hectares || 0), 0);
+  const totalExpectedProductionKg = sectorPlans.reduce((sum, { plan }) => sum + resolveSeasonPlanMetrics(plan).expectedKg, 0);
+  const totalExpectedRevenueClp = sectorPlans.reduce((sum, { plan }) => sum + resolveSeasonPlanMetrics(plan).expectedRevenueClp, 0);
+  const totalExpectedRevenueUsd = sectorPlans.reduce((sum, { plan }) => sum + resolveSeasonPlanMetrics(plan).expectedRevenueUsd, 0);
+  const budgetedArea = budgetedSectors.reduce((sum, item) => sum + Number(item.sector.hectares || 0), 0);
   const totalArea = sectors.reduce((sum, sector) => sum + Number(sector.hectares || 0), 0);
 
   return {
@@ -82,10 +135,13 @@ const getFieldBudgetSummary = (field: Field) => {
     projectedSectors: projectedSectors.length,
     sectorsWithoutBudget: sectorsWithoutBudget.length,
     totalSectors: sectors.length,
-    totalBudget,
+    totalBudgetClp,
+    totalBudgetUsd,
     totalExpectedProductionKg,
-    totalExpectedRevenue,
-    expectedMargin: totalExpectedRevenue - totalBudget,
+    totalExpectedRevenueClp,
+    totalExpectedRevenueUsd,
+    expectedMarginClp: totalExpectedRevenueClp - totalBudgetClp,
+    expectedMarginUsd: totalExpectedRevenueUsd - totalBudgetUsd,
     areaCoveragePct: totalArea > 0 ? (budgetedArea / totalArea) * 100 : 0
   };
 };
@@ -154,9 +210,6 @@ export const Fields: React.FC = () => {
   const [showSectorForm, setShowSectorForm] = useState<string | null>(null); // Field ID
   const [newSectorName, setNewSectorName] = useState('');
   const [newSectorHectares, setNewSectorHectares] = useState('');
-  const [newSectorBudget, setNewSectorBudget] = useState('');
-  const [newSectorExpectedProductionKg, setNewSectorExpectedProductionKg] = useState('');
-  const [newSectorExpectedPricePerKg, setNewSectorExpectedPricePerKg] = useState('');
   const [newSectorProductiveStage, setNewSectorProductiveStage] = useState<Sector['productive_stage']>('productivo');
   const [newSectorExpectedSeason, setNewSectorExpectedSeason] = useState('');
   const [newSectorNonProductiveReason, setNewSectorNonProductiveReason] = useState<NonNullable<Sector['non_productive_reason']>>('plantacion_nueva');
@@ -176,15 +229,23 @@ export const Fields: React.FC = () => {
   const [editingSectorId, setEditingSectorId] = useState<string | null>(null);
   const [editSectorName, setEditSectorName] = useState('');
   const [editSectorHectares, setEditSectorHectares] = useState('');
-  const [editSectorBudget, setEditSectorBudget] = useState('');
-  const [editSectorExpectedProductionKg, setEditSectorExpectedProductionKg] = useState('');
-  const [editSectorExpectedPricePerKg, setEditSectorExpectedPricePerKg] = useState('');
   const [editSectorProductiveStage, setEditSectorProductiveStage] = useState<Sector['productive_stage']>('productivo');
   const [editSectorExpectedSeason, setEditSectorExpectedSeason] = useState('');
   const [editSectorNonProductiveReason, setEditSectorNonProductiveReason] = useState<NonNullable<Sector['non_productive_reason']>>('plantacion_nueva');
   const [editSectorEstablishmentNotes, setEditSectorEstablishmentNotes] = useState('');
   const [editSectorLatitude, setEditSectorLatitude] = useState('');
   const [editSectorLongitude, setEditSectorLongitude] = useState('');
+  const [planEditorSectorId, setPlanEditorSectorId] = useState<string | null>(null);
+  const [planEditorPlanId, setPlanEditorPlanId] = useState<string | null>(null);
+  const [planSeason, setPlanSeason] = useState(getSeasonFromDate(new Date()));
+  const [planBudgetClpPerHa, setPlanBudgetClpPerHa] = useState('');
+  const [planBudgetUsdPerHa, setPlanBudgetUsdPerHa] = useState('');
+  const [planExpectedKg, setPlanExpectedKg] = useState('');
+  const [planExpectedPriceClp, setPlanExpectedPriceClp] = useState('');
+  const [planExpectedPriceUsd, setPlanExpectedPriceUsd] = useState('');
+  const [planExchangeRate, setPlanExchangeRate] = useState('');
+  const [planNotes, setPlanNotes] = useState('');
+  const currentPlanningSeason = getSeasonFromDate(new Date());
 
   const loadFields = useCallback(async () => {
     if (!selectedCompany) return;
@@ -294,9 +355,6 @@ export const Fields: React.FC = () => {
         payload: {
           name: newSectorName,
           hectares: parseFloat(newSectorHectares),
-          budget: newSectorBudget ? parseFloat(newSectorBudget) : 0,
-          expected_production_kg: newSectorExpectedProductionKg ? parseFloat(newSectorExpectedProductionKg) : 0,
-          expected_price_per_kg: newSectorExpectedPricePerKg ? parseFloat(newSectorExpectedPricePerKg) : 0,
           productive_stage: newSectorProductiveStage || 'productivo',
           production_expected_from_season: newSectorExpectedSeason.trim() || null,
           non_productive_reason: isSectorNonProductiveExpected({ productive_stage: newSectorProductiveStage } as Sector)
@@ -321,9 +379,6 @@ export const Fields: React.FC = () => {
       setShowSectorForm(null);
       setNewSectorName('');
       setNewSectorHectares('');
-      setNewSectorBudget('');
-      setNewSectorExpectedProductionKg('');
-      setNewSectorExpectedPricePerKg('');
       setNewSectorProductiveStage('productivo');
       setNewSectorExpectedSeason('');
       setNewSectorNonProductiveReason('plantacion_nueva');
@@ -339,9 +394,6 @@ export const Fields: React.FC = () => {
     setEditingSectorId(sector.id);
     setEditSectorName(sector.name);
     setEditSectorHectares(sector.hectares.toString());
-    setEditSectorBudget(sector.budget ? sector.budget.toString() : '');
-    setEditSectorExpectedProductionKg(sector.expected_production_kg ? sector.expected_production_kg.toString() : '');
-    setEditSectorExpectedPricePerKg(sector.expected_price_per_kg ? sector.expected_price_per_kg.toString() : '');
     setEditSectorProductiveStage(sector.productive_stage || 'productivo');
     setEditSectorExpectedSeason(sector.production_expected_from_season || '');
     setEditSectorNonProductiveReason(sector.non_productive_reason || 'plantacion_nueva');
@@ -354,9 +406,6 @@ export const Fields: React.FC = () => {
     setEditingSectorId(null);
     setEditSectorName('');
     setEditSectorHectares('');
-    setEditSectorBudget('');
-    setEditSectorExpectedProductionKg('');
-    setEditSectorExpectedPricePerKg('');
     setEditSectorProductiveStage('productivo');
     setEditSectorExpectedSeason('');
     setEditSectorNonProductiveReason('plantacion_nueva');
@@ -373,9 +422,6 @@ export const Fields: React.FC = () => {
         patch: {
           name: editSectorName,
           hectares: parseFloat(editSectorHectares),
-          budget: editSectorBudget ? parseFloat(editSectorBudget) : 0,
-          expected_production_kg: editSectorExpectedProductionKg ? parseFloat(editSectorExpectedProductionKg) : 0,
-          expected_price_per_kg: editSectorExpectedPricePerKg ? parseFloat(editSectorExpectedPricePerKg) : 0,
           productive_stage: editSectorProductiveStage || 'productivo',
           production_expected_from_season: editSectorExpectedSeason.trim() || null,
           non_productive_reason: isSectorNonProductiveExpected({ productive_stage: editSectorProductiveStage } as Sector)
@@ -419,6 +465,93 @@ export const Fields: React.FC = () => {
       }));
     } catch {
       toast.error('Error al eliminar sector.');
+    }
+  };
+
+  const openPlanEditor = (sector: Sector, plan?: SectorBudgetSeasonPlan | null) => {
+    setPlanEditorSectorId(sector.id);
+    setPlanEditorPlanId(plan?.id || null);
+    setPlanSeason(plan?.season || currentPlanningSeason);
+    setPlanBudgetClpPerHa(plan?.budget_cost_clp_per_ha ? String(plan.budget_cost_clp_per_ha) : '');
+    setPlanBudgetUsdPerHa(plan?.budget_cost_usd_per_ha ? String(plan.budget_cost_usd_per_ha) : '');
+    setPlanExpectedKg(plan?.expected_production_kg ? String(plan.expected_production_kg) : '');
+    setPlanExpectedPriceClp(plan?.expected_sale_price_clp_per_kg ? String(plan.expected_sale_price_clp_per_kg) : '');
+    setPlanExpectedPriceUsd(plan?.expected_sale_price_usd_per_kg ? String(plan.expected_sale_price_usd_per_kg) : '');
+    setPlanExchangeRate(plan?.exchange_rate_reference ? String(plan.exchange_rate_reference) : '');
+    setPlanNotes(plan?.notes || '');
+  };
+
+  const cancelPlanEditor = () => {
+    setPlanEditorSectorId(null);
+    setPlanEditorPlanId(null);
+    setPlanSeason(currentPlanningSeason);
+    setPlanBudgetClpPerHa('');
+    setPlanBudgetUsdPerHa('');
+    setPlanExpectedKg('');
+    setPlanExpectedPriceClp('');
+    setPlanExpectedPriceUsd('');
+    setPlanExchangeRate('');
+    setPlanNotes('');
+  };
+
+  const handleSaveSectorPlan = async (e: React.FormEvent, fieldId: string, sectorId: string) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        season: planSeason.trim(),
+        budget_cost_clp_per_ha: planBudgetClpPerHa ? parseFloat(planBudgetClpPerHa) : 0,
+        budget_cost_usd_per_ha: planBudgetUsdPerHa ? parseFloat(planBudgetUsdPerHa) : 0,
+        expected_production_kg: planExpectedKg ? parseFloat(planExpectedKg) : 0,
+        expected_sale_price_clp_per_kg: planExpectedPriceClp ? parseFloat(planExpectedPriceClp) : 0,
+        expected_sale_price_usd_per_kg: planExpectedPriceUsd ? parseFloat(planExpectedPriceUsd) : 0,
+        exchange_rate_reference: planExchangeRate ? parseFloat(planExchangeRate) : 0,
+        notes: planNotes.trim() || null
+      };
+
+      const data = planEditorPlanId
+        ? await updateSectorBudgetSeasonPlan({ planId: planEditorPlanId, patch: payload })
+        : await createSectorBudgetSeasonPlan({ sectorId, payload });
+
+      setFields(fields.map((field) => {
+        if (field.id !== fieldId) return field;
+        return {
+          ...field,
+          sectors: (field.sectors || []).map((sector) => {
+            if (sector.id !== sectorId) return sector;
+            const plans = sector.sector_budget_season_plans || [];
+            const nextPlans = planEditorPlanId
+              ? plans.map((plan) => (plan.id === planEditorPlanId ? data : plan))
+              : [...plans, data].sort((a, b) => String(b.season).localeCompare(String(a.season)));
+            return { ...sector, sector_budget_season_plans: nextPlans };
+          })
+        };
+      }));
+      cancelPlanEditor();
+      toast.success('Plan presupuestario guardado.');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Error al guardar el plan presupuestario.'));
+    }
+  };
+
+  const handleDeleteSectorPlan = async (fieldId: string, sectorId: string, planId: string) => {
+    if (!window.confirm('¿Eliminar este plan de temporada?')) return;
+    try {
+      await deleteSectorBudgetSeasonPlan({ planId });
+      setFields(fields.map((field) => {
+        if (field.id !== fieldId) return field;
+        return {
+          ...field,
+          sectors: (field.sectors || []).map((sector) => (
+            sector.id === sectorId
+              ? { ...sector, sector_budget_season_plans: (sector.sector_budget_season_plans || []).filter((plan) => plan.id !== planId) }
+              : sector
+          ))
+        };
+      }));
+      if (planEditorPlanId === planId) cancelPlanEditor();
+      toast.success('Plan presupuestario eliminado.');
+    } catch (error) {
+      toast.error(getErrorMessage(error, 'Error al eliminar el plan presupuestario.'));
     }
   };
 
@@ -534,7 +667,7 @@ export const Fields: React.FC = () => {
           <ul className="divide-y divide-gray-200">
             {fields.map((field) => {
               const hectareSummary = getFieldHectareSummary(field);
-              const budgetSummary = getFieldBudgetSummary(field);
+              const budgetSummary = getFieldBudgetSummary(field, currentPlanningSeason);
               const hectareTone = hectareSummary.overAssigned > 0.01
                 ? 'bg-red-100 text-red-700 border-red-200'
                 : hectareSummary.available > 0.01
@@ -642,7 +775,7 @@ export const Fields: React.FC = () => {
                               {budgetSummary.totalSectors <= 0
                                 ? 'Sin sectores'
                                 : budgetSummary.sectorsWithoutBudget > 0
-                                  ? `${budgetSummary.budgetedSectors}/${budgetSummary.totalSectors} sectores con presupuesto`
+                                  ? `${budgetSummary.budgetedSectors}/${budgetSummary.totalSectors} sectores con plan ${currentPlanningSeason}`
                                   : 'Presupuesto completo'}
                             </span>
                           </div>
@@ -675,6 +808,10 @@ export const Fields: React.FC = () => {
                   {/* Sectors Expansion */}
                   {expandedFieldId === field.id && !editingFieldId && (
                     <div className="mt-4 ml-8 border-l-2 border-gray-200 pl-4">
+                      <div className="mb-4 flex items-center justify-between gap-3">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Resumen temporada {currentPlanningSeason}</h4>
+                      </div>
+
                       <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                           <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Hectáreas campo</div>
@@ -722,11 +859,15 @@ export const Fields: React.FC = () => {
 
                       <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-3">
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Presupuesto total</div>
-                          <div className="mt-1 text-lg font-semibold text-slate-900">{formatCLP(budgetSummary.totalBudget)}</div>
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Presupuesto total CLP</div>
+                          <div className="mt-1 text-lg font-semibold text-slate-900">{formatCLP(budgetSummary.totalBudgetClp)}</div>
                         </div>
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sectores con presupuesto</div>
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Presupuesto total USD</div>
+                          <div className="mt-1 text-lg font-semibold text-slate-900">US$ {Number(budgetSummary.totalBudgetUsd || 0).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sectores con plan</div>
                           <div className="mt-1 text-lg font-semibold text-slate-900">{budgetSummary.budgetedSectors} / {budgetSummary.totalSectors}</div>
                         </div>
                         <div className={`rounded-lg border p-3 ${
@@ -760,12 +901,20 @@ export const Fields: React.FC = () => {
                           <div className="mt-1 text-lg font-semibold text-slate-900">{Number(budgetSummary.totalExpectedProductionKg || 0).toLocaleString('es-CL')} kg</div>
                         </div>
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ingreso estimado</div>
-                          <div className="mt-1 text-lg font-semibold text-slate-900">{formatCLP(budgetSummary.totalExpectedRevenue)}</div>
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ingreso estimado CLP</div>
+                          <div className="mt-1 text-lg font-semibold text-slate-900">{formatCLP(budgetSummary.totalExpectedRevenueClp)}</div>
                         </div>
-                        <div className={`rounded-lg border p-3 ${budgetSummary.expectedMargin >= 0 ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
-                          <div className={`text-[11px] font-semibold uppercase tracking-wide ${budgetSummary.expectedMargin >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>Margen esperado</div>
-                          <div className={`mt-1 text-lg font-semibold ${budgetSummary.expectedMargin >= 0 ? 'text-emerald-800' : 'text-red-800'}`}>{formatCLP(budgetSummary.expectedMargin)}</div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ingreso estimado USD</div>
+                          <div className="mt-1 text-lg font-semibold text-slate-900">US$ {Number(budgetSummary.totalExpectedRevenueUsd || 0).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div>
+                        </div>
+                        <div className={`rounded-lg border p-3 ${budgetSummary.expectedMarginClp >= 0 ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+                          <div className={`text-[11px] font-semibold uppercase tracking-wide ${budgetSummary.expectedMarginClp >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>Margen esperado CLP</div>
+                          <div className={`mt-1 text-lg font-semibold ${budgetSummary.expectedMarginClp >= 0 ? 'text-emerald-800' : 'text-red-800'}`}>{formatCLP(budgetSummary.expectedMarginClp)}</div>
+                        </div>
+                        <div className={`rounded-lg border p-3 ${budgetSummary.expectedMarginUsd >= 0 ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+                          <div className={`text-[11px] font-semibold uppercase tracking-wide ${budgetSummary.expectedMarginUsd >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>Margen esperado USD</div>
+                          <div className={`mt-1 text-lg font-semibold ${budgetSummary.expectedMarginUsd >= 0 ? 'text-emerald-800' : 'text-red-800'}`}>US$ {Number(budgetSummary.expectedMarginUsd || 0).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div>
                         </div>
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                           <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sectores con proyección</div>
@@ -776,7 +925,12 @@ export const Fields: React.FC = () => {
                       <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Sectores</h4>
                       
                       <ul className="space-y-3 mb-4">
-                        {field.sectors?.map((sector) => (
+                        {field.sectors?.map((sector) => {
+                          const currentSeasonPlan = getSectorSeasonPlan(sector, currentPlanningSeason);
+                          const currentSeasonPlanMetrics = resolveSeasonPlanMetrics(currentSeasonPlan);
+                          const seasonPlans = [...(sector.sector_budget_season_plans || [])].sort((a, b) => String(b.season).localeCompare(String(a.season)));
+
+                          return (
                           <li key={sector.id} className="text-sm text-gray-600 group">
                             {editingSectorId === sector.id ? (
                               <form onSubmit={(e) => handleUpdateSector(e, sector.id, field.id)} className="w-full rounded-lg border border-green-200 bg-green-50/40 p-3">
@@ -797,29 +951,6 @@ export const Fields: React.FC = () => {
                                     className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
                                     placeholder="Has"
                                     required
-                                  />
-                                  <input
-                                    type="number"
-                                    value={editSectorBudget}
-                                    onChange={(e) => setEditSectorBudget(e.target.value)}
-                                    className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
-                                    placeholder="Ppto/Ha ($)"
-                                  />
-                                  <input
-                                    type="number"
-                                    step="0.01"
-                                    value={editSectorExpectedProductionKg}
-                                    onChange={(e) => setEditSectorExpectedProductionKg(e.target.value)}
-                                    className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
-                                    placeholder="Prod. esperada (kg)"
-                                  />
-                                  <input
-                                    type="number"
-                                    step="0.01"
-                                    value={editSectorExpectedPricePerKg}
-                                    onChange={(e) => setEditSectorExpectedPricePerKg(e.target.value)}
-                                    className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
-                                    placeholder="Precio estimado / kg"
                                   />
                                   <select
                                     value={editSectorProductiveStage || 'productivo'}
@@ -895,7 +1026,8 @@ export const Fields: React.FC = () => {
                                 </div>
                               </form>
                             ) : (
-                              <div className="flex items-center justify-between">
+                              <>
+                                <div className="flex items-center justify-between">
                                 <div className="flex items-center flex-1">
                                   <MapPin className="h-4 w-4 text-gray-400 mr-2" />
                                   <span className="font-medium mr-2">{sector.name}</span>
@@ -912,27 +1044,27 @@ export const Fields: React.FC = () => {
                                     </span>
                                   )}
                                   
-                                  {sector.budget > 0 && (
+                                  {currentSeasonPlan && (
                                     <div className="hidden sm:flex items-center mr-6 text-sm">
                                       <div className="flex flex-col">
-                                        <span className="text-[10px] uppercase text-gray-400 font-bold">Ppto / Ha</span>
-                                        <span className="font-medium text-blue-600">{formatCLP(sector.budget)}</span>
+                                        <span className="text-[10px] uppercase text-gray-400 font-bold">Plan {currentPlanningSeason}</span>
+                                        <span className="font-medium text-blue-600">{formatCLP(currentSeasonPlanMetrics.budgetClpPerHa * Number(sector.hectares || 0))}</span>
                                       </div>
                                     </div>
                                   )}
-                                  {(Number(sector.expected_production_kg || 0) > 0 || Number(sector.expected_price_per_kg || 0) > 0) && (
+                                  {currentSeasonPlanMetrics.expectedKg > 0 && (
                                     <div className="hidden sm:flex items-center mr-6 text-sm">
                                       <div className="flex flex-col">
                                         <span className="text-[10px] uppercase text-gray-400 font-bold">Prod. esperada</span>
-                                        <span className="font-medium text-violet-700">{Number(sector.expected_production_kg || 0).toLocaleString('es-CL')} kg</span>
+                                        <span className="font-medium text-violet-700">{Number(currentSeasonPlanMetrics.expectedKg || 0).toLocaleString('es-CL')} kg</span>
                                       </div>
                                     </div>
                                   )}
-                                  {(Number(sector.expected_production_kg || 0) > 0 && Number(sector.expected_price_per_kg || 0) > 0) && (
+                                  {currentSeasonPlanMetrics.expectedRevenueClp > 0 && (
                                     <div className="hidden sm:flex items-center mr-6 text-sm">
                                       <div className="flex flex-col">
                                         <span className="text-[10px] uppercase text-gray-400 font-bold">Ingreso estimado</span>
-                                        <span className="font-medium text-violet-700">{formatCLP(Number(sector.expected_production_kg || 0) * Number(sector.expected_price_per_kg || 0))}</span>
+                                        <span className="font-medium text-violet-700">{formatCLP(currentSeasonPlanMetrics.expectedRevenueClp)}</span>
                                       </div>
                                     </div>
                                   )}
@@ -953,6 +1085,13 @@ export const Fields: React.FC = () => {
                                 {userRole !== 'viewer' && (
                                   <div className="flex items-center space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button
+                                      onClick={() => openPlanEditor(sector, currentSeasonPlan)}
+                                      className="text-gray-400 hover:text-violet-600"
+                                      title="Plan por temporada"
+                                    >
+                                      <Plus className="h-3 w-3" />
+                                    </button>
+                                    <button
                                       onClick={() => startEditingSector(sector)}
                                       className="text-gray-400 hover:text-green-600"
                                       title="Editar sector"
@@ -968,10 +1107,107 @@ export const Fields: React.FC = () => {
                                     </button>
                                   </div>
                                 )}
-                              </div>
+                                </div>
+                                <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/40 p-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div>
+                                    <div className="text-xs font-semibold uppercase tracking-wide text-violet-700">Planificación por temporada</div>
+                                    <div className="text-xs text-violet-700">Temporada visible: {currentPlanningSeason}</div>
+                                  </div>
+                                  {userRole !== 'viewer' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openPlanEditor(sector, currentSeasonPlan)}
+                                      className="inline-flex items-center rounded-md border border-violet-200 bg-white px-2.5 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-50"
+                                    >
+                                      <Plus className="mr-1 h-3.5 w-3.5" />
+                                      {currentSeasonPlan ? 'Editar plan actual' : 'Agregar plan'}
+                                    </button>
+                                  )}
+                                </div>
+
+                                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-6">
+                                  <div className="rounded-md bg-white px-3 py-2">
+                                    <div className="text-[10px] uppercase tracking-wide text-slate-500">Ppto CLP</div>
+                                    <div className="mt-1 font-semibold text-slate-900">{formatCLP(currentSeasonPlanMetrics.budgetClpPerHa * Number(sector.hectares || 0))}</div>
+                                  </div>
+                                  <div className="rounded-md bg-white px-3 py-2">
+                                    <div className="text-[10px] uppercase tracking-wide text-slate-500">Ppto USD</div>
+                                    <div className="mt-1 font-semibold text-slate-900">US$ {Number(currentSeasonPlanMetrics.budgetUsdPerHa * Number(sector.hectares || 0)).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div>
+                                  </div>
+                                  <div className="rounded-md bg-white px-3 py-2">
+                                    <div className="text-[10px] uppercase tracking-wide text-slate-500">Prod. esperada</div>
+                                    <div className="mt-1 font-semibold text-slate-900">{Number(currentSeasonPlanMetrics.expectedKg || 0).toLocaleString('es-CL')} kg</div>
+                                  </div>
+                                  <div className="rounded-md bg-white px-3 py-2">
+                                    <div className="text-[10px] uppercase tracking-wide text-slate-500">Ingreso CLP</div>
+                                    <div className="mt-1 font-semibold text-slate-900">{formatCLP(currentSeasonPlanMetrics.expectedRevenueClp)}</div>
+                                  </div>
+                                  <div className="rounded-md bg-white px-3 py-2">
+                                    <div className="text-[10px] uppercase tracking-wide text-slate-500">Ingreso USD</div>
+                                    <div className="mt-1 font-semibold text-slate-900">US$ {Number(currentSeasonPlanMetrics.expectedRevenueUsd || 0).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div>
+                                  </div>
+                                  <div className="rounded-md bg-white px-3 py-2">
+                                    <div className="text-[10px] uppercase tracking-wide text-slate-500">TC ref.</div>
+                                    <div className="mt-1 font-semibold text-slate-900">{Number(currentSeasonPlanMetrics.exchangeRate || 0).toLocaleString('es-CL')}</div>
+                                  </div>
+                                </div>
+
+                                <div className="mt-3 space-y-2">
+                                  {seasonPlans.map((plan) => {
+                                    const planMetrics = resolveSeasonPlanMetrics(plan);
+                                    return (
+                                      <div key={plan.id} className="flex flex-col gap-2 rounded-md border border-violet-100 bg-white px-3 py-2 md:flex-row md:items-center md:justify-between">
+                                        <div>
+                                          <div className="text-sm font-medium text-slate-900">{plan.season}</div>
+                                          <div className="text-xs text-slate-500">
+                                            {formatCLP(planMetrics.budgetClpPerHa * Number(sector.hectares || 0))} · US$ {Number(planMetrics.budgetUsdPerHa * Number(sector.hectares || 0)).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} · {Number(planMetrics.expectedKg || 0).toLocaleString('es-CL')} kg
+                                          </div>
+                                        </div>
+                                        {userRole !== 'viewer' && (
+                                          <div className="flex items-center gap-2">
+                                            <button type="button" onClick={() => openPlanEditor(sector, plan)} className="text-violet-700 hover:text-violet-900" title="Editar plan">
+                                              <Edit2 className="h-3.5 w-3.5" />
+                                            </button>
+                                            <button type="button" onClick={() => handleDeleteSectorPlan(field.id, sector.id, plan.id)} className="text-red-600 hover:text-red-800" title="Eliminar plan">
+                                              <Trash2 className="h-3.5 w-3.5" />
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                  {seasonPlans.length === 0 && (
+                                    <div className="rounded-md border border-dashed border-violet-200 bg-white/70 px-3 py-2 text-xs text-violet-700">
+                                      No hay planes cargados todavía para este sector.
+                                    </div>
+                                  )}
+                                </div>
+
+                                  {planEditorSectorId === sector.id && userRole !== 'viewer' && (
+                                    <form onSubmit={(e) => handleSaveSectorPlan(e, field.id, sector.id)} className="mt-3 rounded-md border border-violet-200 bg-white p-3">
+                                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                                        <input type="text" value={planSeason} onChange={(e) => setPlanSeason(e.target.value)} placeholder="Temporada 2025-2026" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" required />
+                                        <input type="number" step="0.01" value={planBudgetClpPerHa} onChange={(e) => setPlanBudgetClpPerHa(e.target.value)} placeholder="Ppto CLP / Ha" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
+                                        <input type="number" step="0.01" value={planBudgetUsdPerHa} onChange={(e) => setPlanBudgetUsdPerHa(e.target.value)} placeholder="Ppto USD / Ha" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
+                                        <input type="number" step="0.01" value={planExpectedKg} onChange={(e) => setPlanExpectedKg(e.target.value)} placeholder="Prod. esperada (kg)" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
+                                        <input type="number" step="0.01" value={planExpectedPriceClp} onChange={(e) => setPlanExpectedPriceClp(e.target.value)} placeholder="Precio venta CLP/kg" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
+                                        <input type="number" step="0.01" value={planExpectedPriceUsd} onChange={(e) => setPlanExpectedPriceUsd(e.target.value)} placeholder="Precio venta USD/kg" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
+                                        <input type="number" step="0.01" value={planExchangeRate} onChange={(e) => setPlanExchangeRate(e.target.value)} placeholder="TC referencia" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
+                                        <input type="text" value={planNotes} onChange={(e) => setPlanNotes(e.target.value)} placeholder="Notas del plan" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
+                                      </div>
+                                      <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+                                        <button type="button" onClick={cancelPlanEditor} className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancelar</button>
+                                        <button type="submit" className="inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700">Guardar plan</button>
+                                      </div>
+                                    </form>
+                                  )}
+                                </div>
+                              </>
                             )}
                           </li>
-                        ))}
+                        );
+                        })}
                       </ul>
 
                       {userRole !== 'viewer' && (
@@ -993,29 +1229,6 @@ export const Fields: React.FC = () => {
                                 required
                                 value={newSectorHectares}
                                 onChange={e => setNewSectorHectares(e.target.value)}
-                                className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
-                              />
-                              <input
-                                type="number"
-                                placeholder="Ppto/Ha ($)"
-                                value={newSectorBudget}
-                                onChange={e => setNewSectorBudget(e.target.value)}
-                                className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
-                              />
-                              <input
-                                type="number"
-                                step="0.01"
-                                placeholder="Prod. esperada (kg)"
-                                value={newSectorExpectedProductionKg}
-                                onChange={e => setNewSectorExpectedProductionKg(e.target.value)}
-                                className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
-                              />
-                              <input
-                                type="number"
-                                step="0.01"
-                                placeholder="Precio estimado / kg"
-                                value={newSectorExpectedPricePerKg}
-                                onChange={e => setNewSectorExpectedPricePerKg(e.target.value)}
                                 className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
                               />
                               <select
@@ -1070,6 +1283,9 @@ export const Fields: React.FC = () => {
                                 onChange={e => setNewSectorLongitude(e.target.value)}
                                 className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
                               />
+                            </div>
+                            <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                              El presupuesto y la proyección comercial se cargan después por temporada dentro del sector.
                             </div>
                             <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                               <button
