@@ -1507,6 +1507,21 @@ export const ApplicationOrders: React.FC = () => {
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                                   <div>{order.field?.name}</div>
                                   <div className="text-xs text-gray-500 dark:text-gray-400">{order.sector?.name}</div>
+                                  {!!order.items?.length && (
+                                      <div className="mt-2 space-y-1">
+                                          {order.items.slice(0, 2).map((item, itemIdx) => (
+                                              <div key={`${order.id}-summary-${itemIdx}`} className="rounded border border-violet-100 bg-violet-50 px-2 py-1 text-[11px] leading-4 text-violet-800">
+                                                  <span className="font-medium text-violet-950">{item.product_name}:</span>{' '}
+                                                  {formatOrderItemQuantity(item.dose_per_100l, item.unit, 'input')} = {formatOrderItemQuantity(item.dose_per_hectare, item.unit, 'expanded')} = {formatOrderItemQuantity(item.total_quantity, item.unit, 'expanded')}
+                                              </div>
+                                          ))}
+                                          {(order.items.length || 0) > 2 && (
+                                              <div className="text-[11px] text-violet-700">
+                                                  + {(order.items.length || 0) - 2} productos más
+                                              </div>
+                                          )}
+                                      </div>
+                                  )}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{order.objective || '-'}</td>
                               <td className="px-6 py-4 whitespace-nowrap">
