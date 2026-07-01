@@ -252,6 +252,13 @@ export const ApplicationOrders: React.FC = () => {
     currentProductMeta,
     currentSectorMeta?.hectares
   ]);
+  const currentOrderHeaderSummaryRows = useMemo(
+    () => (currentOrder.items || []).slice(0, 3).map((item) => ({
+      productName: item.product_name,
+      summary: `${formatOrderItemQuantity(item.dose_per_100l, item.unit, 'input')} = ${formatOrderItemQuantity(item.dose_per_hectare, item.unit, 'expanded')} = ${formatOrderItemQuantity(item.total_quantity, item.unit, 'expanded')}`
+    })),
+    [currentOrder.items]
+  );
 
   useEffect(() => {
     if (!pageQuery.isError) {
@@ -995,6 +1002,35 @@ export const ApplicationOrders: React.FC = () => {
                   </button>
                 </div>
               </div>
+
+              {currentOrder.id && currentOrderHeaderSummaryRows.length > 0 && (
+                <div className="mb-6 rounded-md border border-violet-200 bg-violet-50 p-4">
+                  <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <div className="text-sm font-bold text-violet-900">Resumen rápido de la orden</div>
+                      <div className="text-xs text-violet-700">
+                        {currentOrder.field?.name || currentField?.name || '-'} / {currentOrder.sector?.name || currentSectorMeta?.name || '-'} · {currentOrder.items?.length || 0} productos
+                      </div>
+                    </div>
+                    <div className="text-xs text-violet-700">
+                      Orden #{currentOrder.order_number || '-'}
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-3">
+                    {currentOrderHeaderSummaryRows.map((row, idx) => (
+                      <div key={`header-summary-${idx}`} className="rounded border border-violet-100 bg-white/80 px-3 py-2">
+                        <div className="text-sm font-medium text-violet-950">{row.productName}</div>
+                        <div className="mt-1 text-xs text-violet-800">{row.summary}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {(currentOrder.items?.length || 0) > currentOrderHeaderSummaryRows.length && (
+                    <div className="mt-2 text-xs text-violet-700">
+                      + {(currentOrder.items?.length || 0) - currentOrderHeaderSummaryRows.length} productos adicionales visibles en la revisión completa.
+                    </div>
+                  )}
+                </div>
+              )}
 
               {wizardStep === 1 && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
