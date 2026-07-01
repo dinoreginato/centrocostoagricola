@@ -1154,6 +1154,20 @@ export const Fields: React.FC = () => {
                                       <div className="flex flex-col">
                                         <span className="text-[10px] uppercase text-gray-400 font-bold">Ingreso estimado</span>
                                         <span className="font-medium text-violet-700">{formatCLP(currentSeasonPlanMetrics.expectedRevenueClp)}</span>
+                                        <span className="text-[11px] text-gray-500">{formatUSD(currentSeasonPlanMetrics.expectedRevenueUsd)}</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {(currentSeasonPlanMetrics.expectedRevenueClp > 0 || currentSeasonPlanMetrics.budgetClpPerHa > 0) && (
+                                    <div className="hidden sm:flex items-center mr-6 text-sm">
+                                      <div className="flex flex-col">
+                                        <span className="text-[10px] uppercase text-gray-400 font-bold">Margen estimado</span>
+                                        <span className={`font-medium ${(currentSeasonPlanMetrics.expectedRevenueClp - (currentSeasonPlanMetrics.budgetClpPerHa * Number(sector.hectares || 0))) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                                          {formatCLP(currentSeasonPlanMetrics.expectedRevenueClp - (currentSeasonPlanMetrics.budgetClpPerHa * Number(sector.hectares || 0)))}
+                                        </span>
+                                        <span className={`${(currentSeasonPlanMetrics.expectedRevenueUsd - (currentSeasonPlanMetrics.budgetUsdPerHa * Number(sector.hectares || 0))) >= 0 ? 'text-emerald-600' : 'text-red-500'} text-[11px]`}>
+                                          {formatUSD(currentSeasonPlanMetrics.expectedRevenueUsd - (currentSeasonPlanMetrics.budgetUsdPerHa * Number(sector.hectares || 0)))}
+                                        </span>
                                       </div>
                                     </div>
                                   )}
