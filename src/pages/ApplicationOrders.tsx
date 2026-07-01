@@ -101,6 +101,46 @@ const getConversionFactor = (fromUnit: string, toUnit: string): number => {
   return 1;
 };
 
+const formatDisplayAmount = (value: number, fractionDigits = 4) => {
+  const safeValue = Number(value || 0);
+  if (!Number.isFinite(safeValue)) return '0';
+
+  return safeValue.toLocaleString('es-CL', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: fractionDigits
+  });
+};
+
+const formatOrderItemQuantity = (
+  value: number | undefined,
+  unit: string | undefined,
+  mode: 'input' | 'expanded' = 'input'
+) => {
+  const safeValue = Number(value || 0);
+  const normalizedUnit = normalizeUnit(unit || '');
+
+  if (!Number.isFinite(safeValue) || safeValue <= 0) {
+    return '-';
+  }
+
+  if (mode === 'expanded') {
+    if (normalizedUnit === 'gr') {
+      return `${formatDisplayAmount(safeValue / 1000)} kg`;
+    }
+    if (normalizedUnit === 'cc') {
+      return `${formatDisplayAmount(safeValue / 1000)} Lts`;
+    }
+  }
+
+  const unitLabel = normalizedUnit === 'kg'
+    ? 'kg'
+    : normalizedUnit === 'l'
+      ? 'Lts'
+      : normalizedUnit || unit || '';
+
+  return `${formatDisplayAmount(safeValue)} ${unitLabel}`.trim();
+};
+
 export const ApplicationOrders: React.FC = () => {
   const { selectedCompany, userRole } = useCompany();
   const queryClient = useQueryClient();
@@ -716,9 +756,9 @@ export const ApplicationOrders: React.FC = () => {
       const tableData = order.items?.map(item => [
           item.product_name,
           item.active_ingredient || '-',
-          item.dose_per_100l ? `${item.dose_per_100l} ${item.unit || 'L/Kg'}` : '-',
-          item.dose_per_hectare ? `${item.dose_per_hectare} ${item.unit || 'L/Kg'}` : '-',
-          `${item.total_quantity} ${item.unit || 'L/Kg'}`
+          formatOrderItemQuantity(item.dose_per_100l, item.unit, 'input'),
+          formatOrderItemQuantity(item.dose_per_hectare, item.unit, 'expanded'),
+          formatOrderItemQuantity(item.total_quantity, item.unit, 'expanded')
       ]) || [];
 
       autoTable(doc, {
@@ -1146,9 +1186,9 @@ export const ApplicationOrders: React.FC = () => {
                                       <div className="font-medium">{item.product_name}</div>
                                       <div className="text-xs text-gray-500 dark:text-gray-400">{item.active_ingredient}</div>
                                   </td>
-                                  <td className="px-3 py-2 text-sm">{item.dose_per_100l ? `${item.dose_per_100l} ${item.unit}` : '-'}</td>
-                                  <td className="px-3 py-2 text-sm">{item.dose_per_hectare} {item.unit}</td>
-                                  <td className="px-3 py-2 text-sm font-bold">{item.total_quantity} {item.unit}</td>
+                                  <td className="px-3 py-2 text-sm">{formatOrderItemQuantity(item.dose_per_100l, item.unit, 'input')}</td>
+                                  <td className="px-3 py-2 text-sm">{formatOrderItemQuantity(item.dose_per_hectare, item.unit, 'expanded')}</td>
+                                  <td className="px-3 py-2 text-sm font-bold">{formatOrderItemQuantity(item.total_quantity, item.unit, 'expanded')}</td>
                                   <td className="px-3 py-2 text-right">
                                       <button onClick={() => handleRemoveItem(idx)} className="text-red-600 hover:text-red-800">
                                           <Trash2 className="h-4 w-4" />
