@@ -4211,18 +4211,18 @@ export const Reports: React.FC = () => {
         sharePct: executiveCurrentBase.totalSeasonCost > 0 ? (row.total / executiveCurrentBase.totalSeasonCost) * 100 : 0,
         budgetTotal,
         budgetTotalUsd,
-        budgetDelta: row.total - budgetTotal,
-        budgetExecutionPct: budgetTotal > 0 ? (row.total / budgetTotal) * 100 : 0,
+        budgetDelta: actualIncome - budgetTotal,
+        budgetExecutionPct: budgetTotal > 0 ? (actualIncome / budgetTotal) * 100 : 0,
         kgProduced: Number(budgetInfo.kg || 0),
         expectedKg,
         expectedRevenue,
         expectedRevenueUsd,
         actualIncome,
-        expectedMargin: expectedRevenue - budgetTotal,
-        expectedMarginUsd: expectedRevenueUsd - budgetTotalUsd,
+        expectedMargin: budgetTotal - row.total,
+        expectedMarginUsd: budgetTotalUsd - (Number(budgetInfo.cost || 0) > 0 && expectedRevenue > 0 ? ((Number(budgetInfo.cost || 0) / expectedRevenue) * expectedRevenueUsd) : 0),
         actualProfit,
-        revenueGap: actualIncome - expectedRevenue,
-        marginGap: actualProfit - (expectedRevenue - budgetTotal),
+        revenueGap: actualIncome - budgetTotal,
+        marginGap: actualProfit - (budgetTotal - row.total),
         productionAchievementPct: expectedKg > 0 ? (Number(budgetInfo.kg || 0) / expectedKg) * 100 : 0,
         revenueAchievementPct: expectedRevenue > 0 ? (actualIncome / expectedRevenue) * 100 : 0,
         costPerHa,
@@ -4253,18 +4253,18 @@ export const Reports: React.FC = () => {
         sharePct: executiveCurrentBase.totalSeasonCost > 0 ? (row.total / executiveCurrentBase.totalSeasonCost) * 100 : 0,
         budgetTotal,
         budgetTotalUsd,
-        budgetDelta: row.total - budgetTotal,
-        budgetExecutionPct: budgetTotal > 0 ? (row.total / budgetTotal) * 100 : 0,
+        budgetDelta: actualIncome - budgetTotal,
+        budgetExecutionPct: budgetTotal > 0 ? (actualIncome / budgetTotal) * 100 : 0,
         kgProduced: Number(budgetInfo.kg || 0),
         expectedKg,
         expectedRevenue,
         expectedRevenueUsd,
         actualIncome,
-        expectedMargin: expectedRevenue - budgetTotal,
-        expectedMarginUsd: expectedRevenueUsd - budgetTotalUsd,
+        expectedMargin: budgetTotal - row.total,
+        expectedMarginUsd: budgetTotalUsd - (Number(budgetInfo.cost || 0) > 0 && expectedRevenue > 0 ? ((Number(budgetInfo.cost || 0) / expectedRevenue) * expectedRevenueUsd) : 0),
         actualProfit,
-        revenueGap: actualIncome - expectedRevenue,
-        marginGap: actualProfit - (expectedRevenue - budgetTotal),
+        revenueGap: actualIncome - budgetTotal,
+        marginGap: actualProfit - (budgetTotal - row.total),
         productionAchievementPct: expectedKg > 0 ? (Number(budgetInfo.kg || 0) / expectedKg) * 100 : 0,
         revenueAchievementPct: expectedRevenue > 0 ? (actualIncome / expectedRevenue) * 100 : 0,
         costPerHa,
@@ -4328,18 +4328,18 @@ export const Reports: React.FC = () => {
         seasonVariationPct,
         totalBudget,
         totalBudgetUsd,
-        budgetDelta: executiveCurrentBase.totalSeasonCost - totalBudget,
-        budgetExecutionPct: totalBudget > 0 ? (executiveCurrentBase.totalSeasonCost / totalBudget) * 100 : 0,
+        budgetDelta: totalActualIncome - totalBudget,
+        budgetExecutionPct: totalBudget > 0 ? (totalActualIncome / totalBudget) * 100 : 0,
         totalKgProduced,
         totalExpectedKg,
         totalExpectedRevenue,
         totalExpectedRevenueUsd,
         totalActualIncome,
-        totalExpectedMargin: totalExpectedRevenue - totalBudget,
-        totalExpectedMarginUsd: totalExpectedRevenueUsd - totalBudgetUsd,
+        totalExpectedMargin: totalBudget - executiveCurrentBase.totalSeasonCost,
+        totalExpectedMarginUsd: totalBudgetUsd - (totalBudget > 0 ? (executiveCurrentBase.totalSeasonCost / totalBudget) * totalBudgetUsd : 0),
         totalActualProfit,
-        expectedRevenueGap: totalActualIncome - totalExpectedRevenue,
-        expectedMarginGap: totalActualProfit - (totalExpectedRevenue - totalBudget),
+        expectedRevenueGap: totalActualIncome - totalBudget,
+        expectedMarginGap: totalActualProfit - (totalBudget - executiveCurrentBase.totalSeasonCost),
         productionAchievementPct: totalExpectedKg > 0 ? (totalKgProduced / totalExpectedKg) * 100 : 0,
         revenueAchievementPct: totalExpectedRevenue > 0 ? (totalActualIncome / totalExpectedRevenue) * 100 : 0,
         averageCostPerHa,
@@ -4447,18 +4447,18 @@ export const Reports: React.FC = () => {
           averageMonthlyCost,
           totalBudget,
           totalBudgetUsd,
-          budgetDelta: totalSeasonCost - totalBudget,
-          budgetExecutionPct: totalBudget > 0 ? (totalSeasonCost / totalBudget) * 100 : 0,
+          budgetDelta: totalActualIncome - totalBudget,
+          budgetExecutionPct: totalBudget > 0 ? (totalActualIncome / totalBudget) * 100 : 0,
           totalKgProduced,
           totalExpectedKg,
           totalExpectedRevenue,
           totalExpectedRevenueUsd,
           totalActualIncome,
-          totalExpectedMargin: totalExpectedRevenue - totalBudget,
-          totalExpectedMarginUsd: totalExpectedRevenueUsd - totalBudgetUsd,
+          totalExpectedMargin: totalBudget - totalSeasonCost,
+          totalExpectedMarginUsd: totalBudgetUsd - (totalBudget > 0 ? (totalSeasonCost / totalBudget) * totalBudgetUsd : 0),
           totalActualProfit,
-          expectedRevenueGap: totalActualIncome - totalExpectedRevenue,
-          expectedMarginGap: totalActualProfit - (totalExpectedRevenue - totalBudget),
+          expectedRevenueGap: totalActualIncome - totalBudget,
+          expectedMarginGap: totalActualProfit - (totalBudget - totalSeasonCost),
           productionAchievementPct: totalExpectedKg > 0 ? (totalKgProduced / totalExpectedKg) * 100 : 0,
           revenueAchievementPct: totalExpectedRevenue > 0 ? (totalActualIncome / totalExpectedRevenue) * 100 : 0,
           averageCostPerHa: selectedField?.hectares ? totalSeasonCost / selectedField.hectares : 0,
@@ -4507,13 +4507,13 @@ export const Reports: React.FC = () => {
           score: Math.abs(row.vsPreviousSeason)
         })),
       ...sortedFieldRows
-        .filter((row) => Number((row as any).budgetTotal || 0) > 0 && Number((row as any).budgetExecutionPct || 0) >= 110)
+        .filter((row) => Number((row as any).budgetTotal || 0) > 0 && Number((row as any).budgetExecutionPct || 0) > 0 && Number((row as any).budgetExecutionPct || 0) <= 90)
         .map((row) => ({
-          level: Number((row as any).budgetExecutionPct || 0) >= 130 ? 'alta' : 'media',
-          title: `Campo ${row.fieldName} sobre presupuesto`,
-          message: `Ejecuta ${Number((row as any).budgetExecutionPct || 0).toFixed(1)}% del presupuesto y supera el plan en ${formatCLP(Number((row as any).budgetDelta || 0))}.`,
-          amount: Math.max(Number((row as any).budgetDelta || 0), 0),
-          score: Math.max(Number((row as any).budgetDelta || 0), 0)
+          level: Number((row as any).budgetExecutionPct || 0) <= 70 ? 'alta' : 'media',
+          title: `Campo ${row.fieldName} bajo presupuesto`,
+          message: `El ingreso real alcanza ${Number((row as any).budgetExecutionPct || 0).toFixed(1)}% del presupuesto visible y queda con una brecha de ${formatCLP(Math.abs(Number((row as any).budgetDelta || 0)))}.`,
+          amount: Math.abs(Number((row as any).budgetDelta || 0)),
+          score: Math.abs(Number((row as any).budgetDelta || 0))
         })),
       ...sortedFieldRows
         .filter((row) =>
@@ -4548,14 +4548,14 @@ export const Reports: React.FC = () => {
           score: Number((row as any).costPerKg || 0)
         })),
       ...sortedSectorRows
-        .filter((row) => Number((row as any).budgetTotal || 0) > 0 && Number((row as any).budgetExecutionPct || 0) >= 115)
+        .filter((row) => Number((row as any).budgetTotal || 0) > 0 && Number((row as any).budgetExecutionPct || 0) > 0 && Number((row as any).budgetExecutionPct || 0) <= 85)
         .slice(0, 4)
         .map((row) => ({
-          level: Number((row as any).budgetExecutionPct || 0) >= 135 ? 'alta' : 'media',
-          title: `Sector ${row.fieldName} / ${row.sectorName} en desvio`,
-          message: `El sector ejecuta ${Number((row as any).budgetExecutionPct || 0).toFixed(1)}% de su presupuesto y requiere explicacion operativa.`,
-          amount: Math.max(Number((row as any).budgetDelta || 0), 0),
-          score: Math.max(Number((row as any).budgetDelta || 0), 0)
+          level: Number((row as any).budgetExecutionPct || 0) <= 60 ? 'alta' : 'media',
+          title: `Sector ${row.fieldName} / ${row.sectorName} bajo presupuesto`,
+          message: `El ingreso real del sector alcanza ${Number((row as any).budgetExecutionPct || 0).toFixed(1)}% del presupuesto proyectado y requiere seguimiento comercial.`,
+          amount: Math.abs(Number((row as any).budgetDelta || 0)),
+          score: Math.abs(Number((row as any).budgetDelta || 0))
         })),
       ...sortedSectorRows
         .filter((row) => Number(row.total || 0) > 0 && Number((row as any).budgetTotal || 0) <= 0)
@@ -9447,8 +9447,8 @@ export const Reports: React.FC = () => {
           : (finalIncomeClp > 0 ? (finalProfitClp / finalIncomeClp) * 100 : 0);
         
         const seasonPlanMetrics = resolveSectorSeasonPlanMetrics(sector, selectedSeason);
-        const budgetPerHa = seasonPlanMetrics.budgetClpPerHa;
-        const totalBudgetUsd = seasonPlanMetrics.budgetUsdPerHa * hectares;
+        const budgetPerHa = hectares > 0 ? seasonPlanMetrics.expectedRevenueClp / hectares : 0;
+        const totalBudgetUsd = seasonPlanMetrics.expectedRevenueUsd;
         const expectedProductionKg = seasonPlanMetrics.expectedProductionKg;
         const expectedPricePerKg = seasonPlanMetrics.expectedPriceClp;
         const expectedPricePerKgUsd = seasonPlanMetrics.expectedPriceUsd;
@@ -9481,16 +9481,16 @@ export const Reports: React.FC = () => {
           price_jugo: finalPriceJugo,
           income_usd_jugo: finalUsdJugo,
           budget_per_ha: budgetPerHa,
-          total_budget: budgetPerHa * hectares,
-          budget_per_ha_usd: seasonPlanMetrics.budgetUsdPerHa,
+          total_budget: seasonPlanMetrics.expectedRevenueClp,
+          budget_per_ha_usd: hectares > 0 ? seasonPlanMetrics.expectedRevenueUsd / hectares : 0,
           total_budget_usd: totalBudgetUsd,
           expected_production_kg: expectedProductionKg,
           expected_price_per_kg: expectedPricePerKg,
           expected_price_per_kg_usd: expectedPricePerKgUsd,
           expected_revenue: expectedRevenue,
           expected_revenue_usd: expectedRevenueUsd,
-          expected_margin: expectedRevenue - (budgetPerHa * hectares),
-          expected_margin_usd: expectedRevenueUsd - totalBudgetUsd,
+          expected_margin: expectedRevenue - totalCostGeneral,
+          expected_margin_usd: expectedRevenueUsd - (seasonPlanMetrics.exchangeRate > 0 ? totalCostGeneral / seasonPlanMetrics.exchangeRate : 0),
           exchange_rate_reference: seasonPlanMetrics.exchangeRate,
           income_estimated: finalIncomeClp,
           production_source: expectedWithoutProduction
@@ -14422,10 +14422,10 @@ export const Reports: React.FC = () => {
                   <div className="mt-2 text-2xl font-semibold text-gray-900">{formatCLP(executiveViewData.kpis.averageMonthlyCost)}</div>
                 </div>
                 <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
-                  <div className="text-xs uppercase tracking-wide text-gray-500">Presupuesto</div>
+                  <div className="text-xs uppercase tracking-wide text-gray-500">Presupuesto proyectado</div>
                   <div className="mt-2 text-2xl font-semibold text-gray-900">{formatCLP(executiveViewData.kpis.totalBudget || 0)}</div>
                   <div className="mt-1 text-sm text-gray-500">{formatUSD(executiveViewData.kpis.totalBudgetUsd || 0)}</div>
-                  <div className={`mt-1 text-sm ${(executiveViewData.kpis.budgetDelta || 0) >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                  <div className={`mt-1 text-sm ${(executiveViewData.kpis.budgetDelta || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                     {formatCLP(executiveViewData.kpis.budgetDelta || 0)}
                   </div>
                 </div>
@@ -14435,9 +14435,9 @@ export const Reports: React.FC = () => {
                   <div className="mt-1 text-sm text-gray-500">{(executiveViewData.kpis.productionAchievementPct || 0).toFixed(1)}% cumplimiento</div>
                 </div>
                 <div className="bg-white rounded-lg shadow border border-gray-200 p-5">
-                  <div className="text-xs uppercase tracking-wide text-gray-500">Ingreso estimado</div>
-                  <div className="mt-2 text-2xl font-semibold text-gray-900">{formatCLP(executiveViewData.kpis.totalExpectedRevenue || 0)}</div>
-                  <div className="mt-1 text-sm text-gray-500">{formatUSD(executiveViewData.kpis.totalExpectedRevenueUsd || 0)}</div>
+                  <div className="text-xs uppercase tracking-wide text-gray-500">Ingreso real</div>
+                  <div className="mt-2 text-2xl font-semibold text-gray-900">{formatCLP(executiveViewData.kpis.totalActualIncome || 0)}</div>
+                  <div className="mt-1 text-sm text-gray-500">{(executiveViewData.kpis.revenueAchievementPct || 0).toFixed(1)}% del presupuesto</div>
                   <div className={`mt-1 text-sm ${(executiveViewData.kpis.expectedRevenueGap || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                     {formatCLP(executiveViewData.kpis.expectedRevenueGap || 0)}
                   </div>
@@ -14506,8 +14506,8 @@ export const Reports: React.FC = () => {
                 <div className="bg-white rounded-lg shadow border border-gray-200 p-6 xl:col-span-2">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-900">Presupuesto vs real</h3>
-                      <p className="text-sm text-gray-500">Combina presupuesto de costo con producción esperada, ingreso estimado y brechas reales visibles.</p>
+                      <h3 className="text-lg font-semibold text-gray-900">Presupuesto proyectado vs real</h3>
+                      <p className="text-sm text-gray-500">Compara la venta proyectada por temporada contra el ingreso real visible y el costo acumulado.</p>
                     </div>
                     <span className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${getExecutiveTone(Math.abs((executiveViewData.kpis.budgetExecutionPct || 0) - 100)).badge}`}>
                       {Number(executiveViewData.kpis.budgetExecutionPct || 0).toFixed(1)}%
@@ -14515,7 +14515,7 @@ export const Reports: React.FC = () => {
                   </div>
                   <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="rounded-xl bg-slate-50 p-4">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Presupuesto</div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Presupuesto proyectado</div>
                       <div className="mt-2 text-xl font-semibold text-slate-900">{formatCLP(executiveViewData.kpis.totalBudget || 0)}</div>
                       <div className="mt-1 text-sm text-slate-500">{formatUSD(executiveViewData.kpis.totalBudgetUsd || 0)}</div>
                     </div>
@@ -14524,8 +14524,8 @@ export const Reports: React.FC = () => {
                       <div className="mt-2 text-xl font-semibold text-slate-900">{formatCLP(executiveViewData.kpis.totalSeasonCost)}</div>
                     </div>
                     <div className="rounded-xl bg-slate-50 p-4">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Desviación</div>
-                      <div className={`mt-2 text-xl font-semibold ${(executiveViewData.kpis.budgetDelta || 0) >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Brecha ingreso vs presupuesto</div>
+                      <div className={`mt-2 text-xl font-semibold ${(executiveViewData.kpis.budgetDelta || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                         {formatCLP(executiveViewData.kpis.budgetDelta || 0)}
                       </div>
                     </div>
@@ -14540,9 +14540,9 @@ export const Reports: React.FC = () => {
                       <div className="mt-2 text-xl font-semibold text-slate-900">{Number(executiveViewData.kpis.totalKgProduced || 0).toLocaleString('es-CL')} kg</div>
                     </div>
                     <div className="rounded-xl bg-slate-50 p-4">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Ingreso estimado</div>
-                      <div className="mt-2 text-xl font-semibold text-slate-900">{formatCLP(executiveViewData.kpis.totalExpectedRevenue || 0)}</div>
-                      <div className="mt-1 text-sm text-slate-500">{formatUSD(executiveViewData.kpis.totalExpectedRevenueUsd || 0)}</div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">Cumplimiento presupuesto</div>
+                      <div className="mt-2 text-xl font-semibold text-slate-900">{(executiveViewData.kpis.revenueAchievementPct || 0).toFixed(1)}%</div>
+                      <div className="mt-1 text-sm text-slate-500">{formatUSD(executiveViewData.kpis.totalActualIncome || 0)}</div>
                     </div>
                     <div className="rounded-xl bg-slate-50 p-4">
                       <div className="text-xs uppercase tracking-wide text-slate-500">Ingreso real</div>
@@ -14595,8 +14595,8 @@ export const Reports: React.FC = () => {
                         : 'No hay sectores con costo visible sin presupuesto en el alcance actual.'}
                     </p>
                     <p className="mt-2">
-                      {Number(executiveViewData.kpis.totalExpectedRevenue || 0) > 0
-                        ? `La referencia comercial visible proyecta ${Number(executiveViewData.kpis.totalExpectedKg || 0).toLocaleString('es-CL')} kg, ${formatCLP(executiveViewData.kpis.totalExpectedRevenue || 0)} (${formatUSD(executiveViewData.kpis.totalExpectedRevenueUsd || 0)}) de ingreso y un margen esperado de ${formatCLP(executiveViewData.kpis.totalExpectedMargin || 0)} (${formatUSD(executiveViewData.kpis.totalExpectedMarginUsd || 0)}).`
+                      {Number(executiveViewData.kpis.totalBudget || 0) > 0
+                        ? `El presupuesto visible proyecta ${Number(executiveViewData.kpis.totalExpectedKg || 0).toLocaleString('es-CL')} kg, ${formatCLP(executiveViewData.kpis.totalBudget || 0)} (${formatUSD(executiveViewData.kpis.totalBudgetUsd || 0)}) de venta esperada y un resultado proyectado de ${formatCLP(executiveViewData.kpis.totalExpectedMargin || 0)} (${formatUSD(executiveViewData.kpis.totalExpectedMarginUsd || 0)}).`
                         : 'Aún faltan metas de producción y precio estimado para convertir el presupuesto en referencia comercial visible.'}
                     </p>
                   </div>

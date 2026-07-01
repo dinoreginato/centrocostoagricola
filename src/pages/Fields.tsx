@@ -118,17 +118,9 @@ const getFieldHectareSummary = (field: Field) => {
 const getFieldBudgetSummary = (field: Field, season: string) => {
   const sectors = field.sectors || [];
   const sectorPlans = sectors.map((sector) => ({ sector, plan: getSectorSeasonPlan(sector, season) }));
-  const budgetedSectors = sectorPlans.filter(({ plan }) => resolveSeasonPlanMetrics(plan).budgetClpPerHa > 0);
-  const sectorsWithoutBudget = sectorPlans.filter(({ plan }) => resolveSeasonPlanMetrics(plan).budgetClpPerHa <= 0);
+  const budgetedSectors = sectorPlans.filter(({ plan }) => resolveSeasonPlanMetrics(plan).expectedRevenueClp > 0);
+  const sectorsWithoutBudget = sectorPlans.filter(({ plan }) => resolveSeasonPlanMetrics(plan).expectedRevenueClp <= 0);
   const projectedSectors = sectorPlans.filter(({ plan }) => resolveSeasonPlanMetrics(plan).expectedKg > 0);
-  const totalBudgetClp = budgetedSectors.reduce(
-    (sum, { sector, plan }) => sum + (resolveSeasonPlanMetrics(plan).budgetClpPerHa * Number(sector.hectares || 0)),
-    0
-  );
-  const totalBudgetUsd = budgetedSectors.reduce(
-    (sum, { sector, plan }) => sum + (resolveSeasonPlanMetrics(plan).budgetUsdPerHa * Number(sector.hectares || 0)),
-    0
-  );
   const totalExpectedProductionKg = sectorPlans.reduce((sum, { plan }) => sum + resolveSeasonPlanMetrics(plan).expectedKg, 0);
   const totalExpectedRevenueClp = sectorPlans.reduce((sum, { plan }) => sum + resolveSeasonPlanMetrics(plan).expectedRevenueClp, 0);
   const totalExpectedRevenueUsd = sectorPlans.reduce((sum, { plan }) => sum + resolveSeasonPlanMetrics(plan).expectedRevenueUsd, 0);
@@ -140,13 +132,11 @@ const getFieldBudgetSummary = (field: Field, season: string) => {
     projectedSectors: projectedSectors.length,
     sectorsWithoutBudget: sectorsWithoutBudget.length,
     totalSectors: sectors.length,
-    totalBudgetClp,
-    totalBudgetUsd,
+    totalBudgetClp: totalExpectedRevenueClp,
+    totalBudgetUsd: totalExpectedRevenueUsd,
     totalExpectedProductionKg,
     totalExpectedRevenueClp,
     totalExpectedRevenueUsd,
-    expectedMarginClp: totalExpectedRevenueClp - totalBudgetClp,
-    expectedMarginUsd: totalExpectedRevenueUsd - totalBudgetUsd,
     areaCoveragePct: totalArea > 0 ? (budgetedArea / totalArea) * 100 : 0
   };
 };
@@ -243,8 +233,8 @@ export const Fields: React.FC = () => {
   const [planEditorSectorId, setPlanEditorSectorId] = useState<string | null>(null);
   const [planEditorPlanId, setPlanEditorPlanId] = useState<string | null>(null);
   const [planSeason, setPlanSeason] = useState(getSeasonFromDate(new Date()));
-  const [planBudgetClpPerHa, setPlanBudgetClpPerHa] = useState('');
-  const [planBudgetUsdPerHa, setPlanBudgetUsdPerHa] = useState('');
+  const [, setPlanBudgetClpPerHa] = useState('');
+  const [, setPlanBudgetUsdPerHa] = useState('');
   const [planExpectedKg, setPlanExpectedKg] = useState('');
   const [planExpectedPriceClp, setPlanExpectedPriceClp] = useState('');
   const [planExpectedPriceUsd, setPlanExpectedPriceUsd] = useState('');
@@ -270,32 +260,28 @@ export const Fields: React.FC = () => {
       .sort((a, b) => String(b).localeCompare(String(a)));
   }, [currentPlanningSeason, fields, selectedPlanningSeason]);
 
+  const planEditorSector = useMemo(
+    () => fields.flatMap((field) => field.sectors || []).find((sector) => sector.id === planEditorSectorId) || null,
+    [fields, planEditorSectorId]
+  );
+  const planEditorSectorHectares = Number(planEditorSector?.hectares || 0);
+
   const planCommercialPreview = useMemo(() => {
     const exchangeRate = Number(planExchangeRate || 0);
-    const budgetClpInput = Number(planBudgetClpPerHa || 0);
-    const budgetUsdInput = Number(planBudgetUsdPerHa || 0);
     const expectedKg = Number(planExpectedKg || 0);
     const expectedSalePriceUsd = Number(planExpectedPriceUsd || 0);
     const fallbackSalePriceClp = Number(planExpectedPriceClp || 0);
     const expectedSalePriceClp = expectedSalePriceUsd > 0 && exchangeRate > 0
       ? expectedSalePriceUsd * exchangeRate
       : fallbackSalePriceClp;
-    const budgetClpPerHa = budgetClpInput > 0
-      ? budgetClpInput
-      : exchangeRate > 0
-        ? budgetUsdInput * exchangeRate
-        : 0;
-    const budgetUsdPerHa = budgetUsdInput > 0
-      ? budgetUsdInput
-      : exchangeRate > 0
-        ? budgetClpInput / exchangeRate
-        : 0;
     const expectedRevenueUsd = expectedKg * expectedSalePriceUsd;
     const expectedRevenueClp = expectedSalePriceClp > 0
       ? expectedKg * expectedSalePriceClp
       : exchangeRate > 0
         ? expectedRevenueUsd * exchangeRate
         : 0;
+    const budgetClpPerHa = planEditorSectorHectares > 0 ? expectedRevenueClp / planEditorSectorHectares : 0;
+    const budgetUsdPerHa = planEditorSectorHectares > 0 ? expectedRevenueUsd / planEditorSectorHectares : 0;
 
     return {
       exchangeRate,
@@ -308,8 +294,7 @@ export const Fields: React.FC = () => {
       expectedRevenueClp
     };
   }, [
-    planBudgetClpPerHa,
-    planBudgetUsdPerHa,
+    planEditorSectorHectares,
     planExchangeRate,
     planExpectedKg,
     planExpectedPriceClp,
@@ -572,10 +557,15 @@ export const Fields: React.FC = () => {
   const handleSaveSectorPlan = async (e: React.FormEvent, fieldId: string, sectorId: string) => {
     e.preventDefault();
     try {
+      const sectorHectares = Number(
+        fields
+          .flatMap((field) => field.sectors || [])
+          .find((sector) => sector.id === sectorId)?.hectares || 0
+      );
       const payload = {
         season: planSeason.trim(),
-        budget_cost_clp_per_ha: planBudgetClpPerHa ? parseFloat(planBudgetClpPerHa) : 0,
-        budget_cost_usd_per_ha: planBudgetUsdPerHa ? parseFloat(planBudgetUsdPerHa) : 0,
+        budget_cost_clp_per_ha: sectorHectares > 0 ? planCommercialPreview.expectedRevenueClp / sectorHectares : 0,
+        budget_cost_usd_per_ha: sectorHectares > 0 ? planCommercialPreview.expectedRevenueUsd / sectorHectares : 0,
         expected_production_kg: planExpectedKg ? parseFloat(planExpectedKg) : 0,
         expected_sale_price_clp_per_kg: planCommercialPreview.expectedSalePriceClp,
         expected_sale_price_usd_per_kg: planCommercialPreview.expectedSalePriceUsd,
@@ -990,22 +980,6 @@ export const Fields: React.FC = () => {
                           <div className="mt-1 text-lg font-semibold text-slate-900">{Number(budgetSummary.totalExpectedProductionKg || 0).toLocaleString('es-CL')} kg</div>
                         </div>
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ingreso estimado CLP</div>
-                          <div className="mt-1 text-lg font-semibold text-slate-900">{formatCLP(budgetSummary.totalExpectedRevenueClp)}</div>
-                        </div>
-                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ingreso estimado USD</div>
-                          <div className="mt-1 text-lg font-semibold text-slate-900">US$ {Number(budgetSummary.totalExpectedRevenueUsd || 0).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div>
-                        </div>
-                        <div className={`rounded-lg border p-3 ${budgetSummary.expectedMarginClp >= 0 ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
-                          <div className={`text-[11px] font-semibold uppercase tracking-wide ${budgetSummary.expectedMarginClp >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>Margen esperado CLP</div>
-                          <div className={`mt-1 text-lg font-semibold ${budgetSummary.expectedMarginClp >= 0 ? 'text-emerald-800' : 'text-red-800'}`}>{formatCLP(budgetSummary.expectedMarginClp)}</div>
-                        </div>
-                        <div className={`rounded-lg border p-3 ${budgetSummary.expectedMarginUsd >= 0 ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
-                          <div className={`text-[11px] font-semibold uppercase tracking-wide ${budgetSummary.expectedMarginUsd >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>Margen esperado USD</div>
-                          <div className={`mt-1 text-lg font-semibold ${budgetSummary.expectedMarginUsd >= 0 ? 'text-emerald-800' : 'text-red-800'}`}>US$ {Number(budgetSummary.expectedMarginUsd || 0).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div>
-                        </div>
-                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                           <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sectores con proyección</div>
                           <div className="mt-1 text-lg font-semibold text-slate-900">{budgetSummary.projectedSectors} / {budgetSummary.totalSectors}</div>
                         </div>
@@ -1137,7 +1111,7 @@ export const Fields: React.FC = () => {
                                     <div className="hidden sm:flex items-center mr-6 text-sm">
                                       <div className="flex flex-col">
                                         <span className="text-[10px] uppercase text-gray-400 font-bold">Plan {selectedPlanningSeason}</span>
-                                        <span className="font-medium text-blue-600">{formatCLP(currentSeasonPlanMetrics.budgetClpPerHa * Number(sector.hectares || 0))}</span>
+                                        <span className="font-medium text-blue-600">{formatCLP(currentSeasonPlanMetrics.expectedRevenueClp)}</span>
                                       </div>
                                     </div>
                                   )}
@@ -1152,22 +1126,9 @@ export const Fields: React.FC = () => {
                                   {currentSeasonPlanMetrics.expectedRevenueClp > 0 && (
                                     <div className="hidden sm:flex items-center mr-6 text-sm">
                                       <div className="flex flex-col">
-                                        <span className="text-[10px] uppercase text-gray-400 font-bold">Ingreso estimado</span>
+                                        <span className="text-[10px] uppercase text-gray-400 font-bold">Presupuesto</span>
                                         <span className="font-medium text-violet-700">{formatCLP(currentSeasonPlanMetrics.expectedRevenueClp)}</span>
                                         <span className="text-[11px] text-gray-500">{formatUSD(currentSeasonPlanMetrics.expectedRevenueUsd)}</span>
-                                      </div>
-                                    </div>
-                                  )}
-                                  {(currentSeasonPlanMetrics.expectedRevenueClp > 0 || currentSeasonPlanMetrics.budgetClpPerHa > 0) && (
-                                    <div className="hidden sm:flex items-center mr-6 text-sm">
-                                      <div className="flex flex-col">
-                                        <span className="text-[10px] uppercase text-gray-400 font-bold">Margen estimado</span>
-                                        <span className={`font-medium ${(currentSeasonPlanMetrics.expectedRevenueClp - (currentSeasonPlanMetrics.budgetClpPerHa * Number(sector.hectares || 0))) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                                          {formatCLP(currentSeasonPlanMetrics.expectedRevenueClp - (currentSeasonPlanMetrics.budgetClpPerHa * Number(sector.hectares || 0)))}
-                                        </span>
-                                        <span className={`${(currentSeasonPlanMetrics.expectedRevenueUsd - (currentSeasonPlanMetrics.budgetUsdPerHa * Number(sector.hectares || 0))) >= 0 ? 'text-emerald-600' : 'text-red-500'} text-[11px]`}>
-                                          {formatUSD(currentSeasonPlanMetrics.expectedRevenueUsd - (currentSeasonPlanMetrics.budgetUsdPerHa * Number(sector.hectares || 0)))}
-                                        </span>
                                       </div>
                                     </div>
                                   )}
@@ -1220,23 +1181,23 @@ export const Fields: React.FC = () => {
                                 <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-6">
                                   <div className="rounded-md bg-white px-3 py-2">
                                     <div className="text-[10px] uppercase tracking-wide text-slate-500">Ppto CLP</div>
-                                    <div className="mt-1 font-semibold text-slate-900">{formatCLP(currentSeasonPlanMetrics.budgetClpPerHa * Number(sector.hectares || 0))}</div>
+                                    <div className="mt-1 font-semibold text-slate-900">{formatCLP(currentSeasonPlanMetrics.expectedRevenueClp)}</div>
                                   </div>
                                   <div className="rounded-md bg-white px-3 py-2">
                                     <div className="text-[10px] uppercase tracking-wide text-slate-500">Ppto USD</div>
-                                    <div className="mt-1 font-semibold text-slate-900">US$ {Number(currentSeasonPlanMetrics.budgetUsdPerHa * Number(sector.hectares || 0)).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div>
+                                    <div className="mt-1 font-semibold text-slate-900">{formatUSD(currentSeasonPlanMetrics.expectedRevenueUsd)}</div>
                                   </div>
                                   <div className="rounded-md bg-white px-3 py-2">
                                     <div className="text-[10px] uppercase tracking-wide text-slate-500">Prod. esperada</div>
                                     <div className="mt-1 font-semibold text-slate-900">{Number(currentSeasonPlanMetrics.expectedKg || 0).toLocaleString('es-CL')} kg</div>
                                   </div>
                                   <div className="rounded-md bg-white px-3 py-2">
-                                    <div className="text-[10px] uppercase tracking-wide text-slate-500">Ingreso CLP</div>
-                                    <div className="mt-1 font-semibold text-slate-900">{formatCLP(currentSeasonPlanMetrics.expectedRevenueClp)}</div>
+                                    <div className="text-[10px] uppercase tracking-wide text-slate-500">Precio USD/kg</div>
+                                    <div className="mt-1 font-semibold text-slate-900">{formatUSD(currentSeasonPlanMetrics.expectedSalePriceUsd)}</div>
                                   </div>
                                   <div className="rounded-md bg-white px-3 py-2">
-                                    <div className="text-[10px] uppercase tracking-wide text-slate-500">Ingreso USD</div>
-                                    <div className="mt-1 font-semibold text-slate-900">US$ {Number(currentSeasonPlanMetrics.expectedRevenueUsd || 0).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div>
+                                    <div className="text-[10px] uppercase tracking-wide text-slate-500">Precio CLP/kg</div>
+                                    <div className="mt-1 font-semibold text-slate-900">{formatCLP(currentSeasonPlanMetrics.expectedSalePriceClp)}</div>
                                   </div>
                                   <div className="rounded-md bg-white px-3 py-2">
                                     <div className="text-[10px] uppercase tracking-wide text-slate-500">TC ref.</div>
@@ -1252,7 +1213,7 @@ export const Fields: React.FC = () => {
                                         <div>
                                           <div className="text-sm font-medium text-slate-900">{plan.season}</div>
                                           <div className="text-xs text-slate-500">
-                                            {formatCLP(planMetrics.budgetClpPerHa * Number(sector.hectares || 0))} · US$ {Number(planMetrics.budgetUsdPerHa * Number(sector.hectares || 0)).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} · {Number(planMetrics.expectedKg || 0).toLocaleString('es-CL')} kg
+                                            {formatCLP(planMetrics.expectedRevenueClp)} · {formatUSD(planMetrics.expectedRevenueUsd)} · {Number(planMetrics.expectedKg || 0).toLocaleString('es-CL')} kg
                                           </div>
                                         </div>
                                         {userRole !== 'viewer' && (
@@ -1279,44 +1240,36 @@ export const Fields: React.FC = () => {
                                     <form onSubmit={(e) => handleSaveSectorPlan(e, field.id, sector.id)} className="mt-3 rounded-md border border-violet-200 bg-white p-3">
                                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                                         <input type="text" value={planSeason} onChange={(e) => setPlanSeason(e.target.value)} placeholder="Temporada 2025-2026" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" required />
-                                        <input type="number" step="0.01" value={planBudgetClpPerHa} onChange={(e) => setPlanBudgetClpPerHa(e.target.value)} placeholder="Ppto CLP / Ha" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
-                                        <input type="number" step="0.01" value={planBudgetUsdPerHa} onChange={(e) => setPlanBudgetUsdPerHa(e.target.value)} placeholder="Ppto USD / Ha" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
                                         <input type="number" step="0.01" value={planExpectedKg} onChange={(e) => setPlanExpectedKg(e.target.value)} placeholder="Prod. esperada (kg)" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
                                         <input type="number" step="0.01" value={planExpectedPriceUsd} onChange={(e) => setPlanExpectedPriceUsd(e.target.value)} placeholder="Precio venta USD/kg" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
                                         <input type="number" step="0.01" value={planExchangeRate} onChange={(e) => setPlanExchangeRate(e.target.value)} placeholder="TC referencia" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
+                                        <input type="number" step="0.01" value={planCommercialPreview.expectedRevenueUsd > 0 ? String(Number(planCommercialPreview.expectedRevenueUsd.toFixed(2))) : ''} readOnly placeholder="Presupuesto USD (auto)" className="block w-full border-gray-200 bg-slate-50 rounded-md shadow-sm py-2 px-3 text-sm text-slate-600" />
+                                        <input type="number" step="0.01" value={planCommercialPreview.expectedRevenueClp > 0 ? String(Number(planCommercialPreview.expectedRevenueClp.toFixed(2))) : ''} readOnly placeholder="Presupuesto CLP (auto)" className="block w-full border-gray-200 bg-slate-50 rounded-md shadow-sm py-2 px-3 text-sm text-slate-600" />
                                         <input type="number" step="0.01" value={planCommercialPreview.expectedSalePriceClp > 0 ? String(Number(planCommercialPreview.expectedSalePriceClp.toFixed(2))) : ''} readOnly placeholder="Precio venta CLP/kg (auto)" className="block w-full border-gray-200 bg-slate-50 rounded-md shadow-sm py-2 px-3 text-sm text-slate-600" />
                                         <input type="text" value={planNotes} onChange={(e) => setPlanNotes(e.target.value)} placeholder="Notas del plan" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
                                       </div>
                                       <div className="mt-3 rounded-md border border-blue-200 bg-blue-50 p-3">
-                                        <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">Cálculo automático comercial</div>
+                                        <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">Presupuesto automático de temporada</div>
                                         <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
                                           <div className="rounded-md bg-white px-3 py-2">
                                             <div className="text-[10px] uppercase tracking-wide text-slate-500">Precio CLP/kg</div>
                                             <div className="mt-1 font-semibold text-slate-900">{formatCLP(planCommercialPreview.expectedSalePriceClp)}</div>
                                           </div>
                                           <div className="rounded-md bg-white px-3 py-2">
-                                            <div className="text-[10px] uppercase tracking-wide text-slate-500">Ingreso estimado USD</div>
+                                            <div className="text-[10px] uppercase tracking-wide text-slate-500">Presupuesto USD</div>
                                             <div className="mt-1 font-semibold text-slate-900">{formatUSD(planCommercialPreview.expectedRevenueUsd)}</div>
                                           </div>
                                           <div className="rounded-md bg-white px-3 py-2">
-                                            <div className="text-[10px] uppercase tracking-wide text-slate-500">Ingreso estimado CLP</div>
+                                            <div className="text-[10px] uppercase tracking-wide text-slate-500">Presupuesto CLP</div>
                                             <div className="mt-1 font-semibold text-slate-900">{formatCLP(planCommercialPreview.expectedRevenueClp)}</div>
                                           </div>
                                           <div className="rounded-md bg-white px-3 py-2">
-                                            <div className="text-[10px] uppercase tracking-wide text-slate-500">Margen esperado USD</div>
-                                            <div className={`mt-1 font-semibold ${(planCommercialPreview.expectedRevenueUsd - (planCommercialPreview.budgetUsdPerHa * Number(sector.hectares || 0))) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                                              {formatUSD(planCommercialPreview.expectedRevenueUsd - (planCommercialPreview.budgetUsdPerHa * Number(sector.hectares || 0)))}
-                                            </div>
-                                          </div>
-                                          <div className="rounded-md bg-white px-3 py-2">
-                                            <div className="text-[10px] uppercase tracking-wide text-slate-500">Margen esperado CLP</div>
-                                            <div className={`mt-1 font-semibold ${(planCommercialPreview.expectedRevenueClp - (planCommercialPreview.budgetClpPerHa * Number(sector.hectares || 0))) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                                              {formatCLP(planCommercialPreview.expectedRevenueClp - (planCommercialPreview.budgetClpPerHa * Number(sector.hectares || 0)))}
-                                            </div>
+                                            <div className="text-[10px] uppercase tracking-wide text-slate-500">Presupuesto CLP / ha</div>
+                                            <div className="mt-1 font-semibold text-slate-900">{formatCLP(planCommercialPreview.budgetClpPerHa)}</div>
                                           </div>
                                         </div>
                                         <div className="mt-2 text-xs text-blue-700">
-                                          El ingreso estimado se calcula automáticamente con `kg esperados x precio venta USD/kg`, y el valor en pesos usa el tipo de cambio de referencia.
+                                          El presupuesto de la temporada se calcula automáticamente con `kg esperados x precio venta USD/kg`, y su equivalente en pesos usa el tipo de cambio de referencia.
                                         </div>
                                       </div>
                                       <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
