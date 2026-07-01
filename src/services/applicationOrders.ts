@@ -69,6 +69,32 @@ export type ProductRow = {
 export type MachineRow = { id: string; name: string; type: string };
 export type WorkerRow = { id: string; name: string; role: string };
 
+const isMissingColumnError = (error: any, columnName: string) => {
+  const message = String(error?.message || error?.details || error || '').toLowerCase();
+  return message.includes('does not exist') && message.includes(columnName.toLowerCase());
+};
+
+const loadActiveWorkersForApplicationOrders = async (companyId: string) => {
+  const activeWorkersRes = await supabase
+    .from('workers')
+    .select('id, name, role')
+    .eq('company_id', companyId)
+    .eq('is_active', true);
+
+  if (activeWorkersRes.error && isMissingColumnError(activeWorkersRes.error, 'workers.is_active')) {
+    const fallbackWorkersRes = await supabase
+      .from('workers')
+      .select('id, name, role')
+      .eq('company_id', companyId);
+
+    if (fallbackWorkersRes.error) throw fallbackWorkersRes.error;
+    return fallbackWorkersRes;
+  }
+
+  if (activeWorkersRes.error) throw activeWorkersRes.error;
+  return activeWorkersRes;
+};
+
 export type ProgramEventForOrder = {
   id: string;
   program_id: string;
@@ -165,7 +191,7 @@ export async function loadApplicationOrdersPageData(params: {
       .eq('company_id', params.companyId)
       .neq('category', 'Archivado'),
     supabase.from('machines').select('id, name, type').eq('company_id', params.companyId).eq('is_active', true),
-    supabase.from('workers').select('id, name, role').eq('company_id', params.companyId).eq('is_active', true),
+    loadActiveWorkersForApplicationOrders(params.companyId),
   ]);
 
   if (fieldsRes.error) throw fieldsRes.error;

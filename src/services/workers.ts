@@ -5,6 +5,7 @@ export type Worker = {
   company_id: string;
   name: string;
   role: string;
+  is_active?: boolean;
   birth_date?: string | null;
   gender?: 'male' | 'female' | 'unspecified';
   is_pensioner?: boolean;
