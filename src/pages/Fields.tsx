@@ -10,6 +10,8 @@ interface Sector {
   name: string;
   hectares: number;
   budget?: number;
+  expected_production_kg?: number;
+  expected_price_per_kg?: number;
   productive_stage?: 'productivo' | 'en_formacion' | 'renovacion' | 'arranque';
   production_expected_from_season?: string | null;
   non_productive_reason?: 'plantacion_nueva' | 'replante' | 'recuperacion' | 'otro' | null;
@@ -62,8 +64,14 @@ const getFieldBudgetSummary = (field: Field) => {
   const sectors = field.sectors || [];
   const budgetedSectors = sectors.filter((sector) => Number(sector.budget || 0) > 0);
   const sectorsWithoutBudget = sectors.filter((sector) => Number(sector.budget || 0) <= 0);
+  const projectedSectors = sectors.filter((sector) => Number(sector.expected_production_kg || 0) > 0);
   const totalBudget = budgetedSectors.reduce(
     (sum, sector) => sum + (Number(sector.budget || 0) * Number(sector.hectares || 0)),
+    0
+  );
+  const totalExpectedProductionKg = sectors.reduce((sum, sector) => sum + Number(sector.expected_production_kg || 0), 0);
+  const totalExpectedRevenue = sectors.reduce(
+    (sum, sector) => sum + (Number(sector.expected_production_kg || 0) * Number(sector.expected_price_per_kg || 0)),
     0
   );
   const budgetedArea = budgetedSectors.reduce((sum, sector) => sum + Number(sector.hectares || 0), 0);
@@ -71,9 +79,13 @@ const getFieldBudgetSummary = (field: Field) => {
 
   return {
     budgetedSectors: budgetedSectors.length,
+    projectedSectors: projectedSectors.length,
     sectorsWithoutBudget: sectorsWithoutBudget.length,
     totalSectors: sectors.length,
     totalBudget,
+    totalExpectedProductionKg,
+    totalExpectedRevenue,
+    expectedMargin: totalExpectedRevenue - totalBudget,
     areaCoveragePct: totalArea > 0 ? (budgetedArea / totalArea) * 100 : 0
   };
 };
@@ -143,6 +155,8 @@ export const Fields: React.FC = () => {
   const [newSectorName, setNewSectorName] = useState('');
   const [newSectorHectares, setNewSectorHectares] = useState('');
   const [newSectorBudget, setNewSectorBudget] = useState('');
+  const [newSectorExpectedProductionKg, setNewSectorExpectedProductionKg] = useState('');
+  const [newSectorExpectedPricePerKg, setNewSectorExpectedPricePerKg] = useState('');
   const [newSectorProductiveStage, setNewSectorProductiveStage] = useState<Sector['productive_stage']>('productivo');
   const [newSectorExpectedSeason, setNewSectorExpectedSeason] = useState('');
   const [newSectorNonProductiveReason, setNewSectorNonProductiveReason] = useState<NonNullable<Sector['non_productive_reason']>>('plantacion_nueva');
@@ -163,6 +177,8 @@ export const Fields: React.FC = () => {
   const [editSectorName, setEditSectorName] = useState('');
   const [editSectorHectares, setEditSectorHectares] = useState('');
   const [editSectorBudget, setEditSectorBudget] = useState('');
+  const [editSectorExpectedProductionKg, setEditSectorExpectedProductionKg] = useState('');
+  const [editSectorExpectedPricePerKg, setEditSectorExpectedPricePerKg] = useState('');
   const [editSectorProductiveStage, setEditSectorProductiveStage] = useState<Sector['productive_stage']>('productivo');
   const [editSectorExpectedSeason, setEditSectorExpectedSeason] = useState('');
   const [editSectorNonProductiveReason, setEditSectorNonProductiveReason] = useState<NonNullable<Sector['non_productive_reason']>>('plantacion_nueva');
@@ -279,6 +295,8 @@ export const Fields: React.FC = () => {
           name: newSectorName,
           hectares: parseFloat(newSectorHectares),
           budget: newSectorBudget ? parseFloat(newSectorBudget) : 0,
+          expected_production_kg: newSectorExpectedProductionKg ? parseFloat(newSectorExpectedProductionKg) : 0,
+          expected_price_per_kg: newSectorExpectedPricePerKg ? parseFloat(newSectorExpectedPricePerKg) : 0,
           productive_stage: newSectorProductiveStage || 'productivo',
           production_expected_from_season: newSectorExpectedSeason.trim() || null,
           non_productive_reason: isSectorNonProductiveExpected({ productive_stage: newSectorProductiveStage } as Sector)
@@ -304,6 +322,8 @@ export const Fields: React.FC = () => {
       setNewSectorName('');
       setNewSectorHectares('');
       setNewSectorBudget('');
+      setNewSectorExpectedProductionKg('');
+      setNewSectorExpectedPricePerKg('');
       setNewSectorProductiveStage('productivo');
       setNewSectorExpectedSeason('');
       setNewSectorNonProductiveReason('plantacion_nueva');
@@ -320,6 +340,8 @@ export const Fields: React.FC = () => {
     setEditSectorName(sector.name);
     setEditSectorHectares(sector.hectares.toString());
     setEditSectorBudget(sector.budget ? sector.budget.toString() : '');
+    setEditSectorExpectedProductionKg(sector.expected_production_kg ? sector.expected_production_kg.toString() : '');
+    setEditSectorExpectedPricePerKg(sector.expected_price_per_kg ? sector.expected_price_per_kg.toString() : '');
     setEditSectorProductiveStage(sector.productive_stage || 'productivo');
     setEditSectorExpectedSeason(sector.production_expected_from_season || '');
     setEditSectorNonProductiveReason(sector.non_productive_reason || 'plantacion_nueva');
@@ -333,6 +355,8 @@ export const Fields: React.FC = () => {
     setEditSectorName('');
     setEditSectorHectares('');
     setEditSectorBudget('');
+    setEditSectorExpectedProductionKg('');
+    setEditSectorExpectedPricePerKg('');
     setEditSectorProductiveStage('productivo');
     setEditSectorExpectedSeason('');
     setEditSectorNonProductiveReason('plantacion_nueva');
@@ -350,6 +374,8 @@ export const Fields: React.FC = () => {
           name: editSectorName,
           hectares: parseFloat(editSectorHectares),
           budget: editSectorBudget ? parseFloat(editSectorBudget) : 0,
+          expected_production_kg: editSectorExpectedProductionKg ? parseFloat(editSectorExpectedProductionKg) : 0,
+          expected_price_per_kg: editSectorExpectedPricePerKg ? parseFloat(editSectorExpectedPricePerKg) : 0,
           productive_stage: editSectorProductiveStage || 'productivo',
           production_expected_from_season: editSectorExpectedSeason.trim() || null,
           non_productive_reason: isSectorNonProductiveExpected({ productive_stage: editSectorProductiveStage } as Sector)
@@ -729,6 +755,22 @@ export const Fields: React.FC = () => {
                             {budgetSummary.areaCoveragePct.toFixed(1)}%
                           </div>
                         </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Producción esperada</div>
+                          <div className="mt-1 text-lg font-semibold text-slate-900">{Number(budgetSummary.totalExpectedProductionKg || 0).toLocaleString('es-CL')} kg</div>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Ingreso estimado</div>
+                          <div className="mt-1 text-lg font-semibold text-slate-900">{formatCLP(budgetSummary.totalExpectedRevenue)}</div>
+                        </div>
+                        <div className={`rounded-lg border p-3 ${budgetSummary.expectedMargin >= 0 ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+                          <div className={`text-[11px] font-semibold uppercase tracking-wide ${budgetSummary.expectedMargin >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>Margen esperado</div>
+                          <div className={`mt-1 text-lg font-semibold ${budgetSummary.expectedMargin >= 0 ? 'text-emerald-800' : 'text-red-800'}`}>{formatCLP(budgetSummary.expectedMargin)}</div>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Sectores con proyección</div>
+                          <div className="mt-1 text-lg font-semibold text-slate-900">{budgetSummary.projectedSectors} / {budgetSummary.totalSectors}</div>
+                        </div>
                       </div>
 
                       <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Sectores</h4>
@@ -762,6 +804,22 @@ export const Fields: React.FC = () => {
                                     onChange={(e) => setEditSectorBudget(e.target.value)}
                                     className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
                                     placeholder="Ppto/Ha ($)"
+                                  />
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={editSectorExpectedProductionKg}
+                                    onChange={(e) => setEditSectorExpectedProductionKg(e.target.value)}
+                                    className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                                    placeholder="Prod. esperada (kg)"
+                                  />
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={editSectorExpectedPricePerKg}
+                                    onChange={(e) => setEditSectorExpectedPricePerKg(e.target.value)}
+                                    className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                                    placeholder="Precio estimado / kg"
                                   />
                                   <select
                                     value={editSectorProductiveStage || 'productivo'}
@@ -862,6 +920,22 @@ export const Fields: React.FC = () => {
                                       </div>
                                     </div>
                                   )}
+                                  {(Number(sector.expected_production_kg || 0) > 0 || Number(sector.expected_price_per_kg || 0) > 0) && (
+                                    <div className="hidden sm:flex items-center mr-6 text-sm">
+                                      <div className="flex flex-col">
+                                        <span className="text-[10px] uppercase text-gray-400 font-bold">Prod. esperada</span>
+                                        <span className="font-medium text-violet-700">{Number(sector.expected_production_kg || 0).toLocaleString('es-CL')} kg</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                  {(Number(sector.expected_production_kg || 0) > 0 && Number(sector.expected_price_per_kg || 0) > 0) && (
+                                    <div className="hidden sm:flex items-center mr-6 text-sm">
+                                      <div className="flex flex-col">
+                                        <span className="text-[10px] uppercase text-gray-400 font-bold">Ingreso estimado</span>
+                                        <span className="font-medium text-violet-700">{formatCLP(Number(sector.expected_production_kg || 0) * Number(sector.expected_price_per_kg || 0))}</span>
+                                      </div>
+                                    </div>
+                                  )}
 
                                   {(sector.total_labor_cost || 0) > 0 && (
                                     <div className="hidden sm:flex items-center space-x-6 text-sm">
@@ -926,6 +1000,22 @@ export const Fields: React.FC = () => {
                                 placeholder="Ppto/Ha ($)"
                                 value={newSectorBudget}
                                 onChange={e => setNewSectorBudget(e.target.value)}
+                                className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                              />
+                              <input
+                                type="number"
+                                step="0.01"
+                                placeholder="Prod. esperada (kg)"
+                                value={newSectorExpectedProductionKg}
+                                onChange={e => setNewSectorExpectedProductionKg(e.target.value)}
+                                className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
+                              />
+                              <input
+                                type="number"
+                                step="0.01"
+                                placeholder="Precio estimado / kg"
+                                value={newSectorExpectedPricePerKg}
+                                onChange={e => setNewSectorExpectedPricePerKg(e.target.value)}
                                 className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm"
                               />
                               <select
