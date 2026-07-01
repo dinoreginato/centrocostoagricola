@@ -1483,28 +1483,29 @@ export const ApplicationOrders: React.FC = () => {
           </div>
       ) : (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+            <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                   <thead className="bg-gray-50 dark:bg-gray-900">
                       <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">N°</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fecha</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Huerto/Sector</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Objetivo</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Estado</th>
-                          <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Acciones</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">N°</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Fecha</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Huerto/Sector</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Objetivo</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Estado</th>
+                          <th className="sticky right-0 z-10 bg-gray-50 dark:bg-gray-900 px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Acciones</th>
                       </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                       {orders.map((order) => (
                           <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 dark:bg-gray-900">
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 dark:text-gray-100">#{order.order_number}</td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                              <td className="px-4 py-4 whitespace-nowrap text-sm font-bold text-gray-900 dark:text-gray-100">#{order.order_number}</td>
+                              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                                   <div>Plan: {new Date(order.scheduled_date + 'T12:00:00').toLocaleDateString()}</div>
                                   {order.completed_date && (
                                       <div className="text-green-600 font-medium">Realizada: {new Date(order.completed_date + 'T12:00:00').toLocaleDateString()}</div>
                                   )}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                              <td className="min-w-[320px] px-4 py-4 text-sm text-gray-900 dark:text-gray-100">
                                   <div>{order.field?.name}</div>
                                   <div className="text-xs text-gray-500 dark:text-gray-400">{order.sector?.name}</div>
                                   {!!order.items?.length && (
@@ -1523,8 +1524,10 @@ export const ApplicationOrders: React.FC = () => {
                                       </div>
                                   )}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">{order.objective || '-'}</td>
-                              <td className="px-6 py-4 whitespace-nowrap">
+                              <td className="max-w-[180px] px-4 py-4 text-sm text-gray-500 dark:text-gray-400">
+                                <div className="line-clamp-3 break-words">{order.objective || '-'}</div>
+                              </td>
+                              <td className="px-4 py-4 whitespace-nowrap">
                                   {canWrite && order.status === 'pendiente' ? (
                                       <button
                                           onClick={async (e) => {
@@ -1556,7 +1559,8 @@ export const ApplicationOrders: React.FC = () => {
                                       </span>
                                   )}
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end gap-2">
+                              <td className="sticky right-0 bg-white dark:bg-gray-900 px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <div className="flex justify-end gap-2">
                                   <button 
                                       onClick={() => handlePrintOrder(order)}
                                       className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:text-gray-100"
@@ -1593,6 +1597,7 @@ export const ApplicationOrders: React.FC = () => {
                                       </button>
                                     </>
                                   )}
+                                </div>
                               </td>
                           </tr>
                       ))}
@@ -1603,6 +1608,7 @@ export const ApplicationOrders: React.FC = () => {
                       )}
                   </tbody>
               </table>
+            </div>
           </div>
       )}
 
