@@ -199,6 +199,59 @@ export const ApplicationOrders: React.FC = () => {
   const machines = useMemo(() => (pageQuery.data?.machines || []) as Machine[], [pageQuery.data?.machines]);
   const workers = useMemo(() => (pageQuery.data?.workers || []) as Worker[], [pageQuery.data?.workers]);
   const programEvents = useMemo(() => (pageQuery.data?.programEvents || []) as any[], [pageQuery.data?.programEvents]);
+  const currentField = useMemo(
+    () => fields.find((field) => field.id === currentOrder.field_id) || null,
+    [currentOrder.field_id, fields]
+  );
+  const currentSectorMeta = useMemo(
+    () => currentField?.sectors.find((sector) => sector.id === currentOrder.sector_id) || null,
+    [currentField, currentOrder.sector_id]
+  );
+  const currentProductMeta = useMemo(
+    () => products.find((product) => product.id === currentItem.product_id) || null,
+    [currentItem.product_id, products]
+  );
+  const currentItemPreview = useMemo(() => {
+    const doseInput = Number(currentItem.dose_input_value || 0);
+    const waterPerHa = Number(currentOrder.water_liters_per_hectare || 0);
+    const hectares = Number(currentSectorMeta?.hectares || 0);
+    const selectedUnit = currentItem.unit_override || currentProductMeta?.unit || '';
+
+    if (!currentProductMeta || doseInput <= 0 || !selectedUnit) return null;
+
+    let dosePer100L = 0;
+    let dosePerHa = 0;
+
+    if (currentItem.dose_input_type === 'hl') {
+      dosePer100L = doseInput;
+      if (waterPerHa > 0) {
+        dosePerHa = (dosePer100L * waterPerHa) / 100;
+      }
+    } else {
+      dosePerHa = doseInput;
+      if (waterPerHa > 0) {
+        dosePer100L = (dosePerHa * 100) / waterPerHa;
+      }
+    }
+
+    const totalQuantity = dosePerHa > 0 && hectares > 0 ? dosePerHa * hectares : 0;
+
+    return {
+      inputLabel: `${formatDisplayAmount(doseInput)} ${selectedUnit} / ${currentItem.dose_input_type === 'hl' ? '100L' : 'Ha'}`,
+      dose100LLabel: formatOrderItemQuantity(dosePer100L, selectedUnit, 'input'),
+      doseHaLabel: formatOrderItemQuantity(dosePerHa, selectedUnit, 'expanded'),
+      totalLabel: totalQuantity > 0
+        ? formatOrderItemQuantity(totalQuantity, selectedUnit, 'expanded')
+        : 'Seleccione sector para calcular total'
+    };
+  }, [
+    currentItem.dose_input_type,
+    currentItem.dose_input_value,
+    currentItem.unit_override,
+    currentOrder.water_liters_per_hectare,
+    currentProductMeta,
+    currentSectorMeta?.hectares
+  ]);
 
   useEffect(() => {
     if (!pageQuery.isError) {
@@ -1168,6 +1221,30 @@ export const ApplicationOrders: React.FC = () => {
                       </button>
                   </div>
 
+                  {currentItemPreview && (
+                    <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm">
+                      <div className="font-semibold text-blue-900">Equivalencia de la dosis</div>
+                      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-4">
+                        <div>
+                          <div className="text-[11px] uppercase tracking-wide text-blue-700">Ingresado</div>
+                          <div className="font-medium text-blue-950">{currentItemPreview.inputLabel}</div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] uppercase tracking-wide text-blue-700">Dosis / 100L</div>
+                          <div className="font-medium text-blue-950">{currentItemPreview.dose100LLabel}</div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] uppercase tracking-wide text-blue-700">Dosis / Ha</div>
+                          <div className="font-medium text-blue-950">{currentItemPreview.doseHaLabel}</div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] uppercase tracking-wide text-blue-700">Total a pedir</div>
+                          <div className="font-medium text-blue-950">{currentItemPreview.totalLabel}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Items Table */}
                   <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                       <thead className="bg-gray-50 dark:bg-gray-900">
@@ -1185,6 +1262,9 @@ export const ApplicationOrders: React.FC = () => {
                                   <td className="px-3 py-2 text-sm">
                                       <div className="font-medium">{item.product_name}</div>
                                       <div className="text-xs text-gray-500 dark:text-gray-400">{item.active_ingredient}</div>
+                                      <div className="mt-1 text-[11px] text-blue-700 dark:text-blue-300">
+                                        {formatOrderItemQuantity(item.dose_per_100l, item.unit, 'input')} = {formatOrderItemQuantity(item.dose_per_hectare, item.unit, 'expanded')} = {formatOrderItemQuantity(item.total_quantity, item.unit, 'expanded')}
+                                      </div>
                                   </td>
                                   <td className="px-3 py-2 text-sm">{formatOrderItemQuantity(item.dose_per_100l, item.unit, 'input')}</td>
                                   <td className="px-3 py-2 text-sm">{formatOrderItemQuantity(item.dose_per_hectare, item.unit, 'expanded')}</td>
@@ -1311,6 +1391,23 @@ export const ApplicationOrders: React.FC = () => {
                               title="¿Cuántos días dura la protección de esta aplicación?"
                           />
                       </div>
+                  </div>
+              </div>
+
+              <div className="mb-6 rounded-md border border-emerald-200 bg-emerald-50 p-4">
+                  <div className="text-sm font-bold text-emerald-900">Resumen de equivalencias</div>
+                  <div className="mt-3 space-y-2">
+                      {currentOrder.items?.map((item, idx) => (
+                          <div key={`review-${idx}`} className="rounded border border-emerald-100 bg-white/80 px-3 py-2 text-sm">
+                              <div className="font-medium text-emerald-950">{item.product_name}</div>
+                              <div className="mt-1 text-emerald-800">
+                                  {formatOrderItemQuantity(item.dose_per_100l, item.unit, 'input')} = {formatOrderItemQuantity(item.dose_per_hectare, item.unit, 'expanded')} = {formatOrderItemQuantity(item.total_quantity, item.unit, 'expanded')}
+                              </div>
+                          </div>
+                      ))}
+                      {(!currentOrder.items || currentOrder.items.length === 0) && (
+                          <div className="text-sm text-emerald-700">Todavía no hay productos cargados.</div>
+                      )}
                   </div>
               </div>
 
