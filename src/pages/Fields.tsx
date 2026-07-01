@@ -18,6 +18,11 @@ import {
   type SectorBudgetSeasonPlan
 } from '../services/fields';
 
+const formatUSD = (value: number) => `US$ ${Number(value || 0).toLocaleString('es-CL', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2
+})}`;
+
 interface Sector {
   id: string;
   name: string;
@@ -1277,11 +1282,17 @@ export const Fields: React.FC = () => {
                                           </div>
                                           <div className="rounded-md bg-white px-3 py-2">
                                             <div className="text-[10px] uppercase tracking-wide text-slate-500">Ingreso estimado USD</div>
-                                            <div className="mt-1 font-semibold text-slate-900">US$ {Number(planCommercialPreview.expectedRevenueUsd || 0).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div>
+                                            <div className="mt-1 font-semibold text-slate-900">{formatUSD(planCommercialPreview.expectedRevenueUsd)}</div>
                                           </div>
                                           <div className="rounded-md bg-white px-3 py-2">
                                             <div className="text-[10px] uppercase tracking-wide text-slate-500">Ingreso estimado CLP</div>
                                             <div className="mt-1 font-semibold text-slate-900">{formatCLP(planCommercialPreview.expectedRevenueClp)}</div>
+                                          </div>
+                                          <div className="rounded-md bg-white px-3 py-2">
+                                            <div className="text-[10px] uppercase tracking-wide text-slate-500">Margen esperado USD</div>
+                                            <div className={`mt-1 font-semibold ${(planCommercialPreview.expectedRevenueUsd - (planCommercialPreview.budgetUsdPerHa * Number(sector.hectares || 0))) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                                              {formatUSD(planCommercialPreview.expectedRevenueUsd - (planCommercialPreview.budgetUsdPerHa * Number(sector.hectares || 0)))}
+                                            </div>
                                           </div>
                                           <div className="rounded-md bg-white px-3 py-2">
                                             <div className="text-[10px] uppercase tracking-wide text-slate-500">Margen esperado CLP</div>
