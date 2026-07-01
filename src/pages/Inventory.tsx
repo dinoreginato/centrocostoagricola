@@ -63,6 +63,7 @@ export const Inventory: React.FC = () => {
   // Edit State
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [editForm, setEditForm] = useState<Partial<Product>>({});
+  const [editModalTab, setEditModalTab] = useState<'datos' | 'stock' | 'lote'>('datos');
   const [editSuggestions, setEditSuggestions] = useState<any[]>([]);
   const [adjustType, setAdjustType] = useState<'entrada' | 'salida'>('entrada');
   const [adjustQty, setAdjustQty] = useState<number>(0);
@@ -354,11 +355,13 @@ export const Inventory: React.FC = () => {
     setAdjustQty(0);
     setAdjustUnitCost(Number(product.average_cost || 0));
     setAdjustNotes('');
+    setEditModalTab('datos');
   };
 
   const cancelEdit = () => {
     setEditingProduct(null);
     setEditForm({});
+    setEditModalTab('datos');
     setEditSuggestions([]);
     setAdjustType('entrada');
     setAdjustQty(0);
@@ -1117,9 +1120,37 @@ export const Inventory: React.FC = () => {
                 <X className="h-6 w-6" />
               </button>
             </div>
+
+            <div className="border-b border-gray-200 dark:border-gray-700 px-4 py-2">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditModalTab('datos')}
+                  className={`rounded-md px-3 py-1.5 text-sm border ${editModalTab === 'datos' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600'}`}
+                >
+                  Datos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditModalTab('stock')}
+                  className={`rounded-md px-3 py-1.5 text-sm border ${editModalTab === 'stock' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600'}`}
+                >
+                  Stock
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditModalTab('lote')}
+                  className={`rounded-md px-3 py-1.5 text-sm border ${editModalTab === 'lote' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600'}`}
+                >
+                  Lote
+                </button>
+              </div>
+            </div>
             
             <div className="flex-1 overflow-y-auto px-4 py-4">
             <div className="space-y-4">
+              {editModalTab === 'datos' && (
+              <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nombre</label>
                 <div className="relative">
@@ -1194,7 +1225,11 @@ export const Inventory: React.FC = () => {
                   className="w-full border border-gray-300 dark:border-gray-600 rounded-md p-2"
                 />
               </div>
+              </>
+              )}
 
+              {editModalTab === 'stock' && (
+              <>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Stock Actual</label>
@@ -1296,7 +1331,10 @@ export const Inventory: React.FC = () => {
                   </button>
                 </div>
               </div>
+              </>
+              )}
 
+              {editModalTab === 'lote' && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">N° de Lote</label>
@@ -1318,6 +1356,7 @@ export const Inventory: React.FC = () => {
                   />
                 </div>
               </div>
+              )}
             </div>
             </div>
 
