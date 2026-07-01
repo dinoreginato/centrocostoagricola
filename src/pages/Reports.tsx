@@ -2794,7 +2794,13 @@ const buildEconomicClosureSummaryFromReportSources = (params: {
   const pendingIncomeRows = blockingRows.filter((row) => row.hasProductionEvidence && row.totalIncome <= 0);
   const costWithoutIncomeRows = blockingRows.filter((row) => row.totalCost > 0 && row.totalIncome <= 0);
   const expectedNoProductionRows = visibleRows.filter((row) => row.expectedWithoutProduction && row.totalCost > 0);
-  const closurePct = blockingRows.length > 0 ? (closedRows.length / blockingRows.length) * 100 : 0;
+  const closedByExceptionRows = expectedNoProductionRows;
+  const effectiveClosedRows = [...closedRows, ...closedByExceptionRows];
+  const closurePct = blockingRows.length > 0
+    ? (closedRows.length / blockingRows.length) * 100
+    : visibleRows.length > 0
+      ? 100
+      : 0;
   const pendingProductionAmount = pendingProductionRows.reduce((sum, row) => sum + Number(row.totalIncome || 0), 0);
   const pendingIncomeCost = pendingIncomeRows.reduce((sum, row) => sum + Number(row.totalCost || 0), 0);
   const costWithoutIncomeAmount = costWithoutIncomeRows.reduce((sum, row) => sum + Number(row.totalCost || 0), 0);
@@ -2825,8 +2831,8 @@ const buildEconomicClosureSummaryFromReportSources = (params: {
   const findings = [
     {
       title: 'Sectores cerrados',
-      description: 'Sectores con costo, ingreso y producción formal visibles.',
-      emphasis: `${closedRows.length} de ${blockingRows.length} sectores exigibles · ${closurePct.toFixed(1)}%`
+      description: 'Incluye sectores cerrados normalmente y sectores cerrados por excepción cuando están en formación.',
+      emphasis: `${effectiveClosedRows.length} sectores (${closedRows.length} exigibles + ${closedByExceptionRows.length} por excepción) · ${closurePct.toFixed(1)}%`
     },
     {
       title: 'Pendientes de producción',
@@ -2840,7 +2846,7 @@ const buildEconomicClosureSummaryFromReportSources = (params: {
     },
     {
       title: 'Sectores en formación',
-      description: 'Sectores eximidos de cierre productivo por estar en etapa no productiva esperada.',
+      description: 'Costos de formación eximidos de cierre productivo porque su producción comienza en una temporada futura.',
       emphasis: `${expectedNoProductionRows.length} sectores · ${formatCLP(expectedNoProductionAmount)}`
     }
   ];
@@ -2869,6 +2875,14 @@ const buildEconomicClosureSummaryFromReportSources = (params: {
       sectorName: row.sectorName,
       amount: row.kgProduced,
       unitLabel: `${Number(row.kgProduced || 0).toLocaleString('es-CL')} Kg`
+    })),
+    ...closedByExceptionRows.map((row) => ({
+      key: `formation-${row.sectorId}`,
+      status: 'Costo de formación',
+      fieldName: row.fieldName,
+      sectorName: row.sectorName,
+      amount: row.totalCost,
+      unitLabel: `${formatCLP(row.totalCost)}${row.productionExpectedFromSeason ? ` · Produce desde ${row.productionExpectedFromSeason}` : ''}`
     }))
   ]
     .sort((a, b) => b.amount - a.amount)
@@ -2876,14 +2890,18 @@ const buildEconomicClosureSummaryFromReportSources = (params: {
 
   const conclusion = visibleRows.length <= 0
     ? 'No hay sectores visibles para medir cierre económico.'
-    : closurePct >= 85 && pendingProductionRows.length === 0 && pendingIncomeRows.length === 0
-      ? `La temporada presenta un cierre económico de ${closurePct.toFixed(1)}% y ya puede usarse como lectura más confiable de margen.`
+    : closurePct >= 85 && pendingProductionRows.length === 0 && pendingIncomeRows.length === 0 && costWithoutIncomeRows.length === 0
+      ? expectedNoProductionRows.length > 0
+        ? `La temporada presenta un cierre económico de ${closurePct.toFixed(1)}%. Los sectores en formación quedan cerrados por excepción como costo de formación y no bloquean la lectura final del margen.`
+        : `La temporada presenta un cierre económico de ${closurePct.toFixed(1)}% y ya puede usarse como lectura más confiable de margen.`
       : `La temporada muestra un cierre económico de ${closurePct.toFixed(1)}%. Conviene regularizar ${pendingProductionRows.length + pendingIncomeRows.length + costWithoutIncomeRows.length} focos antes de presentar el margen como definitivo.`;
 
   return {
     season,
     visibleRows,
     closedRows,
+    closedByExceptionRows,
+    effectiveClosedRows,
     pendingProductionRows,
     pendingIncomeRows,
     costWithoutIncomeRows,
@@ -2903,9 +2921,12 @@ const buildEconomicClosureSummaryFromReportSources = (params: {
 const buildTotalDataClosureSummary = (params: {
   economicClosureData: {
     closurePct: number;
+    closedByExceptionRows: Array<any>;
     pendingProductionRows: Array<any>;
     pendingIncomeRows: Array<any>;
     costWithoutIncomeRows: Array<any>;
+    expectedNoProductionRows: Array<any>;
+    expectedNoProductionAmount?: number;
   };
   auditMetrics: {
     totalAudited: number;
@@ -2997,11 +3018,18 @@ const buildTotalDataClosureSummary = (params: {
       title: 'Lectura para comité',
       description: readiness.detail,
       emphasis: readiness.title
+    },
+    {
+      title: 'Cierre por excepción',
+      description: 'Identifica costos de formación que no bloquean el cierre ejecutivo porque la producción comienza en temporadas futuras.',
+      emphasis: `${economicClosureData.expectedNoProductionRows.length} sectores · ${formatCLP(economicClosureData.expectedNoProductionAmount || 0)}`
     }
   ];
 
   const conclusion = blockers.length === 0
-    ? `La temporada presenta un cierre total del dato de ${totalClosurePct.toFixed(1)}% y no muestra bloqueos críticos visibles.`
+    ? economicClosureData.expectedNoProductionRows.length > 0
+      ? `La temporada presenta un cierre total del dato de ${totalClosurePct.toFixed(1)}% y no muestra bloqueos críticos visibles. ${economicClosureData.expectedNoProductionRows.length} sectores quedan cerrados por excepción como costo de formación.`
+      : `La temporada presenta un cierre total del dato de ${totalClosurePct.toFixed(1)}% y no muestra bloqueos críticos visibles.`
     : `La temporada presenta un cierre total del dato de ${totalClosurePct.toFixed(1)}%. Antes de considerarla definitiva conviene resolver ${blockers.length} bloqueos principales.`;
 
   return {
@@ -4888,14 +4916,19 @@ export const Reports: React.FC = () => {
         return {
           season,
           visibleSectorCount: summary.visibleRows.length,
+          blockingSectorCount: summary.visibleRows.filter((row) => !row.expectedWithoutProduction).length,
           closedSectorCount: summary.closedRows.length,
+          closedByExceptionCount: summary.closedByExceptionRows.length,
+          effectiveClosedCount: summary.effectiveClosedRows.length,
           closurePct: summary.closurePct,
           pendingProductionCount: summary.pendingProductionRows.length,
           pendingIncomeCount: summary.pendingIncomeRows.length,
           costWithoutIncomeCount: summary.costWithoutIncomeRows.length,
+          formationCostCount: summary.expectedNoProductionRows.length,
           pendingProductionAmount: summary.pendingProductionAmount,
           pendingIncomeCost: summary.pendingIncomeCost,
           costWithoutIncomeAmount: summary.costWithoutIncomeAmount,
+          formationCostAmount: summary.expectedNoProductionAmount,
           toneLabel: summary.tone.label
         };
       })
@@ -4919,9 +4952,12 @@ export const Reports: React.FC = () => {
   const buildTotalDataClosure = useCallback((params: {
     economicClosureData: {
       closurePct: number;
+      closedByExceptionRows: Array<any>;
       pendingProductionRows: Array<any>;
       pendingIncomeRows: Array<any>;
       costWithoutIncomeRows: Array<any>;
+      expectedNoProductionRows: Array<any>;
+      expectedNoProductionAmount?: number;
     };
     auditMetrics: {
       totalAudited: number;
@@ -7998,7 +8034,8 @@ export const Reports: React.FC = () => {
         { Indicador: 'Margen neto %', Valor: Number(executiveMarginData.marginPct.toFixed(2)) },
         { Indicador: 'Cobertura producción %', Valor: Number(executiveMarginData.productionCoveragePct.toFixed(2)) },
         { Indicador: 'Cierre económico %', Valor: Number(executiveEconomicClosureData.closurePct.toFixed(2)) },
-        { Indicador: 'Sectores cerrados', Valor: executiveEconomicClosureData.closedRows.length },
+        { Indicador: 'Sectores cerrados o eximidos', Valor: executiveEconomicClosureData.effectiveClosedRows.length },
+        { Indicador: 'Sectores en formación', Valor: executiveEconomicClosureData.closedByExceptionRows.length },
         { Indicador: 'Pendientes producción', Valor: executiveEconomicClosureData.pendingProductionRows.length },
         { Indicador: 'Pendientes ingreso', Valor: executiveEconomicClosureData.pendingIncomeRows.length },
         { Indicador: 'Cierre total dato %', Valor: Number(executiveTotalDataClosure.totalClosurePct.toFixed(2)) },
@@ -8224,7 +8261,8 @@ export const Reports: React.FC = () => {
         Temporada: row.season,
         Estado: row.toneLabel,
         'Sectores visibles': row.visibleSectorCount,
-        'Sectores cerrados': row.closedSectorCount,
+        'Sectores cerrados o eximidos': row.effectiveClosedCount,
+        'Sectores en formación': row.closedByExceptionCount,
         'Cierre %': Number(row.closurePct.toFixed(2)),
         'Pend. producción': row.pendingProductionCount,
         'Pend. ingreso': row.pendingIncomeCount,
@@ -9554,7 +9592,8 @@ export const Reports: React.FC = () => {
             ['Margen neto', `${executiveMarginData.marginPct.toFixed(1)}%`],
             ['Cobertura producción', `${executiveMarginData.productionCoveragePct.toFixed(1)}%`],
             ['Cierre económico', `${executiveEconomicClosureData.closurePct.toFixed(1)}%`],
-            ['Sectores cerrados', `${executiveEconomicClosureData.closedRows.length} / ${executiveEconomicClosureData.visibleRows.length}`],
+            ['Sectores cerrados o eximidos', `${executiveEconomicClosureData.effectiveClosedRows.length} / ${executiveEconomicClosureData.visibleRows.length}`],
+            ['Sectores en formación', String(executiveEconomicClosureData.closedByExceptionRows.length)],
             ['Pendientes producción', String(executiveEconomicClosureData.pendingProductionRows.length)],
             ['Pendientes ingreso', String(executiveEconomicClosureData.pendingIncomeRows.length)],
             ['Cierre total dato', `${executiveTotalDataClosure.totalClosurePct.toFixed(1)}%`],
@@ -9895,12 +9934,13 @@ export const Reports: React.FC = () => {
 
           autoTable(doc, {
             startY: yPos,
-            head: [['Temporada', 'Estado', 'Cierre %', 'Cerrados', 'Pend. prod.', 'Pend. ingreso', 'Costo sin ingreso']],
+            head: [['Temporada', 'Estado', 'Cierre %', 'Cerrados', 'Formación', 'Pend. prod.', 'Pend. ingreso', 'Costo sin ingreso']],
             body: executiveEconomicClosureHistoryRows.map((row) => [
               row.season,
               row.toneLabel,
               `${row.closurePct.toFixed(1)}%`,
-              `${row.closedSectorCount}/${row.visibleSectorCount}`,
+              `${row.effectiveClosedCount}/${row.visibleSectorCount}`,
+              String(row.closedByExceptionCount),
               String(row.pendingProductionCount),
               String(row.pendingIncomeCount),
               String(row.costWithoutIncomeCount)
@@ -12525,7 +12565,7 @@ export const Reports: React.FC = () => {
                   <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <h3 className="text-lg font-semibold text-gray-900">Cierre económico de temporada</h3>
-                      <p className="text-sm text-gray-500">Mide qué parte del margen visible ya tiene costo, ingreso y producción formal suficientemente cerrados para comité.</p>
+                      <p className="text-sm text-gray-500">Mide qué parte del margen visible ya tiene costo, ingreso y producción cerrados, separando los sectores en formación como cierre por excepción.</p>
                     </div>
                     <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${executiveEconomicClosureData.tone.badge}`}>
                       <span className={`mr-2 inline-block h-2.5 w-2.5 rounded-full ${executiveEconomicClosureData.tone.dot}`} />
@@ -12538,7 +12578,7 @@ export const Reports: React.FC = () => {
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <div className="text-xs uppercase tracking-wide text-slate-500">Cierre económico</div>
                       <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveEconomicClosureData.closurePct.toFixed(1)}%</div>
-                      <div className="mt-1 text-sm text-slate-500">{executiveEconomicClosureData.closedRows.length} sectores cerrados</div>
+                      <div className="mt-1 text-sm text-slate-500">{executiveEconomicClosureData.effectiveClosedRows.length} sectores cerrados o eximidos</div>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <div className="text-xs uppercase tracking-wide text-slate-500">Pendiente producción</div>
@@ -12555,10 +12595,10 @@ export const Reports: React.FC = () => {
                       <div className="mt-2 text-2xl font-semibold text-red-700">{executiveEconomicClosureData.costWithoutIncomeRows.length}</div>
                       <div className="mt-1 text-sm text-slate-500">{formatCLP(executiveEconomicClosureData.costWithoutIncomeAmount)} pendiente de cierre comercial</div>
                     </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Sectores visibles</div>
-                      <div className="mt-2 text-2xl font-semibold text-slate-900">{executiveEconomicClosureData.visibleRows.length}</div>
-                      <div className="mt-1 text-sm text-slate-500">{executiveFieldLabel}</div>
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                      <div className="text-xs uppercase tracking-wide text-emerald-700">Costo de formación</div>
+                      <div className="mt-2 text-2xl font-semibold text-emerald-700">{executiveEconomicClosureData.closedByExceptionRows.length}</div>
+                      <div className="mt-1 text-sm text-emerald-700">{formatCLP(executiveEconomicClosureData.expectedNoProductionAmount)} cerrado por excepción</div>
                     </div>
                   </div>
 
@@ -12667,6 +12707,7 @@ export const Reports: React.FC = () => {
                           <th className="px-4 py-3 text-left font-medium uppercase tracking-wide text-slate-500">Estado</th>
                           <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Cierre %</th>
                           <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Cerrados</th>
+                          <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Formación</th>
                           <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Pend. prod.</th>
                           <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Pend. ingreso</th>
                           <th className="px-4 py-3 text-right font-medium uppercase tracking-wide text-slate-500">Costo sin ingreso</th>
@@ -12678,7 +12719,8 @@ export const Reports: React.FC = () => {
                             <td className="px-4 py-3 font-medium text-slate-900">{row.season}</td>
                             <td className="px-4 py-3 text-slate-700">{row.toneLabel}</td>
                             <td className="px-4 py-3 text-right font-medium text-slate-900">{row.closurePct.toFixed(1)}%</td>
-                            <td className="px-4 py-3 text-right text-slate-700">{row.closedSectorCount} / {row.visibleSectorCount}</td>
+                            <td className="px-4 py-3 text-right text-slate-700">{row.effectiveClosedCount} / {row.visibleSectorCount}</td>
+                            <td className="px-4 py-3 text-right text-emerald-700">{row.closedByExceptionCount}</td>
                             <td className="px-4 py-3 text-right text-slate-700">{row.pendingProductionCount}</td>
                             <td className="px-4 py-3 text-right text-slate-700">{row.pendingIncomeCount}</td>
                             <td className="px-4 py-3 text-right text-slate-700">{row.costWithoutIncomeCount}</td>
@@ -12686,7 +12728,7 @@ export const Reports: React.FC = () => {
                         ))}
                         {executiveEconomicClosureHistoryRows.length === 0 && (
                           <tr>
-                            <td colSpan={7} className="px-4 py-4 text-center text-sm text-slate-500">
+                            <td colSpan={8} className="px-4 py-4 text-center text-sm text-slate-500">
                               No hay temporadas suficientes para construir historial de cierre.
                             </td>
                           </tr>
@@ -19661,14 +19703,14 @@ export const Reports: React.FC = () => {
                               {executiveEconomicClosureData.tone.label}
                             </span>
                           </div>
-                          <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-4">
+                          <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-4">
                             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
                               <div className="text-sm uppercase tracking-wide text-slate-500">Cierre económico</div>
                               <div className="mt-3 text-3xl font-bold text-slate-900">{executiveEconomicClosureData.closurePct.toFixed(1)}%</div>
                             </div>
                             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                              <div className="text-sm uppercase tracking-wide text-slate-500">Sectores cerrados</div>
-                              <div className="mt-3 text-3xl font-bold text-slate-900">{executiveEconomicClosureData.closedRows.length}</div>
+                              <div className="text-sm uppercase tracking-wide text-slate-500">Cerrados o eximidos</div>
+                              <div className="mt-3 text-3xl font-bold text-slate-900">{executiveEconomicClosureData.effectiveClosedRows.length}</div>
                             </div>
                             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
                               <div className="text-sm uppercase tracking-wide text-slate-500">Pend. producción</div>
@@ -19677,6 +19719,11 @@ export const Reports: React.FC = () => {
                             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
                               <div className="text-sm uppercase tracking-wide text-slate-500">Pend. ingreso</div>
                               <div className="mt-3 text-3xl font-bold text-indigo-700">{executiveEconomicClosureData.pendingIncomeRows.length}</div>
+                            </div>
+                            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+                              <div className="text-sm uppercase tracking-wide text-emerald-700">Costo de formación</div>
+                              <div className="mt-3 text-3xl font-bold text-emerald-700">{executiveEconomicClosureData.closedByExceptionRows.length}</div>
+                              <div className="text-sm text-emerald-700">{formatCLP(executiveEconomicClosureData.expectedNoProductionAmount)}</div>
                             </div>
                             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
                               <div className="text-sm uppercase tracking-wide text-slate-500">Costo sin ingreso</div>
@@ -19774,6 +19821,7 @@ export const Reports: React.FC = () => {
                                   <th className="p-3">Estado</th>
                                   <th className="p-3 text-right">Cierre %</th>
                                   <th className="p-3 text-right">Cerrados</th>
+                                  <th className="p-3 text-right">Formación</th>
                                   <th className="p-3 text-right">Pend. prod.</th>
                                   <th className="p-3 text-right">Pend. ingreso</th>
                                   <th className="p-3 text-right">Costo sin ingreso</th>
@@ -19785,7 +19833,8 @@ export const Reports: React.FC = () => {
                                     <td className="p-3 font-semibold text-slate-900">{row.season}</td>
                                     <td className="p-3 text-slate-700">{row.toneLabel}</td>
                                     <td className="p-3 text-right font-semibold text-slate-900">{row.closurePct.toFixed(1)}%</td>
-                                    <td className="p-3 text-right text-slate-700">{row.closedSectorCount}/{row.visibleSectorCount}</td>
+                                    <td className="p-3 text-right text-slate-700">{row.effectiveClosedCount}/{row.visibleSectorCount}</td>
+                                    <td className="p-3 text-right text-emerald-700">{row.closedByExceptionCount}</td>
                                     <td className="p-3 text-right text-slate-700">{row.pendingProductionCount}</td>
                                     <td className="p-3 text-right text-slate-700">{row.pendingIncomeCount}</td>
                                     <td className="p-3 text-right text-slate-700">{row.costWithoutIncomeCount}</td>
