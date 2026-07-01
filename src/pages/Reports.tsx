@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useCompany } from '../contexts/CompanyContext';
 import { formatCLP } from '../lib/utils';
 import { getSeasonFromDate, isDateInSeason } from '../lib/seasonUtils';
-import { aggregateCostMovementsBySector, type AgriculturalCostMovement } from '../lib/costMovements';
+import { aggregateCostMovementsBySector, buildAgriculturalCostMovements, type AgriculturalCostMovement } from '../lib/costMovements';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { Loader2, PieChart as PieChartIcon, AlertCircle, Beaker, FileText, X, Printer, Settings, DollarSign, Scale, Play, ChevronLeft, ChevronRight, Layers, Plus, Pencil, Trash2, Database } from 'lucide-react';
 import jsPDF from 'jspdf';
@@ -212,6 +212,37 @@ const resolveSectorSeasonPlanMetrics = (sector: any, season: string) => {
     expectedRevenueUsd: expectedProductionKg * expectedPriceUsd,
     exchangeRate
   };
+};
+
+const buildSectorMetaMapFromFields = (fields: any[]) => {
+  const map = new Map<string, { fieldId: string }>();
+  (fields || []).forEach((field: any) => {
+    const fieldId = String(field?.id || '');
+    (field?.sectors || []).forEach((sector: any) => {
+      const sectorId = String(sector?.id || '');
+      if (!fieldId || !sectorId) return;
+      map.set(sectorId, { fieldId });
+    });
+  });
+  return map;
+};
+
+const shouldRebuildCostMovementsFromAssignments = (params: {
+  viewMovements: AgriculturalCostMovement[];
+  rawFuel: any[];
+  rawFuelConsumption: any[];
+  rawMachinery: any[];
+  rawIrrigation: any[];
+  rawGeneralCosts: any[];
+}) => {
+  const sourceSet = new Set((params.viewMovements || []).map((movement) => movement.source));
+  return (
+    ((params.rawFuel || []).length > 0 && !sourceSet.has('fuel_assignments')) ||
+    ((params.rawFuelConsumption || []).length > 0 && !sourceSet.has('fuel_consumption')) ||
+    ((params.rawMachinery || []).length > 0 && !sourceSet.has('machinery_assignments')) ||
+    ((params.rawIrrigation || []).length > 0 && !sourceSet.has('irrigation_assignments')) ||
+    ((params.rawGeneralCosts || []).length > 0 && !sourceSet.has('general_costs'))
+  );
 };
 
 interface CategoryExpense {
@@ -9065,16 +9096,52 @@ export const Reports: React.FC = () => {
 
       const res = reportsResult.value;
       if (reportLoadSeqRef.current !== loadSeq || selectedCompany?.id !== companyId) return;
-      setRawFields(res.fields || []);
-      setRawApplications(res.applications || []);
-      setRawCostMovements((res as any).costMovements || []);
-      setRawLabor(res.labor || []);
-      setRawWorkerCosts(res.workerCosts || []);
-      setRawFuel(res.fuel || []);
-      setRawFuelConsumption(res.fuelConsumption || []);
-      setRawMachinery(res.machinery || []);
-      setRawIrrigation(res.irrigation || []);
-      setRawGeneralCosts(res.generalCosts || []);
+      const rawFieldsData = res.fields || [];
+      const rawApplicationsData = res.applications || [];
+      const rawLaborData = res.labor || [];
+      const rawWorkerCostsData = res.workerCosts || [];
+      const rawFuelData = res.fuel || [];
+      const rawFuelConsumptionData = res.fuelConsumption || [];
+      const rawMachineryData = res.machinery || [];
+      const rawIrrigationData = res.irrigation || [];
+      const rawGeneralCostsData = res.generalCosts || [];
+      const rawCostMovementsData = (res as any).costMovements || [];
+      const rebuildCostMovements = shouldRebuildCostMovementsFromAssignments({
+        viewMovements: rawCostMovementsData,
+        rawFuel: rawFuelData,
+        rawFuelConsumption: rawFuelConsumptionData,
+        rawMachinery: rawMachineryData,
+        rawIrrigation: rawIrrigationData,
+        rawGeneralCosts: rawGeneralCostsData
+      });
+      const effectiveCostMovements = rebuildCostMovements
+        ? buildAgriculturalCostMovements({
+          sectorMeta: buildSectorMetaMapFromFields(rawFieldsData),
+          fuelPrices: executiveFuelPrices,
+          applications: rawApplicationsData,
+          labor: rawLaborData,
+          workerCosts: rawWorkerCostsData,
+          fuelAssignments: rawFuelData,
+          fuelConsumption: rawFuelConsumptionData,
+          machinery: rawMachineryData,
+          irrigation: rawIrrigationData,
+          generalCosts: rawGeneralCostsData
+        })
+        : rawCostMovementsData;
+
+      if (rebuildCostMovements) {
+        console.warn('Reportes: se reconstruyeron movimientos de costo desde asignaciones por vista incompleta.');
+      }
+      setRawFields(rawFieldsData);
+      setRawApplications(rawApplicationsData);
+      setRawCostMovements(effectiveCostMovements);
+      setRawLabor(rawLaborData);
+      setRawWorkerCosts(rawWorkerCostsData);
+      setRawFuel(rawFuelData);
+      setRawFuelConsumption(rawFuelConsumptionData);
+      setRawMachinery(rawMachineryData);
+      setRawIrrigation(rawIrrigationData);
+      setRawGeneralCosts(rawGeneralCostsData);
       setIncomeEntries(res.incomeEntries || []);
       setRawInvoices(res.invoices || []);
       setRawProducts((res as any).products || []);
