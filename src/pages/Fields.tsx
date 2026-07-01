@@ -265,6 +265,52 @@ export const Fields: React.FC = () => {
       .sort((a, b) => String(b).localeCompare(String(a)));
   }, [currentPlanningSeason, fields, selectedPlanningSeason]);
 
+  const planCommercialPreview = useMemo(() => {
+    const exchangeRate = Number(planExchangeRate || 0);
+    const budgetClpInput = Number(planBudgetClpPerHa || 0);
+    const budgetUsdInput = Number(planBudgetUsdPerHa || 0);
+    const expectedKg = Number(planExpectedKg || 0);
+    const expectedSalePriceUsd = Number(planExpectedPriceUsd || 0);
+    const fallbackSalePriceClp = Number(planExpectedPriceClp || 0);
+    const expectedSalePriceClp = expectedSalePriceUsd > 0 && exchangeRate > 0
+      ? expectedSalePriceUsd * exchangeRate
+      : fallbackSalePriceClp;
+    const budgetClpPerHa = budgetClpInput > 0
+      ? budgetClpInput
+      : exchangeRate > 0
+        ? budgetUsdInput * exchangeRate
+        : 0;
+    const budgetUsdPerHa = budgetUsdInput > 0
+      ? budgetUsdInput
+      : exchangeRate > 0
+        ? budgetClpInput / exchangeRate
+        : 0;
+    const expectedRevenueUsd = expectedKg * expectedSalePriceUsd;
+    const expectedRevenueClp = expectedSalePriceClp > 0
+      ? expectedKg * expectedSalePriceClp
+      : exchangeRate > 0
+        ? expectedRevenueUsd * exchangeRate
+        : 0;
+
+    return {
+      exchangeRate,
+      budgetClpPerHa,
+      budgetUsdPerHa,
+      expectedKg,
+      expectedSalePriceUsd,
+      expectedSalePriceClp,
+      expectedRevenueUsd,
+      expectedRevenueClp
+    };
+  }, [
+    planBudgetClpPerHa,
+    planBudgetUsdPerHa,
+    planExchangeRate,
+    planExpectedKg,
+    planExpectedPriceClp,
+    planExpectedPriceUsd
+  ]);
+
   const loadFields = useCallback(async () => {
     if (!selectedCompany) return;
     setLoading(true);
@@ -494,7 +540,13 @@ export const Fields: React.FC = () => {
     setPlanBudgetUsdPerHa(plan?.budget_cost_usd_per_ha ? String(plan.budget_cost_usd_per_ha) : '');
     setPlanExpectedKg(plan?.expected_production_kg ? String(plan.expected_production_kg) : '');
     setPlanExpectedPriceClp(plan?.expected_sale_price_clp_per_kg ? String(plan.expected_sale_price_clp_per_kg) : '');
-    setPlanExpectedPriceUsd(plan?.expected_sale_price_usd_per_kg ? String(plan.expected_sale_price_usd_per_kg) : '');
+    setPlanExpectedPriceUsd(
+      plan?.expected_sale_price_usd_per_kg
+        ? String(plan.expected_sale_price_usd_per_kg)
+        : plan?.expected_sale_price_clp_per_kg && Number(plan?.exchange_rate_reference || 0) > 0
+          ? String(Number(plan.expected_sale_price_clp_per_kg) / Number(plan.exchange_rate_reference))
+          : ''
+    );
     setPlanExchangeRate(plan?.exchange_rate_reference ? String(plan.exchange_rate_reference) : '');
     setPlanNotes(plan?.notes || '');
   };
@@ -520,8 +572,8 @@ export const Fields: React.FC = () => {
         budget_cost_clp_per_ha: planBudgetClpPerHa ? parseFloat(planBudgetClpPerHa) : 0,
         budget_cost_usd_per_ha: planBudgetUsdPerHa ? parseFloat(planBudgetUsdPerHa) : 0,
         expected_production_kg: planExpectedKg ? parseFloat(planExpectedKg) : 0,
-        expected_sale_price_clp_per_kg: planExpectedPriceClp ? parseFloat(planExpectedPriceClp) : 0,
-        expected_sale_price_usd_per_kg: planExpectedPriceUsd ? parseFloat(planExpectedPriceUsd) : 0,
+        expected_sale_price_clp_per_kg: planCommercialPreview.expectedSalePriceClp,
+        expected_sale_price_usd_per_kg: planCommercialPreview.expectedSalePriceUsd,
         exchange_rate_reference: planExchangeRate ? parseFloat(planExchangeRate) : 0,
         notes: planNotes.trim() || null
       };
@@ -1211,10 +1263,36 @@ export const Fields: React.FC = () => {
                                         <input type="number" step="0.01" value={planBudgetClpPerHa} onChange={(e) => setPlanBudgetClpPerHa(e.target.value)} placeholder="Ppto CLP / Ha" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
                                         <input type="number" step="0.01" value={planBudgetUsdPerHa} onChange={(e) => setPlanBudgetUsdPerHa(e.target.value)} placeholder="Ppto USD / Ha" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
                                         <input type="number" step="0.01" value={planExpectedKg} onChange={(e) => setPlanExpectedKg(e.target.value)} placeholder="Prod. esperada (kg)" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
-                                        <input type="number" step="0.01" value={planExpectedPriceClp} onChange={(e) => setPlanExpectedPriceClp(e.target.value)} placeholder="Precio venta CLP/kg" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
                                         <input type="number" step="0.01" value={planExpectedPriceUsd} onChange={(e) => setPlanExpectedPriceUsd(e.target.value)} placeholder="Precio venta USD/kg" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
                                         <input type="number" step="0.01" value={planExchangeRate} onChange={(e) => setPlanExchangeRate(e.target.value)} placeholder="TC referencia" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
+                                        <input type="number" step="0.01" value={planCommercialPreview.expectedSalePriceClp > 0 ? String(Number(planCommercialPreview.expectedSalePriceClp.toFixed(2))) : ''} readOnly placeholder="Precio venta CLP/kg (auto)" className="block w-full border-gray-200 bg-slate-50 rounded-md shadow-sm py-2 px-3 text-sm text-slate-600" />
                                         <input type="text" value={planNotes} onChange={(e) => setPlanNotes(e.target.value)} placeholder="Notas del plan" className="block w-full border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm" />
+                                      </div>
+                                      <div className="mt-3 rounded-md border border-blue-200 bg-blue-50 p-3">
+                                        <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">Cálculo automático comercial</div>
+                                        <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                                          <div className="rounded-md bg-white px-3 py-2">
+                                            <div className="text-[10px] uppercase tracking-wide text-slate-500">Precio CLP/kg</div>
+                                            <div className="mt-1 font-semibold text-slate-900">{formatCLP(planCommercialPreview.expectedSalePriceClp)}</div>
+                                          </div>
+                                          <div className="rounded-md bg-white px-3 py-2">
+                                            <div className="text-[10px] uppercase tracking-wide text-slate-500">Ingreso estimado USD</div>
+                                            <div className="mt-1 font-semibold text-slate-900">US$ {Number(planCommercialPreview.expectedRevenueUsd || 0).toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</div>
+                                          </div>
+                                          <div className="rounded-md bg-white px-3 py-2">
+                                            <div className="text-[10px] uppercase tracking-wide text-slate-500">Ingreso estimado CLP</div>
+                                            <div className="mt-1 font-semibold text-slate-900">{formatCLP(planCommercialPreview.expectedRevenueClp)}</div>
+                                          </div>
+                                          <div className="rounded-md bg-white px-3 py-2">
+                                            <div className="text-[10px] uppercase tracking-wide text-slate-500">Margen esperado CLP</div>
+                                            <div className={`mt-1 font-semibold ${(planCommercialPreview.expectedRevenueClp - (planCommercialPreview.budgetClpPerHa * Number(sector.hectares || 0))) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                                              {formatCLP(planCommercialPreview.expectedRevenueClp - (planCommercialPreview.budgetClpPerHa * Number(sector.hectares || 0)))}
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <div className="mt-2 text-xs text-blue-700">
+                                          El ingreso estimado se calcula automáticamente con `kg esperados x precio venta USD/kg`, y el valor en pesos usa el tipo de cambio de referencia.
+                                        </div>
                                       </div>
                                       <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                                         <button type="button" onClick={cancelPlanEditor} className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancelar</button>
